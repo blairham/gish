@@ -1,0 +1,55 @@
+// HistoryBackend — pluggable history storage and search.
+//
+// The shell keeps its own local history file regardless; a HistoryBackend
+// plugin observes appends and can serve richer search (sync across
+// machines, dedupe, secret-scrubbing, fuzzy/frecency ranking). Append is
+// fire-and-forget from the shell's perspective — a slow backend must
+// never delay accepting the next command.
+syntax = "proto3";
+
+package swash.plugin.v1;
+
+option go_package = "github.com/blairham/swash/pkg/pluginapi;pluginapi";
+
+service HistoryBackend {
+  // Append records an executed command. Called after the command exits.
+  rpc Append(AppendRequest) returns (AppendResponse);
+  // Search streams matches, best first, in batches.
+  rpc Search(SearchRequest) returns (stream SearchBatch);
+}
+
+message HistoryEntry {
+  string command = 1;
+  // Wall-clock start, milliseconds since the Unix epoch (host-stamped).
+  int64 started_unix_ms = 2;
+  int64 duration_ms = 3;
+  int32 exit_code = 4;
+  string cwd = 5;
+  // Opaque per-session id, stable for the life of one interactive shell.
+  string session_id = 6;
+}
+
+message AppendRequest {
+  HistoryEntry entry = 1;
+}
+
+message AppendResponse {
+  // False lets a backend decline an entry (e.g. its own ignore rules);
+  // the shell's local history is unaffected either way.
+  bool stored = 1;
+}
+
+message SearchRequest {
+  string query = 1;
+  // Current directory, for backends that rank by locality.
+  string cwd = 2;
+  uint32 limit = 3;
+  // True restricts matching to command prefixes (up-arrow style);
+  // false is full fuzzy search (ctrl-r style).
+  bool prefix_only = 4;
+}
+
+message SearchBatch {
+  repeated HistoryEntry entries = 1;
+  bool final = 2;
+}

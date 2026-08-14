@@ -1,0 +1,53 @@
+# Pre-commit configuration for swash
+# Install: pre-commit install
+# Run:     pre-commit run --all-files
+# Update:  pre-commit autoupdate
+
+repos:
+  # General hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(build/|pkg/pluginapi/)
+      - id: end-of-file-fixer
+        exclude: ^(build/|pkg/pluginapi/)
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Go housekeeping
+  - repo: https://github.com/TekWizely/pre-commit-golang
+    rev: v1.0.0-rc.4
+    hooks:
+      - id: go-mod-tidy-repo
+
+  # Toolchain pin invariant
+  - repo: https://github.com/blairham/pre-commit-hooks
+    rev: v0.1.0
+    hooks:
+      - id: check-go-version-sync
+
+  # golangci-lint at commit time, via the upstream hooks (no local scripts).
+  # `golangci-lint-fmt` applies every formatter configured in .golangci.yml
+  # (gofumpt AND goimports); `golangci-lint` lints only what changed since
+  # HEAD — the whole-repo, enforced lint stays in CI, because --new-from-rev
+  # can't see whole-module linters like `unused`. Keep `rev` in lockstep with
+  # go.mod's tool pin and the CI action version.
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.12.2
+    hooks:
+      - id: golangci-lint-fmt
+
+      - id: golangci-lint
+  # Secret scanning
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        exclude: ^build/
+
+# Note: the whole-repo golangci-lint run stays in CI — the hook above only
+# lints what changed since HEAD, which is fast enough for every commit.

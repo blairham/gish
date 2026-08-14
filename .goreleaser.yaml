@@ -1,0 +1,111 @@
+version: 2
+
+# GoReleaser configuration for swash
+# See: https://goreleaser.com
+project_name: swash
+
+builds:
+- id: swash
+  binary: swash
+  main: ./cmd/swash
+  env:
+  - CGO_ENABLED=0
+  goos:
+  - linux
+  - darwin
+  - windows
+  goarch:
+  - amd64
+  - arm64
+  ignore:
+  - goos: windows
+    goarch: arm64
+  ldflags:
+  - -s -w
+  - -X main.version={{.Version}}
+  - -X main.commit={{.Commit}}
+  - -X main.date={{.Date}}
+
+archives:
+- id: default
+  formats:
+  - tar.gz
+  # this name template makes the OS and Arch compatible with the results of uname.
+  name_template: >-
+    {{ .ProjectName }}_ {{- title .Os }}_ {{- if eq .Arch "amd64" }}x86_64 {{- else }}{{ .Arch }}{{ end }}
+  format_overrides:
+  - goos: windows
+    formats:
+    - zip
+
+# macOS signing + notarization, matching ghorg, stevedore and go-pre-commit.
+# Gated on isEnvSet, so releases still succeed unsigned when the secrets are
+# absent — which is the case until MACOS_SIGN_P12 and the notary key are added
+# to this repo.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - swash
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+        wait: true
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+  - title: Features
+    regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+    order: 0
+  - title: Bug Fixes
+    regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+    order: 1
+  - title: Other
+    order: 999
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'
+    - '^chore:'
+
+# Cask, matching the tap convention for user-facing tools (swash ships no
+# daemon, so it doesn't need a formula's `service` stanza the way cswap did).
+# The quarantine hook strips com.apple.quarantine from the unsigned binary
+# until signing secrets are added.
+homebrew_casks:
+- name: swash
+  repository:
+    owner: blairham
+    name: homebrew-tap
+    token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+  directory: Casks
+  homepage: https://github.com/blairham/swash
+  description: "Interactive shell: zsh ergonomics, bash compatibility, gRPC-native plugins"
+  license: MIT
+  hooks:
+    post:
+      install: |
+        if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/swash"]
+        end
+
+release:
+  draft: false
+  replace_existing_draft: true
+  target_commitish: "{{ .Commit }}"
+  prerelease: auto
+  mode: replace
+  footer: |
+    **Full Changelog**: https://github.com/blairham/swash/compare/{{ .PreviousTag }}...{{ .Tag }}

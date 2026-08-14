@@ -1,0 +1,52 @@
+// CompletionProvider — tab-completion candidates from a resident plugin.
+//
+// Modeled on the carapace/LSP experience: the shell sends the current
+// buffer and cursor, the plugin streams candidate batches back so the UI
+// can render early results while a slow source (an API, a large repo)
+// keeps working. The host imposes a per-keystroke deadline; batches that
+// arrive after it are dropped, not queued.
+syntax = "proto3";
+
+package swash.plugin.v1;
+
+option go_package = "github.com/blairham/swash/pkg/pluginapi;pluginapi";
+
+service CompletionProvider {
+  // Complete returns candidate batches for the buffer/cursor in the
+  // request. The final batch sets final=true; the host may cancel the
+  // stream at any time (deadline, or the user kept typing).
+  rpc Complete(CompleteRequest) returns (stream CompleteBatch);
+}
+
+message CompleteRequest {
+  // Full command-line buffer, UTF-8.
+  string line = 1;
+  // Byte offset of the cursor within line.
+  uint32 cursor = 2;
+  // Working directory of the interactive session.
+  string cwd = 3;
+  // Filtered environment. The host sends an allowlisted subset, never
+  // the full environment — plugins should not see secrets by default.
+  map<string, string> env = 4;
+  // Upper bound the host will render; plugins should stop early.
+  uint32 max_candidates = 5;
+}
+
+message Candidate {
+  // Text inserted into the buffer when selected.
+  string value = 1;
+  // Menu display text; defaults to value when empty.
+  string display = 2;
+  // One-line description shown next to the candidate.
+  string description = 3;
+  // Relative ranking hint, higher sorts first. Host merges candidates
+  // from multiple providers by score, then provider priority.
+  uint32 score = 4;
+}
+
+message CompleteBatch {
+  repeated Candidate candidates = 1;
+  // True on the last batch; lets the host distinguish "done" from
+  // "stream cut by deadline".
+  bool final = 2;
+}

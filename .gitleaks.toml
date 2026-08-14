@@ -1,0 +1,19 @@
+# Gitleaks configuration for swash
+
+title = "swash Gitleaks Configuration"
+
+[extend]
+# Extend the default gitleaks configuration
+useDefault = true
+
+# Global allowlist for false positives.
+[allowlist]
+description = "Global allowlist for false positives"
+
+paths = [
+    # Test files often contain fake/example credentials
+    '''.*_test\.go''',
+    # Build output and generated code
+    '''^build/''',
+    '''^pkg/pluginapi/''',
+]

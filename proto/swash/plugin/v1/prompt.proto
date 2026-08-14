@@ -1,0 +1,55 @@
+// PromptSegmentProvider — async prompt segments (git status, k8s context,
+// cloud account, …) from a resident plugin.
+//
+// The gitstatusd lesson, made a contract: prompt data is computed out of
+// process and the prompt never blocks on it. The host calls Render with a
+// deadline derived from the segment's declared budget; on a miss it
+// renders the segment's previous (stale) value or nothing, and repaints
+// in place when the response lands.
+syntax = "proto3";
+
+package swash.plugin.v1;
+
+option go_package = "github.com/blairham/swash/pkg/pluginapi;pluginapi";
+
+service PromptSegmentProvider {
+  // Segments enumerates the segments this plugin offers. Called once
+  // after Describe.
+  rpc Segments(SegmentsRequest) returns (SegmentsResponse);
+  // Render produces the current text for one segment.
+  rpc Render(RenderRequest) returns (RenderResponse);
+}
+
+message SegmentsRequest {}
+
+message SegmentDescriptor {
+  // Segment id, unique within the plugin (e.g. "git", "k8s-context").
+  string id = 1;
+  string description = 2;
+  // Soft latency budget in milliseconds; the host derives Render
+  // deadlines from it. 0 means "use the host default" (currently 50ms).
+  uint32 budget_ms = 3;
+}
+
+message SegmentsResponse {
+  repeated SegmentDescriptor segments = 1;
+}
+
+message RenderRequest {
+  string segment_id = 1;
+  // Working directory the prompt is being drawn for.
+  string cwd = 2;
+  // Exit code of the last foreground pipeline.
+  int32 last_exit_code = 3;
+  // Monotonic per-session sequence number; lets plugins drop stale
+  // requests that were superseded before they were served.
+  uint64 event_seq = 4;
+}
+
+message RenderResponse {
+  // Rendered segment text. Styling vocabulary is TBD (likely a small
+  // markup subset, not raw ANSI) — raw text for now.
+  string text = 1;
+  // How long the host may reuse this value without re-rendering.
+  uint32 ttl_ms = 2;
+}

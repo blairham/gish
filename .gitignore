@@ -1,0 +1,30 @@
+# Binaries and build output
+build/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.html
+
+# Go workspace file
+go.work
+go.work.sum
+
+# OS noise
+.DS_Store
+._*
+Thumbs.db
+*~
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+[._]*.sw[a-p]
+Session.vim
+.history/

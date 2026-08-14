@@ -1,0 +1,30 @@
+# EditorConfig is awesome: https://editorconfig.org
+root = true
+
+# Universal defaults — 2-space indent, LF, UTF-8, trim trailing whitespace
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown — preserve trailing whitespace for hard line breaks
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefiles — require tabs
+[{Makefile,makefile,*.mk}]
+indent_style = tab
+indent_size = 4
+
+# Go — gofmt uses tabs
+[*.go]
+indent_style = tab
+indent_size = 4
+
+# Shell scripts
+[*.{sh,bash}]
+indent_style = space
+indent_size = 4
