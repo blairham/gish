@@ -80,7 +80,20 @@ func runEditor(ctx context.Context) error {
 	signal.Notify(sigs, os.Interrupt, syscall.SIGQUIT)
 	defer signal.Stop(sigs)
 
+	// The rc file runs in the session runner, so its functions, vars,
+	// and cd persist. It also sets GISH_PROMPT / GISH_PROMPT_CONT.
+	loadRC(ctx, runner)
+	info := newPromptInfo()
+	lastExit := 0
+
 	for {
+		info.dir = runner.Dir
+		info.exitCode = lastExit
+		ed.SetPrompt(
+			expandPrompt(shellVar(runner, "GISH_PROMPT", prompt), info),
+			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info),
+		)
+
 		line, err := ed.ReadCommand(ctx)
 		switch {
 		case errors.Is(err, editor.ErrInterrupted):
@@ -102,6 +115,7 @@ func runEditor(ctx context.Context) error {
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
 		start := time.Now()
 		rerr := runInterruptible(ctx, runner, file, sigs)
+		lastExit = exitCode(rerr)
 		if store != nil {
 			// Cwd comes from the runner: `cd` moves the interpreter's
 			// directory, not the gish process's.
@@ -109,7 +123,7 @@ func runEditor(ctx context.Context) error {
 				Command:       line,
 				StartedUnixMs: start.UnixMilli(),
 				DurationMs:    time.Since(start).Milliseconds(),
-				ExitCode:      exitCode(rerr),
+				ExitCode:      lastExit,
 				Cwd:           runner.Dir,
 				SessionID:     sessionID,
 			}); aerr != nil {
