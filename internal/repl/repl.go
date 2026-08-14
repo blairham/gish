@@ -25,6 +25,7 @@ import (
 	"github.com/blairham/gish/internal/editor"
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/jobs"
+	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/internal/term"
 )
 
@@ -76,6 +77,18 @@ func runEditor(ctx context.Context) error {
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
+	}
+
+	// Tier-2 plugin host (#7): discovery now, launch on first demand.
+	// Consumers (prompt segments, completions) arrive with M3; the
+	// `plugins` builtin makes the host inspectable meanwhile.
+	if dir, derr := pluginhost.DefaultDir(); derr == nil {
+		host := pluginhost.NewHost(dir)
+		if derr := host.Discover(); derr != nil {
+			fmt.Fprintln(os.Stderr, "gish: plugins:", derr)
+		}
+		defer host.Close()
+		builtins.Register("plugins", pluginsBuiltin(host, dir))
 	}
 
 	// History failure degrades, never blocks the shell.
@@ -210,6 +223,31 @@ func drainSignals(sigs <-chan os.Signal) {
 	select {
 	case <-sigs:
 	default:
+	}
+}
+
+// pluginsBuiltin lists discovered tier-2 plugins with their live status
+// and capabilities; it launches and Describes plugins on demand.
+func pluginsBuiltin(host *pluginhost.Host, dir string) builtins.Func {
+	return func(ctx context.Context, hc interp.HandlerContext, _ []string) error {
+		_ = host.Discover() //nolint:errcheck // newly installed plugins picked up best-effort
+		statuses := host.Statuses(ctx, true)
+		if len(statuses) == 0 {
+			fmt.Fprintf(hc.Stdout, "no plugins installed — drop executables in %s\n", dir)
+			return nil
+		}
+		for _, st := range statuses {
+			state := "stopped"
+			switch {
+			case st.Running:
+				state = "running"
+			case time.Now().Before(st.BackoffUntil):
+				state = "backoff"
+			}
+			fmt.Fprintf(hc.Stdout, "%-20s %-8s %-12s %s\n",
+				st.Name, state, st.Version, strings.Join(st.Capabilities, ","))
+		}
+		return nil
 	}
 }
 
