@@ -56,6 +56,12 @@ func Register(name string, fn Func) {
 	registry[name] = fn
 }
 
+// ShellBuiltins returns the interpreter builtins that actually work,
+// for completion.
+func ShellBuiltins() []string {
+	return slices.Clone(interpImplemented)
+}
+
 // Native returns the gish-native builtin names as the user types them:
 // registry-internal __gish_ prefixes are stripped for display.
 func Native() []string {
