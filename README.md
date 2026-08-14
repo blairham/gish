@@ -4,6 +4,8 @@
 
 A new interactive shell: **zsh's interactive experience, bash's ubiquity, and a native plugin system with an actual contract.** Cross-platform (macOS, Linux, Windows), one static Go binary.
 
+**Fast is a guarantee, not an accident**: ~6ms to first prompt warm (10ms with a 10,000-entry history), enforced by a CI regression gate. Plugin discovery never blocks the first paint.
+
 **Status: early scaffold.** The interactive loop runs real POSIX/bash today (via [`mvdan.cc/sh`](https://github.com/mvdan/sh)); everything that makes it *gish* is in front of us.
 
 ## The idea
