@@ -91,6 +91,7 @@ type promptInfo struct {
 	exitCode int
 	duration time.Duration // last command's wall time
 	jobs     int           // filed jobs (running or stopped)
+	width    int           // terminal width, for whole-prompt renderers
 	// segment resolves %p{id} escapes (nil renders empty): tier-2
 	// prompt plugins, budget-bounded, stale on miss.
 	segment func(id string) string

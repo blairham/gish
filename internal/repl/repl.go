@@ -58,6 +58,9 @@ func Run(ctx context.Context) error {
 // stops pure-builtin loops the kernel can't reach. SIGTSTP is left at
 // its default until job control (#5).
 func runEditor(ctx context.Context) error {
+	// Native brew shellenv (#44): pure stat/string work, no subprocess.
+	brewShellenv()
+
 	// Tier-2 plugin host (#7): discovery now, launch on first demand.
 	// Prompt segments are consumed via %p{id} escapes; the `plugins`
 	// builtin makes the host inspectable. Plugin-provided commands (#11)
@@ -85,7 +88,10 @@ func runEditor(ctx context.Context) error {
 	if cmdIndex != nil {
 		execChain = append(execChain, cmdIndex.ExecMiddleware)
 	}
-	execChain = append(execChain, table.ExecMiddleware)
+	var runnerRef *interp.Runner
+	execChain = append(execChain,
+		notFoundMiddleware(func() *interp.Runner { return runnerRef }),
+		table.ExecMiddleware)
 	runnerOpts := []interp.RunnerOption{
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(execChain...),
@@ -105,6 +111,7 @@ func runEditor(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	runnerRef = runner
 
 	// History failure degrades, never blocks the shell.
 	var hist editor.History
@@ -114,6 +121,9 @@ func runEditor(ctx context.Context) error {
 		hist = store
 	}
 	sessionID := fmt.Sprintf("%d-%x", os.Getpid(), time.Now().UnixNano())
+	if store != nil {
+		store.SetSession(sessionID) // reloads (#40) skip our own entries
+	}
 
 	edCfg := editor.Config{
 		Prompt:     prompt,
@@ -145,6 +155,7 @@ func runEditor(ctx context.Context) error {
 	// The rc file runs in the session runner, so its functions, vars,
 	// and cd persist. It also sets GISH_PROMPT / GISH_PROMPT_CONT.
 	loadRC(ctx, runner)
+	starshipHint(shellVar(runner, "GISH_THEME", "") != "", shellVar(runner, "GISH_PROMPT", "") != "")
 	info := newPromptInfo()
 	lastExit := 0
 
@@ -154,6 +165,9 @@ func runEditor(ctx context.Context) error {
 		info.exitCode = lastExit
 		info.duration = lastDuration
 		info.jobs = table.Count()
+		if w, _, werr := term.NewTTY(os.Stdin, os.Stdout).Size(); werr == nil {
+			info.width = w
+		}
 		if segs != nil {
 			info.segment = func(id string) string {
 				return segs.render(ctx, id, runner.Dir, lastExit)
