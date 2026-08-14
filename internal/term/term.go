@@ -12,7 +12,8 @@
 package term
 
 import (
-	"errors"
+	"context"
+	"fmt"
 	"os"
 	"sync"
 
@@ -83,23 +84,35 @@ type Terminal interface {
 	EnterRaw() (restore func() error, err error)
 	// Size reports the current terminal dimensions in cells.
 	Size() (width, height int, err error)
-	// ReadEvent blocks until the next input event. Event decoding lands
-	// with the line editor (#2); until then implementations may return
-	// an error.
-	ReadEvent() (Event, error)
+	// Events starts decoding input and streams events until ctx is
+	// canceled, at which point the channel is closed. Canceling ctx
+	// stops the underlying read: the shell must never keep consuming
+	// stdin once a child process owns the terminal.
+	Events(ctx context.Context) (<-chan Event, error)
 }
-
-// ErrNoDecoder is returned by ReadEvent until event decoding lands (#2).
-var ErrNoDecoder = errors.New("term: event decoding lands with the line editor (#2)")
 
 // TTY implements Terminal on a real terminal device.
 type TTY struct {
-	f *os.File
+	f   *os.File // input side; also the raw-mode fd
+	out *os.File // output side, for mode-toggle sequences
+
+	// Type-ahead carried between Events sessions: input the loop
+	// consumed but the previous session's consumer never received.
+	pending   []byte
+	pendingEv []Event
+
+	dec uvDecoder
 }
 
-// NewTTY wraps an open terminal device, typically os.Stdin.
-func NewTTY(f *os.File) *TTY {
-	return &TTY{f: f}
+// NewTTY wraps the two sides of a terminal, typically stdin and stdout.
+func NewTTY(in, out *os.File) *TTY {
+	return &TTY{f: in, out: out}
+}
+
+// IsTerminal reports whether f is a terminal device. Callers use this to
+// choose between the line editor and the plain piped-input loop.
+func IsTerminal(f *os.File) bool {
+	return xterm.IsTerminal(int(f.Fd()))
 }
 
 func (t *TTY) EnterRaw() (func() error, error) {
@@ -108,10 +121,14 @@ func (t *TTY) EnterRaw() (func() error, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Bracketed paste: pasted text arrives delimited instead of as
+	// keystrokes, so a pasted newline can never trigger accept-line.
+	fmt.Fprint(t.out, "\x1b[?2004h")
 	var once sync.Once
 	restore := func() error {
 		var rerr error
 		once.Do(func() {
+			fmt.Fprint(t.out, "\x1b[?2004l")
 			rerr = xterm.Restore(fd, state)
 		})
 		return rerr
@@ -121,10 +138,6 @@ func (t *TTY) EnterRaw() (func() error, error) {
 
 func (t *TTY) Size() (int, int, error) {
 	return xterm.GetSize(int(t.f.Fd()))
-}
-
-func (t *TTY) ReadEvent() (Event, error) {
-	return nil, ErrNoDecoder
 }
 
 // WithRaw runs fn with t in raw mode and guarantees the terminal is

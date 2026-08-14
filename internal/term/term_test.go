@@ -1,6 +1,7 @@
 package term_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -13,6 +14,7 @@ type fake struct {
 	raw          bool
 	restoreCalls int
 	enterErr     error
+	events       chan term.Event
 }
 
 func (f *fake) EnterRaw() (func() error, error) {
@@ -27,8 +29,11 @@ func (f *fake) EnterRaw() (func() error, error) {
 	}, nil
 }
 
-func (f *fake) Size() (int, int, error)        { return 80, 24, nil }
-func (f *fake) ReadEvent() (term.Event, error) { return nil, term.ErrNoDecoder }
+func (f *fake) Size() (int, int, error) { return 80, 24, nil }
+
+func (f *fake) Events(_ context.Context) (<-chan term.Event, error) {
+	return f.events, nil
+}
 
 func TestWithRawRestoresOnReturn(t *testing.T) {
 	t.Parallel()
@@ -112,16 +117,7 @@ func TestTTYEnterRawRejectsNonTerminal(t *testing.T) {
 	defer r.Close()
 	defer w.Close()
 
-	if _, err := term.NewTTY(r).EnterRaw(); err == nil {
+	if _, err := term.NewTTY(r, w).EnterRaw(); err == nil {
 		t.Error("EnterRaw on a pipe succeeded, want error")
-	}
-}
-
-func TestTTYReadEventUnimplemented(t *testing.T) {
-	t.Parallel()
-
-	_, err := term.NewTTY(os.Stdin).ReadEvent()
-	if !errors.Is(err, term.ErrNoDecoder) {
-		t.Errorf("err = %v, want ErrNoDecoder", err)
 	}
 }
