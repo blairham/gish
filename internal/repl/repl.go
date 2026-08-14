@@ -1,10 +1,10 @@
 // Package repl implements gish's read-eval loop on top of mvdan.cc/sh's
 // POSIX/bash parser and interpreter.
 //
-// This is the walking skeleton: a line-oriented loop with no editing,
-// highlighting, or completion yet. The interactive line editor (the
-// zle-equivalent) replaces the plain prompt loop here; script and -c
-// execution stay as they are.
+// Interactive terminals get the raw-mode line editor (internal/editor);
+// piped stdin falls back to the plain line loop so `echo cmd | gish` and
+// tests behave like a non-interactive shell. Script and -c execution are
+// separate paths via RunReader.
 package repl
 
 import (
@@ -17,6 +17,9 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/gish/internal/editor"
+	"github.com/blairham/gish/internal/term"
 )
 
 const (
@@ -28,6 +31,65 @@ const (
 // The returned error is the session's exit status (an interp.ExitStatus)
 // when the user ran exit, or a real I/O/parse failure.
 func Run(ctx context.Context) error {
+	if term.IsTerminal(os.Stdin) {
+		return runEditor(ctx)
+	}
+	return runPlain(ctx)
+}
+
+// runEditor is the interactive path: the line editor owns the terminal
+// between commands; the interpreter owns it while a command runs.
+func runEditor(ctx context.Context) error {
+	runner, err := interp.New(interp.StdIO(os.Stdin, os.Stdout, os.Stderr))
+	if err != nil {
+		return err
+	}
+	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, editor.Config{
+		Prompt:     prompt,
+		ContPrompt: contPrompt,
+		AcceptWhen: acceptWhen,
+	})
+	parser := syntax.NewParser()
+
+	for {
+		line, err := ed.ReadCommand(ctx)
+		switch {
+		case errors.Is(err, editor.ErrInterrupted):
+			continue // Ctrl-C: fresh prompt
+		case errors.Is(err, io.EOF):
+			return nil // Ctrl-D on an empty line
+		case err != nil:
+			return err
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		file, perr := parser.Parse(strings.NewReader(line), "gish")
+		if perr != nil {
+			fmt.Fprintln(os.Stderr, "gish:", perr)
+			continue
+		}
+		if rerr := runner.Run(ctx, file); rerr != nil {
+			if runner.Exited() {
+				return rerr
+			}
+			if _, ok := errors.AsType[interp.ExitStatus](rerr); !ok {
+				fmt.Fprintln(os.Stderr, "gish:", rerr)
+			}
+		}
+	}
+}
+
+// acceptWhen reports whether text parses as a complete program. Syntax
+// errors submit too — the interpreter reports them, matching how a shell
+// treats a finished-but-wrong line.
+func acceptWhen(text string) bool {
+	_, err := syntax.NewParser().Parse(strings.NewReader(text), "gish")
+	return err == nil || !syntax.IsIncomplete(err)
+}
+
+// runPlain is the non-TTY loop (piped stdin).
+func runPlain(ctx context.Context) error {
 	runner, err := interp.New(interp.StdIO(os.Stdin, os.Stdout, os.Stderr))
 	if err != nil {
 		return err

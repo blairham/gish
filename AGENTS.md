@@ -15,7 +15,7 @@ The design bet is a **two-tier plugin system**:
 
 Non-negotiable latency rule for tier 2: every host→plugin call carries a deadline; a slow plugin degrades (stale segment, missing completions), it never blocks a keystroke or the prompt.
 
-**Status: walking skeleton.** The REPL is a plain line loop over `mvdan.cc/sh` (POSIX/bash parse + interp). No line editor, no zsh dialect, no plugin dispatch yet — the proto surface and go-plugin scaffolding exist so the contract is designed before the internals grow around it.
+**Status: interactive core in progress (M2).** Scripting runs on `mvdan.cc/sh` (POSIX/bash parse + interp). Interactive terminals get the raw-mode line editor (`internal/editor`): emacs keymap, kill ring, undo, grapheme-aware multi-line editing, diff-based inline rendering, and byte-level type-ahead preservation across commands. Still missing: signal handling (#3), history (#4), job control (#5), rc file (#6). No zsh dialect or plugin dispatch yet — the proto surface and go-plugin scaffolding exist so the contract is designed before the internals grow around it.
 
 ## Quick Reference
 
@@ -40,11 +40,14 @@ make check-versions  # Assert go.mod ↔ .tool-versions agree (runs the pre-comm
 cmd/gish/main.go        # Entry point: -c command, script file, or interactive REPL
 internal/
   repl/                  # Read-eval loop over mvdan.cc/sh parser + interpreter.
-                         # The future line editor (zle-equivalent) replaces the
-                         # plain prompt loop here; RunReader stays the script path
-  term/                  # TTY abstraction (raw mode, input events) — the
-                         # swappable plumbing boundary from #1. Nothing outside
-                         # this package imports a terminal library
+                         # TTY stdin → line editor; piped stdin → plain loop;
+                         # RunReader stays the script path
+  editor/                # Raw-mode line editor (the zle-equivalent): buffer,
+                         # keymap, kill ring, undo, diff-based inline renderer.
+                         # Plugin ghost text / completion menus land here
+  term/                  # TTY abstraction (raw mode, event decoding, type-ahead
+                         # carry) — the swappable plumbing boundary from #1.
+                         # Nothing outside this package imports a terminal library
   pluginhost/            # Tier-2 host: go-plugin handshake, plugin map, gRPC
                          # client/server glue for each capability service
 proto/gish/plugin/v1/   # The versioned tier-2 plugin contract (source of truth):
@@ -88,6 +91,9 @@ Read these before touching `pluginhost` or the protos.
 - `mvdan.cc/sh/v3` — POSIX/bash parser and interpreter; the scripting substrate the zsh dialect grows on top of
 - `hashicorp/go-plugin` — tier-2 plugin transport (same architecture as the cloudctl/understudy/chaos-lab tools)
 - `google.golang.org/grpc` + `protobuf` — the plugin contract
+- `charmbracelet/ultraviolet` — input **decoding only** (`EventDecoder`), behind `internal/term`; gish owns the read loop
+- `golang.org/x/term` — raw-mode entry/restore
+- `rivo/uniseg` — grapheme clusters and display widths for the editor/renderer
 
 ## Testing
 
