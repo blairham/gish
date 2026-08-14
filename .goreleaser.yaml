@@ -26,11 +26,29 @@ builds:
   - -X main.commit={{.Commit}}
   - -X main.date={{.Date}}
 
-# The flagship tier-2 plugin ships alongside the shell; installing is
-# dropping it into $XDG_DATA_HOME/gish/plugins.
+# Tier-2 plugins ship alongside the shell; installing is dropping them
+# into $XDG_DATA_HOME/gish/plugins.
 - id: gish-git
   binary: gish-git
   main: ./cmd/gish-git
+  env:
+  - CGO_ENABLED=0
+  goos:
+  - linux
+  - darwin
+  - windows
+  goarch:
+  - amd64
+  - arm64
+  ignore:
+  - goos: windows
+    goarch: arm64
+  ldflags:
+  - -s -w
+
+- id: gish-carapace
+  binary: gish-carapace
+  main: ./cmd/gish-carapace
   env:
   - CGO_ENABLED=0
   goos:
