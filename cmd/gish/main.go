@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"mvdan.cc/sh/v3/interp"
 
@@ -27,6 +28,7 @@ func main() {
 
 func run() int {
 	command := flag.String("c", "", "run `command` and exit")
+	loginFlag := flag.Bool("l", false, "act as a login shell (source profile files)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -35,15 +37,19 @@ func run() int {
 		return 0
 	}
 
+	// Login invocation (#41): the -l flag, or argv[0] beginning with
+	// '-' — how login(1) and sshd invoke a user's shell.
+	login := *loginFlag || strings.HasPrefix(os.Args[0], "-")
+
 	ctx := context.Background()
 	var err error
 	switch {
 	case *command != "":
-		err = repl.RunCommand(ctx, *command)
+		err = repl.RunCommand(ctx, *command, login)
 	case flag.NArg() > 0:
-		err = repl.RunFile(ctx, flag.Arg(0))
+		err = repl.RunFile(ctx, flag.Arg(0), login)
 	default:
-		err = repl.Run(ctx)
+		err = repl.Run(ctx, login)
 	}
 	if err == nil {
 		return 0

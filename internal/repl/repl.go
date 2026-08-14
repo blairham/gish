@@ -38,11 +38,11 @@ const (
 // Run starts the interactive loop on stdin and blocks until EOF or exit.
 // The returned error is the session's exit status (an interp.ExitStatus)
 // when the user ran exit, or a real I/O/parse failure.
-func Run(ctx context.Context) error {
+func Run(ctx context.Context, login bool) error {
 	if term.IsTerminal(os.Stdin) {
-		return runEditor(ctx)
+		return runEditor(ctx, login)
 	}
-	return runPlain(ctx)
+	return runPlain(ctx, login)
 }
 
 // runEditor is the interactive path: the line editor owns the terminal
@@ -57,7 +57,7 @@ func Run(ctx context.Context) error {
 // Ctrl-C) and reacts by canceling the command context, which is what
 // stops pure-builtin loops the kernel can't reach. SIGTSTP is left at
 // its default until job control (#5).
-func runEditor(ctx context.Context) error {
+func runEditor(ctx context.Context, login bool) error {
 	// Native brew shellenv (#44): pure stat/string work, no subprocess.
 	brewShellenv()
 
@@ -152,8 +152,11 @@ func runEditor(ctx context.Context) error {
 	signal.Notify(sigs, os.Interrupt, syscall.SIGQUIT)
 	defer signal.Stop(sigs)
 
-	// The rc file runs in the session runner, so its functions, vars,
-	// and cd persist. It also sets GISH_PROMPT / GISH_PROMPT_CONT.
+	// Login shells source profile files first (#41), then the rc file
+	// runs in the session runner so functions, vars, and cd persist.
+	if login {
+		loadProfile(ctx, runner)
+	}
 	loadRC(ctx, runner)
 	starshipHint(shellVar(runner, "GISH_THEME", "") != "", shellVar(runner, "GISH_PROMPT", "") != "")
 	info := newPromptInfo()
@@ -361,7 +364,7 @@ func acceptWhen(text string) bool {
 }
 
 // runPlain is the non-TTY loop (piped stdin).
-func runPlain(ctx context.Context) error {
+func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler),
@@ -369,6 +372,9 @@ func runPlain(ctx context.Context) error {
 	)
 	if err != nil {
 		return err
+	}
+	if login {
+		loadProfile(ctx, runner)
 	}
 	parser := syntax.NewParser()
 
@@ -405,19 +411,42 @@ loop:
 	return exitErr
 }
 
-// RunCommand parses and runs src as a complete script (gish -c).
-func RunCommand(ctx context.Context, src string) error {
-	return RunReader(ctx, strings.NewReader(src), "gish -c")
+// RunCommand parses and runs src as a complete script (gish -c). This
+// is the path tools take when they spawn $SHELL -c: it stays POSIX-clean
+// — no editor, theme, plugins, history, or extra output (#41).
+func RunCommand(ctx context.Context, src string, login bool) error {
+	return runScript(ctx, strings.NewReader(src), "gish -c", login)
 }
 
 // RunFile runs the script at path.
-func RunFile(ctx context.Context, path string) error {
+func RunFile(ctx context.Context, path string, login bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return RunReader(ctx, f, path)
+	return runScript(ctx, f, path, login)
+}
+
+// runScript is the non-interactive execution path, optionally preceded
+// by login profile sourcing.
+func runScript(ctx context.Context, r io.Reader, name string, login bool) error {
+	file, err := syntax.NewParser().Parse(r, name)
+	if err != nil {
+		return err
+	}
+	runner, err := interp.New(
+		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		interp.ExecHandlers(builtins.ExecHandler),
+		interp.CallHandler(ziCallHandler(passthroughCall)),
+	)
+	if err != nil {
+		return err
+	}
+	if login {
+		loadProfile(ctx, runner)
+	}
+	return runner.Run(ctx, file)
 }
 
 // RunReader parses and runs an entire script from r; name appears in

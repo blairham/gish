@@ -70,6 +70,42 @@ func loadRC(ctx context.Context, runner *interp.Runner) {
 	}
 }
 
+// loadProfile sources login-shell startup files (#41): /etc/profile
+// when present (macOS path_helper and distro PATH setup live there),
+// then the first of $GISH_PROFILE, ~/.gish_profile, ~/.profile. Errors
+// warn and continue — a broken profile must never lock the user out.
+func loadProfile(ctx context.Context, runner *interp.Runner) {
+	paths := []string{"/etc/profile"}
+	if p := os.Getenv("GISH_PROFILE"); p != "" {
+		paths = append(paths, p)
+	} else if home, err := os.UserHomeDir(); err == nil {
+		for _, candidate := range []string{
+			filepath.Join(home, ".gish_profile"),
+			filepath.Join(home, ".profile"),
+		} {
+			if _, err := os.Stat(candidate); err == nil {
+				paths = append(paths, candidate)
+				break
+			}
+		}
+	}
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			continue // missing files are normal
+		}
+		file, perr := syntax.NewParser().Parse(f, path)
+		f.Close()
+		if perr != nil {
+			fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, perr)
+			continue
+		}
+		if rerr := runner.Run(ctx, file); rerr != nil {
+			fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, rerr)
+		}
+	}
+}
+
 // shellVar reads a scalar shell variable from the runner, falling back
 // when unset or empty.
 func shellVar(runner *interp.Runner, name, fallback string) string {
