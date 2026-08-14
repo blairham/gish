@@ -14,13 +14,20 @@ import (
 // a deadline derived from the segment's declared budget, and a miss
 // serves the segment's previous value (stale) or nothing — the prompt
 // never waits.
+//
+// Discovery (launching prompt plugins and mapping segment ids) runs in
+// the background from shell startup (#37: the first prompt must never
+// pay plugin-launch latency). The first render waits for warm-up only
+// within its own budget; segments missing at first paint appear on the
+// next prompt.
 type segmentRenderer struct {
 	host *pluginhost.Host
 
-	mu         sync.Mutex
-	discovered bool
-	segments   map[string]segmentEntry
-	last       map[string]string // stale fallback per segment id
+	warmed chan struct{} // closed when discovery finishes
+
+	mu       sync.Mutex
+	segments map[string]segmentEntry
+	last     map[string]string // stale fallback per segment id
 }
 
 type segmentEntry struct {
@@ -29,28 +36,28 @@ type segmentEntry struct {
 }
 
 func newSegmentRenderer(host *pluginhost.Host) *segmentRenderer {
-	return &segmentRenderer{
+	r := &segmentRenderer{
 		host:     host,
+		warmed:   make(chan struct{}),
 		segments: map[string]segmentEntry{},
 		last:     map[string]string{},
 	}
+	go r.warm()
+	return r
 }
 
-// discover maps segment ids to their providers, once per session. This
-// launches prompt plugins — the cost lands on the first prompt that
-// actually uses a %p escape, never on shells that don't.
-func (r *segmentRenderer) discover(ctx context.Context) {
-	if r.discovered {
-		return
-	}
-	r.discovered = true
+// warm maps segment ids to their providers once, launching prompt
+// plugins off the startup path.
+func (r *segmentRenderer) warm() {
+	defer close(r.warmed)
+	ctx, cancel := context.WithTimeout(context.Background(), pluginhost.DescribeTimeout)
+	defer cancel()
 	for _, prov := range r.host.PromptProviders(ctx) {
-		sctx, cancel := context.WithTimeout(ctx, pluginhost.DescribeTimeout)
-		resp, err := prov.Client.Segments(sctx, &pluginapi.SegmentsRequest{})
-		cancel()
+		resp, err := prov.Client.Segments(ctx, &pluginapi.SegmentsRequest{})
 		if err != nil {
 			continue
 		}
+		r.mu.Lock()
 		for _, seg := range resp.GetSegments() {
 			budget := pluginhost.DefaultRenderBudget
 			if ms := seg.GetBudgetMs(); ms > 0 {
@@ -61,16 +68,25 @@ func (r *segmentRenderer) discover(ctx context.Context) {
 				r.segments[seg.GetId()] = segmentEntry{client: prov.Client, budget: budget}
 			}
 		}
+		r.mu.Unlock()
 	}
 }
 
 // render returns the segment's current text. Unknown ids render empty;
-// budget misses render the previous value.
+// budget misses render the previous value. If discovery is still warming
+// up, render waits for it only within the default budget.
 func (r *segmentRenderer) render(ctx context.Context, id, cwd string, lastExit int) string {
+	select {
+	case <-r.warmed:
+	case <-time.After(pluginhost.DefaultRenderBudget):
+		return r.stale(id) // warm-up outran the budget: paint now, fill next prompt
+	case <-ctx.Done():
+		return r.stale(id)
+	}
+
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.discover(ctx)
 	entry, ok := r.segments[id]
+	r.mu.Unlock()
 	if !ok {
 		return ""
 	}
@@ -83,8 +99,16 @@ func (r *segmentRenderer) render(ctx context.Context, id, cwd string, lastExit i
 		EventSeq:     r.host.NextSeq(),
 	})
 	if err != nil {
-		return r.last[id] // stale beats blocking
+		return r.stale(id)
 	}
+	r.mu.Lock()
 	r.last[id] = resp.GetText()
+	r.mu.Unlock()
 	return resp.GetText()
+}
+
+func (r *segmentRenderer) stale(id string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.last[id]
 }

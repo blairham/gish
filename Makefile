@@ -41,6 +41,11 @@ tidy:
 
 check: fmt vet test
 
+# Startup latency: prints exec-to-first-prompt timings (#37). The CI
+# regression gate lives in cmd/gish/startup_test.go.
+bench-startup:
+	go test -run TestStartupBudget -v ./cmd/gish/ | grep 'startup runs'
+
 # Regenerate pkg/pluginapi from proto/gish/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.
 proto:
