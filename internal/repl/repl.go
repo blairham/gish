@@ -80,8 +80,9 @@ func runEditor(ctx context.Context) error {
 	}
 
 	// Tier-2 plugin host (#7): discovery now, launch on first demand.
-	// Consumers (prompt segments, completions) arrive with M3; the
-	// `plugins` builtin makes the host inspectable meanwhile.
+	// Prompt segments are consumed via %p{id} escapes; the `plugins`
+	// builtin makes the host inspectable.
+	var segs *segmentRenderer
 	if dir, derr := pluginhost.DefaultDir(); derr == nil {
 		host := pluginhost.NewHost(dir)
 		if derr := host.Discover(); derr != nil {
@@ -89,6 +90,7 @@ func runEditor(ctx context.Context) error {
 		}
 		defer host.Close()
 		builtins.Register("plugins", pluginsBuiltin(host, dir))
+		segs = newSegmentRenderer(host)
 	}
 
 	// History failure degrades, never blocks the shell.
@@ -121,6 +123,11 @@ func runEditor(ctx context.Context) error {
 	for {
 		info.dir = runner.Dir
 		info.exitCode = lastExit
+		if segs != nil {
+			info.segment = func(id string) string {
+				return segs.render(ctx, id, runner.Dir, lastExit)
+			}
+		}
 		ed.SetPrompt(
 			expandPrompt(shellVar(runner, "GISH_PROMPT", prompt), info),
 			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info),

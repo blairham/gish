@@ -156,3 +156,34 @@ func TestExpandPrompt(t *testing.T) {
 		t.Errorf("at home = %q, want ~|~", got)
 	}
 }
+
+func TestExpandPromptSegments(t *testing.T) {
+	t.Parallel()
+
+	info := promptInfo{
+		segment: func(id string) string {
+			if id == "git" {
+				return "main !1"
+			}
+			return ""
+		},
+	}
+	tests := []struct {
+		format, want string
+	}{
+		{"%p{git} $ ", "main !1 $ "},
+		{"%p{nope}$ ", "$ "},         // unknown segment renders empty
+		{"%p $ ", "%p $ "},           // no braces: literal
+		{"%p{open $ ", "%p{open $ "}, // unclosed brace: everything literal
+	}
+	for _, tt := range tests {
+		if got := expandPrompt(tt.format, info); got != tt.want {
+			t.Errorf("expandPrompt(%q) = %q, want %q", tt.format, got, tt.want)
+		}
+	}
+
+	// nil segment func renders empty rather than panicking.
+	if got := expandPrompt("x%p{git}y", promptInfo{}); got != "xy" {
+		t.Errorf("nil segment = %q, want %q", got, "xy")
+	}
+}

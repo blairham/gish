@@ -30,9 +30,11 @@ gish reads one rc file at interactive startup — `$GISH_RC`, else `$XDG_CONFIG_
 
 ```sh
 # ~/.gishrc
-GISH_PROMPT='%u@%h %W %?$ '   # %u user  %h host  %w cwd(~)  %W basename  %? exit  %% literal
-GISH_PROMPT_CONT='... '
+GISH_PROMPT='%W %p{git} %?$ '  # %u user  %h host  %w cwd(~)  %W basename  %? exit  %% literal
+GISH_PROMPT_CONT='... '        # %p{id} renders a tier-2 plugin prompt segment
 ```
+
+Plugins are executables in `$XDG_DATA_HOME/gish/plugins` — `plugins` lists them. `gish-git` (in this repo) serves the `%p{git}` segment: branch, ahead/behind, staged/dirty/untracked, cached per-repo with fsnotify invalidation.
 
 History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, and a leading space keeps a command out of history.
 
