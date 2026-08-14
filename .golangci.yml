@@ -64,6 +64,8 @@ linters:
       - (os.File).Close
       - (*os.File).Close
       - (io.ReadCloser).Close
+      - (*compress/gzip.Reader).Close
+      - (*archive/zip.ReadCloser).Close
       - (net.Conn).Close
       - (net.Listener).Close
       - (*google.golang.org/grpc.ClientConn).Close
