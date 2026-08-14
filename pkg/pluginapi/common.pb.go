@@ -44,6 +44,7 @@ const (
 	Capability_CAPABILITY_COMPLETION     Capability = 1 // CompletionProvider
 	Capability_CAPABILITY_PROMPT_SEGMENT Capability = 2 // PromptSegmentProvider
 	Capability_CAPABILITY_HISTORY        Capability = 3 // HistoryBackend
+	Capability_CAPABILITY_COMMAND        Capability = 4 // CommandProvider (#11)
 )
 
 // Enum value maps for Capability.
@@ -53,12 +54,14 @@ var (
 		1: "CAPABILITY_COMPLETION",
 		2: "CAPABILITY_PROMPT_SEGMENT",
 		3: "CAPABILITY_HISTORY",
+		4: "CAPABILITY_COMMAND",
 	}
 	Capability_value = map[string]int32{
 		"CAPABILITY_UNSPECIFIED":    0,
 		"CAPABILITY_COMPLETION":     1,
 		"CAPABILITY_PROMPT_SEGMENT": 2,
 		"CAPABILITY_HISTORY":        3,
+		"CAPABILITY_COMMAND":        4,
 	}
 )
 
@@ -198,13 +201,14 @@ const file_gish_plugin_v1_common_proto_rawDesc = "" +
 	"\x10DescribeResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12>\n" +
-	"\fcapabilities\x18\x03 \x03(\x0e2\x1a.gish.plugin.v1.CapabilityR\fcapabilities*z\n" +
+	"\fcapabilities\x18\x03 \x03(\x0e2\x1a.gish.plugin.v1.CapabilityR\fcapabilities*\x92\x01\n" +
 	"\n" +
 	"Capability\x12\x1a\n" +
 	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CAPABILITY_COMPLETION\x10\x01\x12\x1d\n" +
 	"\x19CAPABILITY_PROMPT_SEGMENT\x10\x02\x12\x16\n" +
-	"\x12CAPABILITY_HISTORY\x10\x032[\n" +
+	"\x12CAPABILITY_HISTORY\x10\x03\x12\x16\n" +
+	"\x12CAPABILITY_COMMAND\x10\x042[\n" +
 	"\n" +
 	"PluginInfo\x12M\n" +
 	"\bDescribe\x12\x1f.gish.plugin.v1.DescribeRequest\x1a .gish.plugin.v1.DescribeResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"

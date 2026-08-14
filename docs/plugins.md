@@ -69,7 +69,7 @@ Two invariants sit under all of these:
 | --- | --- | --- |
 | command-not-found | one unary RPC | "did you mean", brew package suggestions; inherently off the hot path |
 | env provider (direnv-class) | `EnvProvider` service | On cwd change, plugin returns an env diff. Requires direnv's `allow` model: allowlist + explicit per-directory approval — an env plugin must not be able to silently rewrite `PATH` for every directory |
-| `gish-jump` (zoxide-class) | `CommandProvider` service | Plugins registering builtins over gRPC — the cloudctl/understudy pattern applied to a shell. Big lever; design deliberately, not first |
+| `gish-jump` (zoxide-class) | ~~CommandProvider~~ **landed** (#11) | Plugins register commands over gRPC: reserved-name guard, PATH shadowing, streamed I/O, mtime-cached discovery. gish-jump itself is now just a plugin to write |
 | AI assist | invoked RPC (not ambient) | natural language → command, "explain that error". Explicitly invoked, human-scale latency, can never touch the keystroke path |
 
 ## Build order

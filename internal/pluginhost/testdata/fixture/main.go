@@ -28,6 +28,7 @@ func (info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.De
 			pluginapi.Capability_CAPABILITY_COMPLETION,
 			pluginapi.Capability_CAPABILITY_PROMPT_SEGMENT,
 			pluginapi.Capability_CAPABILITY_HISTORY,
+			pluginapi.Capability_CAPABILITY_COMMAND,
 		},
 	}, nil
 }
@@ -89,11 +90,60 @@ func (h *historyBackend) Search(req *pluginapi.SearchRequest, stream pluginapi.H
 	return stream.Send(batch)
 }
 
+type commands struct {
+	pluginapi.UnimplementedCommandProviderServer
+}
+
+func (commands) Commands(context.Context, *pluginapi.CommandsRequest) (*pluginapi.CommandsResponse, error) {
+	return &pluginapi.CommandsResponse{Commands: []*pluginapi.CommandSpec{
+		{Name: "fixture-echo", Summary: "echo args"},
+		{Name: "fixture-upper", Summary: "uppercase stdin"},
+		{Name: "fixture-fail", Summary: "exit 3"},
+		{Name: "cd", Summary: "reserved name, must be rejected"},
+	}}, nil
+}
+
+func (commands) Run(stream pluginapi.CommandProvider_RunServer) error {
+	first, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	start := first.GetStart()
+	if start == nil {
+		return stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Exit{Exit: 126}})
+	}
+	switch start.GetName() {
+	case "fixture-echo":
+		line := "echo:" + strings.Join(start.GetArgs(), ",") + " cwd:" + start.GetCwd() + "\n"
+		_ = stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Stdout{Stdout: []byte(line)}})
+		return stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Exit{Exit: 0}})
+	case "fixture-upper":
+		var data []byte
+		for {
+			in, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			if in.GetStdinEof() {
+				break
+			}
+			data = append(data, in.GetStdin()...)
+		}
+		_ = stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Stdout{Stdout: []byte(strings.ToUpper(string(data)))}})
+		return stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Exit{Exit: 0}})
+	case "fixture-fail":
+		_ = stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Stderr{Stderr: []byte("deliberate failure\n")}})
+		return stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Exit{Exit: 3}})
+	}
+	return stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Exit{Exit: 127}})
+}
+
 func main() {
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: pluginhost.Handshake,
 		Plugins: map[string]plugin.Plugin{
 			"info":       &pluginhost.InfoPlugin{Impl: info{}},
+			"command":    &pluginhost.CommandPlugin{Impl: commands{}},
 			"completion": &pluginhost.CompletionPlugin{Impl: completion{}},
 			"prompt":     &pluginhost.PromptPlugin{Impl: prompt{}},
 			"history":    &pluginhost.HistoryPlugin{Impl: &historyBackend{}},
