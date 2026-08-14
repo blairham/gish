@@ -83,8 +83,9 @@ func runEditor(ctx context.Context) error {
 	// Prompt segments are consumed via %p{id} escapes; the `plugins`
 	// builtin makes the host inspectable.
 	var segs *segmentRenderer
+	var host *pluginhost.Host
 	if dir, derr := pluginhost.DefaultDir(); derr == nil {
-		host := pluginhost.NewHost(dir)
+		host = pluginhost.NewHost(dir)
 		if derr := host.Discover(); derr != nil {
 			fmt.Fprintln(os.Stderr, "gish: plugins:", derr)
 		}
@@ -163,15 +164,23 @@ func runEditor(ctx context.Context) error {
 		if store != nil {
 			// Cwd comes from the runner: `cd` moves the interpreter's
 			// directory, not the gish process's.
-			if aerr := store.Append(history.Entry{
+			entry := history.Entry{
 				Command:       line,
 				StartedUnixMs: start.UnixMilli(),
 				DurationMs:    time.Since(start).Milliseconds(),
 				ExitCode:      lastExit,
 				Cwd:           runner.Dir,
 				SessionID:     sessionID,
-			}); aerr != nil {
+			}
+			skip, aerr := store.Append(entry)
+			switch {
+			case aerr != nil:
 				fmt.Fprintln(os.Stderr, "gish: history:", aerr)
+			case skip == history.SkipSecret:
+				fmt.Fprintln(os.Stderr, "gish: history: possible secret detected — command not recorded")
+			case skip == history.SkipNone:
+				// Backends only ever see entries that passed the scrub.
+				fanoutHistory(host, entry)
 			}
 		}
 		switch {

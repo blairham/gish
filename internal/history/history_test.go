@@ -20,7 +20,7 @@ func open(t *testing.T, path string) *history.Store {
 
 func appendCmd(t *testing.T, s *history.Store, cmd string) {
 	t.Helper()
-	if err := s.Append(history.Entry{Command: cmd, Cwd: "/tmp", SessionID: "test"}); err != nil {
+	if _, err := s.Append(history.Entry{Command: cmd, Cwd: "/tmp", SessionID: "test"}); err != nil {
 		t.Fatal(err)
 	}
 }

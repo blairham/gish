@@ -17,6 +17,9 @@ repos:
         args: ['--maxkb=500']
       - id: check-merge-conflict
       - id: detect-private-key
+        # The history scrubber detects key markers, so its source and
+        # tests necessarily contain the pattern being detected.
+        exclude: ^internal/history/scrub(_test)?\.go$
 
   # Go housekeeping
   - repo: https://github.com/TekWizely/pre-commit-golang

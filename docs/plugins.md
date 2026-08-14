@@ -59,7 +59,8 @@ Two invariants sit under all of these:
 
 | Plugin | What | Fast/correct notes |
 | --- | --- | --- |
-| `gish-scrub` | secret-scrubbing on append (gitleaks-style rules) | Correctness as a feature: the pasted AWS key never reaches disk. Scrub before *store*, never before *prompt*; build third |
+| *(native)* secret scrubbing | gitleaks-style rules in the shell's own store (#10) | Moved shell-side by design: a plugin cannot unwrite the authoritative local file. Matching commands are skipped entirely (ignorespace posture) with a notice; backends only ever receive scrubbed entries |
+| *(native)* backend fan-out | async, deadline-bounded Append to every HistoryBackend after a successful local store | Fire-and-forget: the next prompt never waits; `stored=false` governs only a backend's own store |
 | `gish-sync` | local-first SQLite history, cross-machine sync, frecency + directory-locality ctrl-r ranking | Local file is authoritative; sync is eventual and conflict-free (append-only log) |
 
 ## Needs new proto services (v1 is frozen-additive — new services are fine)
@@ -76,7 +77,8 @@ Two invariants sit under all of these:
 1. **`gish-git`** — hardest latency case (every prompt, every repo); proves
    the deadline/stale/repaint machinery before anything depends on it.
 2. **`gish-carapace`** — completion breadth for free.
-3. **`gish-scrub`** — small, and makes "correct" a visible brand promise.
+3. ~~`gish-scrub`~~ — done natively in the shell store (#10), with the
+   HistoryBackend fan-out alongside it.
 
 Everything else rides on the infrastructure those three force into
 existence.

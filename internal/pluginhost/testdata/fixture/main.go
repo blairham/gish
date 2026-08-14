@@ -7,6 +7,8 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/hashicorp/go-plugin"
 
@@ -25,6 +27,7 @@ func (info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.De
 		Capabilities: []pluginapi.Capability{
 			pluginapi.Capability_CAPABILITY_COMPLETION,
 			pluginapi.Capability_CAPABILITY_PROMPT_SEGMENT,
+			pluginapi.Capability_CAPABILITY_HISTORY,
 		},
 	}, nil
 }
@@ -61,6 +64,31 @@ func (prompt) Render(_ context.Context, req *pluginapi.RenderRequest) (*pluginap
 	return &pluginapi.RenderResponse{Text: "fixture-segment", TtlMs: 100}, nil
 }
 
+type historyBackend struct {
+	pluginapi.UnimplementedHistoryBackendServer
+	mu      sync.Mutex
+	entries []*pluginapi.HistoryEntry
+}
+
+func (h *historyBackend) Append(_ context.Context, req *pluginapi.AppendRequest) (*pluginapi.AppendResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.entries = append(h.entries, req.GetEntry())
+	return &pluginapi.AppendResponse{Stored: true}, nil
+}
+
+func (h *historyBackend) Search(req *pluginapi.SearchRequest, stream pluginapi.HistoryBackend_SearchServer) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	batch := &pluginapi.SearchBatch{Final: true}
+	for _, e := range h.entries {
+		if strings.Contains(e.GetCommand(), req.GetQuery()) {
+			batch.Entries = append(batch.Entries, e)
+		}
+	}
+	return stream.Send(batch)
+}
+
 func main() {
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: pluginhost.Handshake,
@@ -68,7 +96,7 @@ func main() {
 			"info":       &pluginhost.InfoPlugin{Impl: info{}},
 			"completion": &pluginhost.CompletionPlugin{Impl: completion{}},
 			"prompt":     &pluginhost.PromptPlugin{Impl: prompt{}},
-			"history":    &pluginhost.HistoryPlugin{},
+			"history":    &pluginhost.HistoryPlugin{Impl: &historyBackend{}},
 		},
 		GRPCServer: plugin.DefaultGRPCServer,
 	})
