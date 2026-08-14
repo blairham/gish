@@ -84,6 +84,13 @@ func New(t term.Terminal, out io.Writer, cfg Config) *Editor {
 	}
 }
 
+// SetPrompt updates both prompts for subsequent ReadCommand calls — the
+// shell recomputes them per command (cwd, last exit status).
+func (e *Editor) SetPrompt(prompt, contPrompt string) {
+	e.cfg.Prompt = prompt
+	e.cfg.ContPrompt = contPrompt
+}
+
 // ReadCommand runs one interactive read: it enters raw mode, edits until
 // the buffer is accepted, and restores the terminal before returning —
 // on every path — so the shell always executes commands in cooked mode.
