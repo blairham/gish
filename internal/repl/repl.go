@@ -21,6 +21,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/blairham/gish/internal/builtins"
 	"github.com/blairham/gish/internal/editor"
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/term"
@@ -54,7 +55,10 @@ func Run(ctx context.Context) error {
 // stops pure-builtin loops the kernel can't reach. SIGTSTP is left at
 // its default until job control (#5).
 func runEditor(ctx context.Context) error {
-	runner, err := interp.New(interp.StdIO(os.Stdin, os.Stdout, os.Stderr))
+	runner, err := interp.New(
+		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		interp.ExecHandlers(builtins.ExecHandler),
+	)
 	if err != nil {
 		return err
 	}
@@ -229,7 +233,10 @@ func acceptWhen(text string) bool {
 
 // runPlain is the non-TTY loop (piped stdin).
 func runPlain(ctx context.Context) error {
-	runner, err := interp.New(interp.StdIO(os.Stdin, os.Stdout, os.Stderr))
+	runner, err := interp.New(
+		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		interp.ExecHandlers(builtins.ExecHandler),
+	)
 	if err != nil {
 		return err
 	}
@@ -292,7 +299,10 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		return err
 	}
 	runner, err := interp.New(append(
-		[]interp.RunnerOption{interp.StdIO(os.Stdin, os.Stdout, os.Stderr)},
+		[]interp.RunnerOption{
+			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+			interp.ExecHandlers(builtins.ExecHandler),
+		},
 		opts...,
 	)...)
 	if err != nil {
