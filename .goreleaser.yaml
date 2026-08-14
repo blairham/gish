@@ -118,11 +118,10 @@ changelog:
     - '^test:'
     - '^chore:'
 
-# Cask, matching the tap convention for user-facing tools (gish ships no
-# daemon, so it doesn't need a formula's `service` stanza the way cswap did).
-# The quarantine hook strips com.apple.quarantine from the unsigned binary
-# until signing secrets are added.
-homebrew_casks:
+# Formula, matching the tap convention (blairham/homebrew-tap ships
+# Formula/, not Casks/ — cswap, ghorg, pre-commit, stevedore all do this).
+# Formulas don't get Gatekeeper-quarantined, so no xattr hook is needed.
+brews:
 - name: gish
   # Skip the tap push until HOMEBREW_TAP_TOKEN exists as a repo secret;
   # the GitHub release itself still publishes.
@@ -131,16 +130,24 @@ homebrew_casks:
     owner: blairham
     name: homebrew-tap
     token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-  directory: Casks
+  directory: Formula
   homepage: https://github.com/blairham/gish
   description: "Interactive shell: zsh ergonomics, bash compatibility, gRPC-native plugins"
   license: MIT
-  hooks:
-    post:
-      install: |
-        if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gish"]
-        end
+  install: |
+    bin.install "gish"
+    bin.install "gish-git"
+    bin.install "gish-carapace"
+  caveats: |
+    To use gish as your login shell:
+      echo "#{opt_bin}/gish" | sudo tee -a /etc/shells
+      chsh -s "#{opt_bin}/gish"
+
+    The bundled tier-2 plugins activate once linked into the plugin dir:
+      mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/gish/plugins"
+      ln -sf "#{opt_bin}/gish-git" "#{opt_bin}/gish-carapace" "${XDG_DATA_HOME:-$HOME/.local/share}/gish/plugins/"
+  test: |
+    system "#{bin}/gish", "--version"
 
 release:
   draft: false
@@ -148,5 +155,8 @@ release:
   target_commitish: "{{ .Commit }}"
   prerelease: auto
   mode: replace
+  # A workflow_dispatch re-release of an existing tag must overwrite the
+  # assets, not 422 on already_exists (bit us on v0.0.0).
+  replace_existing_artifacts: true
   footer: |
     **Full Changelog**: https://github.com/blairham/gish/compare/{{ .PreviousTag }}...{{ .Tag }}
