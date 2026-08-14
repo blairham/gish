@@ -110,6 +110,7 @@ func runEditor(ctx context.Context) error {
 		ContPrompt: contPrompt,
 		AcceptWhen: acceptWhen,
 		History:    hist,
+		Complete:   completionFn(runner, host),
 	})
 	parser := syntax.NewParser()
 

@@ -29,6 +29,9 @@ type Config struct {
 	// History backs up/down navigation and ctrl-r search. nil disables
 	// both.
 	History History
+	// Complete answers Tab: candidates for the word at the cursor. nil
+	// disables completion.
+	Complete func(text string, cursor int) CompleteResult
 }
 
 type loopState int
@@ -70,6 +73,10 @@ type Editor struct {
 	histPending string
 	histPrefix  string
 	search      searchState
+
+	// candList shows completion candidates below the edit line for one
+	// render cycle; any following event clears it.
+	candList []string
 }
 
 // New creates an editor reading from t and drawing to out (both sides of
@@ -186,6 +193,7 @@ func (e *Editor) render() {
 	if cl > 0 {
 		prefix = e.cfg.ContPrompt
 	}
+	lines = append(lines, candidateRows(e.candList, e.rend.width)...)
 	e.rend.render(lines, len(banner)+cl, displayWidth(prefix+before))
 }
 
@@ -198,6 +206,7 @@ func promptParts(prompt string) (banner []string, prefix string) {
 
 func (e *Editor) dispatch(ev term.Event) {
 	e.thisKill, e.thisInsert, e.thisYank = false, false, false
+	e.candList = nil // completion lists live for exactly one event
 
 	if e.search.active {
 		e.searchDispatch(ev)
@@ -379,6 +388,7 @@ type binding struct {
 
 func defaultKeymap() map[binding]func(*Editor) {
 	return map[binding]func(*Editor){
+		{key: term.KeyTab}:                     (*Editor).completeTab,
 		{key: term.KeyEnter}:                   (*Editor).acceptOrNewline,
 		{key: term.KeyEnter, mod: term.ModAlt}: (*Editor).insertNewline,
 		// LF arrives as Ctrl-J (readline's accept-line); piped-into-pty
