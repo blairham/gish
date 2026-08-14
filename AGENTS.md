@@ -49,7 +49,8 @@ proto/gish/plugin/v1/   # The versioned tier-2 plugin contract (source of truth)
                          # prompt.proto, history.proto
 pkg/pluginapi/           # protoc output from proto/ — generated, never hand-edited;
                          # exported so plugin authors can import it
-docs/design.md           # Architecture: two-tier plugins, latency budgets, roadmap
+docs/design.md           # Architecture: two-tier plugins, milestones, open questions
+docs/plugins.md          # Tier-2 plugin roadmap: planned plugins, latency budgets, build order
 ```
 
 ## Architecture invariants

@@ -61,3 +61,7 @@ The line editor and prompt engine consume both tiers through one internal interf
 - Prompt styling vocabulary for tier 2 (`RenderResponse.text`): markup subset vs. structured spans. Raw text until decided.
 - Line editor: build on an existing Go TTY layer (bubbletea's input stack?) or hand-roll raw-mode like elvish. Decide at milestone 2.
 - Tier-1 widget shim depth: which zle APIs are worth emulating vs. declaring out of scope.
+- **`CommandProvider`**: should plugins be able to register builtins/commands over gRPC (the cloudctl pattern — needed for a zoxide-class jumper)? Questions: name collisions with PATH binaries and real builtins, stdin/stdout/TTY plumbing across the RPC boundary, and whether a registered command may run on the hot path at all. Design deliberately; not needed for the first three plugins.
+- **`EnvProvider`** (direnv-class): env diffs on cwd change need a trust model — direnv-style explicit per-directory `allow`, an allowlist of settable variables, or both. An env plugin must not be able to silently rewrite `PATH` for every directory.
+
+The plugin roadmap itself — which plugins, in what order, under which latency budgets — lives in [plugins.md](plugins.md).

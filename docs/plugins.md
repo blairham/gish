@@ -1,0 +1,82 @@
+# gish — plugin roadmap
+
+The plugins we intend to write, and the fast/correct rules they must obey.
+This is the tier-2 (native gRPC) roadmap; the tier-1 zsh-compat story lives
+in [design.md](design.md).
+
+## The dividing rule
+
+**Per-keystroke + pure-local = core. Touches external state = plugin.**
+
+The keystroke path never crosses a process boundary for things that don't
+need it. Syntax highlighting, path/file completion, autosuggestions from
+local history, alias expansion, last exit code, and command duration are
+all core — the host already has the data, and IPC for them would be pure
+overhead. Everything that *can* be slow or wrong (git, network, k8s,
+cloud, disk scans) lives behind a deadline where it degrades instead of
+blocking.
+
+## Latency budgets
+
+| Interaction | Budget | On miss |
+| --- | --- | --- |
+| Prompt segment render | 50ms default (`SegmentDescriptor.budget_ms`) | render previous (stale) value or nothing; repaint in place when the response lands |
+| Completion request | ~80ms to first batch | show whatever batches arrived; stream stays open until the user types again |
+| History append | none — fire-and-forget | shell never waits; backend scrubs/stores on its own time |
+| History search (ctrl-r) | ~100ms to first batch | partial results render, best-first |
+| Command-not-found | human-scale (command already failed) | skip suggestion |
+
+Two invariants sit under all of these:
+
+- **Stale responses are dropped by sequence, not by luck.** Requests carry
+  `event_seq`; a slow answer for the *previous* directory or buffer must
+  never overwrite the current one.
+- **Plugins return raw values; the host owns quoting and escaping.** A
+  completion candidate is data, never buffer text. No plugin can inject
+  shell metacharacters — this closes the "completion became code
+  execution" class of bugs and keeps quoting identical across plugins.
+
+## Prompt segments (`PromptSegmentProvider`)
+
+| Plugin | What | Fast/correct notes |
+| --- | --- | --- |
+| `gish-git` | branch, dirty state, ahead/behind — gitstatusd-class | **Flagship; build first.** Resident, per-repo cache, fsevents/inotify invalidation (never poll). Cached render <1ms; cold scans happen off-prompt and repaint in place |
+| `gish-aws` | active profile + SSO token expiry countdown | Reads the local token cache only; never calls AWS on the prompt path |
+| `gish-k8s` | kubeconfig context/namespace | File-watch invalidated; never talks to the cluster for a prompt |
+| `gish-runtimes` | asdf/`.tool-versions` pins when they differ from global | One small file read, cached by cwd |
+
+## Completion providers (`CompletionProvider`)
+
+| Plugin | What | Fast/correct notes |
+| --- | --- | --- |
+| `gish-carapace` | bridge to carapace's registry (~1,000 CLIs) | Day-one breadth for the cost of one plugin; build second |
+| `gish-git-complete` | branches, remotes, modified files | Same process as `gish-git`, second service on the connection — shares the ref cache |
+| `gish-kubectl` | cluster resource completion | Resident cache with TTL; upstream kubectl completion is slow *because* it's spawn-per-tab |
+| `gish-make` | Makefile/justfile targets | Trivial parse, cached by file mtime |
+| `gish-ssh` | hosts from `~/.ssh/config` | Skip hashed `known_hosts` entries — never un-hash, never guess |
+
+## History backends (`HistoryBackend`)
+
+| Plugin | What | Fast/correct notes |
+| --- | --- | --- |
+| `gish-scrub` | secret-scrubbing on append (gitleaks-style rules) | Correctness as a feature: the pasted AWS key never reaches disk. Scrub before *store*, never before *prompt*; build third |
+| `gish-sync` | local-first SQLite history, cross-machine sync, frecency + directory-locality ctrl-r ranking | Local file is authoritative; sync is eventual and conflict-free (append-only log) |
+
+## Needs new proto services (v1 is frozen-additive — new services are fine)
+
+| Plugin | New surface | Notes |
+| --- | --- | --- |
+| command-not-found | one unary RPC | "did you mean", brew package suggestions; inherently off the hot path |
+| env provider (direnv-class) | `EnvProvider` service | On cwd change, plugin returns an env diff. Requires direnv's `allow` model: allowlist + explicit per-directory approval — an env plugin must not be able to silently rewrite `PATH` for every directory |
+| `gish-jump` (zoxide-class) | `CommandProvider` service | Plugins registering builtins over gRPC — the cloudctl/understudy pattern applied to a shell. Big lever; design deliberately, not first |
+| AI assist | invoked RPC (not ambient) | natural language → command, "explain that error". Explicitly invoked, human-scale latency, can never touch the keystroke path |
+
+## Build order
+
+1. **`gish-git`** — hardest latency case (every prompt, every repo); proves
+   the deadline/stale/repaint machinery before anything depends on it.
+2. **`gish-carapace`** — completion breadth for free.
+3. **`gish-scrub`** — small, and makes "correct" a visible brand promise.
+
+Everything else rides on the infrastructure those three force into
+existence.
