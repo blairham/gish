@@ -39,6 +39,22 @@ GISH_PROMPT_CONT='... '        # %u %h %w %W %? %% and %p{id} plugin segments
 
 Plugins are executables in `$XDG_DATA_HOME/gish/plugins` — `plugins` lists them. `gish-git` (in this repo) serves the `%p{git}` segment: branch, ahead/behind, staged/dirty/untracked, cached per-repo with fsnotify invalidation.
 
+## The zi plugin manager
+
+gish ships [Zi](https://github.com/z-shell/zi) natively — the Go engine from [zi-go](https://github.com/blairham/zi-go) built in, no shim, existing syntax and `~/.zi-go` installs carry over:
+
+```sh
+# ~/.gishrc
+zi ice from"gh-r" as"program"
+zi load junegunn/fzf              # release binary onto PATH
+
+zi snippet OMZP::git              # oh-my-zsh snippets
+zi update                         # refresh everything
+zi list
+```
+
+A load is installed by the engine and `source`d directly in your live session — functions, variables, and PATH changes persist. (Plugins written in heavy zsh dialect await the tier-1 compat layer; snippets, POSIX-style plugins, and `gh-r` binaries work today. `wait` turbo ices are accepted but load immediately for now.) The manager itself sits behind a contract, so an alternative manager can replace it.
+
 History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, and a leading space keeps a command out of history.
 
 ## Development

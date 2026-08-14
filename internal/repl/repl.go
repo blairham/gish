@@ -65,6 +65,7 @@ func runEditor(ctx context.Context) error {
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, table.ExecMiddleware),
 	}
+	callBase := passthroughCall
 	if jobs.Supported() {
 		// Reclaiming the terminal from the background must not stop the
 		// shell. Children inherit the ignore; acceptable (see #5 design).
@@ -72,8 +73,9 @@ func runEditor(ctx context.Context) error {
 		builtins.Register("__gish_jobs", table.Jobs)
 		builtins.Register("__gish_fg", table.Fg)
 		builtins.Register("__gish_bg", table.Bg)
-		runnerOpts = append(runnerOpts, interp.CallHandler(jobs.RewriteCall))
+		callBase = jobs.RewriteCall
 	}
+	runnerOpts = append(runnerOpts, interp.CallHandler(ziCallHandler(callBase)))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -310,6 +312,7 @@ func runPlain(ctx context.Context) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler),
+		interp.CallHandler(ziCallHandler(passthroughCall)),
 	)
 	if err != nil {
 		return err
@@ -376,6 +379,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler),
+			interp.CallHandler(ziCallHandler(passthroughCall)),
 		},
 		opts...,
 	)...)
