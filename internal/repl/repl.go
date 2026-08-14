@@ -16,11 +16,13 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/blairham/gish/internal/editor"
+	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/term"
 )
 
@@ -56,10 +58,21 @@ func runEditor(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// History failure degrades, never blocks the shell.
+	var hist editor.History
+	store := openHistory()
+	if store != nil {
+		defer store.Close() //nolint:errcheck // exit path; entries are already flushed per-append
+		hist = store
+	}
+	sessionID := fmt.Sprintf("%d-%x", os.Getpid(), time.Now().UnixNano())
+
 	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, editor.Config{
 		Prompt:     prompt,
 		ContPrompt: contPrompt,
 		AcceptWhen: acceptWhen,
+		History:    hist,
 	})
 	parser := syntax.NewParser()
 
@@ -87,15 +100,32 @@ func runEditor(ctx context.Context) error {
 		}
 
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
+		start := time.Now()
 		rerr := runInterruptible(ctx, runner, file, sigs)
+		if store != nil {
+			// Cwd comes from the runner: `cd` moves the interpreter's
+			// directory, not the gish process's.
+			if aerr := store.Append(history.Entry{
+				Command:       line,
+				StartedUnixMs: start.UnixMilli(),
+				DurationMs:    time.Since(start).Milliseconds(),
+				ExitCode:      exitCode(rerr),
+				Cwd:           runner.Dir,
+				SessionID:     sessionID,
+			}); aerr != nil {
+				fmt.Fprintln(os.Stderr, "gish: history:", aerr)
+			}
+		}
 		switch {
-		case rerr == nil:
 		case errors.Is(rerr, errInterrupted):
 			// The command was interrupted, not the shell: fresh prompt.
 			// Order matters — Runner.Exited() also reports true after a
 			// cancellation, and the runner stays usable with state intact.
 		case runner.Exited():
+			// `exit` returns a nil error for status 0, so this must be
+			// checked before the nil case or the shell can't exit cleanly.
 			return rerr
+		case rerr == nil:
 		default:
 			if _, ok := errors.AsType[interp.ExitStatus](rerr); !ok {
 				fmt.Fprintln(os.Stderr, "gish:", rerr)
@@ -143,6 +173,35 @@ func drainSignals(sigs <-chan os.Signal) {
 	select {
 	case <-sigs:
 	default:
+	}
+}
+
+// openHistory opens the default history store; on failure the shell
+// runs without history rather than refusing to start.
+func openHistory() *history.Store {
+	path, err := history.DefaultPath()
+	if err == nil {
+		var store *history.Store
+		if store, err = history.Open(path); err == nil {
+			return store
+		}
+	}
+	fmt.Fprintln(os.Stderr, "gish: history disabled:", err)
+	return nil
+}
+
+// exitCode maps a command's error to the status recorded in history.
+func exitCode(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, errInterrupted):
+		return 130 // 128+SIGINT, the shell convention
+	default:
+		if status, ok := errors.AsType[interp.ExitStatus](err); ok {
+			return int(status)
+		}
+		return 1
 	}
 }
 
