@@ -26,6 +26,9 @@ type Config struct {
 	// inserts a newline to continue editing (false). nil always submits.
 	// The shell wires the parser's incomplete-detection here.
 	AcceptWhen func(text string) bool
+	// History backs up/down navigation and ctrl-r search. nil disables
+	// both.
+	History History
 }
 
 type loopState int
@@ -59,6 +62,14 @@ type Editor struct {
 	lastWasInsert, thisInsert bool
 	lastWasYank, thisYank     bool
 	yankStart, yankEnd        int
+
+	// History navigation (see history.go): histPos is the entry shown
+	// (-1 = the live pending line), histPrefix the filter captured when
+	// navigation began.
+	histPos     int
+	histPending string
+	histPrefix  string
+	search      searchState
 }
 
 // New creates an editor reading from t and drawing to out (both sides of
@@ -139,20 +150,26 @@ func (e *Editor) reset() {
 	e.undo.reset()
 	e.state = stateRunning
 	e.lastWasKill, e.lastWasInsert, e.lastWasYank = false, false, false
+	e.histPos = -1
+	e.search = searchState{}
 }
 
 func (e *Editor) render() {
+	firstPrompt := e.cfg.Prompt
+	if e.search.active {
+		firstPrompt = e.searchPrompt()
+	}
 	raw := e.buf.Lines()
 	lines := make([]string, len(raw))
 	for i, l := range raw {
 		if i == 0 {
-			lines[i] = e.cfg.Prompt + l
+			lines[i] = firstPrompt + l
 		} else {
 			lines[i] = e.cfg.ContPrompt + l
 		}
 	}
 	cl, before := e.buf.CursorLine()
-	prefix := e.cfg.Prompt
+	prefix := firstPrompt
 	if cl > 0 {
 		prefix = e.cfg.ContPrompt
 	}
@@ -162,6 +179,18 @@ func (e *Editor) render() {
 func (e *Editor) dispatch(ev term.Event) {
 	e.thisKill, e.thisInsert, e.thisYank = false, false, false
 
+	if e.search.active {
+		e.searchDispatch(ev)
+	} else {
+		e.dispatchEvent(ev)
+	}
+
+	e.lastWasKill = e.thisKill
+	e.lastWasInsert = e.thisInsert
+	e.lastWasYank = e.thisYank
+}
+
+func (e *Editor) dispatchEvent(ev term.Event) {
 	switch ev := ev.(type) {
 	case term.ResizeEvent:
 		e.rend.setWidth(ev.Width)
@@ -171,10 +200,6 @@ func (e *Editor) dispatch(ev term.Event) {
 	case term.KeyEvent:
 		e.dispatchKey(ev)
 	}
-
-	e.lastWasKill = e.thisKill
-	e.lastWasInsert = e.thisInsert
-	e.lastWasYank = e.thisYank
 }
 
 func (e *Editor) dispatchKey(ev term.KeyEvent) {
@@ -194,9 +219,12 @@ func normalizeNewlines(s string) string {
 	return strings.ReplaceAll(s, "\r", "\n")
 }
 
-// recordUndo snapshots the buffer before a mutating command.
+// recordUndo snapshots the buffer before a mutating command. Any edit
+// also ends history navigation: the next up-arrow re-captures its prefix
+// from the edited line.
 func (e *Editor) recordUndo() {
 	e.undo.push(&e.buf)
+	e.histPos = -1
 }
 
 // kill routes killed text into the ring, coalescing consecutive kills.
@@ -346,8 +374,11 @@ func defaultKeymap() map[binding]func(*Editor) {
 		{r: 'b', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveLeft() },
 		{key: term.KeyRight}:                       func(e *Editor) { e.buf.MoveRight() },
 		{r: 'f', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveRight() },
-		{key: term.KeyUp}:                          func(e *Editor) { e.buf.MoveUp() },
-		{key: term.KeyDown}:                        func(e *Editor) { e.buf.MoveDown() },
+		{key: term.KeyUp}:                          (*Editor).historyUp,
+		{r: 'p', mod: term.ModCtrl}:                (*Editor).historyUp,
+		{key: term.KeyDown}:                        (*Editor).historyDown,
+		{r: 'n', mod: term.ModCtrl}:                (*Editor).historyDown,
+		{r: 'r', mod: term.ModCtrl}:                (*Editor).startSearch,
 		{key: term.KeyHome}:                        func(e *Editor) { e.buf.MoveLineStart() },
 		{r: 'a', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveLineStart() },
 		{key: term.KeyEnd}:                         func(e *Editor) { e.buf.MoveLineEnd() },

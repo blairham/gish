@@ -15,7 +15,7 @@ The design bet is a **two-tier plugin system**:
 
 Non-negotiable latency rule for tier 2: every host→plugin call carries a deadline; a slow plugin degrades (stale segment, missing completions), it never blocks a keystroke or the prompt.
 
-**Status: interactive core in progress (M2).** Scripting runs on `mvdan.cc/sh` (POSIX/bash parse + interp). Interactive terminals get the raw-mode line editor (`internal/editor`): emacs keymap, kill ring, undo, grapheme-aware multi-line editing, diff-based inline rendering, and byte-level type-ahead preservation across commands. Signal posture is in place (#3): the interactive shell survives SIGINT/SIGQUIT — Ctrl-C interrupts the foreground command (children via the kernel, builtin loops via context cancellation) and never the shell. Still missing: history (#4), job control (#5), rc file (#6). No zsh dialect or plugin dispatch yet — the proto surface and go-plugin scaffolding exist so the contract is designed before the internals grow around it.
+**Status: interactive core in progress (M2).** Scripting runs on `mvdan.cc/sh` (POSIX/bash parse + interp). Interactive terminals get the raw-mode line editor (`internal/editor`): emacs keymap, kill ring, undo, grapheme-aware multi-line editing, diff-based inline rendering, and byte-level type-ahead preservation across commands. Signal posture is in place (#3): the interactive shell survives SIGINT/SIGQUIT — Ctrl-C interrupts the foreground command (children via the kernel, builtin loops via context cancellation) and never the shell. History is in (#4): metadata-rich JSONL at `$XDG_DATA_HOME/gish/history.jsonl` (mirrors the plugin proto's HistoryEntry), prefix-aware up/down, ctrl-r incremental search, ignorespace + consecutive-dedup. Still missing: job control (#5), rc file (#6). No zsh dialect or plugin dispatch yet — the proto surface and go-plugin scaffolding exist so the contract is designed before the internals grow around it.
 
 ## Quick Reference
 
@@ -43,8 +43,11 @@ internal/
                          # TTY stdin → line editor; piped stdin → plain loop;
                          # RunReader stays the script path
   editor/                # Raw-mode line editor (the zle-equivalent): buffer,
-                         # keymap, kill ring, undo, diff-based inline renderer.
-                         # Plugin ghost text / completion menus land here
+                         # keymap, kill ring, undo, history nav + ctrl-r search,
+                         # diff-based inline renderer. Plugin ghost text /
+                         # completion menus land here
+  history/               # JSONL history store: entry shape mirrors the plugin
+                         # proto's HistoryEntry; local file is authoritative
   term/                  # TTY abstraction (raw mode, event decoding, type-ahead
                          # carry) — the swappable plumbing boundary from #1.
                          # Nothing outside this package imports a terminal library
