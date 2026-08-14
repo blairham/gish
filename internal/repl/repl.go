@@ -24,6 +24,7 @@ import (
 	"github.com/blairham/gish/internal/builtins"
 	"github.com/blairham/gish/internal/editor"
 	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/gish/internal/jobs"
 	"github.com/blairham/gish/internal/term"
 )
 
@@ -55,10 +56,24 @@ func Run(ctx context.Context) error {
 // stops pure-builtin loops the kernel can't reach. SIGTSTP is left at
 // its default until job control (#5).
 func runEditor(ctx context.Context) error {
-	runner, err := interp.New(
+	// Job control (#5): externals of each command line run in their own
+	// process group and own the terminal while foreground; jobs/fg/bg
+	// are gish builtins reached via the CallHandler rewrite.
+	table := jobs.NewTable(os.Stdin)
+	runnerOpts := []interp.RunnerOption{
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
-		interp.ExecHandlers(builtins.ExecHandler),
-	)
+		interp.ExecHandlers(builtins.ExecHandler, table.ExecMiddleware),
+	}
+	if jobs.Supported() {
+		// Reclaiming the terminal from the background must not stop the
+		// shell. Children inherit the ignore; acceptable (see #5 design).
+		signal.Ignore(syscall.SIGTTOU)
+		builtins.Register("__gish_jobs", table.Jobs)
+		builtins.Register("__gish_fg", table.Fg)
+		builtins.Register("__gish_bg", table.Bg)
+		runnerOpts = append(runnerOpts, interp.CallHandler(jobs.RewriteCall))
+	}
+	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
 	}
@@ -118,7 +133,11 @@ func runEditor(ctx context.Context) error {
 
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
 		start := time.Now()
+		table.BeginLine(line)
 		rerr := runInterruptible(ctx, runner, file, sigs)
+		if n, ok := table.EndLine(); ok && n.Stopped {
+			fmt.Printf("[%d]  Stopped  %s\n", n.ID, n.Command)
+		}
 		lastExit = exitCode(rerr)
 		if store != nil {
 			// Cwd comes from the runner: `cd` moves the interpreter's

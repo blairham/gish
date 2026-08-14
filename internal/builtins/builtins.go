@@ -49,11 +49,19 @@ func ExecHandler(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	}
 }
 
-// Native returns the gish-native builtin names, sorted.
+// Register adds a gish-native builtin; called from startup wiring, before
+// any command runs. Job control registers __gish_jobs/fg/bg here, reached
+// through the CallHandler rewrite.
+func Register(name string, fn Func) {
+	registry[name] = fn
+}
+
+// Native returns the gish-native builtin names as the user types them:
+// registry-internal __gish_ prefixes are stripped for display.
 func Native() []string {
 	names := make([]string, 0, len(registry))
 	for name := range registry {
-		names = append(names, name)
+		names = append(names, strings.TrimPrefix(name, "__gish_"))
 	}
 	slices.Sort(names)
 	return names
@@ -79,8 +87,17 @@ var interpUnsupported = []string{
 }
 
 func listBuiltins(_ context.Context, hc interp.HandlerContext, _ []string) error {
-	fmt.Fprintf(hc.Stdout, "gish builtins:\n  %s\n\n", strings.Join(Native(), " "))
+	native := Native()
+	// A registered gish builtin (e.g. jobs/fg/bg under job control)
+	// supersedes its "unsupported" listing.
+	unsupported := make([]string, 0, len(interpUnsupported))
+	for _, name := range interpUnsupported {
+		if !slices.Contains(native, name) {
+			unsupported = append(unsupported, name)
+		}
+	}
+	fmt.Fprintf(hc.Stdout, "gish builtins:\n  %s\n\n", strings.Join(native, " "))
 	fmt.Fprintf(hc.Stdout, "shell builtins:\n  %s\n\n", strings.Join(interpImplemented, " "))
-	fmt.Fprintf(hc.Stdout, "recognized but not yet supported:\n  %s\n", strings.Join(interpUnsupported, " "))
+	fmt.Fprintf(hc.Stdout, "recognized but not yet supported:\n  %s\n", strings.Join(unsupported, " "))
 	return nil
 }
