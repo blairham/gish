@@ -7,9 +7,9 @@
 // never delay accepting the next command.
 syntax = "proto3";
 
-package swash.plugin.v1;
+package gish.plugin.v1;
 
-option go_package = "github.com/blairham/swash/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
 
 service HistoryBackend {
   // Append records an executed command. Called after the command exits.

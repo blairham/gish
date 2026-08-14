@@ -1,4 +1,4 @@
-// Command swash is an interactive shell: zsh's interactive experience,
+// Command gish is an interactive shell: zsh's interactive experience,
 // bash's ubiquity, and a native, contract-first plugin system.
 package main
 
@@ -11,7 +11,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/swash/internal/repl"
+	"github.com/blairham/gish/internal/repl"
 )
 
 // Stamped by -ldflags at build/release time; see Makefile and .goreleaser.yaml.
@@ -31,7 +31,7 @@ func run() int {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("swash %s (commit %s, built %s)\n", version, commit, date)
+		fmt.Printf("gish %s (commit %s, built %s)\n", version, commit, date)
 		return 0
 	}
 
@@ -48,10 +48,10 @@ func run() int {
 	if err == nil {
 		return 0
 	}
-	// A nonzero exit status is the script's exit code, not a swash error.
+	// A nonzero exit status is the script's exit code, not a gish error.
 	if status, ok := errors.AsType[interp.ExitStatus](err); ok {
 		return int(status)
 	}
-	fmt.Fprintln(os.Stderr, "swash:", err)
+	fmt.Fprintln(os.Stderr, "gish:", err)
 	return 1
 }

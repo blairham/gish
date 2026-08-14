@@ -10,7 +10,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v7.35.1
-// source: swash/plugin/v1/completion.proto
+// source: gish/plugin/v1/completion.proto
 
 package pluginapi
 
@@ -27,7 +27,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CompletionProvider_Complete_FullMethodName = "/swash.plugin.v1.CompletionProvider/Complete"
+	CompletionProvider_Complete_FullMethodName = "/gish.plugin.v1.CompletionProvider/Complete"
 )
 
 // CompletionProviderClient is the client API for CompletionProvider service.
@@ -124,7 +124,7 @@ type CompletionProvider_CompleteServer = grpc.ServerStreamingServer[CompleteBatc
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var CompletionProvider_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "swash.plugin.v1.CompletionProvider",
+	ServiceName: "gish.plugin.v1.CompletionProvider",
 	HandlerType: (*CompletionProviderServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
@@ -134,5 +134,5 @@ var CompletionProvider_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "swash/plugin/v1/completion.proto",
+	Metadata: "gish/plugin/v1/completion.proto",
 }

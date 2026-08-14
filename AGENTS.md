@@ -1,17 +1,17 @@
-# AGENTS.md — swash
+# AGENTS.md — gish
 
 Guidance for AI coding agents (Claude Code, Cursor, Copilot, Codex, OpenCode, …) working in this repository. This is the **cross-tool single source of truth** — `CLAUDE.md` imports it.
 
 ## Project Overview
 
-**swash** is a new interactive shell: zsh's interactive experience, bash's ubiquity as scripting substrate, and a native, contract-first plugin system. Cross-platform (macOS, Linux, Windows), written in Go, shipped as a single static binary named `swash`.
+**gish** is a new interactive shell: zsh's interactive experience, bash's ubiquity as scripting substrate, and a native, contract-first plugin system. Cross-platform (macOS, Linux, Windows), written in Go, shipped as a single static binary named `gish`.
 
-The name: *swash* is the rush of seawater up the beach after a wave breaks — sea-themed like fish/nushell/murex, and it ends in `sh` like every shell worth using.
+The name expands bash-style: **gish = gRPC Interactive SHell** — the tier-2 plugin system is the differentiator, so it's in the name, the way bash's expansion carries its own origin story. Rhymes with fish/wish; chosen after an exhaustive availability sweep (~55 candidates) found every other 3–4 letter `-sh` name claimed, most by existing shells.
 
 The design bet is a **two-tier plugin system**:
 
 - **Tier 1 — script plugins**: the existing zsh plugin ecosystem (zi/zinit/oh-my-zsh style). These run in-process against a zsh-compat layer so users keep their plugins on day one. This tier is the adoption story; the compat layer is by far the hardest part of the project and lands incrementally.
-- **Tier 2 — native gRPC plugins**: resident subprocesses over hashicorp/go-plugin with a versioned protobuf API (`proto/swash/plugin/v1`). Completion providers, prompt segments, history backends. This tier is the differentiator: plugins get a real contract instead of poking shell internals, and can be written in any language. Precedent: gitstatusd and carapace already prove out-of-process is how fast shell tooling works.
+- **Tier 2 — native gRPC plugins**: resident subprocesses over hashicorp/go-plugin with a versioned protobuf API (`proto/gish/plugin/v1`). Completion providers, prompt segments, history backends. This tier is the differentiator: plugins get a real contract instead of poking shell internals, and can be written in any language. Precedent: gitstatusd and carapace already prove out-of-process is how fast shell tooling works.
 
 Non-negotiable latency rule for tier 2: every host→plugin call carries a deadline; a slow plugin degrades (stale segment, missing completions), it never blocks a keystroke or the prompt.
 
@@ -20,8 +20,8 @@ Non-negotiable latency rule for tier 2: every host→plugin call carries a deadl
 ## Quick Reference
 
 ```bash
-make build      # Build binary to build/swash (ldflags stamp version/commit/date)
-make install    # go install ./cmd/swash
+make build      # Build binary to build/gish (ldflags stamp version/commit/date)
+make install    # go install ./cmd/gish
 make test       # Run tests with race detector: go test -v -race ./...
 make test-cover # Tests + coverage.html
 make fmt        # Format: go tool gofumpt -w .
@@ -37,14 +37,14 @@ make check-versions  # Assert go.mod ↔ .tool-versions agree (runs the pre-comm
 ## Project Structure
 
 ```
-cmd/swash/main.go        # Entry point: -c command, script file, or interactive REPL
+cmd/gish/main.go        # Entry point: -c command, script file, or interactive REPL
 internal/
   repl/                  # Read-eval loop over mvdan.cc/sh parser + interpreter.
                          # The future line editor (zle-equivalent) replaces the
                          # plain prompt loop here; RunReader stays the script path
   pluginhost/            # Tier-2 host: go-plugin handshake, plugin map, gRPC
                          # client/server glue for each capability service
-proto/swash/plugin/v1/   # The versioned tier-2 plugin contract (source of truth):
+proto/gish/plugin/v1/   # The versioned tier-2 plugin contract (source of truth):
                          # common.proto (Describe/capabilities), completion.proto,
                          # prompt.proto, history.proto
 pkg/pluginapi/           # protoc output from proto/ — generated, never hand-edited;
@@ -56,7 +56,7 @@ docs/design.md           # Architecture: two-tier plugins, latency budgets, road
 
 Read these before touching `pluginhost` or the protos.
 
-- **`proto/swash/plugin/v1` is frozen-additive**: new fields and new RPCs are fine; renames, type changes, and removals are not. Breaking changes mean a `v2` package and a `Handshake.ProtocolVersion` bump.
+- **`proto/gish/plugin/v1` is frozen-additive**: new fields and new RPCs are fine; renames, type changes, and removals are not. Breaking changes mean a `v2` package and a `Handshake.ProtocolVersion` bump.
 - **Deadlines are the host's job**: `pluginhost` attaches a deadline to every outbound call (prompt segments default to a 50ms budget; segments can declare their own via `SegmentDescriptor.budget_ms`). Plugin responses that miss the deadline are dropped or served stale — never awaited.
 - **Plugins are resident**: launched lazily on first use, kept alive for the session. Never spawn-per-call.
 - **Environment is allowlisted**: completion/prompt requests carry a filtered env map, never the full environment.
@@ -68,9 +68,9 @@ Read these before touching `pluginhost` or the protos.
 - **Go version**: `go.mod`'s `go` directive and `.tool-versions`' `golang` pin must match **exactly** — enforced by the `check-go-version-sync` pre-commit hook from [blairham/pre-commit-hooks](https://github.com/blairham/pre-commit-hooks). `go.mod` is authoritative; run `make sync` to bring `.tool-versions` back in line. CI pins the minor line (`GO_VERSION: "1.26"`)
 - **Formatter**: gofumpt via `go tool` (pinned in go.mod's `tool` block alongside golangci-lint). Formatting is applied at commit time by the `golangci-lint-fmt` hook, driven by `.golangci.yml`
 - **Linter**: golangci-lint v2, config in `.golangci.yml` (`pkg/pluginapi` is excluded — it's generated)
-- **Imports**: grouped by goimports with local prefix `github.com/blairham/swash` — local imports get their own trailing group
+- **Imports**: grouped by goimports with local prefix `github.com/blairham/gish` — local imports get their own trailing group
 - **Generated code**: `pkg/pluginapi` comes from `make proto` only; regenerate rather than edit, and commit the output so builds don't require protoc
-- **Exit codes**: `errors.As` with `interp.ExitStatus` distinguishes a script's exit status (propagated as the process exit code) from real swash errors (stderr + exit 1)
+- **Exit codes**: `errors.As` with `interp.ExitStatus` distinguishes a script's exit status (propagated as the process exit code) from real gish errors (stderr + exit 1)
 - **Commits/PRs**: no AI-attribution trailers — do not add `Co-Authored-By: Claude`, "Generated with Claude Code", or similar to commit messages or PR bodies
 
 ## CI/CD

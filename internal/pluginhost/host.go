@@ -15,17 +15,17 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 
-	"github.com/blairham/swash/pkg/pluginapi"
+	"github.com/blairham/gish/pkg/pluginapi"
 )
 
 // Handshake gates plugin startup: a binary that doesn't present the magic
-// cookie is not treated as a swash plugin. ProtocolVersion tracks the
-// proto package version (swash.plugin.v1 == 1); bumping it is a breaking
+// cookie is not treated as a gish plugin. ProtocolVersion tracks the
+// proto package version (gish.plugin.v1 == 1); bumping it is a breaking
 // change and requires a v2 proto package.
 var Handshake = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
-	MagicCookieKey:   "SWASH_PLUGIN",
-	MagicCookieValue: "swash.plugin.v1",
+	MagicCookieKey:   "GISH_PLUGIN",
+	MagicCookieValue: "gish.plugin.v1",
 }
 
 // PluginMap names the capability services a plugin process may serve.

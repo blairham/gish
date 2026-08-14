@@ -10,7 +10,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v7.35.1
-// source: swash/plugin/v1/history.proto
+// source: gish/plugin/v1/history.proto
 
 package pluginapi
 
@@ -27,8 +27,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	HistoryBackend_Append_FullMethodName = "/swash.plugin.v1.HistoryBackend/Append"
-	HistoryBackend_Search_FullMethodName = "/swash.plugin.v1.HistoryBackend/Search"
+	HistoryBackend_Append_FullMethodName = "/gish.plugin.v1.HistoryBackend/Append"
+	HistoryBackend_Search_FullMethodName = "/gish.plugin.v1.HistoryBackend/Search"
 )
 
 // HistoryBackendClient is the client API for HistoryBackend service.
@@ -156,7 +156,7 @@ type HistoryBackend_SearchServer = grpc.ServerStreamingServer[SearchBatch]
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var HistoryBackend_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "swash.plugin.v1.HistoryBackend",
+	ServiceName: "gish.plugin.v1.HistoryBackend",
 	HandlerType: (*HistoryBackendServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -171,5 +171,5 @@ var HistoryBackend_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "swash/plugin/v1/history.proto",
+	Metadata: "gish/plugin/v1/history.proto",
 }

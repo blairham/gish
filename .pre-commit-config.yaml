@@ -1,4 +1,4 @@
-# Pre-commit configuration for swash
+# Pre-commit configuration for gish
 # Install: pre-commit install
 # Run:     pre-commit run --all-files
 # Update:  pre-commit autoupdate

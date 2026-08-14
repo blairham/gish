@@ -7,9 +7,9 @@
 // arrive after it are dropped, not queued.
 syntax = "proto3";
 
-package swash.plugin.v1;
+package gish.plugin.v1;
 
-option go_package = "github.com/blairham/swash/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
 
 service CompletionProvider {
   // Complete returns candidate batches for the buffer/cursor in the

@@ -1,14 +1,14 @@
-# swash
+# gish
 
-> *swash* (n.) — the rush of seawater up the beach after a wave breaks.
+> **gish** — the **g**RPC **i**nteractive **sh**ell.
 
 A new interactive shell: **zsh's interactive experience, bash's ubiquity, and a native plugin system with an actual contract.** Cross-platform (macOS, Linux, Windows), one static Go binary.
 
-**Status: early scaffold.** The interactive loop runs real POSIX/bash today (via [`mvdan.cc/sh`](https://github.com/mvdan/sh)); everything that makes it *swash* is in front of us.
+**Status: early scaffold.** The interactive loop runs real POSIX/bash today (via [`mvdan.cc/sh`](https://github.com/mvdan/sh)); everything that makes it *gish* is in front of us.
 
 ## The idea
 
-Shell plugins today are zsh scripts poking at shell internals with no contract, glued together by plugin managers of wildly varying ergonomics. Swash's design bet is a **two-tier plugin system**:
+Shell plugins today are zsh scripts poking at shell internals with no contract, glued together by plugin managers of wildly varying ergonomics. Gish's design bet is a **two-tier plugin system**:
 
 - **Tier 1 — your existing zsh plugins keep working.** A zsh-compat layer runs the zi/zinit/oh-my-zsh ecosystem in-process, so switching shells doesn't mean abandoning your setup.
 - **Tier 2 — native plugins get a real API.** Resident subprocesses over gRPC ([hashicorp/go-plugin](https://github.com/hashicorp/go-plugin)) with a versioned protobuf contract: completion providers, prompt segments, history backends. Written in any language. Deadline on every call — a slow plugin can never block a keystroke. (This is how the fast parts of the shell world already work — gitstatusd, carapace — promoted from workaround to architecture.)
@@ -19,9 +19,9 @@ See [docs/design.md](docs/design.md) for the full architecture and roadmap.
 
 ```bash
 make build
-./build/swash                 # interactive (plain line loop for now)
-./build/swash -c 'echo hi'    # run a command
-./build/swash script.sh       # run a script
+./build/gish                 # interactive (plain line loop for now)
+./build/gish -c 'echo hi'    # run a command
+./build/gish script.sh       # run a script
 ```
 
 ## Development

@@ -1,6 +1,6 @@
-# Gitleaks configuration for swash
+# Gitleaks configuration for gish
 
-title = "swash Gitleaks Configuration"
+title = "gish Gitleaks Configuration"
 
 [extend]
 # Extend the default gitleaks configuration

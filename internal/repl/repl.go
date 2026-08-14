@@ -1,4 +1,4 @@
-// Package repl implements swash's read-eval loop on top of mvdan.cc/sh's
+// Package repl implements gish's read-eval loop on top of mvdan.cc/sh's
 // POSIX/bash parser and interpreter.
 //
 // This is the walking skeleton: a line-oriented loop with no editing,
@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	prompt     = "swash$ "
+	prompt     = "gish$ "
 	contPrompt = "> "
 )
 
@@ -57,7 +57,7 @@ loop:
 				// Nonzero statuses are ordinary interactive life; only
 				// surface real interpreter errors.
 				if _, ok := errors.AsType[interp.ExitStatus](err); !ok {
-					fmt.Fprintln(os.Stderr, "swash:", err)
+					fmt.Fprintln(os.Stderr, "gish:", err)
 				}
 			}
 		}
@@ -67,9 +67,9 @@ loop:
 	return exitErr
 }
 
-// RunCommand parses and runs src as a complete script (swash -c).
+// RunCommand parses and runs src as a complete script (gish -c).
 func RunCommand(ctx context.Context, src string) error {
-	return RunReader(ctx, strings.NewReader(src), "swash -c")
+	return RunReader(ctx, strings.NewReader(src), "gish -c")
 }
 
 // RunFile runs the script at path.

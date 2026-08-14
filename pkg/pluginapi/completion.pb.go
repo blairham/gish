@@ -10,7 +10,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.35.1
-// source: swash/plugin/v1/completion.proto
+// source: gish/plugin/v1/completion.proto
 
 package pluginapi
 
@@ -48,7 +48,7 @@ type CompleteRequest struct {
 
 func (x *CompleteRequest) Reset() {
 	*x = CompleteRequest{}
-	mi := &file_swash_plugin_v1_completion_proto_msgTypes[0]
+	mi := &file_gish_plugin_v1_completion_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -60,7 +60,7 @@ func (x *CompleteRequest) String() string {
 func (*CompleteRequest) ProtoMessage() {}
 
 func (x *CompleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_swash_plugin_v1_completion_proto_msgTypes[0]
+	mi := &file_gish_plugin_v1_completion_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -73,7 +73,7 @@ func (x *CompleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteRequest.ProtoReflect.Descriptor instead.
 func (*CompleteRequest) Descriptor() ([]byte, []int) {
-	return file_swash_plugin_v1_completion_proto_rawDescGZIP(), []int{0}
+	return file_gish_plugin_v1_completion_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *CompleteRequest) GetLine() string {
@@ -128,7 +128,7 @@ type Candidate struct {
 
 func (x *Candidate) Reset() {
 	*x = Candidate{}
-	mi := &file_swash_plugin_v1_completion_proto_msgTypes[1]
+	mi := &file_gish_plugin_v1_completion_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -140,7 +140,7 @@ func (x *Candidate) String() string {
 func (*Candidate) ProtoMessage() {}
 
 func (x *Candidate) ProtoReflect() protoreflect.Message {
-	mi := &file_swash_plugin_v1_completion_proto_msgTypes[1]
+	mi := &file_gish_plugin_v1_completion_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -153,7 +153,7 @@ func (x *Candidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Candidate.ProtoReflect.Descriptor instead.
 func (*Candidate) Descriptor() ([]byte, []int) {
-	return file_swash_plugin_v1_completion_proto_rawDescGZIP(), []int{1}
+	return file_gish_plugin_v1_completion_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Candidate) GetValue() string {
@@ -196,7 +196,7 @@ type CompleteBatch struct {
 
 func (x *CompleteBatch) Reset() {
 	*x = CompleteBatch{}
-	mi := &file_swash_plugin_v1_completion_proto_msgTypes[2]
+	mi := &file_gish_plugin_v1_completion_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -208,7 +208,7 @@ func (x *CompleteBatch) String() string {
 func (*CompleteBatch) ProtoMessage() {}
 
 func (x *CompleteBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_swash_plugin_v1_completion_proto_msgTypes[2]
+	mi := &file_gish_plugin_v1_completion_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -221,7 +221,7 @@ func (x *CompleteBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteBatch.ProtoReflect.Descriptor instead.
 func (*CompleteBatch) Descriptor() ([]byte, []int) {
-	return file_swash_plugin_v1_completion_proto_rawDescGZIP(), []int{2}
+	return file_gish_plugin_v1_completion_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CompleteBatch) GetCandidates() []*Candidate {
@@ -238,16 +238,16 @@ func (x *CompleteBatch) GetFinal() bool {
 	return false
 }
 
-var File_swash_plugin_v1_completion_proto protoreflect.FileDescriptor
+var File_gish_plugin_v1_completion_proto protoreflect.FileDescriptor
 
-const file_swash_plugin_v1_completion_proto_rawDesc = "" +
+const file_gish_plugin_v1_completion_proto_rawDesc = "" +
 	"\n" +
-	" swash/plugin/v1/completion.proto\x12\x0fswash.plugin.v1\"\xeb\x01\n" +
+	"\x1fgish/plugin/v1/completion.proto\x12\x0egish.plugin.v1\"\xea\x01\n" +
 	"\x0fCompleteRequest\x12\x12\n" +
 	"\x04line\x18\x01 \x01(\tR\x04line\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\rR\x06cursor\x12\x10\n" +
-	"\x03cwd\x18\x03 \x01(\tR\x03cwd\x12;\n" +
-	"\x03env\x18\x04 \x03(\v2).swash.plugin.v1.CompleteRequest.EnvEntryR\x03env\x12%\n" +
+	"\x03cwd\x18\x03 \x01(\tR\x03cwd\x12:\n" +
+	"\x03env\x18\x04 \x03(\v2(.gish.plugin.v1.CompleteRequest.EnvEntryR\x03env\x12%\n" +
 	"\x0emax_candidates\x18\x05 \x01(\rR\rmaxCandidates\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
@@ -256,39 +256,39 @@ const file_swash_plugin_v1_completion_proto_rawDesc = "" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x18\n" +
 	"\adisplay\x18\x02 \x01(\tR\adisplay\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
-	"\x05score\x18\x04 \x01(\rR\x05score\"a\n" +
-	"\rCompleteBatch\x12:\n" +
+	"\x05score\x18\x04 \x01(\rR\x05score\"`\n" +
+	"\rCompleteBatch\x129\n" +
 	"\n" +
-	"candidates\x18\x01 \x03(\v2\x1a.swash.plugin.v1.CandidateR\n" +
+	"candidates\x18\x01 \x03(\v2\x19.gish.plugin.v1.CandidateR\n" +
 	"candidates\x12\x14\n" +
-	"\x05final\x18\x02 \x01(\bR\x05final2d\n" +
-	"\x12CompletionProvider\x12N\n" +
-	"\bComplete\x12 .swash.plugin.v1.CompleteRequest\x1a\x1e.swash.plugin.v1.CompleteBatch0\x01B3Z1github.com/blairham/swash/pkg/pluginapi;pluginapib\x06proto3"
+	"\x05final\x18\x02 \x01(\bR\x05final2b\n" +
+	"\x12CompletionProvider\x12L\n" +
+	"\bComplete\x12\x1f.gish.plugin.v1.CompleteRequest\x1a\x1d.gish.plugin.v1.CompleteBatch0\x01B2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
 
 var (
-	file_swash_plugin_v1_completion_proto_rawDescOnce sync.Once
-	file_swash_plugin_v1_completion_proto_rawDescData []byte
+	file_gish_plugin_v1_completion_proto_rawDescOnce sync.Once
+	file_gish_plugin_v1_completion_proto_rawDescData []byte
 )
 
-func file_swash_plugin_v1_completion_proto_rawDescGZIP() []byte {
-	file_swash_plugin_v1_completion_proto_rawDescOnce.Do(func() {
-		file_swash_plugin_v1_completion_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_swash_plugin_v1_completion_proto_rawDesc), len(file_swash_plugin_v1_completion_proto_rawDesc)))
+func file_gish_plugin_v1_completion_proto_rawDescGZIP() []byte {
+	file_gish_plugin_v1_completion_proto_rawDescOnce.Do(func() {
+		file_gish_plugin_v1_completion_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_completion_proto_rawDesc), len(file_gish_plugin_v1_completion_proto_rawDesc)))
 	})
-	return file_swash_plugin_v1_completion_proto_rawDescData
+	return file_gish_plugin_v1_completion_proto_rawDescData
 }
 
-var file_swash_plugin_v1_completion_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
-var file_swash_plugin_v1_completion_proto_goTypes = []any{
-	(*CompleteRequest)(nil), // 0: swash.plugin.v1.CompleteRequest
-	(*Candidate)(nil),       // 1: swash.plugin.v1.Candidate
-	(*CompleteBatch)(nil),   // 2: swash.plugin.v1.CompleteBatch
-	nil,                     // 3: swash.plugin.v1.CompleteRequest.EnvEntry
+var file_gish_plugin_v1_completion_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_gish_plugin_v1_completion_proto_goTypes = []any{
+	(*CompleteRequest)(nil), // 0: gish.plugin.v1.CompleteRequest
+	(*Candidate)(nil),       // 1: gish.plugin.v1.Candidate
+	(*CompleteBatch)(nil),   // 2: gish.plugin.v1.CompleteBatch
+	nil,                     // 3: gish.plugin.v1.CompleteRequest.EnvEntry
 }
-var file_swash_plugin_v1_completion_proto_depIdxs = []int32{
-	3, // 0: swash.plugin.v1.CompleteRequest.env:type_name -> swash.plugin.v1.CompleteRequest.EnvEntry
-	1, // 1: swash.plugin.v1.CompleteBatch.candidates:type_name -> swash.plugin.v1.Candidate
-	0, // 2: swash.plugin.v1.CompletionProvider.Complete:input_type -> swash.plugin.v1.CompleteRequest
-	2, // 3: swash.plugin.v1.CompletionProvider.Complete:output_type -> swash.plugin.v1.CompleteBatch
+var file_gish_plugin_v1_completion_proto_depIdxs = []int32{
+	3, // 0: gish.plugin.v1.CompleteRequest.env:type_name -> gish.plugin.v1.CompleteRequest.EnvEntry
+	1, // 1: gish.plugin.v1.CompleteBatch.candidates:type_name -> gish.plugin.v1.Candidate
+	0, // 2: gish.plugin.v1.CompletionProvider.Complete:input_type -> gish.plugin.v1.CompleteRequest
+	2, // 3: gish.plugin.v1.CompletionProvider.Complete:output_type -> gish.plugin.v1.CompleteBatch
 	3, // [3:4] is the sub-list for method output_type
 	2, // [2:3] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -296,26 +296,26 @@ var file_swash_plugin_v1_completion_proto_depIdxs = []int32{
 	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_swash_plugin_v1_completion_proto_init() }
-func file_swash_plugin_v1_completion_proto_init() {
-	if File_swash_plugin_v1_completion_proto != nil {
+func init() { file_gish_plugin_v1_completion_proto_init() }
+func file_gish_plugin_v1_completion_proto_init() {
+	if File_gish_plugin_v1_completion_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_swash_plugin_v1_completion_proto_rawDesc), len(file_swash_plugin_v1_completion_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_completion_proto_rawDesc), len(file_gish_plugin_v1_completion_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_swash_plugin_v1_completion_proto_goTypes,
-		DependencyIndexes: file_swash_plugin_v1_completion_proto_depIdxs,
-		MessageInfos:      file_swash_plugin_v1_completion_proto_msgTypes,
+		GoTypes:           file_gish_plugin_v1_completion_proto_goTypes,
+		DependencyIndexes: file_gish_plugin_v1_completion_proto_depIdxs,
+		MessageInfos:      file_gish_plugin_v1_completion_proto_msgTypes,
 	}.Build()
-	File_swash_plugin_v1_completion_proto = out.File
-	file_swash_plugin_v1_completion_proto_goTypes = nil
-	file_swash_plugin_v1_completion_proto_depIdxs = nil
+	File_gish_plugin_v1_completion_proto = out.File
+	file_gish_plugin_v1_completion_proto_goTypes = nil
+	file_gish_plugin_v1_completion_proto_depIdxs = nil
 }

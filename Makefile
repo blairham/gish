@@ -1,4 +1,4 @@
-BINARY_NAME := swash
+BINARY_NAME := gish
 BUILD_DIR := build
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --verify --quiet HEAD 2>/dev/null || echo "none")
@@ -11,10 +11,10 @@ all: build
 
 build:
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/swash
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/gish
 
 install:
-	go install $(LDFLAGS) ./cmd/swash
+	go install $(LDFLAGS) ./cmd/gish
 
 clean:
 	rm -rf $(BUILD_DIR) coverage.out coverage.html
@@ -41,13 +41,13 @@ tidy:
 
 check: fmt vet test
 
-# Regenerate pkg/pluginapi from proto/swash/plugin/v1. Needs protoc plus
+# Regenerate pkg/pluginapi from proto/gish/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.
 proto:
 	protoc --proto_path=proto \
-		--go_out=. --go_opt=module=github.com/blairham/swash \
-		--go-grpc_out=. --go-grpc_opt=module=github.com/blairham/swash \
-		proto/swash/plugin/v1/*.proto
+		--go_out=. --go_opt=module=github.com/blairham/gish \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/blairham/gish \
+		proto/gish/plugin/v1/*.proto
 
 # Toolchain pin invariant. The check itself lives in blairham/pre-commit-hooks
 # and is wired up in .pre-commit-config.yaml — there is no local copy.

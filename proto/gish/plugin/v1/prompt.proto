@@ -8,9 +8,9 @@
 // in place when the response lands.
 syntax = "proto3";
 
-package swash.plugin.v1;
+package gish.plugin.v1;
 
-option go_package = "github.com/blairham/swash/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
 
 service PromptSegmentProvider {
   // Segments enumerates the segments this plugin offers. Called once

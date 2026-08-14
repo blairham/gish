@@ -1,6 +1,6 @@
 // Tier-2 native plugin API — shared types and the discovery service.
 //
-// Swash plugins are resident subprocesses speaking gRPC via
+// Gish plugins are resident subprocesses speaking gRPC via
 // hashicorp/go-plugin. The host launches a plugin lazily on first use,
 // performs the go-plugin handshake (see internal/pluginhost), then calls
 // Describe once to learn which capability services the plugin serves on
@@ -8,15 +8,15 @@
 //
 // Contract rules (the reason this tier exists):
 //   - This protobuf surface is versioned: breaking changes mean a new
-//     swash.plugin.v2 package, never an edit to v1.
+//     gish.plugin.v2 package, never an edit to v1.
 //   - Every host→plugin call carries a deadline. A plugin that misses it
 //     is skipped for that interaction, not waited on — a slow plugin must
 //     never block a keystroke or a prompt.
 syntax = "proto3";
 
-package swash.plugin.v1;
+package gish.plugin.v1;
 
-option go_package = "github.com/blairham/swash/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
 
 // Capability names the services a plugin implements.
 enum Capability {

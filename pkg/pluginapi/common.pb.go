@@ -1,6 +1,6 @@
 // Tier-2 native plugin API — shared types and the discovery service.
 //
-// Swash plugins are resident subprocesses speaking gRPC via
+// Gish plugins are resident subprocesses speaking gRPC via
 // hashicorp/go-plugin. The host launches a plugin lazily on first use,
 // performs the go-plugin handshake (see internal/pluginhost), then calls
 // Describe once to learn which capability services the plugin serves on
@@ -8,7 +8,7 @@
 //
 // Contract rules (the reason this tier exists):
 //   - This protobuf surface is versioned: breaking changes mean a new
-//     swash.plugin.v2 package, never an edit to v1.
+//     gish.plugin.v2 package, never an edit to v1.
 //   - Every host→plugin call carries a deadline. A plugin that misses it
 //     is skipped for that interaction, not waited on — a slow plugin must
 //     never block a keystroke or a prompt.
@@ -17,7 +17,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.35.1
-// source: swash/plugin/v1/common.proto
+// source: gish/plugin/v1/common.proto
 
 package pluginapi
 
@@ -73,11 +73,11 @@ func (x Capability) String() string {
 }
 
 func (Capability) Descriptor() protoreflect.EnumDescriptor {
-	return file_swash_plugin_v1_common_proto_enumTypes[0].Descriptor()
+	return file_gish_plugin_v1_common_proto_enumTypes[0].Descriptor()
 }
 
 func (Capability) Type() protoreflect.EnumType {
-	return &file_swash_plugin_v1_common_proto_enumTypes[0]
+	return &file_gish_plugin_v1_common_proto_enumTypes[0]
 }
 
 func (x Capability) Number() protoreflect.EnumNumber {
@@ -86,7 +86,7 @@ func (x Capability) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Capability.Descriptor instead.
 func (Capability) EnumDescriptor() ([]byte, []int) {
-	return file_swash_plugin_v1_common_proto_rawDescGZIP(), []int{0}
+	return file_gish_plugin_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
 type DescribeRequest struct {
@@ -97,7 +97,7 @@ type DescribeRequest struct {
 
 func (x *DescribeRequest) Reset() {
 	*x = DescribeRequest{}
-	mi := &file_swash_plugin_v1_common_proto_msgTypes[0]
+	mi := &file_gish_plugin_v1_common_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -109,7 +109,7 @@ func (x *DescribeRequest) String() string {
 func (*DescribeRequest) ProtoMessage() {}
 
 func (x *DescribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_swash_plugin_v1_common_proto_msgTypes[0]
+	mi := &file_gish_plugin_v1_common_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -122,7 +122,7 @@ func (x *DescribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeRequest.ProtoReflect.Descriptor instead.
 func (*DescribeRequest) Descriptor() ([]byte, []int) {
-	return file_swash_plugin_v1_common_proto_rawDescGZIP(), []int{0}
+	return file_gish_plugin_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
 type DescribeResponse struct {
@@ -133,14 +133,14 @@ type DescribeResponse struct {
 	// Plugin's own version string, informational only.
 	Version string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	// Which capability services this plugin serves.
-	Capabilities  []Capability `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=swash.plugin.v1.Capability" json:"capabilities,omitempty"`
+	Capabilities  []Capability `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=gish.plugin.v1.Capability" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DescribeResponse) Reset() {
 	*x = DescribeResponse{}
-	mi := &file_swash_plugin_v1_common_proto_msgTypes[1]
+	mi := &file_gish_plugin_v1_common_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +152,7 @@ func (x *DescribeResponse) String() string {
 func (*DescribeResponse) ProtoMessage() {}
 
 func (x *DescribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_swash_plugin_v1_common_proto_msgTypes[1]
+	mi := &file_gish_plugin_v1_common_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,7 +165,7 @@ func (x *DescribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeResponse.ProtoReflect.Descriptor instead.
 func (*DescribeResponse) Descriptor() ([]byte, []int) {
-	return file_swash_plugin_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_gish_plugin_v1_common_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *DescribeResponse) GetName() string {
@@ -189,49 +189,49 @@ func (x *DescribeResponse) GetCapabilities() []Capability {
 	return nil
 }
 
-var File_swash_plugin_v1_common_proto protoreflect.FileDescriptor
+var File_gish_plugin_v1_common_proto protoreflect.FileDescriptor
 
-const file_swash_plugin_v1_common_proto_rawDesc = "" +
+const file_gish_plugin_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x1cswash/plugin/v1/common.proto\x12\x0fswash.plugin.v1\"\x11\n" +
-	"\x0fDescribeRequest\"\x81\x01\n" +
+	"\x1bgish/plugin/v1/common.proto\x12\x0egish.plugin.v1\"\x11\n" +
+	"\x0fDescribeRequest\"\x80\x01\n" +
 	"\x10DescribeResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\x12?\n" +
-	"\fcapabilities\x18\x03 \x03(\x0e2\x1b.swash.plugin.v1.CapabilityR\fcapabilities*z\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12>\n" +
+	"\fcapabilities\x18\x03 \x03(\x0e2\x1a.gish.plugin.v1.CapabilityR\fcapabilities*z\n" +
 	"\n" +
 	"Capability\x12\x1a\n" +
 	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15CAPABILITY_COMPLETION\x10\x01\x12\x1d\n" +
 	"\x19CAPABILITY_PROMPT_SEGMENT\x10\x02\x12\x16\n" +
-	"\x12CAPABILITY_HISTORY\x10\x032]\n" +
+	"\x12CAPABILITY_HISTORY\x10\x032[\n" +
 	"\n" +
-	"PluginInfo\x12O\n" +
-	"\bDescribe\x12 .swash.plugin.v1.DescribeRequest\x1a!.swash.plugin.v1.DescribeResponseB3Z1github.com/blairham/swash/pkg/pluginapi;pluginapib\x06proto3"
+	"PluginInfo\x12M\n" +
+	"\bDescribe\x12\x1f.gish.plugin.v1.DescribeRequest\x1a .gish.plugin.v1.DescribeResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
 
 var (
-	file_swash_plugin_v1_common_proto_rawDescOnce sync.Once
-	file_swash_plugin_v1_common_proto_rawDescData []byte
+	file_gish_plugin_v1_common_proto_rawDescOnce sync.Once
+	file_gish_plugin_v1_common_proto_rawDescData []byte
 )
 
-func file_swash_plugin_v1_common_proto_rawDescGZIP() []byte {
-	file_swash_plugin_v1_common_proto_rawDescOnce.Do(func() {
-		file_swash_plugin_v1_common_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_swash_plugin_v1_common_proto_rawDesc), len(file_swash_plugin_v1_common_proto_rawDesc)))
+func file_gish_plugin_v1_common_proto_rawDescGZIP() []byte {
+	file_gish_plugin_v1_common_proto_rawDescOnce.Do(func() {
+		file_gish_plugin_v1_common_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_common_proto_rawDesc), len(file_gish_plugin_v1_common_proto_rawDesc)))
 	})
-	return file_swash_plugin_v1_common_proto_rawDescData
+	return file_gish_plugin_v1_common_proto_rawDescData
 }
 
-var file_swash_plugin_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_swash_plugin_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_swash_plugin_v1_common_proto_goTypes = []any{
-	(Capability)(0),          // 0: swash.plugin.v1.Capability
-	(*DescribeRequest)(nil),  // 1: swash.plugin.v1.DescribeRequest
-	(*DescribeResponse)(nil), // 2: swash.plugin.v1.DescribeResponse
+var file_gish_plugin_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_gish_plugin_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_gish_plugin_v1_common_proto_goTypes = []any{
+	(Capability)(0),          // 0: gish.plugin.v1.Capability
+	(*DescribeRequest)(nil),  // 1: gish.plugin.v1.DescribeRequest
+	(*DescribeResponse)(nil), // 2: gish.plugin.v1.DescribeResponse
 }
-var file_swash_plugin_v1_common_proto_depIdxs = []int32{
-	0, // 0: swash.plugin.v1.DescribeResponse.capabilities:type_name -> swash.plugin.v1.Capability
-	1, // 1: swash.plugin.v1.PluginInfo.Describe:input_type -> swash.plugin.v1.DescribeRequest
-	2, // 2: swash.plugin.v1.PluginInfo.Describe:output_type -> swash.plugin.v1.DescribeResponse
+var file_gish_plugin_v1_common_proto_depIdxs = []int32{
+	0, // 0: gish.plugin.v1.DescribeResponse.capabilities:type_name -> gish.plugin.v1.Capability
+	1, // 1: gish.plugin.v1.PluginInfo.Describe:input_type -> gish.plugin.v1.DescribeRequest
+	2, // 2: gish.plugin.v1.PluginInfo.Describe:output_type -> gish.plugin.v1.DescribeResponse
 	2, // [2:3] is the sub-list for method output_type
 	1, // [1:2] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -239,27 +239,27 @@ var file_swash_plugin_v1_common_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_swash_plugin_v1_common_proto_init() }
-func file_swash_plugin_v1_common_proto_init() {
-	if File_swash_plugin_v1_common_proto != nil {
+func init() { file_gish_plugin_v1_common_proto_init() }
+func file_gish_plugin_v1_common_proto_init() {
+	if File_gish_plugin_v1_common_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_swash_plugin_v1_common_proto_rawDesc), len(file_swash_plugin_v1_common_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_common_proto_rawDesc), len(file_gish_plugin_v1_common_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_swash_plugin_v1_common_proto_goTypes,
-		DependencyIndexes: file_swash_plugin_v1_common_proto_depIdxs,
-		EnumInfos:         file_swash_plugin_v1_common_proto_enumTypes,
-		MessageInfos:      file_swash_plugin_v1_common_proto_msgTypes,
+		GoTypes:           file_gish_plugin_v1_common_proto_goTypes,
+		DependencyIndexes: file_gish_plugin_v1_common_proto_depIdxs,
+		EnumInfos:         file_gish_plugin_v1_common_proto_enumTypes,
+		MessageInfos:      file_gish_plugin_v1_common_proto_msgTypes,
 	}.Build()
-	File_swash_plugin_v1_common_proto = out.File
-	file_swash_plugin_v1_common_proto_goTypes = nil
-	file_swash_plugin_v1_common_proto_depIdxs = nil
+	File_gish_plugin_v1_common_proto = out.File
+	file_gish_plugin_v1_common_proto_goTypes = nil
+	file_gish_plugin_v1_common_proto_depIdxs = nil
 }

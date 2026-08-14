@@ -1,13 +1,13 @@
 version: 2
 
-# GoReleaser configuration for swash
+# GoReleaser configuration for gish
 # See: https://goreleaser.com
-project_name: swash
+project_name: gish
 
 builds:
-- id: swash
-  binary: swash
-  main: ./cmd/swash
+- id: gish
+  binary: gish
+  main: ./cmd/gish
   env:
   - CGO_ENABLED=0
   goos:
@@ -46,7 +46,7 @@ notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       ids:
-        - swash
+        - gish
       sign:
         certificate: "{{.Env.MACOS_SIGN_P12}}"
         password: "{{.Env.MACOS_SIGN_PASSWORD}}"
@@ -80,25 +80,25 @@ changelog:
     - '^test:'
     - '^chore:'
 
-# Cask, matching the tap convention for user-facing tools (swash ships no
+# Cask, matching the tap convention for user-facing tools (gish ships no
 # daemon, so it doesn't need a formula's `service` stanza the way cswap did).
 # The quarantine hook strips com.apple.quarantine from the unsigned binary
 # until signing secrets are added.
 homebrew_casks:
-- name: swash
+- name: gish
   repository:
     owner: blairham
     name: homebrew-tap
     token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
   directory: Casks
-  homepage: https://github.com/blairham/swash
+  homepage: https://github.com/blairham/gish
   description: "Interactive shell: zsh ergonomics, bash compatibility, gRPC-native plugins"
   license: MIT
   hooks:
     post:
       install: |
         if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/swash"]
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gish"]
         end
 
 release:
@@ -108,4 +108,4 @@ release:
   prerelease: auto
   mode: replace
   footer: |
-    **Full Changelog**: https://github.com/blairham/swash/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/blairham/gish/compare/{{ .PreviousTag }}...{{ .Tag }}

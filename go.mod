@@ -1,4 +1,4 @@
-module github.com/blairham/swash
+module github.com/blairham/gish
 
 go 1.26.1
 

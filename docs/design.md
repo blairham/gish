@@ -1,4 +1,4 @@
-# swash — architecture
+# gish — architecture
 
 ## Goals
 
@@ -23,7 +23,7 @@ Built-in plugin *management* (the zi rethink) is native: declarative manifest, l
 
 ### Tier 2 — native gRPC plugins (differentiator)
 
-Resident subprocesses over hashicorp/go-plugin, contract in `proto/swash/plugin/v1`:
+Resident subprocesses over hashicorp/go-plugin, contract in `proto/gish/plugin/v1`:
 
 | Service | Purpose | Shape |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ Rules that make this fast enough to live in a keystroke path:
 
 - **Resident, never spawn-per-call.** Lazy launch on first use, alive for the session. (Future: a shared cross-session daemon, gitstatusd-style.)
 - **Deadline on every call.** Prompt segments default to a 50ms budget (self-declarable via `budget_ms`); misses render stale/empty and repaint in place. Completions stream so early candidates show while slow sources work.
-- **Versioned contract.** `swash.plugin.v1` is frozen-additive; breaking changes are a `v2` package plus a go-plugin `ProtocolVersion` bump.
+- **Versioned contract.** `gish.plugin.v1` is frozen-additive; breaking changes are a `v2` package plus a go-plugin `ProtocolVersion` bump.
 - **Filtered environment.** Plugins get an allowlisted env map, not the process environment.
 - **Any language.** gRPC + protobuf means plugins in Go, Rust, Python, whatever — an adoption lever the zsh ecosystem can't offer.
 
@@ -49,7 +49,7 @@ The line editor and prompt engine consume both tiers through one internal interf
 ## Roadmap (milestone sketch)
 
 1. **Skeleton** *(now)* — bash/POSIX exec via mvdan/sh, plain REPL, tier-2 contract designed, stubs generated, host handshake in place.
-2. **Line editor** — raw-mode editor (keymap, kill-ring, undo), history file, incremental search. This is where swash starts feeling like a shell.
+2. **Line editor** — raw-mode editor (keymap, kill-ring, undo), history file, incremental search. This is where gish starts feeling like a shell.
 3. **Tier-2 dispatch** — plugin discovery/config, resident lifecycle, deadlines; first real plugins: git prompt segment, file/carapace-style completion.
 4. **Completion UI** — menu selection, descriptions, multi-provider merge.
 5. **Tier-1 compat, wave 1** — precmd/preexec, aliases/exports, simple widget shims; run the top oh-my-zsh plugins unmodified.

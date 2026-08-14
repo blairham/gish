@@ -1,4 +1,4 @@
-# golangci-lint v2 configuration for swash
+# golangci-lint v2 configuration for gish
 # See: https://golangci-lint.run/usage/configuration/
 
 version: "2"
@@ -112,7 +112,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-      - github.com/blairham/swash
+      - github.com/blairham/gish
 
   exclusions:
     paths:
