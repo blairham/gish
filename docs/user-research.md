@@ -14,8 +14,8 @@ not vibes. Issues filed under **M5 — Out-of-box experience**.
 | 4 | **History lost across tabs/sessions** — bash keeps only the first shell's; zsh needs incantations; atuin's popularity is the demand signal | ohmyzsh #9430, atuin coverage | JSONL store already shared on disk | #40: live reload in concurrent sessions |
 | 5 | **Unhelpful errors** — "command not found", nothing more | ubiquitous | we own the exec seam | #42: typo suggestions + install hints; #20 explain-error |
 | 6 | **Config complexity** — oh-my-zsh sprawl, plugin-manager fatigue | manjaro/dev.to threads | zero-config defaults + zi built in (no bootstrap) + one rc file | shipped (#23, #26) |
-| 7 | **Quoting/word-splitting footguns, ugly syntax** | HN perennials | inherited deliberately (compat > purity); mitigated by highlighting (#38: see the breakage before Enter), AI explain (#20), scrubbed history |
-| 8 | **Windows second-class** | nushell's win there | M7; ConPTY groundwork in term boundary | roadmap |
+| 7 | **Quoting/word-splitting footguns, ugly syntax** | HN perennials | inherited deliberately (compat > purity); #46: shellcheck-grade diagnostics at the prompt (we hold a real parse tree); plus #38 red-unknown-commands and #20 explain | #46 |
+| 8 | **Windows second-class** | nushell's win there | M7 milestone opened; ConPTY groundwork in term boundary; WSL2 supported today | #47 |
 
 ## The positioning sentence this research supports
 
