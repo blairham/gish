@@ -191,7 +191,7 @@ func (e *Editor) render() {
 	}
 	if ghost := e.ghostText(); ghost != "" {
 		styled = append(styled[:len(styled)-1:len(styled)-1],
-			styled[len(styled)-1]+"[2m"+ghost+styleReset)
+			styled[len(styled)-1]+"\x1b[2m"+ghost+styleReset)
 	}
 	lines := make([]string, 0, len(banner)+len(styled))
 	lines = append(lines, banner...)
