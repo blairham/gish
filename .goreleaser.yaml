@@ -124,6 +124,9 @@ changelog:
 # until signing secrets are added.
 homebrew_casks:
 - name: gish
+  # Skip the tap push until HOMEBREW_TAP_TOKEN exists as a repo secret;
+  # the GitHub release itself still publishes.
+  skip_upload: '{{ if isEnvSet "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
   repository:
     owner: blairham
     name: homebrew-tap
