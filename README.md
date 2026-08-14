@@ -21,7 +21,7 @@ See [docs/design.md](docs/design.md) for the full architecture and roadmap.
 
 ```bash
 make build
-./build/gish                 # interactive: raw-mode editor, emacs keys, Tab completion
+./build/gish                 # syntax highlighting, autosuggestions, Tab completion
 ./build/gish -c 'echo hi'    # run a command
 ./build/gish script.sh       # run a script
 ```

@@ -32,6 +32,12 @@ type Config struct {
 	// Complete answers Tab: candidates for the word at the cursor. nil
 	// disables completion.
 	Complete func(text string, cursor int) CompleteResult
+	// Highlight returns style spans for the buffer text (parser-driven,
+	// shell-side). nil disables highlighting.
+	Highlight func(text string) []HighlightSpan
+	// Suggest returns the full suggested line for the current buffer
+	// prefix (fish-style ghost text). nil disables suggestions.
+	Suggest func(text string) string
 }
 
 type loopState int
@@ -179,9 +185,17 @@ func (e *Editor) render() {
 	banner, linePrefix := promptParts(firstPrompt)
 
 	raw := e.buf.Lines()
-	lines := make([]string, 0, len(banner)+len(raw))
+	styled := raw
+	if e.cfg.Highlight != nil && !e.search.active {
+		styled = applyHighlight(raw, e.cfg.Highlight(e.buf.String()))
+	}
+	if ghost := e.ghostText(); ghost != "" {
+		styled = append(styled[:len(styled)-1:len(styled)-1],
+			styled[len(styled)-1]+"[2m"+ghost+styleReset)
+	}
+	lines := make([]string, 0, len(banner)+len(styled))
 	lines = append(lines, banner...)
-	for i, l := range raw {
+	for i, l := range styled {
 		if i == 0 {
 			lines = append(lines, linePrefix+l)
 		} else {
@@ -402,8 +416,8 @@ func defaultKeymap() map[binding]func(*Editor) {
 		{key: term.KeyDelete}:                      (*Editor).deleteForward,
 		{key: term.KeyLeft}:                        func(e *Editor) { e.buf.MoveLeft() },
 		{r: 'b', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveLeft() },
-		{key: term.KeyRight}:                       func(e *Editor) { e.buf.MoveRight() },
-		{r: 'f', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveRight() },
+		{key: term.KeyRight}:                       (*Editor).moveRightOrAccept,
+		{r: 'f', mod: term.ModCtrl}:                (*Editor).moveRightOrAccept,
 		{key: term.KeyUp}:                          (*Editor).historyUp,
 		{r: 'p', mod: term.ModCtrl}:                (*Editor).historyUp,
 		{key: term.KeyDown}:                        (*Editor).historyDown,
@@ -411,8 +425,8 @@ func defaultKeymap() map[binding]func(*Editor) {
 		{r: 'r', mod: term.ModCtrl}:                (*Editor).startSearch,
 		{key: term.KeyHome}:                        func(e *Editor) { e.buf.MoveLineStart() },
 		{r: 'a', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveLineStart() },
-		{key: term.KeyEnd}:                         func(e *Editor) { e.buf.MoveLineEnd() },
-		{r: 'e', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveLineEnd() },
+		{key: term.KeyEnd}:                         (*Editor).moveLineEndOrAccept,
+		{r: 'e', mod: term.ModCtrl}:                (*Editor).moveLineEndOrAccept,
 		{r: 'b', mod: term.ModAlt}:                 func(e *Editor) { e.buf.MoveWordLeft() },
 		{r: 'f', mod: term.ModAlt}:                 func(e *Editor) { e.buf.MoveWordRight() },
 		{r: 'k', mod: term.ModCtrl}:                (*Editor).killToLineEnd,
