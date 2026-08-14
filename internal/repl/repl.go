@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -39,6 +41,16 @@ func Run(ctx context.Context) error {
 
 // runEditor is the interactive path: the line editor owns the terminal
 // between commands; the interpreter owns it while a command runs.
+//
+// Signal posture (see #3): an interactive shell must never die from the
+// user's Ctrl-C or Ctrl-\. At the prompt those arrive as key events (raw
+// mode); while a command runs, the terminal delivers them to the whole
+// foreground process group — children included, which is what kills the
+// child. gish catches its own copy via Notify (NOT Ignore: an ignored
+// disposition would be inherited across exec and make children immune to
+// Ctrl-C) and reacts by canceling the command context, which is what
+// stops pure-builtin loops the kernel can't reach. SIGTSTP is left at
+// its default until job control (#5).
 func runEditor(ctx context.Context) error {
 	runner, err := interp.New(interp.StdIO(os.Stdin, os.Stdout, os.Stderr))
 	if err != nil {
@@ -50,6 +62,10 @@ func runEditor(ctx context.Context) error {
 		AcceptWhen: acceptWhen,
 	})
 	parser := syntax.NewParser()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGQUIT)
+	defer signal.Stop(sigs)
 
 	for {
 		line, err := ed.ReadCommand(ctx)
@@ -69,14 +85,64 @@ func runEditor(ctx context.Context) error {
 			fmt.Fprintln(os.Stderr, "gish:", perr)
 			continue
 		}
-		if rerr := runner.Run(ctx, file); rerr != nil {
-			if runner.Exited() {
-				return rerr
-			}
+
+		drainSignals(sigs) // a signal from prompt-time must not cancel this command
+		rerr := runInterruptible(ctx, runner, file, sigs)
+		switch {
+		case rerr == nil:
+		case errors.Is(rerr, errInterrupted):
+			// The command was interrupted, not the shell: fresh prompt.
+			// Order matters — Runner.Exited() also reports true after a
+			// cancellation, and the runner stays usable with state intact.
+		case runner.Exited():
+			return rerr
+		default:
 			if _, ok := errors.AsType[interp.ExitStatus](rerr); !ok {
 				fmt.Fprintln(os.Stderr, "gish:", rerr)
 			}
 		}
+	}
+}
+
+// errInterrupted marks a command run that ended because the user
+// interrupted it — the shell continues, silently.
+var errInterrupted = errors.New("command interrupted")
+
+// runInterruptible runs one parsed command, canceling its context when
+// SIGINT arrives so builtin-only loops stop too. External children get
+// their signal directly from the terminal (same process group — that
+// changes with job control, #5). SIGQUIT is swallowed for the shell and
+// left to the kernel for the child.
+func runInterruptible(ctx context.Context, runner *interp.Runner, file *syntax.File, sigs <-chan os.Signal) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			select {
+			case sig := <-sigs:
+				if sig == os.Interrupt {
+					cancel()
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	err := runner.Run(runCtx, file)
+	if err != nil && runCtx.Err() != nil && ctx.Err() == nil {
+		return errInterrupted
+	}
+	return err
+}
+
+// drainSignals discards any signal that arrived while no command was
+// running.
+func drainSignals(sigs <-chan os.Signal) {
+	select {
+	case <-sigs:
+	default:
 	}
 }
 

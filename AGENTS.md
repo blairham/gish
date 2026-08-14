@@ -15,7 +15,7 @@ The design bet is a **two-tier plugin system**:
 
 Non-negotiable latency rule for tier 2: every host→plugin call carries a deadline; a slow plugin degrades (stale segment, missing completions), it never blocks a keystroke or the prompt.
 
-**Status: interactive core in progress (M2).** Scripting runs on `mvdan.cc/sh` (POSIX/bash parse + interp). Interactive terminals get the raw-mode line editor (`internal/editor`): emacs keymap, kill ring, undo, grapheme-aware multi-line editing, diff-based inline rendering, and byte-level type-ahead preservation across commands. Still missing: signal handling (#3), history (#4), job control (#5), rc file (#6). No zsh dialect or plugin dispatch yet — the proto surface and go-plugin scaffolding exist so the contract is designed before the internals grow around it.
+**Status: interactive core in progress (M2).** Scripting runs on `mvdan.cc/sh` (POSIX/bash parse + interp). Interactive terminals get the raw-mode line editor (`internal/editor`): emacs keymap, kill ring, undo, grapheme-aware multi-line editing, diff-based inline rendering, and byte-level type-ahead preservation across commands. Signal posture is in place (#3): the interactive shell survives SIGINT/SIGQUIT — Ctrl-C interrupts the foreground command (children via the kernel, builtin loops via context cancellation) and never the shell. Still missing: history (#4), job control (#5), rc file (#6). No zsh dialect or plugin dispatch yet — the proto surface and go-plugin scaffolding exist so the contract is designed before the internals grow around it.
 
 ## Quick Reference
 
