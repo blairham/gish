@@ -29,17 +29,28 @@ const (
 	cYel   = "\x1b[33m"
 )
 
-// promptStrings resolves the prompt pair for the next read.
+// promptStrings resolves the prompt pair for the next read. Precedence:
+// manual GISH_PROMPT > GISH_THEME (starship | p10k default | plain) >
+// plain; NO_COLOR and dumb terminals degrade regardless.
 func promptStrings(runner *interp.Runner, info promptInfo) (string, string) {
 	if v := shellVar(runner, "GISH_PROMPT", ""); v != "" {
 		return expandPrompt(v, info),
 			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info)
 	}
-	theme := shellVar(runner, "GISH_THEME", "p10k")
-	if theme != "p10k" || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return prompt, contPrompt
 	}
-	return themedPrompt(info)
+	switch shellVar(runner, "GISH_THEME", "p10k") {
+	case "starship":
+		if p, cp, ok := starship.render(info, info.width); ok {
+			return p, cp
+		}
+		return themedPrompt(info) // missing binary: native fallback
+	case "p10k":
+		return themedPrompt(info)
+	default:
+		return prompt, contPrompt
+	}
 }
 
 // themedPrompt renders the p10k-style layout:

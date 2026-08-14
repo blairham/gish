@@ -57,7 +57,7 @@ zi list
 
 A load is installed by the engine and `source`d directly in your live session — functions, variables, and PATH changes persist. (Plugins written in heavy zsh dialect await the tier-1 compat layer; snippets, POSIX-style plugins, and `gh-r` binaries work today. `wait` turbo ices are accepted but load immediately for now.) The manager itself sits behind a contract, so an alternative manager can replace it.
 
-History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, and a leading space keeps a command out of history.
+History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions; Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
 
 ## Development
 

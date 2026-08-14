@@ -6,9 +6,7 @@
 package history
 
 import (
-	"bufio"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,10 +44,25 @@ func DefaultPath() (string, error) {
 // Store is an append-mostly history file with an in-memory index.
 // Appends are single JSONL lines on an O_APPEND handle, so concurrent
 // gish sessions interleave whole entries. Safe for concurrent use.
+//
+// Live cross-session history (#40): lookups reload the file tail first,
+// so commands from concurrent sessions appear here as they happen. One
+// stat when nothing changed; own-session entries are skipped on reload
+// (they are already in memory).
 type Store struct {
 	mu      sync.RWMutex
 	f       *os.File
+	path    string
+	session string
+	loaded  int64   // bytes of the file already ingested (complete lines)
 	entries []Entry // oldest first
+}
+
+// SetSession identifies this session's entries so reloads skip them.
+func (s *Store) SetSession(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.session = id
 }
 
 // Open loads the trailing entries of the file at path (creating it and
@@ -63,25 +76,82 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{f: f}
+	s := &Store{f: f, path: path}
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		var e Entry
-		if json.Unmarshal(scanner.Bytes(), &e) != nil || e.Command == "" {
-			continue
-		}
-		s.entries = append(s.entries, e)
-	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, bufio.ErrTooLong) {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		f.Close()
 		return nil, err
 	}
+	entries, consumed := consumeLines(data, "")
+	s.entries = entries
+	s.loaded = consumed
 	if len(s.entries) > loadMax {
 		s.entries = s.entries[len(s.entries)-loadMax:]
 	}
 	return s, nil
+}
+
+// consumeLines parses complete JSONL lines, skipping corrupt ones and
+// entries from skipSession. It reports how many bytes were consumed —
+// a trailing partial line (another session mid-write) stays unconsumed
+// for the next reload.
+func consumeLines(data []byte, skipSession string) ([]Entry, int64) {
+	var entries []Entry
+	var consumed int64
+	for {
+		nl := bytesIndexByte(data[consumed:], '\n')
+		if nl < 0 {
+			break
+		}
+		line := data[consumed : consumed+int64(nl)]
+		consumed += int64(nl) + 1
+		var e Entry
+		if json.Unmarshal(line, &e) != nil || e.Command == "" {
+			continue
+		}
+		if skipSession != "" && e.SessionID == skipSession {
+			continue
+		}
+		entries = append(entries, e)
+	}
+	return entries, consumed
+}
+
+func bytesIndexByte(b []byte, c byte) int {
+	for i, x := range b {
+		if x == c {
+			return i
+		}
+	}
+	return -1
+}
+
+// reload ingests lines other sessions appended since the last look.
+// Cheap when nothing changed: one stat. Callers hold no lock.
+func (s *Store) reload() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fi, err := os.Stat(s.path)
+	if err != nil || fi.Size() <= s.loaded {
+		return
+	}
+	f, err := os.Open(s.path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	if _, err := f.Seek(s.loaded, 0); err != nil {
+		return
+	}
+	data := make([]byte, fi.Size()-s.loaded)
+	n, _ := f.Read(data)
+	fresh, consumed := consumeLines(data[:n], s.session)
+	s.loaded += consumed
+	s.entries = append(s.entries, fresh...)
+	if len(s.entries) > loadMax {
+		s.entries = s.entries[len(s.entries)-loadMax:]
+	}
 }
 
 // Skip explains why an Append stored nothing.
@@ -117,8 +187,14 @@ func (s *Store) Append(e Entry) (Skip, error) {
 	if err != nil {
 		return SkipNone, err
 	}
+	pre, _ := s.f.Seek(0, 2) //nolint:errcheck // best-effort accounting
 	if _, err := s.f.Write(append(line, '\n')); err != nil {
 		return SkipNone, err
+	}
+	if pre == s.loaded {
+		// No interleaved writes from other sessions: our line extends
+		// the ingested region directly.
+		s.loaded += int64(len(line)) + 1
 	}
 	s.entries = append(s.entries, e)
 	return SkipNone, nil
@@ -134,6 +210,7 @@ func (s *Store) Close() error {
 // Match returns the nth most-recent distinct command starting with
 // prefix (n=0 is the newest). An empty prefix matches everything.
 func (s *Store) Match(prefix string, n int) (string, bool) {
+	s.reload()
 	return s.scan(n, func(cmd string) bool {
 		return strings.HasPrefix(cmd, prefix)
 	})
@@ -141,6 +218,7 @@ func (s *Store) Match(prefix string, n int) (string, bool) {
 
 // Search returns the nth most-recent distinct command containing query.
 func (s *Store) Search(query string, n int) (string, bool) {
+	s.reload()
 	return s.scan(n, func(cmd string) bool {
 		return strings.Contains(cmd, query)
 	})
