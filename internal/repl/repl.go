@@ -100,7 +100,7 @@ func runEditor(ctx context.Context, login bool) error {
 	if jobs.Supported() {
 		// Reclaiming the terminal from the background must not stop the
 		// shell. Children inherit the ignore; acceptable (see #5 design).
-		signal.Ignore(syscall.SIGTTOU)
+		ignoreTTOU()
 		builtins.Register("__gish_jobs", table.Jobs)
 		builtins.Register("__gish_fg", table.Fg)
 		builtins.Register("__gish_bg", table.Bg)
