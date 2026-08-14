@@ -19,7 +19,7 @@ func TestEditDistance(t *testing.T) {
 	}{
 		{"git", "git", 0},
 		// Deliberate typos: this is a typo-detector's test data.
-		{"gti", "git", 1}, // adjacent transposition costs 1 (Damerau)
+		{"gti", "git", 1},   // adjacent transposition costs 1 (Damerau)
 		{"mkae", "make", 1}, //nolint:misspell // the typo is the test
 		{"sl", "ls", 1},
 		{"completely", "different", 3}, // clamped at bound+1
