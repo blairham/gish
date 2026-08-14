@@ -36,8 +36,32 @@ func (r *renderer) setWidth(w int) {
 	}
 }
 
+// nextToken returns the next atom of s: a zero-width ANSI escape
+// sequence (kept atomic so wrapping can never split one) or a grapheme
+// cluster with its display width. state threads uniseg's segmentation
+// state; pass -1 to start.
+func nextToken(s string, state int) (tok string, width int, rest string, newState int) {
+	if s[0] == 0x1b {
+		if len(s) >= 2 && s[1] == '[' { // CSI: ESC [ params final
+			for i := 2; i < len(s); i++ {
+				if s[i] >= 0x40 && s[i] <= 0x7e {
+					return s[:i+1], 0, s[i+1:], -1
+				}
+			}
+			return s, 0, "", -1 // truncated sequence: swallow
+		}
+		if len(s) >= 2 { // two-byte escape (ESC c etc.)
+			return s[:2], 0, s[2:], -1
+		}
+		return s, 0, "", -1
+	}
+	cluster, rest, w, st := uniseg.FirstGraphemeClusterInString(s, state)
+	return cluster, w, rest, st
+}
+
 // wrapLine splits one logical line into screen rows by display width,
-// breaking on grapheme boundaries.
+// breaking on grapheme boundaries. ANSI escapes are zero-width and
+// atomic — colored prompts wrap correctly.
 func wrapLine(line string, width int) []string {
 	if line == "" {
 		return []string{""}
@@ -50,15 +74,15 @@ func wrapLine(line string, width int) []string {
 		rest  = line
 	)
 	for len(rest) > 0 {
-		var cluster string
+		var tok string
 		var w int
-		cluster, rest, w, state = uniseg.FirstGraphemeClusterInString(rest, state)
+		tok, w, rest, state = nextToken(rest, state)
 		if rowW+w > width && rowW > 0 {
 			rows = append(rows, row.String())
 			row.Reset()
 			rowW = 0
 		}
-		row.WriteString(cluster)
+		row.WriteString(tok)
 		rowW += w
 	}
 	rows = append(rows, row.String())
@@ -142,7 +166,13 @@ func (r *renderer) clearScreen() {
 	r.curRow = 0
 }
 
-// displayWidth is the on-screen width of s.
+// displayWidth is the on-screen width of s, ignoring ANSI escapes.
 func displayWidth(s string) int {
-	return uniseg.StringWidth(s)
+	total, state, rest := 0, -1, s
+	for len(rest) > 0 {
+		var w int
+		_, w, rest, state = nextToken(rest, state)
+		total += w
+	}
+	return total
 }

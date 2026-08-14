@@ -120,18 +120,18 @@ func runEditor(ctx context.Context) error {
 	info := newPromptInfo()
 	lastExit := 0
 
+	lastDuration := time.Duration(0)
 	for {
 		info.dir = runner.Dir
 		info.exitCode = lastExit
+		info.duration = lastDuration
+		info.jobs = table.Count()
 		if segs != nil {
 			info.segment = func(id string) string {
 				return segs.render(ctx, id, runner.Dir, lastExit)
 			}
 		}
-		ed.SetPrompt(
-			expandPrompt(shellVar(runner, "GISH_PROMPT", prompt), info),
-			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info),
-		)
+		ed.SetPrompt(promptStrings(runner, info))
 
 		line, err := ed.ReadCommand(ctx)
 		switch {
@@ -159,6 +159,7 @@ func runEditor(ctx context.Context) error {
 			fmt.Printf("[%d]  Stopped  %s\n", n.ID, n.Command)
 		}
 		lastExit = exitCode(rerr)
+		lastDuration = time.Since(start)
 		if store != nil {
 			// Cwd comes from the runner: `cd` moves the interpreter's
 			// directory, not the gish process's.
