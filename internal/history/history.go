@@ -84,27 +84,44 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// Append records an executed command. Commands starting with a space are
-// private (classic ignorespace) and immediate duplicates collapse
-// (ignoredups); both are skipped silently.
-func (s *Store) Append(e Entry) error {
-	if e.Command == "" || strings.HasPrefix(e.Command, " ") {
-		return nil
+// Skip explains why an Append stored nothing.
+type Skip int
+
+const (
+	SkipNone      Skip = iota // stored
+	SkipEmpty                 // empty command
+	SkipPrivate               // leading space (ignorespace)
+	SkipDuplicate             // immediate duplicate (ignoredups)
+	SkipSecret                // matched a secret-scrubbing rule
+)
+
+// Append records an executed command, reporting why it was skipped when
+// it wasn't stored. Commands starting with a space are private (classic
+// ignorespace), immediate duplicates collapse (ignoredups), and commands
+// matching a secret-scrubbing rule never reach disk (#10).
+func (s *Store) Append(e Entry) (Skip, error) {
+	switch {
+	case e.Command == "":
+		return SkipEmpty, nil
+	case strings.HasPrefix(e.Command, " "):
+		return SkipPrivate, nil
+	case scrubReason(e.Command) != "":
+		return SkipSecret, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if n := len(s.entries); n > 0 && s.entries[n-1].Command == e.Command {
-		return nil
+		return SkipDuplicate, nil
 	}
 	line, err := json.Marshal(e)
 	if err != nil {
-		return err
+		return SkipNone, err
 	}
 	if _, err := s.f.Write(append(line, '\n')); err != nil {
-		return err
+		return SkipNone, err
 	}
 	s.entries = append(s.entries, e)
-	return nil
+	return SkipNone, nil
 }
 
 // Close releases the file handle.

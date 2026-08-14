@@ -64,7 +64,7 @@ func TestDescribeAndCapabilities(t *testing.T) {
 	if st.Name != "fixture" || !st.Running || st.Version != "0.0.1-test" {
 		t.Errorf("status = %+v", st)
 	}
-	if len(st.Capabilities) != 2 {
+	if len(st.Capabilities) != 3 {
 		t.Errorf("capabilities = %v", st.Capabilities)
 	}
 }
@@ -116,10 +116,27 @@ func TestCompletionStream(t *testing.T) {
 	}
 }
 
-func TestNoHistoryCapability(t *testing.T) {
+func TestHistoryBackendRoundtrip(t *testing.T) {
 	h := newHost(t)
-	if provs := h.HistoryBackends(context.Background()); len(provs) != 0 {
-		t.Errorf("fixture must not serve history, got %d providers", len(provs))
+	provs := h.HistoryBackends(context.Background())
+	if len(provs) != 1 {
+		t.Fatalf("providers = %d", len(provs))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	resp, err := provs[0].Client.Append(ctx, &pluginapi.AppendRequest{
+		Entry: &pluginapi.HistoryEntry{Command: "make lint", Cwd: "/tmp"},
+	})
+	if err != nil || !resp.GetStored() {
+		t.Fatalf("append = %v, %v", resp, err)
+	}
+	stream, err := provs[0].Client.Search(ctx, &pluginapi.SearchRequest{Query: "lint"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := stream.Recv()
+	if err != nil || len(batch.GetEntries()) != 1 || batch.GetEntries()[0].GetCommand() != "make lint" {
+		t.Fatalf("search = %v, %v", batch, err)
 	}
 }
 
