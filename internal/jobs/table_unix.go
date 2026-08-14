@@ -480,3 +480,10 @@ func execEnv(env expand.Environ) []string {
 	})
 	return list
 }
+
+// Count reports filed jobs (running or stopped), for prompt display.
+func (t *Table) Count() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.jobs)
+}

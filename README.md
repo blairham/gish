@@ -28,10 +28,13 @@ make build
 
 gish reads one rc file at interactive startup — `$GISH_RC`, else `$XDG_CONFIG_HOME/gish/gishrc`, else `~/.gishrc` — as ordinary shell script: functions, variables, and `cd` persist into your session.
 
+gish ships a p10k-class two-line prompt **by default** — smart-truncated path, git (via the gish-git plugin), runtime pins, job count, duration, exit status — all async and budget-bounded, so the prompt never waits on anything.
+
 ```sh
 # ~/.gishrc
-GISH_PROMPT='%W %p{git} %?$ '  # %u user  %h host  %w cwd(~)  %W basename  %? exit  %% literal
-GISH_PROMPT_CONT='... '        # %p{id} renders a tier-2 plugin prompt segment
+GISH_THEME=plain               # the off switch, for the bare-metal crowd
+GISH_PROMPT='%W %p{git} %?$ '  # or take full manual control (always wins):
+GISH_PROMPT_CONT='... '        # %u %h %w %W %? %% and %p{id} plugin segments
 ```
 
 Plugins are executables in `$XDG_DATA_HOME/gish/plugins` — `plugins` lists them. `gish-git` (in this repo) serves the `%p{git}` segment: branch, ahead/behind, staged/dirty/untracked, cached per-repo with fsnotify invalidation.

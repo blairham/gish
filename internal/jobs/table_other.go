@@ -43,3 +43,6 @@ func (t *Table) Fg(_ context.Context, hc interp.HandlerContext, _ []string) erro
 func (t *Table) Bg(_ context.Context, hc interp.HandlerContext, _ []string) error {
 	return unsupported(hc, "bg")
 }
+
+// Count reports filed jobs; always zero without job control.
+func (t *Table) Count() int { return 0 }

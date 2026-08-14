@@ -166,21 +166,34 @@ func (e *Editor) render() {
 	if e.search.active {
 		firstPrompt = e.searchPrompt()
 	}
+	// Multi-line prompts (the themed two-line layout) split into banner
+	// lines drawn above the edit line and the prefix of the edit line
+	// itself.
+	banner, linePrefix := promptParts(firstPrompt)
+
 	raw := e.buf.Lines()
-	lines := make([]string, len(raw))
+	lines := make([]string, 0, len(banner)+len(raw))
+	lines = append(lines, banner...)
 	for i, l := range raw {
 		if i == 0 {
-			lines[i] = firstPrompt + l
+			lines = append(lines, linePrefix+l)
 		} else {
-			lines[i] = e.cfg.ContPrompt + l
+			lines = append(lines, e.cfg.ContPrompt+l)
 		}
 	}
 	cl, before := e.buf.CursorLine()
-	prefix := firstPrompt
+	prefix := linePrefix
 	if cl > 0 {
 		prefix = e.cfg.ContPrompt
 	}
-	e.rend.render(lines, cl, displayWidth(prefix+before))
+	e.rend.render(lines, len(banner)+cl, displayWidth(prefix+before))
+}
+
+// promptParts splits a possibly multi-line prompt into the banner lines
+// above the edit line and the edit line's prefix.
+func promptParts(prompt string) (banner []string, prefix string) {
+	parts := strings.Split(prompt, "\n")
+	return parts[:len(parts)-1], parts[len(parts)-1]
 }
 
 func (e *Editor) dispatch(ev term.Event) {
