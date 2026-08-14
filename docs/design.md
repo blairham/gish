@@ -56,10 +56,29 @@ The line editor and prompt engine consume both tiers through one internal interf
 6. **zsh dialect** — corpus-driven parser/interpreter extensions.
 7. **Windows hardening** — ConPTY line editor path, job-object process groups.
 
+## Decisions
+
+- **TTY input approach** (2026-08, [#1](https://github.com/blairham/gish/issues/1)):
+  **own the editor core; borrow the terminal plumbing.** gish writes the
+  buffer/cursor model, keymap engine, kill ring, undo, multi-line
+  continuation, and the diff-based inline renderer — the render loop is
+  where the differentiators (plugin ghost text, streamed completion menus,
+  deadline repaints) live, and every serious shell ends up owning its
+  editor (fish, elvish `pkg/edit`, nushell/reedline). The plumbing is
+  imported behind `internal/term`, gish's own interface: raw-mode
+  entry/restore via `golang.org/x/term` now; key/event decoding (ANSI,
+  kitty protocol, bracketed paste, Windows ConPTY) via charmbracelet's
+  `ultraviolet`/`x/ansi` layer when the editor lands, with a hand-rolled
+  decoder as the documented fallback. Nothing outside `internal/term`
+  imports a terminal library. Ruled out: bubbletea as framework (Elm
+  control inversion; terminal ownership fights shell handover and job
+  control), go-prompt and the readline family (framework-shaped, stale,
+  or single-maintainer risk at the heart of the shell, with render
+  pipelines that can't host plugin hooks).
+
 ## Open questions
 
 - Prompt styling vocabulary for tier 2 (`RenderResponse.text`): markup subset vs. structured spans. Raw text until decided.
-- Line editor: build on an existing Go TTY layer (bubbletea's input stack?) or hand-roll raw-mode like elvish. Decide at milestone 2.
 - Tier-1 widget shim depth: which zle APIs are worth emulating vs. declaring out of scope.
 - **`CommandProvider`**: should plugins be able to register builtins/commands over gRPC (the cloudctl pattern — needed for a zoxide-class jumper)? Questions: name collisions with PATH binaries and real builtins, stdin/stdout/TTY plumbing across the RPC boundary, and whether a registered command may run on the hot path at all. Design deliberately; not needed for the first three plugins.
 - **`EnvProvider`** (direnv-class): env diffs on cwd change need a trust model — direnv-style explicit per-directory `allow`, an allowlist of settable variables, or both. An env plugin must not be able to silently rewrite `PATH` for every directory.

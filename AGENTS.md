@@ -42,6 +42,9 @@ internal/
   repl/                  # Read-eval loop over mvdan.cc/sh parser + interpreter.
                          # The future line editor (zle-equivalent) replaces the
                          # plain prompt loop here; RunReader stays the script path
+  term/                  # TTY abstraction (raw mode, input events) — the
+                         # swappable plumbing boundary from #1. Nothing outside
+                         # this package imports a terminal library
   pluginhost/            # Tier-2 host: go-plugin handshake, plugin map, gRPC
                          # client/server glue for each capability service
 proto/gish/plugin/v1/   # The versioned tier-2 plugin contract (source of truth):
