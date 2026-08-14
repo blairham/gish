@@ -115,13 +115,27 @@ func runEditor(ctx context.Context) error {
 	}
 	sessionID := fmt.Sprintf("%d-%x", os.Getpid(), time.Now().UnixNano())
 
-	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, editor.Config{
+	edCfg := editor.Config{
 		Prompt:     prompt,
 		ContPrompt: contPrompt,
 		AcceptWhen: acceptWhen,
 		History:    hist,
 		Complete:   completionFn(runner, host),
-	})
+	}
+	// The fish-parity pair (#38/#39): parser-driven highlighting and
+	// history ghost text — skipped where color is unwelcome.
+	if os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb" {
+		edCfg.Highlight = highlightFn(runner)
+		if store != nil {
+			edCfg.Suggest = func(text string) string {
+				if s, ok := store.Match(text, 0); ok {
+					return s
+				}
+				return ""
+			}
+		}
+	}
+	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, edCfg)
 	parser := syntax.NewParser()
 
 	sigs := make(chan os.Signal, 1)

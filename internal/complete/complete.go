@@ -180,3 +180,11 @@ func sortCandidates(cs []Candidate) {
 		return strings.Compare(a.Value, b.Value)
 	})
 }
+
+// IsCommand reports whether name resolves as a command: a PATH
+// executable (cached per PATH value). Builtins and functions are the
+// caller's to check — they live in the shell, not here.
+func IsCommand(name, pathVar string) bool {
+	_, ok := slices.BinarySearch(pathExecutables(pathVar), name)
+	return ok
+}
