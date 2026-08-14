@@ -1,0 +1,69 @@
+// CommandProvider — plugins registering shell commands over gRPC (#11):
+// the cloudctl pattern applied to a shell. A registered command runs
+// like a builtin: dispatched by name before PATH lookup, with its I/O
+// streamed over the connection.
+//
+// Precedence rules (decided on #11): interpreter and gish-native builtin
+// names are reserved — claims on them are rejected. Shell functions
+// shadow plugin commands (the user always wins). Plugin commands shadow
+// PATH binaries, like functions do. Between plugins, the
+// lexicographically first plugin name wins a contested command.
+//
+// v1 streams stdin/stdout/stderr; there is no raw-terminal handover —
+// full-screen commands are out of scope until a PTY-passing design
+// exists. Execution starts at Enter (never the keystroke path), so Run
+// carries no latency budget; cancellation rides the command context.
+syntax = "proto3";
+
+package gish.plugin.v1;
+
+option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
+
+service CommandProvider {
+  // Commands enumerates what this plugin provides. Called after
+  // Describe, and its result may be cached against the plugin binary's
+  // mtime — keep it deterministic.
+  rpc Commands(CommandsRequest) returns (CommandsResponse);
+  // Run executes one invocation. The first client message must be
+  // start; stdin chunks follow as the command consumes them. The server
+  // streams stdout/stderr chunks and ends with exit.
+  rpc Run(stream RunInput) returns (stream RunOutput);
+}
+
+message CommandsRequest {}
+
+message CommandSpec {
+  // Command name as typed by the user (e.g. "jump").
+  string name = 1;
+  // One-line description, shown by the `plugins` builtin.
+  string summary = 2;
+}
+
+message CommandsResponse {
+  repeated CommandSpec commands = 1;
+}
+
+message RunInput {
+  oneof input {
+    RunStart start = 1;
+    bytes stdin = 2;
+    bool stdin_eof = 3;
+  }
+}
+
+message RunStart {
+  string name = 1;
+  repeated string args = 2;
+  string cwd = 3;
+  // Allowlisted environment, per the filtered-env invariant.
+  map<string, string> env = 4;
+}
+
+message RunOutput {
+  oneof output {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    // Final message: the command's exit status.
+    int32 exit = 3;
+  }
+}

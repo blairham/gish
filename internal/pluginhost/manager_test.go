@@ -64,7 +64,7 @@ func TestDescribeAndCapabilities(t *testing.T) {
 	if st.Name != "fixture" || !st.Running || st.Version != "0.0.1-test" {
 		t.Errorf("status = %+v", st)
 	}
-	if len(st.Capabilities) != 3 {
+	if len(st.Capabilities) != 4 {
 		t.Errorf("capabilities = %v", st.Capabilities)
 	}
 }

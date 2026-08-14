@@ -76,11 +76,22 @@ The line editor and prompt engine consume both tiers through one internal interf
   or single-maintainer risk at the heart of the shell, with render
   pipelines that can't host plugin hooks).
 
+- **CommandProvider** (2026-08, [#11](https://github.com/blairham/gish/issues/11)):
+  plugins register commands over gRPC. Precedence: interpreter/gish
+  builtin names are reserved (claims rejected with a warning); shell
+  functions shadow plugin commands (dispatched before the exec seam);
+  plugin commands shadow PATH; contested names go to the
+  lexicographically first plugin. I/O is streamed over the RPC — no raw
+  terminal handover in v1 (full-screen plugin commands wait for a
+  PTY-passing design). Execution starts at Enter, so Run carries no
+  budget; Ctrl-C rides context cancellation. Discovery uses an
+  mtime-keyed command-index cache so warm sessions route names without
+  launching plugins.
+
 ## Open questions
 
 - Prompt styling vocabulary for tier 2 (`RenderResponse.text`): markup subset vs. structured spans. Raw text until decided.
 - Tier-1 widget shim depth: which zle APIs are worth emulating vs. declaring out of scope.
-- **`CommandProvider`**: should plugins be able to register builtins/commands over gRPC (the cloudctl pattern — needed for a zoxide-class jumper)? Questions: name collisions with PATH binaries and real builtins, stdin/stdout/TTY plumbing across the RPC boundary, and whether a registered command may run on the hot path at all. Design deliberately; not needed for the first three plugins.
 - **`EnvProvider`** (direnv-class): env diffs on cwd change need a trust model — direnv-style explicit per-directory `allow`, an allowlist of settable variables, or both. An env plugin must not be able to silently rewrite `PATH` for every directory.
 
 The plugin roadmap itself — which plugins, in what order, under which latency budgets — lives in [plugins.md](plugins.md).

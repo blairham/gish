@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -57,13 +58,37 @@ func Run(ctx context.Context) error {
 // stops pure-builtin loops the kernel can't reach. SIGTSTP is left at
 // its default until job control (#5).
 func runEditor(ctx context.Context) error {
+	// Tier-2 plugin host (#7): discovery now, launch on first demand.
+	// Prompt segments are consumed via %p{id} escapes; the `plugins`
+	// builtin makes the host inspectable. Plugin-provided commands (#11)
+	// dispatch through the command index, after gish builtins and before
+	// PATH.
+	var segs *segmentRenderer
+	var host *pluginhost.Host
+	var cmdIndex *pluginhost.CommandIndex
+	if dir, derr := pluginhost.DefaultDir(); derr == nil {
+		host = pluginhost.NewHost(dir)
+		if derr := host.Discover(); derr != nil {
+			fmt.Fprintln(os.Stderr, "gish: plugins:", derr)
+		}
+		defer host.Close()
+		cmdIndex = host.NewCommandIndex(reservedCommandName)
+		builtins.Register("plugins", pluginsBuiltin(host, cmdIndex, dir))
+		segs = newSegmentRenderer(host)
+	}
+
 	// Job control (#5): externals of each command line run in their own
 	// process group and own the terminal while foreground; jobs/fg/bg
 	// are gish builtins reached via the CallHandler rewrite.
 	table := jobs.NewTable(os.Stdin)
+	execChain := []func(interp.ExecHandlerFunc) interp.ExecHandlerFunc{builtins.ExecHandler}
+	if cmdIndex != nil {
+		execChain = append(execChain, cmdIndex.ExecMiddleware)
+	}
+	execChain = append(execChain, table.ExecMiddleware)
 	runnerOpts := []interp.RunnerOption{
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
-		interp.ExecHandlers(builtins.ExecHandler, table.ExecMiddleware),
+		interp.ExecHandlers(execChain...),
 	}
 	callBase := passthroughCall
 	if jobs.Supported() {
@@ -79,21 +104,6 @@ func runEditor(ctx context.Context) error {
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
-	}
-
-	// Tier-2 plugin host (#7): discovery now, launch on first demand.
-	// Prompt segments are consumed via %p{id} escapes; the `plugins`
-	// builtin makes the host inspectable.
-	var segs *segmentRenderer
-	var host *pluginhost.Host
-	if dir, derr := pluginhost.DefaultDir(); derr == nil {
-		host = pluginhost.NewHost(dir)
-		if derr := host.Discover(); derr != nil {
-			fmt.Fprintln(os.Stderr, "gish: plugins:", derr)
-		}
-		defer host.Close()
-		builtins.Register("plugins", pluginsBuiltin(host, dir))
-		segs = newSegmentRenderer(host)
 	}
 
 	// History failure degrades, never blocks the shell.
@@ -246,9 +256,19 @@ func drainSignals(sigs <-chan os.Signal) {
 	}
 }
 
-// pluginsBuiltin lists discovered tier-2 plugins with their live status
-// and capabilities; it launches and Describes plugins on demand.
-func pluginsBuiltin(host *pluginhost.Host, dir string) builtins.Func {
+// reservedCommandName reports names a plugin command may not claim:
+// interpreter builtins and gish-native builtins (#11 precedence rules).
+func reservedCommandName(name string) bool {
+	if interp.IsBuiltin(name) || name == "zi" || name == "builtins" || name == "plugins" {
+		return true
+	}
+	return slices.Contains(builtins.Native(), name)
+}
+
+// pluginsBuiltin lists discovered tier-2 plugins with their live status,
+// capabilities, and registered commands; it launches and Describes
+// plugins on demand.
+func pluginsBuiltin(host *pluginhost.Host, cmdIndex *pluginhost.CommandIndex, dir string) builtins.Func {
 	return func(ctx context.Context, hc interp.HandlerContext, _ []string) error {
 		_ = host.Discover() //nolint:errcheck // newly installed plugins picked up best-effort
 		statuses := host.Statuses(ctx, true)
@@ -264,8 +284,12 @@ func pluginsBuiltin(host *pluginhost.Host, dir string) builtins.Func {
 			case time.Now().Before(st.BackoffUntil):
 				state = "backoff"
 			}
-			fmt.Fprintf(hc.Stdout, "%-20s %-8s %-12s %s\n",
+			line := fmt.Sprintf("%-20s %-8s %-12s %s",
 				st.Name, state, st.Version, strings.Join(st.Capabilities, ","))
+			if cmds := cmdIndex.CommandsOf(st.Name); len(cmds) > 0 {
+				line += "  cmds: " + strings.Join(cmds, ",")
+			}
+			fmt.Fprintln(hc.Stdout, line)
 		}
 		return nil
 	}

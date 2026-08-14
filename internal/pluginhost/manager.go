@@ -340,6 +340,8 @@ func capName(c pluginapi.Capability) string {
 		return "prompt"
 	case pluginapi.Capability_CAPABILITY_HISTORY:
 		return "history"
+	case pluginapi.Capability_CAPABILITY_COMMAND:
+		return "command"
 	default:
 		return "unknown"
 	}
