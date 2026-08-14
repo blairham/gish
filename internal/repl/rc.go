@@ -88,6 +88,9 @@ type promptInfo struct {
 	home     string
 	dir      string
 	exitCode int
+	// segment resolves %p{id} escapes (nil renders empty): tier-2
+	// prompt plugins, budget-bounded, stale on miss.
+	segment func(id string) string
 }
 
 // newPromptInfo resolves the session-static fields, tolerating failures
@@ -113,6 +116,8 @@ func newPromptInfo() promptInfo {
 //	%u  username         %w  cwd, ~-abbreviated
 //	%h  hostname         %W  cwd basename (~ at home)
 //	%?  last exit code   %%  literal %
+//	%p{id}  tier-2 prompt segment (e.g. %p{git}); empty when no plugin
+//	        serves the id or the render misses its budget with no cache
 //
 // Unknown escapes pass through verbatim so future additions aren't
 // breaking.
@@ -142,12 +147,36 @@ func expandPrompt(format string, info promptInfo) string {
 			}
 		case '?':
 			b.WriteString(strconv.Itoa(info.exitCode))
+		case 'p':
+			id, next, ok := bracedArg(runes, i)
+			if !ok {
+				b.WriteString("%p")
+				continue
+			}
+			i = next
+			if info.segment != nil {
+				b.WriteString(info.segment(id))
+			}
 		default:
 			b.WriteByte('%')
 			b.WriteRune(runes[i])
 		}
 	}
 	return b.String()
+}
+
+// bracedArg parses {arg} starting right after the escape rune at i;
+// returns the arg and the index of the closing brace.
+func bracedArg(runes []rune, i int) (arg string, next int, ok bool) {
+	if i+1 >= len(runes) || runes[i+1] != '{' {
+		return "", i, false
+	}
+	for j := i + 2; j < len(runes); j++ {
+		if runes[j] == '}' {
+			return string(runes[i+2 : j]), j, true
+		}
+	}
+	return "", i, false
 }
 
 // tildify abbreviates home to ~ at the start of dir.
