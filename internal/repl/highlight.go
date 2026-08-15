@@ -29,7 +29,7 @@ const (
 func highlightFn(runner *interp.Runner) func(string) []editor.HighlightSpan {
 	return func(text string) []editor.HighlightSpan {
 		known := func(name string) bool {
-			if interp.IsBuiltin(name) || name == "zi" {
+			if interp.IsBuiltin(name) || name == "zi" || name == "config" {
 				return true
 			}
 			if _, ok := runner.Funcs[name]; ok {
