@@ -39,6 +39,7 @@ var PluginMap = map[string]plugin.Plugin{
 	"command":    &CommandPlugin{},
 	"theme":      &ThemePlugin{},
 	"env":        &EnvPlugin{},
+	"ai":         &AIPlugin{},
 }
 
 // InfoPlugin dispenses the mandatory PluginInfo service.
@@ -130,6 +131,21 @@ func (p *EnvPlugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 
 func (p *EnvPlugin) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, c *grpc.ClientConn) (any, error) {
 	return pluginapi.NewEnvProviderClient(c), nil
+}
+
+// AIPlugin dispenses AIProvider (#20).
+type AIPlugin struct {
+	plugin.NetRPCUnsupportedPlugin
+	Impl pluginapi.AIProviderServer
+}
+
+func (p *AIPlugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
+	pluginapi.RegisterAIProviderServer(s, p.Impl)
+	return nil
+}
+
+func (p *AIPlugin) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, c *grpc.ClientConn) (any, error) {
+	return pluginapi.NewAIProviderClient(c), nil
 }
 
 // CommandPlugin dispenses CommandProvider (#11).

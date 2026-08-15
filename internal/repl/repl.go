@@ -118,7 +118,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -136,6 +136,9 @@ func runEditor(ctx context.Context, login bool) error {
 	sessionID := fmt.Sprintf("%d-%x", os.Getpid(), time.Now().UnixNano())
 	if store != nil {
 		store.SetSession(sessionID) // reloads (#40) skip our own entries
+	}
+	if host != nil {
+		aiMgr = newAIManager(host, store)
 	}
 
 	edCfg := editor.Config{
@@ -217,6 +220,23 @@ func runEditor(ctx context.Context, login bool) error {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		// The ?? compose prefix (#20): the query goes to the AI provider
+		// and the candidate lands in the next buffer for review — it is
+		// never executed here. Ctrl-C cancels the model call.
+		if query, isCompose := strings.CutPrefix(strings.TrimSpace(line), "??"); isCompose {
+			drainSignals(sigs)
+			composeCtx, cancelCompose := context.WithCancel(ctx)
+			go func() {
+				select {
+				case <-sigs:
+					cancelCompose()
+				case <-composeCtx.Done():
+				}
+			}()
+			handleCompose(composeCtx, runner, strings.TrimSpace(query), ed.Preload, os.Stderr)
+			cancelCompose()
+			continue
+		}
 		file, perr := parser.Parse(strings.NewReader(line), "gish")
 		if perr != nil {
 			fmt.Fprintln(os.Stderr, "gish:", perr)
@@ -240,6 +260,9 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 		lastExit = exitCode(rerr)
 		lastDuration = time.Since(start)
+		if aiMgr != nil {
+			aiMgr.note(lastExit)
+		}
 		if store != nil {
 			// Cwd comes from the runner: `cd` moves the interpreter's
 			// directory, not the gish process's.
@@ -403,7 +426,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))),
+		interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))),
 	)
 	if err != nil {
 		return err
@@ -473,7 +496,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))),
+		interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))),
 	)
 	if err != nil {
 		return err
@@ -496,7 +519,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))),
+			interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))),
 		},
 		opts...,
 	)...)

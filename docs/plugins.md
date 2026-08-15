@@ -96,9 +96,9 @@ Applied diffs revert when the shell leaves the proposal's subtree.
 | Plugin | New surface | Notes |
 | --- | --- | --- |
 | command-not-found | one unary RPC | "did you mean", brew package suggestions; inherently off the hot path |
-| env provider (direnv-class) | `EnvProvider` service | On cwd change, plugin returns an env diff. Requires direnv's `allow` model: allowlist + explicit per-directory approval — an env plugin must not be able to silently rewrite `PATH` for every directory |
+| env provider (direnv-class) | ~~`EnvProvider` service~~ **landed** (#12) | Trust model host-enforced: per-(plugin, dir, diff-hash) allow, deny-listed vars stripped, subtree revert |
 | `gish-jump` (zoxide-class) | ~~CommandProvider~~ **landed** (#11) | Plugins register commands over gRPC: reserved-name guard, PATH shadowing, streamed I/O, mtime-cached discovery. gish-jump itself is now just a plugin to write |
-| AI assist | invoked RPC (not ambient) | natural language → command, "explain that error". Explicitly invoked, human-scale latency, can never touch the keystroke path |
+| AI assist | ~~invoked RPC~~ **landed** (#20, `AIProvider`) | `??` prefix → Compose (streamed candidates, best-first) lands in the editor buffer wrapped in a visible #21 sandbox invocation — never auto-executes; `explain` builtin → Explain for the last command. Context is scrub-safe by construction (recent commands come from the #10-gated history store; env is the allowlist). Human-scale deadline (90s), Ctrl-C cancels; `gish-claude` (cmd/gish-claude) is the reference provider, driving the user's claude CLI; GISH_AI_PROVIDER selects among several, GISH_AI_SANDBOX tunes the wrap |
 
 ## Build order
 

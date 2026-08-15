@@ -64,7 +64,7 @@ func TestDescribeAndCapabilities(t *testing.T) {
 	if st.Name != "fixture" || !st.Running || st.Version != "0.0.1-test" {
 		t.Errorf("status = %+v", st)
 	}
-	if len(st.Capabilities) != 6 {
+	if len(st.Capabilities) != 7 {
 		t.Errorf("capabilities = %v", st.Capabilities)
 	}
 }
@@ -251,5 +251,35 @@ func TestEnvProviderRoundtrip(t *testing.T) {
 	if resp.GetForDir() != "/tmp/envdir/sub" || resp.GetSet()["FIXTURE_ENV"] != "on" ||
 		len(resp.GetUnset()) != 1 {
 		t.Errorf("proposal = %+v", resp)
+	}
+}
+
+func TestAIProviderRoundtrip(t *testing.T) {
+	h := newHost(t)
+	provs := h.AIProviders(context.Background())
+	if len(provs) != 1 {
+		t.Fatalf("ai providers = %d", len(provs))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pluginhost.DescribeTimeout)
+	defer cancel()
+
+	stream, err := provs[0].Client.Compose(ctx, &pluginapi.ComposeRequest{Query: "list files"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.GetCommand() != "echo composed:list files" || first.GetExplanation() != "fixture rationale" {
+		t.Errorf("first candidate = %+v", first)
+	}
+
+	resp, err := provs[0].Client.Explain(ctx, &pluginapi.ExplainRequest{Command: "make test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetExplanation() != "fixture explains: make test" {
+		t.Errorf("explain = %q", resp.GetExplanation())
 	}
 }

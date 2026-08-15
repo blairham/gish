@@ -31,6 +31,7 @@ func (info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.De
 			pluginapi.Capability_CAPABILITY_COMMAND,
 			pluginapi.Capability_CAPABILITY_THEME,
 			pluginapi.Capability_CAPABILITY_ENV,
+			pluginapi.Capability_CAPABILITY_AI,
 		},
 	}, nil
 }
@@ -101,6 +102,26 @@ func (env) EnvDiff(_ context.Context, req *pluginapi.EnvDiffRequest) (*pluginapi
 		ForDir: req.GetCwd(),
 		Set:    map[string]string{"FIXTURE_ENV": "on", "LD_PRELOAD": "/evil.so"},
 		Unset:  []string{"FIXTURE_OLD"},
+	}, nil
+}
+
+type ai struct {
+	pluginapi.UnimplementedAIProviderServer
+}
+
+func (ai) Compose(req *pluginapi.ComposeRequest, stream pluginapi.AIProvider_ComposeServer) error {
+	if err := stream.Send(&pluginapi.ComposeCandidate{
+		Command:     "echo composed:" + req.GetQuery(),
+		Explanation: "fixture rationale",
+	}); err != nil {
+		return err
+	}
+	return stream.Send(&pluginapi.ComposeCandidate{Command: "echo alternative", Final: true})
+}
+
+func (ai) Explain(_ context.Context, req *pluginapi.ExplainRequest) (*pluginapi.ExplainResponse, error) {
+	return &pluginapi.ExplainResponse{
+		Explanation: "fixture explains: " + req.GetCommand(),
 	}, nil
 }
 
@@ -188,6 +209,7 @@ func main() {
 			"history":    &pluginhost.HistoryPlugin{Impl: &historyBackend{}},
 			"theme":      &pluginhost.ThemePlugin{Impl: theme{}},
 			"env":        &pluginhost.EnvPlugin{Impl: env{}},
+			"ai":         &pluginhost.AIPlugin{Impl: ai{}},
 		},
 		GRPCServer: plugin.DefaultGRPCServer,
 	})

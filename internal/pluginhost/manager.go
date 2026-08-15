@@ -33,6 +33,9 @@ const (
 	// DefaultEnvBudget bounds an EnvDiff on directory change; a miss
 	// skips the diff for this prompt and retries on the next.
 	DefaultEnvBudget = 100 * time.Millisecond
+	// AITimeout bounds Compose/Explain: human-scale — explicitly
+	// invoked, never on the keystroke path, canceled by Ctrl-C.
+	AITimeout = 90 * time.Second
 )
 
 // DefaultDir returns the plugin discovery directory: every executable in
@@ -297,6 +300,11 @@ func (h *Host) EnvProviders(ctx context.Context) []Provider[pluginapi.EnvProvide
 	return providers[pluginapi.EnvProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_ENV, "env")
 }
 
+// AIProviders returns live model-access clients (#20).
+func (h *Host) AIProviders(ctx context.Context) []Provider[pluginapi.AIProviderClient] {
+	return providers[pluginapi.AIProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_AI, "ai")
+}
+
 // HistoryBackends returns live history backend clients.
 func (h *Host) HistoryBackends(ctx context.Context) []Provider[pluginapi.HistoryBackendClient] {
 	return providers[pluginapi.HistoryBackendClient](ctx, h, pluginapi.Capability_CAPABILITY_HISTORY, "history")
@@ -359,6 +367,8 @@ func capName(c pluginapi.Capability) string {
 		return "theme"
 	case pluginapi.Capability_CAPABILITY_ENV:
 		return "env"
+	case pluginapi.Capability_CAPABILITY_AI:
+		return "ai"
 	default:
 		return "unknown"
 	}

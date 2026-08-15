@@ -1,0 +1,78 @@
+// AIProvider — model access as an interchangeable plugin (#20), never a
+// hardcoded vendor. The shell owns the hooks (the ?? compose prefix,
+// the explain builtin) and the context assembly; a provider owns the
+// model call — Claude API, claude CLI, local models, all behind one
+// contract.
+//
+// Correctness rules, enforced shell-side:
+//   - Explicitly invoked only. Nothing streams keystrokes to a model;
+//     a request exists because the user asked.
+//   - Preview-before-execute. Compose results land in the editor
+//     buffer as text; the user runs them (and by default they arrive
+//     wrapped in a #21 sandbox invocation, visible and removable).
+//   - Scrubbed context. The recent-command context comes from the
+//     history store, which never records secret-bearing commands
+//     (#10), and the env map is the standard allowlist.
+//
+// Latency is human-scale (explicitly invoked, never on the keystroke
+// path) — the host allows a long deadline and Ctrl-C cancels.
+syntax = "proto3";
+
+package gish.plugin.v1;
+
+option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
+
+service AIProvider {
+  // Compose turns natural language into command candidates, streamed
+  // best-first so the first candidate can land while alternatives are
+  // still generating.
+  rpc Compose(ComposeRequest) returns (stream ComposeCandidate);
+  // Explain answers "why did that fail" (or "what does this do") for
+  // one command.
+  rpc Explain(ExplainRequest) returns (ExplainResponse);
+}
+
+// ShellContext is the shell's unfair advantage: real session state,
+// assembled host-side and already scrubbed. Absent fields are unknown.
+message ShellContext {
+  string cwd = 1;
+  // Most recent commands, newest first, from the history store — which
+  // never contains secret-bearing commands.
+  repeated string recent_commands = 2;
+  int32 last_exit_code = 3;
+  // Tail of the failing command's output. Reserved until the shell
+  // captures command output; empty today.
+  string output_tail = 4;
+  // Allowlisted environment subset (the filtered-env invariant).
+  map<string, string> env = 5;
+  // "darwin", "linux", … — command dialects differ.
+  string os = 6;
+}
+
+message ComposeRequest {
+  // The user's natural-language request, verbatim.
+  string query = 1;
+  ShellContext context = 2;
+  uint64 event_seq = 3;
+}
+
+message ComposeCandidate {
+  // The proposed command, ready for the editor buffer. Raw command
+  // only — the host owns any sandbox wrapping.
+  string command = 1;
+  // One-line rationale, shown as a comment above the buffer.
+  string explanation = 2;
+  // Last candidate of the stream.
+  bool final = 4;
+}
+
+message ExplainRequest {
+  // The command being explained (from the history store, scrub-safe).
+  string command = 1;
+  int32 exit_code = 2;
+  ShellContext context = 3;
+}
+
+message ExplainResponse {
+  string explanation = 1;
+}

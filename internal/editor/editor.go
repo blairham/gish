@@ -93,6 +93,9 @@ type Editor struct {
 	// candList shows completion candidates below the edit line for one
 	// render cycle; any following event clears it.
 	candList []string
+
+	// preload seeds the next ReadCommand's buffer (see Preload).
+	preload string
 }
 
 // New creates an editor reading from t and drawing to out (both sides of
@@ -180,8 +183,15 @@ func (e *Editor) ReadCommand(ctx context.Context) (_ string, err error) {
 	return "", io.EOF
 }
 
+// Preload seeds the next ReadCommand's buffer (cursor at the end) —
+// how composed text lands for review instead of executing (#20).
+func (e *Editor) Preload(text string) {
+	e.preload = text
+}
+
 func (e *Editor) reset() {
-	e.buf.Set("", 0)
+	e.buf.Set(e.preload, len(e.preload))
+	e.preload = ""
 	e.undo.reset()
 	e.state = stateRunning
 	e.lastWasKill, e.lastWasInsert, e.lastWasYank = false, false, false

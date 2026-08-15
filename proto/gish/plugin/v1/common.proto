@@ -27,6 +27,7 @@ enum Capability {
   CAPABILITY_COMMAND = 4;         // CommandProvider (#11)
   CAPABILITY_THEME = 5;           // ThemeProvider (#30)
   CAPABILITY_ENV = 6;             // EnvProvider (#12)
+  CAPABILITY_AI = 7;              // AIProvider (#20)
 }
 
 // PluginInfo is the one service every plugin must implement.
