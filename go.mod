@@ -10,6 +10,7 @@ require (
 	github.com/hashicorp/go-plugin v1.8.0
 	github.com/landlock-lsm/go-landlock v0.9.0
 	github.com/rivo/uniseg v0.4.7
+	github.com/ulikunitz/xz v0.5.16
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	google.golang.org/grpc v1.83.0

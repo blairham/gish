@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"mvdan.cc/sh/v3/interp"
+
+	"github.com/blairham/gish/internal/tools"
 )
 
 // Themes. gish starts naked: the out-of-box prompt is the familiar
@@ -372,16 +374,17 @@ func toolPins(dir string) string {
 			return entry.pins
 		}
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
+	// Show the truth, not just the file (#77): a pin whose version is
+	// not installed is marked. The tool builtin clears this cache on
+	// pin edits and installs.
+	roots := tools.InstallRoots()
 	var parts []string
-	for line := range strings.Lines(string(data)) {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && !strings.HasPrefix(fields[0], "#") {
-			parts = append(parts, fields[0]+" "+fields[1])
+	for _, pin := range tools.ParseFile(path) {
+		label := pin.Tool + " " + pin.Versions[0]
+		if !pin.Resolves(roots) {
+			label += "✗"
 		}
+		parts = append(parts, label)
 		if len(parts) == 3 {
 			break // prompt real estate: at most three pins
 		}

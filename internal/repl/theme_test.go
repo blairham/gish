@@ -276,9 +276,19 @@ func TestFmtDuration(t *testing.T) {
 }
 
 func TestToolPins(t *testing.T) {
-	t.Parallel()
+	base := t.TempDir()
+	// A fake install tree: golang installed, nodejs not — the segment
+	// shows the truth (#77), marking the uninstalled pin.
+	t.Setenv("ASDF_DATA_DIR", filepath.Join(base, "asdf"))
+	t.Setenv("MISE_DATA_DIR", filepath.Join(base, "mise"))
+	if err := os.MkdirAll(filepath.Join(base, "asdf", "installs", "golang", "1.26.1", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
-	dir := t.TempDir()
+	dir := filepath.Join(base, "proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if got := toolPins(dir); got != "" {
 		t.Errorf("no file = %q", got)
 	}
@@ -286,7 +296,7 @@ func TestToolPins(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".tool-versions"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want := "golang 1.26.1 nodejs 22.1.0"
+	want := "golang 1.26.1 nodejs 22.1.0✗"
 	if got := toolPins(dir); got != want {
 		t.Errorf("toolPins = %q, want %q", got, want)
 	}

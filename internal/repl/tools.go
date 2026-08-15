@@ -22,6 +22,10 @@ import (
 // PATH edits survive. First-party env work: it runs before EnvProvider
 // plugins and needs no trust prompt (pins can only select among
 // already-installed versions; see internal/tools).
+// toolsMgr is set at interactive startup; the tool builtin pokes it
+// to force a re-resolve after pin edits and installs.
+var toolsMgr *toolsManager
+
 type toolsManager struct {
 	notices io.Writer
 
@@ -33,6 +37,10 @@ type toolsManager struct {
 func newToolsManager(notices io.Writer) *toolsManager {
 	return &toolsManager{notices: notices, warned: map[string]bool{}}
 }
+
+// invalidate forces the next prompt to re-resolve (pins or installs
+// changed under the same directory).
+func (t *toolsManager) invalidate() { t.lastDir = "" }
 
 // atPrompt rebuilds PATH when the directory (or the GISH_TOOLS switch)
 // changed what should be active.
@@ -48,7 +56,7 @@ func (t *toolsManager) atPrompt(ctx context.Context, runner *interp.Runner) {
 	}
 	t.lastDir = dir
 
-	res := tools.Resolve(dir, tools.InstallRoot())
+	res := tools.Resolve(dir, tools.InstallRoots())
 	for _, pin := range res.Missing {
 		key := res.File + "\x00" + pin.Tool
 		if t.warned[key] {

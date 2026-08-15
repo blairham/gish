@@ -58,7 +58,7 @@ func TestResolveLayouts(t *testing.T) {
 	dir := t.TempDir()
 	writePins(t, dir, "golang 1.26.6\nhelm 3.15.0\nnodejs 22.1.0\n")
 
-	res := Resolve(dir, installs)
+	res := Resolve(dir, []string{installs})
 	if res.File != filepath.Join(dir, ".tool-versions") {
 		t.Errorf("file = %q", res.File)
 	}
@@ -82,7 +82,7 @@ func TestResolveFallbackAndSystem(t *testing.T) {
 	dir := t.TempDir()
 	writePins(t, dir, "golang 1.99.0 1.25.0\npython system\n")
 
-	res := Resolve(dir, installs)
+	res := Resolve(dir, []string{installs})
 	if len(res.Bins) != 1 || !strings.Contains(res.Bins[0], "1.25.0") {
 		t.Errorf("fallback version not used: %q", res.Bins)
 	}
@@ -102,7 +102,7 @@ func TestResolvePathPin(t *testing.T) {
 	dir := t.TempDir()
 	writePins(t, dir, "mytool path:"+custom+"\n")
 
-	res := Resolve(dir, "")
+	res := Resolve(dir, nil)
 	if len(res.Bins) != 1 || res.Bins[0] != filepath.Join(custom, "bin") {
 		t.Errorf("path: pin = %q", res.Bins)
 	}
@@ -119,13 +119,13 @@ func TestFindFileWalksUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if res := Resolve(nested, installs); res.File != filepath.Join(root, ".tool-versions") {
+	if res := Resolve(nested, []string{installs}); res.File != filepath.Join(root, ".tool-versions") {
 		t.Errorf("walk-up file = %q", res.File)
 	}
 
 	// The nearest file wins over an ancestor's.
 	writePins(t, nested, "golang 1.99.0\n")
-	res := Resolve(nested, installs)
+	res := Resolve(nested, []string{installs})
 	if res.File != filepath.Join(nested, ".tool-versions") || len(res.Missing) != 1 {
 		t.Errorf("nearest file did not win: %+v", res)
 	}
@@ -133,8 +133,53 @@ func TestFindFileWalksUp(t *testing.T) {
 
 func TestResolveNoFile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // no global fallback either
-	res := Resolve(t.TempDir(), "")
+	res := Resolve(t.TempDir(), nil)
 	if res.File != "" || len(res.Bins) != 0 || len(res.Missing) != 0 {
 		t.Errorf("empty resolution expected: %+v", res)
+	}
+}
+
+func TestSetPin(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), ".tool-versions")
+	// Creates the file when missing.
+	if err := SetPin(path, "golang", "1.26.6"); err != nil {
+		t.Fatal(err)
+	}
+	// Replaces in place, preserving comments and other lines.
+	if err := os.WriteFile(path, []byte("# pins\ngolang 1.0.0\nnodejs 22.0.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetPin(path, "golang", "1.26.6"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# pins\ngolang 1.26.6\nnodejs 22.0.0\n"
+	if string(data) != want {
+		t.Errorf("file = %q, want %q", data, want)
+	}
+	// Appends a new tool.
+	if err := SetPin(path, "helm", "3.15.0"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(path)
+	if !strings.HasSuffix(string(data), "helm 3.15.0\n") {
+		t.Errorf("append failed: %q", data)
+	}
+}
+
+func TestInstalled(t *testing.T) {
+	t.Parallel()
+
+	asdf := fakeInstalls(t, map[string][]string{"golang/1.26.6": {"bin"}, "golang/1.25.0": {"bin"}})
+	mise := fakeInstalls(t, map[string][]string{"golang/1.24.0": {"bin"}, "golang/1.26.6": {"bin"}})
+	got := Installed([]string{asdf, mise}, "golang")
+	want := []string{"1.24.0", "1.25.0", "1.26.6"}
+	if len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Errorf("installed = %q, want %q (deduplicated across roots)", got, want)
 	}
 }

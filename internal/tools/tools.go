@@ -34,30 +34,72 @@ type Resolution struct {
 	Missing []Pin
 }
 
-// InstallRoot returns the asdf install tree: $ASDF_DATA_DIR/installs,
-// defaulting to ~/.asdf/installs. (The mise tree lands with v2.)
-func InstallRoot() string {
+// InstallRoots returns the install trees to resolve against, priority
+// order: asdf ($ASDF_DATA_DIR, default ~/.asdf), then mise
+// ($MISE_DATA_DIR, then $XDG_DATA_HOME/mise, default
+// ~/.local/share/mise) — mise users' installs just work too.
+func InstallRoots() []string {
+	var roots []string
 	if dir := os.Getenv("ASDF_DATA_DIR"); dir != "" {
-		return filepath.Join(dir, "installs")
+		roots = append(roots, filepath.Join(dir, "installs"))
+	} else if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, filepath.Join(home, ".asdf", "installs"))
+	}
+	switch {
+	case os.Getenv("MISE_DATA_DIR") != "":
+		roots = append(roots, filepath.Join(os.Getenv("MISE_DATA_DIR"), "installs"))
+	case os.Getenv("XDG_DATA_HOME") != "":
+		roots = append(roots, filepath.Join(os.Getenv("XDG_DATA_HOME"), "mise", "installs"))
+	default:
+		if home, err := os.UserHomeDir(); err == nil {
+			roots = append(roots, filepath.Join(home, ".local", "share", "mise", "installs"))
+		}
+	}
+	return roots
+}
+
+// AsdfInstallDir is where `tool install` places a native download:
+// the asdf tree, so every asdf-compatible consumer sees it.
+func AsdfInstallDir(tool, version string) (string, error) {
+	if dir := os.Getenv("ASDF_DATA_DIR"); dir != "" {
+		return filepath.Join(dir, "installs", tool, version), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return filepath.Join(home, ".asdf", "installs")
+	return filepath.Join(home, ".asdf", "installs", tool, version), nil
+}
+
+// Installed lists the versions of tool present under any root, sorted.
+func Installed(roots []string, tool string) []string {
+	var out []string
+	for _, root := range roots {
+		entries, err := os.ReadDir(filepath.Join(root, tool))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() && !slices.Contains(out, e.Name()) {
+				out = append(out, e.Name())
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Resolve walks up from dir for the nearest .tool-versions (falling
 // back to the home-directory file, asdf's global), parses its pins,
-// and resolves each against the install root.
-func Resolve(dir, installRoot string) Resolution {
+// and resolves each against the install roots in order.
+func Resolve(dir string, roots []string) Resolution {
 	file := findFile(dir)
 	if file == "" {
 		return Resolution{}
 	}
 	res := Resolution{File: file}
 	for _, pin := range ParseFile(file) {
-		if bins, ok := resolvePin(pin, installRoot); ok {
+		if bins, ok := resolvePin(pin, roots); ok {
 			res.Bins = append(res.Bins, bins...)
 		} else {
 			res.Missing = append(res.Missing, pin)
@@ -111,7 +153,7 @@ func ParseFile(path string) []Pin {
 // resolvePin finds the first installed candidate version and returns
 // its bin directories. ok=true with no bins means the pin is satisfied
 // without PATH changes ("system" — use whatever PATH already has).
-func resolvePin(pin Pin, installRoot string) (bins []string, ok bool) {
+func resolvePin(pin Pin, roots []string) (bins []string, ok bool) {
 	for _, version := range pin.Versions {
 		switch {
 		case version == "system":
@@ -121,11 +163,10 @@ func resolvePin(pin Pin, installRoot string) (bins []string, ok bool) {
 				return dirs, true
 			}
 		default:
-			if installRoot == "" {
-				continue
-			}
-			if dirs := binDirs(filepath.Join(installRoot, pin.Tool, version)); len(dirs) > 0 {
-				return dirs, true
+			for _, root := range roots {
+				if dirs := binDirs(filepath.Join(root, pin.Tool, version)); len(dirs) > 0 {
+					return dirs, true
+				}
 			}
 		}
 	}

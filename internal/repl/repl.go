@@ -118,7 +118,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -179,7 +179,7 @@ func runEditor(ctx context.Context, login bool) error {
 	info := newPromptInfo()
 	lastExit := 0
 
-	toolsMgr := newToolsManager(os.Stderr)
+	toolsMgr = newToolsManager(os.Stderr)
 	lastDuration := time.Duration(0)
 	for {
 		// Native tool-version switching (#77) rebuilds PATH first —
@@ -403,7 +403,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))),
+		interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))),
 	)
 	if err != nil {
 		return err
@@ -473,7 +473,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))),
+		interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))),
 	)
 	if err != nil {
 		return err
@@ -496,7 +496,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))),
+			interp.CallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))),
 		},
 		opts...,
 	)...)

@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/ulikunitz/xz"
 )
 
 type Release struct {
@@ -136,8 +138,9 @@ func names(assets []Asset) string {
 }
 
 // Download fetches an asset into destDir and extracts recognized archive
-// formats (.tar.gz, .tgz, .zip, .gz); anything else is saved as-is and made
-// executable, since gh-r assets are programs by definition.
+// formats (.tar.gz, .tgz, .tar.xz, .txz, .zip, .gz); anything else is
+// saved as-is and made executable, since gh-r assets are programs by
+// definition.
 func Download(a *Asset, destDir string) error {
 	resp, err := httpClient.Get(a.URL)
 	if err != nil {
@@ -151,6 +154,12 @@ func Download(a *Asset, destDir string) error {
 	switch {
 	case strings.HasSuffix(name, ".tar.gz"), strings.HasSuffix(name, ".tgz"):
 		return untar(resp.Body, destDir)
+	case strings.HasSuffix(name, ".tar.xz"), strings.HasSuffix(name, ".txz"):
+		xzr, err := xz.NewReader(resp.Body)
+		if err != nil {
+			return err
+		}
+		return untarStream(xzr, destDir)
 	case strings.HasSuffix(name, ".zip"):
 		tmp, err := os.CreateTemp("", "zi-go-ghr-*.zip")
 		if err != nil {
@@ -179,7 +188,12 @@ func untar(r io.Reader, destDir string) error {
 		return err
 	}
 	defer gz.Close()
-	tr := tar.NewReader(gz)
+	return untarStream(gz, destDir)
+}
+
+// untarStream extracts an already-decompressed tar stream.
+func untarStream(r io.Reader, destDir string) error {
+	tr := tar.NewReader(r)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
