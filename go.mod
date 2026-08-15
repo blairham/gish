@@ -8,6 +8,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-plugin v1.8.0
+	github.com/landlock-lsm/go-landlock v0.9.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
@@ -226,6 +227,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
+	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 	mvdan.cc/gofumpt v0.11.0 // indirect
 	mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15 // indirect
 )
