@@ -114,10 +114,12 @@ func defaultSegmentIDs() []string {
 }
 
 // themeConfig is the resolved per-segment configuration (#28): which
-// segments render, in what order, and any color overrides.
+// segments render, in what order, color overrides, and layout.
 type themeConfig struct {
-	segments []string
-	colors   map[string]string // segment id → SGR escape
+	segments  []string
+	colors    map[string]string // segment id → SGR escape
+	oneLine   bool              // GISH_THEME_LINES=1: no frame, arrow inline
+	powerline bool              // GISH_THEME_SEP=powerline: chevron separators
 }
 
 func defaultThemeConfig() themeConfig {
@@ -133,6 +135,8 @@ func themeConfigFrom(runner *interp.Runner) themeConfig {
 	if v := shellVar(runner, "GISH_THEME_SEGMENTS", ""); strings.TrimSpace(v) != "" {
 		cfg.segments = strings.Fields(v)
 	}
+	cfg.oneLine = shellVar(runner, "GISH_THEME_LINES", "2") == "1"
+	cfg.powerline = shellVar(runner, "GISH_THEME_SEP", "plain") == "powerline"
 	for _, id := range cfg.segments {
 		if sgr, ok := colorSGR(shellVar(runner, themeColorVar(id), "")); ok {
 			if cfg.colors == nil {
@@ -175,14 +179,24 @@ func colorSGR(value string) (string, bool) {
 	return "", false
 }
 
-// themedPrompt renders the p10k-style layout:
+// themedPrompt renders the p10k-style layout — two-line by default:
 //
 //	╭─ ~/d/gish  main !2 ?1  go 1.26.1  ⚙1  2.3s  ✘ 7
 //	╰─❯
+//
+// or, with GISH_THEME_LINES=1, everything inline:
+//
+//	~/d/gish  main !2 ?1  ✘ 7 ❯
 func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
-	var b strings.Builder
-	b.WriteString(cDim + "╭─ " + cReset)
+	sep := "  "
+	if cfg.powerline {
+		sep = " " + cDim + "\ue0b1" + cReset + " " // nerd-font thin chevron
+	}
 
+	var b strings.Builder
+	if !cfg.oneLine {
+		b.WriteString(cDim + "╭─ " + cReset)
+	}
 	if os.Getenv("SSH_CONNECTION") != "" {
 		fmt.Fprintf(&b, "%s%s@%s%s ", cYel, info.username, info.host, cReset)
 	}
@@ -196,18 +210,24 @@ func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
 			color = c
 		}
 		if !first {
-			b.WriteString("  ")
+			b.WriteString(sep)
 		}
 		first = false
 		b.WriteString(color + text + cReset)
 	}
-	b.WriteString("\n")
 
 	arrow := cGreen
 	if info.exitCode != 0 {
 		arrow = cRed
 	}
-	b.WriteString(cDim + "╰─" + cReset + arrow + "❯" + cReset + " ")
+	if cfg.oneLine {
+		if !first {
+			b.WriteString(" ")
+		}
+		b.WriteString(arrow + "❯" + cReset + " ")
+	} else {
+		b.WriteString("\n" + cDim + "╰─" + cReset + arrow + "❯" + cReset + " ")
+	}
 	return b.String(), cDim + "│ " + cReset
 }
 

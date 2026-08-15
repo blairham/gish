@@ -101,11 +101,43 @@ func TestThemeColorOverride(t *testing.T) {
 	}
 }
 
+func TestThemeOneLineLayout(t *testing.T) {
+	info := themeInfo()
+	info.exitCode = 7
+	p, _ := themedPrompt(info, themeConfig{segments: []string{"dir", "exit"}, oneLine: true})
+	if strings.Contains(p, "\n") || strings.Contains(p, "╭") || strings.Contains(p, "╰") {
+		t.Errorf("one-line layout still framed: %q", p)
+	}
+	if !strings.HasSuffix(p, "❯"+cReset+" ") {
+		t.Errorf("one-line prompt should end with the arrow: %q", p)
+	}
+	if !strings.Contains(p, "~/dev/gish") || !strings.Contains(p, "✘ 7") {
+		t.Errorf("one-line prompt missing segments: %q", p)
+	}
+}
+
+func TestThemePowerlineSeparator(t *testing.T) {
+	info := themeInfo()
+	info.exitCode = 7
+	cfg := themeConfig{segments: []string{"dir", "exit"}, powerline: true}
+	p, _ := themedPrompt(info, cfg)
+	if !strings.Contains(p, "\ue0b1") {
+		t.Errorf("powerline separator missing: %q", p)
+	}
+	// A single rendered segment gets no separator.
+	p, _ = themedPrompt(themeInfo(), themeConfig{segments: []string{"dir"}, powerline: true})
+	if strings.Contains(p, "\ue0b1") {
+		t.Errorf("separator rendered with one segment: %q", p)
+	}
+}
+
 func TestThemeConfigFrom(t *testing.T) {
 	runner := newTestRunner(t)
 	script := `GISH_THEME_SEGMENTS='git dir'
 GISH_THEME_COLOR_DIR=yellow
-GISH_THEME_COLOR_GIT='; rm -rf'`
+GISH_THEME_COLOR_GIT='; rm -rf'
+GISH_THEME_LINES=1
+GISH_THEME_SEP=powerline`
 	if err := runner.Run(t.Context(), parseLine(t, script)); err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +151,17 @@ GISH_THEME_COLOR_GIT='; rm -rf'`
 	if _, ok := cfg.colors["git"]; ok {
 		t.Error("invalid color value should be ignored, not applied")
 	}
+	if !cfg.oneLine || !cfg.powerline {
+		t.Errorf("layout vars not read: oneLine=%v powerline=%v", cfg.oneLine, cfg.powerline)
+	}
 
 	// Unset variables mean the default config.
 	def := themeConfigFrom(newTestRunner(t))
 	if got := strings.Join(def.segments, " "); got != "dir git pins jobs duration exit" {
 		t.Errorf("default segments = %q", got)
+	}
+	if def.oneLine || def.powerline {
+		t.Errorf("defaults should be two-line plain: oneLine=%v powerline=%v", def.oneLine, def.powerline)
 	}
 }
 
