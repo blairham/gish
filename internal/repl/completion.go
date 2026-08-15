@@ -25,7 +25,7 @@ func completionFn(runner *interp.Runner, host *pluginhost.Host) func(string, int
 		if isCmd && !strings.ContainsAny(word, "/~") {
 			extra := builtins.ShellBuiltins()
 			extra = append(extra, builtins.Native()...)
-			extra = append(extra, "zi")
+			extra = append(extra, "zi", "config")
 			for name := range runner.Funcs {
 				extra = append(extra, name)
 			}
