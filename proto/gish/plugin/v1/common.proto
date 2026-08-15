@@ -25,6 +25,7 @@ enum Capability {
   CAPABILITY_PROMPT_SEGMENT = 2;  // PromptSegmentProvider
   CAPABILITY_HISTORY = 3;         // HistoryBackend
   CAPABILITY_COMMAND = 4;         // CommandProvider (#11)
+  CAPABILITY_THEME = 5;           // ThemeProvider (#30)
 }
 
 // PluginInfo is the one service every plugin must implement.

@@ -78,6 +78,7 @@ func runEditor(ctx context.Context, login bool) error {
 		cmdIndex = host.NewCommandIndex(reservedCommandName)
 		builtins.Register("plugins", pluginsBuiltin(host, cmdIndex, dir))
 		segs = newSegmentRenderer(host)
+		themePlugins = newThemeRenderer(host)
 	}
 
 	// Job control (#5): externals of each command line run in their own
@@ -180,8 +181,9 @@ func runEditor(ctx context.Context, login bool) error {
 				return segs.render(ctx, id, runner.Dir, lastExit)
 			}
 		}
-		ed.SetPrompt(promptStrings(runner, info))
-		ed.SetRPrompt(rpromptString(runner, info))
+		p, cp, rp := promptStrings(runner, info)
+		ed.SetPrompt(p, cp)
+		ed.SetRPrompt(rp)
 
 		line, err := ed.ReadCommand(ctx)
 		switch {

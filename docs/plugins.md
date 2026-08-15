@@ -21,6 +21,7 @@ blocking.
 | Interaction | Budget | On miss |
 | --- | --- | --- |
 | Prompt segment render | 50ms default (`SegmentDescriptor.budget_ms`) | render previous (stale) value or nothing; repaint in place when the response lands |
+| Whole-prompt theme render | 50ms default (`ThemeDescriptor.budget_ms`) | serve the theme's previous prompt set, else fall back to the built-in theme |
 | Completion request | ~80ms to first batch | show whatever batches arrived; stream stays open until the user types again |
 | History append | none — fire-and-forget | shell never waits; backend scrubs/stores on its own time |
 | History search (ctrl-r) | ~100ms to first batch | partial results render, best-first |
@@ -44,6 +45,19 @@ Two invariants sit under all of these:
 | `gish-aws` | active profile + SSO token expiry countdown | Reads the local token cache only; never calls AWS on the prompt path |
 | `gish-k8s` | kubeconfig context/namespace | File-watch invalidated; never talks to the cluster for a prompt |
 | `gish-runtimes` | asdf/`.tool-versions` pins when they differ from global | One small file read, cached by cwd |
+
+## Whole-prompt themes (`ThemeProvider`, #30)
+
+| Plugin | What | Fast/correct notes |
+| --- | --- | --- |
+| `gish-starship-native` | starship as a resident gRPC theme | The reference external implementation: today's subprocess flavor (#45) spawns per prompt; the plugin flavor keeps it resident |
+| community themes | any whole-prompt look, any language | `GISH_THEME=<name>` selects by declared theme name; built-in names (plain, p10k, starship) cannot be claimed |
+
+A theme plugin renders the entire prompt set — `prompt`, `cont_prompt`,
+`rprompt` — from a `PromptContext` (cwd, exit code, duration, jobs,
+user/host/ssh, width, color). It may serve several themes; a miss serves
+the previous set or falls back to the built-in p10k-class theme, so a
+broken theme costs its look, never the prompt.
 
 ## Completion providers (`CompletionProvider`)
 

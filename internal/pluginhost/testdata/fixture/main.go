@@ -29,6 +29,7 @@ func (info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.De
 			pluginapi.Capability_CAPABILITY_PROMPT_SEGMENT,
 			pluginapi.Capability_CAPABILITY_HISTORY,
 			pluginapi.Capability_CAPABILITY_COMMAND,
+			pluginapi.Capability_CAPABILITY_THEME,
 		},
 	}, nil
 }
@@ -63,6 +64,26 @@ func (prompt) Render(_ context.Context, req *pluginapi.RenderRequest) (*pluginap
 		os.Exit(1)
 	}
 	return &pluginapi.RenderResponse{Text: "fixture-segment", TtlMs: 100}, nil
+}
+
+type theme struct {
+	pluginapi.UnimplementedThemeProviderServer
+}
+
+func (theme) Themes(context.Context, *pluginapi.ThemesRequest) (*pluginapi.ThemesResponse, error) {
+	return &pluginapi.ThemesResponse{
+		Themes: []*pluginapi.ThemeDescriptor{
+			{Name: "fixture-theme", Description: "fixture whole-prompt theme", BudgetMs: 50},
+		},
+	}, nil
+}
+
+func (theme) RenderPrompt(_ context.Context, req *pluginapi.RenderPromptRequest) (*pluginapi.RenderPromptResponse, error) {
+	return &pluginapi.RenderPromptResponse{
+		Prompt:     "fixture[" + req.GetContext().GetCwd() + "]> ",
+		ContPrompt: "fixture| ",
+		Rprompt:    "fixture-right",
+	}, nil
 }
 
 type historyBackend struct {
@@ -147,6 +168,7 @@ func main() {
 			"completion": &pluginhost.CompletionPlugin{Impl: completion{}},
 			"prompt":     &pluginhost.PromptPlugin{Impl: prompt{}},
 			"history":    &pluginhost.HistoryPlugin{Impl: &historyBackend{}},
+			"theme":      &pluginhost.ThemePlugin{Impl: theme{}},
 		},
 		GRPCServer: plugin.DefaultGRPCServer,
 	})

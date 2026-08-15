@@ -197,7 +197,7 @@ func TestPromptStringsPrecedence(t *testing.T) {
 
 	// Default: naked — the stock zsh/bash shape, no theme until asked.
 	runner := newTestRunner(t)
-	p, _ := promptStrings(runner, info)
+	p, _, _ := promptStrings(runner, info)
 	if p != "blair@mba gish % " {
 		t.Errorf("default prompt not naked: %q", p)
 	}
@@ -206,7 +206,7 @@ func TestPromptStringsPrecedence(t *testing.T) {
 	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ = promptStrings(runner, info); !strings.Contains(p, "❯") {
+	if p, _, _ = promptStrings(runner, info); !strings.Contains(p, "❯") {
 		t.Errorf("p10k theme not themed: %q", p)
 	}
 
@@ -214,7 +214,7 @@ func TestPromptStringsPrecedence(t *testing.T) {
 	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=plain`)); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ = promptStrings(runner, info); p != "blair@mba gish % " {
+	if p, _, _ = promptStrings(runner, info); p != "blair@mba gish % " {
 		t.Errorf("plain theme = %q, want naked", p)
 	}
 
@@ -222,7 +222,7 @@ func TestPromptStringsPrecedence(t *testing.T) {
 	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; GISH_PROMPT='mine> '`)); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ = promptStrings(runner, info); p != "mine> " {
+	if p, _, _ = promptStrings(runner, info); p != "mine> " {
 		t.Errorf("manual prompt = %q, want %q", p, "mine> ")
 	}
 }
@@ -234,7 +234,7 @@ func TestPromptStringsRespectsNoColor(t *testing.T) {
 	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
-	p, _ := promptStrings(runner, themeInfo())
+	p, _, _ := promptStrings(runner, themeInfo())
 	if p != "blair@mba gish % " {
 		t.Errorf("NO_COLOR prompt = %q, want naked", p)
 	}
@@ -324,7 +324,7 @@ func TestRPromptString(t *testing.T) {
 
 	// Plain theme: no right prompt.
 	runner := newTestRunner(t)
-	if rp := rpromptString(runner, info); rp != "" {
+	if _, _, rp := promptStrings(runner, info); rp != "" {
 		t.Errorf("plain theme rprompt = %q, want empty", rp)
 	}
 
@@ -332,7 +332,7 @@ func TestRPromptString(t *testing.T) {
 	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; GISH_THEME_RPROMPT=time`)); err != nil {
 		t.Fatal(err)
 	}
-	if rp := rpromptString(runner, info); rp == "" {
+	if _, _, rp := promptStrings(runner, info); rp == "" {
 		t.Error("p10k rprompt empty despite GISH_THEME_RPROMPT=time")
 	}
 
@@ -340,7 +340,7 @@ func TestRPromptString(t *testing.T) {
 	if err := runner.Run(t.Context(), parseLine(t, `GISH_PROMPT='mine> '`)); err != nil {
 		t.Fatal(err)
 	}
-	if rp := rpromptString(runner, info); rp != "" {
+	if _, _, rp := promptStrings(runner, info); rp != "" {
 		t.Errorf("manual prompt rprompt = %q, want empty", rp)
 	}
 }

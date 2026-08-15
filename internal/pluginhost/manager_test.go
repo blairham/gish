@@ -64,7 +64,7 @@ func TestDescribeAndCapabilities(t *testing.T) {
 	if st.Name != "fixture" || !st.Running || st.Version != "0.0.1-test" {
 		t.Errorf("status = %+v", st)
 	}
-	if len(st.Capabilities) != 4 {
+	if len(st.Capabilities) != 5 {
 		t.Errorf("capabilities = %v", st.Capabilities)
 	}
 }
@@ -191,5 +191,37 @@ func TestNextSeqMonotonic(t *testing.T) {
 	a, b := h.NextSeq(), h.NextSeq()
 	if b <= a {
 		t.Errorf("NextSeq not monotonic: %d then %d", a, b)
+	}
+}
+
+func TestThemeProviderRoundtrip(t *testing.T) {
+	h := newHost(t)
+	provs := h.ThemeProviders(context.Background())
+	if len(provs) != 1 {
+		t.Fatalf("theme providers = %d", len(provs))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), pluginhost.DescribeTimeout)
+	defer cancel()
+	themes, err := provs[0].Client.Themes(ctx, &pluginapi.ThemesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(themes.GetThemes()) != 1 || themes.GetThemes()[0].GetName() != "fixture-theme" {
+		t.Fatalf("themes = %+v", themes.GetThemes())
+	}
+
+	rctx, rcancel := context.WithTimeout(context.Background(), pluginhost.DefaultRenderBudget)
+	defer rcancel()
+	resp, err := provs[0].Client.RenderPrompt(rctx, &pluginapi.RenderPromptRequest{
+		Theme:   "fixture-theme",
+		Context: &pluginapi.PromptContext{Cwd: "/tmp/x"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetPrompt() != "fixture[/tmp/x]> " || resp.GetContPrompt() != "fixture| " ||
+		resp.GetRprompt() != "fixture-right" {
+		t.Errorf("render = %+v", resp)
 	}
 }
