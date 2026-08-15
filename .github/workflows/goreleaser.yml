@@ -29,7 +29,21 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
-        cache: true
+        cache: false # replaced by the release-scoped cache below
+
+    # Release-scoped Go cache: setup-go's built-in cache is exact-match on
+    # go.sum and usually saved by CI test jobs (host-platform builds only);
+    # this one falls back on a restore-keys prefix and is saved at job end —
+    # after goreleaser — so it warms every cross-compiled GOOS/GOARCH target.
+    - name: Restore release Go cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: go-release-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+        restore-keys: |
+          go-release-${{ runner.os }}-
 
     - name: Checkout tag (workflow_dispatch)
       if: github.event_name == 'workflow_dispatch'
