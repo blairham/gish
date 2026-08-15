@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func pluginDir(t *testing.T) string {
 			fixtureErr = err
 			return
 		}
-		cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "fixture"), "./testdata/fixture")
+		cmd := exec.Command("go", "build", "-o", filepath.Join(dir, fixtureName()), "./testdata/fixture")
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			fixtureErr = err
@@ -42,6 +43,15 @@ func pluginDir(t *testing.T) string {
 		t.Fatalf("building fixture: %v", fixtureErr)
 	}
 	return fixtureDir
+}
+
+// fixtureName is the plugin's discovered name: Windows has no exec
+// bit, so the binary carries (and is keyed by) its .exe extension.
+func fixtureName() string {
+	if runtime.GOOS == "windows" {
+		return "fixture.exe"
+	}
+	return "fixture"
 }
 
 func newHost(t *testing.T) *pluginhost.Host {
@@ -61,7 +71,7 @@ func TestDescribeAndCapabilities(t *testing.T) {
 		t.Fatalf("statuses = %+v", statuses)
 	}
 	st := statuses[0]
-	if st.Name != "fixture" || !st.Running || st.Version != "0.0.1-test" {
+	if st.Name != fixtureName() || !st.Running || st.Version != "0.0.1-test" {
 		t.Errorf("status = %+v", st)
 	}
 	if len(st.Capabilities) != 7 {

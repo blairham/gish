@@ -130,7 +130,7 @@ func (h *Host) Discover() error {
 			continue
 		}
 		fi, err := e.Info()
-		if err != nil || fi.Mode()&0o111 == 0 {
+		if err != nil || !executableCandidate(fi) {
 			continue
 		}
 		name := e.Name()
