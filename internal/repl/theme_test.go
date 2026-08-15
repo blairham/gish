@@ -344,3 +344,16 @@ func TestRPromptString(t *testing.T) {
 		t.Errorf("manual prompt rprompt = %q, want empty", rp)
 	}
 }
+
+func TestThemeFramelessTwoLine(t *testing.T) {
+	p, _ := themedPrompt(themeInfo(), themeConfig{segments: []string{"dir"}, noFrame: true})
+	if strings.Contains(p, "╭") || strings.Contains(p, "╰") {
+		t.Errorf("frameless layout still has corners: %q", p)
+	}
+	if strings.Count(p, "\n") != 1 {
+		t.Errorf("frameless layout should stay two lines: %q", p)
+	}
+	if !strings.Contains(p, "❯") {
+		t.Errorf("frameless layout missing arrow: %q", p)
+	}
+}

@@ -26,6 +26,7 @@ func wizardHC(t *testing.T, answers string, env []string, out *strings.Builder) 
 
 func TestWizardFullWalkthrough(t *testing.T) {
 	var out strings.Builder
+	// lines=1 skips the frame question (a one-line prompt has no frame).
 	hc, rc := wizardHC(t, "p10k\npowerline\n1\ndir git exit\ny\n", nil, &out)
 
 	got := runThemeWizard(hc)
@@ -61,10 +62,10 @@ func TestWizardFullWalkthrough(t *testing.T) {
 func TestWizardEnterKeepsCurrent(t *testing.T) {
 	var out strings.Builder
 	env := []string{
-		"GISH_THEME=p10k", "GISH_THEME_SEP=plain",
-		"GISH_THEME_LINES=2", "GISH_THEME_SEGMENTS=dir git",
+		"GISH_THEME=p10k", "GISH_THEME_SEP=plain", "GISH_THEME_LINES=2",
+		"GISH_THEME_FRAME=on", "GISH_THEME_SEGMENTS=dir git",
 	}
-	hc, rc := wizardHC(t, "\n\n\n\n\n", env, &out)
+	hc, rc := wizardHC(t, "\n\n\n\n\n\n", env, &out)
 
 	got := runThemeWizard(hc)
 	if len(got) != 1 || got[0] != "true" {
@@ -80,7 +81,7 @@ func TestWizardEnterKeepsCurrent(t *testing.T) {
 
 func TestWizardDecliningSavesNothing(t *testing.T) {
 	var out strings.Builder
-	hc, rc := wizardHC(t, "p10k\nplain\n2\ndir\nn\n", nil, &out)
+	hc, rc := wizardHC(t, "p10k\nplain\n2\non\ndir\nn\n", nil, &out)
 
 	got := runThemeWizard(hc)
 	if len(got) != 1 || got[0] != "true" {
@@ -113,7 +114,7 @@ func TestWizardEOFAborts(t *testing.T) {
 func TestWizardReasksOnInvalidAnswers(t *testing.T) {
 	var out strings.Builder
 	// Bad theme, then a valid run with a bad segment list first.
-	hc, _ := wizardHC(t, "rainbow\np10k\nplain\n2\ndir;rm\ndir\ny\n", nil, &out)
+	hc, _ := wizardHC(t, "rainbow\np10k\nplain\n2\non\ndir;rm\ndir\ny\n", nil, &out)
 
 	got := runThemeWizard(hc)
 	if len(got) != 2 || got[0] != "eval" {
