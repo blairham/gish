@@ -287,20 +287,21 @@ func (t *Table) waitProc(job *Job, pid int) error {
 }
 
 // procDone records one reaped process; the job is Done (and removed from
-// the table if filed) when none remain.
+// the table if filed) when none remain. Removal happens inside the same
+// job.mu section that flips the state: a waiter woken by (or arriving
+// after) the Done transition must never find the entry still listed —
+// `fg` returning and `jobs` showing the job would race otherwise. Taking
+// t.mu under job.mu is safe: no path acquires them in the other order.
 func (t *Table) procDone(job *Job, exit int) {
 	job.mu.Lock()
+	defer job.mu.Unlock()
 	job.live--
 	job.exit = exit
-	done := job.live <= 0
-	if done {
+	if job.live <= 0 {
 		job.state = Done
 		job.reaping = false
-		job.cond.Broadcast()
-	}
-	job.mu.Unlock()
-	if done {
 		t.remove(job)
+		job.cond.Broadcast()
 	}
 }
 
@@ -330,9 +331,9 @@ func (t *Table) reap(job *Job) {
 			job.live = 0
 			job.state = Done
 			job.reaping = false
+			t.remove(job) // before the broadcast, same as procDone
 			job.cond.Broadcast()
 			job.mu.Unlock()
-			t.remove(job)
 			return
 		case isStopped(ws):
 			job.mu.Lock()
