@@ -154,7 +154,14 @@ func (ci *CommandIndex) saveCache(f indexFile) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(ci.cachedAt, data, 0o600) //nolint:errcheck // cache is disposable
+	// Write-then-rename: the file's existence must mean its content is
+	// complete — a warm-starting index (or a test polling for the file)
+	// must never read a half-written cache.
+	tmp := ci.cachedAt + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, ci.cachedAt) //nolint:errcheck // cache is disposable
 }
 
 // interrogate launches a plugin and asks for its commands.

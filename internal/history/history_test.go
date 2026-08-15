@@ -135,17 +135,24 @@ func TestDefaultPathUsesXDG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "/custom/data/gish/history.jsonl" {
+	if got != filepath.Join("/custom/data", "gish", "history.jsonl") {
 		t.Errorf("DefaultPath() = %q", got)
 	}
 
+	// The home fallback: expectations built from the same source
+	// DefaultPath uses (UserHomeDir reads USERPROFILE on Windows).
 	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("HOME", "/home/u")
+	t.Setenv("USERPROFILE", "/home/u")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err = history.DefaultPath()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "/home/u/.local/share/gish/history.jsonl" {
+	if got != filepath.Join(home, ".local", "share", "gish", "history.jsonl") {
 		t.Errorf("DefaultPath() = %q", got)
 	}
 }
