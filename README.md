@@ -62,6 +62,8 @@ A load is installed by the engine and `source`d directly in your live session �
 
 History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions; Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
 
+gish also warns **before Enter**: it holds a real parse tree of the line, so the classic footguns — `rm $dir/*` unquoted, `cd /tmp; rm -rf *` unchained, `[ $x = y ]`, useless `cat`, `sort f > f` — draw a dim caution line under the prompt as you type. Multi-line buffers get a `shellcheck` pass on Enter when it's installed (budget-bounded, findings with codes). Warnings never block execution; `GISH_LINT=native` skips shellcheck, `GISH_LINT=off` silences everything.
+
 ## Using gish as your login shell
 
 The non-interactive contract is POSIX-clean — tools that spawn `$SHELL -c` (editors, IDEs, cron, ssh, scp) get a fast, silent, script-compatible shell with no prompt machinery loaded. Login invocations (`-l`, or argv[0] beginning with `-`) source `/etc/profile`, then `~/.gish_profile` or `~/.profile`.
