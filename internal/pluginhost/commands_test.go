@@ -143,7 +143,7 @@ func TestIndexCacheWarmStart(t *testing.T) {
 	}
 	defer h2.Close()
 	ci2 := h2.NewCommandIndex(nil)
-	if cmds := ci2.CommandsOf("fixture"); len(cmds) == 0 {
+	if cmds := ci2.CommandsOf(fixtureName()); len(cmds) == 0 {
 		t.Error("warm start did not serve cached command names")
 	}
 }
