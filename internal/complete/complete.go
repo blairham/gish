@@ -161,13 +161,15 @@ func pathExecutables(pathVar string) []string {
 			continue
 		}
 		for _, e := range entries {
-			if e.IsDir() || seen[e.Name()] {
+			if e.IsDir() {
 				continue
 			}
-			if info, err := e.Info(); err == nil && info.Mode()&0o111 != 0 {
-				seen[e.Name()] = true
-				names = append(names, e.Name())
+			name, ok := executableName(e)
+			if !ok || seen[name] {
+				continue
 			}
+			seen[name] = true
+			names = append(names, name)
 		}
 	}
 	slices.Sort(names)

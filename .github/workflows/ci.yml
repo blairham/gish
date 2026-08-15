@@ -28,6 +28,28 @@ jobs:
     - name: Run tests
       run: make test
 
+  # Windows is a target, not a port (#47): everything must build, and
+  # the portable packages must pass on a real Windows runner. The
+  # unix-only surfaces (job control, sandbox enforcement, pty tests)
+  # are build-tagged out; porting their test suites tracks in #47.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        check-latest: true # setup-go's manifest lags fresh Go patch releases; resolve via go.dev
+        cache: true
+
+    - name: Build everything
+      run: go build ./...
+
+    - name: Run portable tests
+      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./cmd/gish-aws/ ./cmd/gish-claude/
+
   lint:
     runs-on: ubuntu-latest
     steps:

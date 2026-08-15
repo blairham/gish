@@ -3,6 +3,7 @@ package complete_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/blairham/gish/internal/complete"
@@ -78,7 +79,13 @@ func TestCommands(t *testing.T) {
 	t.Parallel()
 
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "mycmd"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	// An executable on this platform: exec bit on unix, .exe on Windows
+	// (where completion strips the extension back to "mycmd").
+	exeName := "mycmd"
+	if runtime.GOOS == "windows" {
+		exeName = "mycmd.exe"
+	}
+	if err := os.WriteFile(filepath.Join(bin, exeName), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(bin, "not-exec"), nil, 0o644); err != nil {

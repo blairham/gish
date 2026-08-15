@@ -24,7 +24,7 @@ func newIndex(t *testing.T, reserved func(string) bool) (*pluginhost.Host, *plug
 	ci := h.NewCommandIndex(reserved)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if cmds := ci.CommandsOf("fixture"); len(cmds) > 0 {
+		if cmds := ci.CommandsOf(fixtureName()); len(cmds) > 0 {
 			return h, ci
 		}
 		if time.Now().After(deadline) {
@@ -96,10 +96,10 @@ func TestPluginCommandStdin(t *testing.T) {
 func TestReservedNameRejected(t *testing.T) {
 	reserved := func(name string) bool { return name == "cd" }
 	_, ci := newIndex(t, reserved)
-	if cmds := ci.CommandsOf("fixture"); len(cmds) != 3 {
+	if cmds := ci.CommandsOf(fixtureName()); len(cmds) != 3 {
 		t.Errorf("commands = %v, want the reserved cd claim dropped", cmds)
 	}
-	for _, c := range ci.CommandsOf("fixture") {
+	for _, c := range ci.CommandsOf(fixtureName()) {
 		if c == "cd" {
 			t.Error("reserved name registered")
 		}
@@ -115,7 +115,7 @@ func TestIndexCacheWarmStart(t *testing.T) {
 	}
 	ci := h.NewCommandIndex(nil)
 	deadline := time.Now().Add(10 * time.Second)
-	for len(ci.CommandsOf("fixture")) == 0 {
+	for len(ci.CommandsOf(fixtureName())) == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("index never populated")
 		}
@@ -143,7 +143,7 @@ func TestIndexCacheWarmStart(t *testing.T) {
 	}
 	defer h2.Close()
 	ci2 := h2.NewCommandIndex(nil)
-	if cmds := ci2.CommandsOf("fixture"); len(cmds) == 0 {
+	if cmds := ci2.CommandsOf(fixtureName()); len(cmds) == 0 {
 		t.Error("warm start did not serve cached command names")
 	}
 }
