@@ -66,6 +66,8 @@ History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-awar
 
 gish also warns **before Enter**: it holds a real parse tree of the line, so the classic footguns — `rm $dir/*` unquoted, `cd /tmp; rm -rf *` unchained, `[ $x = y ]`, useless `cat`, `sort f > f` — draw a dim caution line under the prompt as you type. Multi-line buffers get a `shellcheck` pass on Enter when it's installed (budget-bounded, findings with codes). Warnings never block execution; `GISH_LINT=native` skips shellcheck, `GISH_LINT=off` silences everything.
 
+And because the shell owns the scheduler, parallelism is a builtin, not a package: `parallel -j 4 -- gzip -9 {} ::: *.log` runs a goroutine pool of process children with output discipline GNU parallel never had by default — per-task prefixed streaming, or `--collect` for whole outputs in input order, never interleaved garbage. `--fail-fast` cancels the rest on first failure, Ctrl-C stops the lot, and the exit status is the worst task's.
+
 ## Using gish as your login shell
 
 The non-interactive contract is POSIX-clean — tools that spawn `$SHELL -c` (editors, IDEs, cron, ssh, scp) get a fast, silent, script-compatible shell with no prompt machinery loaded. Login invocations (`-l`, or argv[0] beginning with `-`) source `/etc/profile`, then `~/.gish_profile` or `~/.profile`.
