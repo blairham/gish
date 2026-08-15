@@ -1,6 +1,7 @@
 package repl
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,28 +35,59 @@ const (
 	cYel   = "\x1b[33m"
 )
 
-// promptStrings resolves the prompt pair for the next read. Precedence:
-// manual GISH_PROMPT > GISH_THEME (starship | p10k) > the naked default;
-// NO_COLOR and dumb terminals degrade to naked regardless.
-func promptStrings(runner *interp.Runner, info promptInfo) (string, string) {
+// builtinThemes maps the reserved names to in-tree renderers. In-tree
+// and plugin themes are peers behind the same signature (#30) — a theme
+// turns the prompt state into the full (prompt, cont, rprompt) set —
+// but these names cannot be claimed by plugins.
+var builtinThemes = map[string]func(*interp.Runner, promptInfo) (string, string, string){
+	"plain": func(_ *interp.Runner, info promptInfo) (string, string, string) {
+		p, cp := nakedPrompt(info)
+		return p, cp, ""
+	},
+	"p10k": nativeTheme,
+	"starship": func(runner *interp.Runner, info promptInfo) (string, string, string) {
+		if p, cp, ok := starship.render(info, info.width); ok {
+			return p, cp, ""
+		}
+		return nativeTheme(runner, info) // missing binary: native fallback
+	},
+}
+
+// nativeTheme is the built-in p10k-class theme: the great default every
+// other theme is measured against, and the fallback when a selected
+// theme cannot render.
+func nativeTheme(runner *interp.Runner, info promptInfo) (string, string, string) {
+	cfg := themeConfigFrom(runner)
+	p, cp := themedPrompt(info, cfg)
+	return p, cp, themedRPrompt(info, cfg)
+}
+
+// promptStrings resolves the full prompt set for the next read.
+// Precedence: manual GISH_PROMPT > GISH_THEME — a built-in name, else a
+// discovered plugin theme claiming it (budget-bounded, stale on miss),
+// else the native theme > plain when nothing was asked for. NO_COLOR
+// and dumb terminals degrade to naked regardless of source.
+func promptStrings(runner *interp.Runner, info promptInfo) (prompt, cont, rprompt string) {
 	if v := shellVar(runner, "GISH_PROMPT", ""); v != "" {
 		return expandPrompt(v, info),
-			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info)
+			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info), ""
 	}
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
-		return nakedPrompt(info)
+		p, cp := nakedPrompt(info)
+		return p, cp, ""
 	}
-	switch shellVar(runner, "GISH_THEME", "plain") {
-	case "starship":
-		if p, cp, ok := starship.render(info, info.width); ok {
-			return p, cp
+	name := shellVar(runner, "GISH_THEME", "plain")
+	if theme, ok := builtinThemes[name]; ok {
+		return theme(runner, info)
+	}
+	if themePlugins != nil {
+		if set, ok := themePlugins.render(context.Background(), name, info); ok {
+			return set.prompt, set.cont, set.rprompt
 		}
-		return themedPrompt(info, themeConfigFrom(runner)) // missing binary: native fallback
-	case "p10k":
-		return themedPrompt(info, themeConfigFrom(runner))
-	default:
-		return nakedPrompt(info)
 	}
+	// A theme was asked for by name but nothing serves it: the native
+	// theme beats silently going naked (doctor explains the why).
+	return nativeTheme(runner, info)
 }
 
 // nakedPrompt is the default: what a stock zsh (or bash) prompt looks
@@ -264,23 +296,6 @@ func themedRPrompt(info promptInfo, cfg themeConfig) string {
 		parts = append(parts, color+text+cReset)
 	}
 	return strings.Join(parts, sep)
-}
-
-// rpromptString resolves the right prompt for the next read. It follows
-// promptStrings' precedence but only the native theme produces one: a
-// manual GISH_PROMPT, plain, starship, NO_COLOR, and dumb terminals all
-// mean no right prompt.
-func rpromptString(runner *interp.Runner, info promptInfo) string {
-	if shellVar(runner, "GISH_PROMPT", "") != "" {
-		return ""
-	}
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
-		return ""
-	}
-	if shellVar(runner, "GISH_THEME", "plain") != "p10k" {
-		return ""
-	}
-	return themedRPrompt(info, themeConfigFrom(runner))
 }
 
 // renderSegment resolves an id: built-ins from themeSegments, anything

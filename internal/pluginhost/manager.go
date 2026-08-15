@@ -284,6 +284,11 @@ func (h *Host) CompletionProviders(ctx context.Context) []Provider[pluginapi.Com
 	return providers[pluginapi.CompletionProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_COMPLETION, "completion")
 }
 
+// ThemeProviders returns live whole-prompt theme clients (#30).
+func (h *Host) ThemeProviders(ctx context.Context) []Provider[pluginapi.ThemeProviderClient] {
+	return providers[pluginapi.ThemeProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_THEME, "theme")
+}
+
 // HistoryBackends returns live history backend clients.
 func (h *Host) HistoryBackends(ctx context.Context) []Provider[pluginapi.HistoryBackendClient] {
 	return providers[pluginapi.HistoryBackendClient](ctx, h, pluginapi.Capability_CAPABILITY_HISTORY, "history")
@@ -342,6 +347,8 @@ func capName(c pluginapi.Capability) string {
 		return "history"
 	case pluginapi.Capability_CAPABILITY_COMMAND:
 		return "command"
+	case pluginapi.Capability_CAPABILITY_THEME:
+		return "theme"
 	default:
 		return "unknown"
 	}

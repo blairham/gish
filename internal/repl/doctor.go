@@ -119,8 +119,8 @@ func checkTheme(env expand.Environ) checkResult {
 	if !slices.Contains([]string{"plain", "p10k", "starship"}, theme) {
 		return checkResult{
 			checkWarn, "theme",
-			fmt.Sprintf("GISH_THEME=%q is not a theme — prompt falls back to naked", theme),
-			"config theme p10k   (or plain | starship)",
+			fmt.Sprintf("GISH_THEME=%q is not built-in — a plugin theme may claim it; otherwise the native theme renders", theme),
+			"config theme p10k   (or plain | starship, or install the plugin that serves it)",
 		}
 	}
 	if theme == "starship" {
