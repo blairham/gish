@@ -106,7 +106,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(ziCallHandler(callBase)))
+	runnerOpts = append(runnerOpts, interp.CallHandler(configCallHandler(ziCallHandler(callBase))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -302,7 +302,7 @@ func drainSignals(sigs <-chan os.Signal) {
 // reservedCommandName reports names a plugin command may not claim:
 // interpreter builtins and gish-native builtins (#11 precedence rules).
 func reservedCommandName(name string) bool {
-	if interp.IsBuiltin(name) || name == "zi" || name == "builtins" || name == "plugins" {
+	if interp.IsBuiltin(name) || name == "zi" || name == "config" || name == "builtins" || name == "plugins" {
 		return true
 	}
 	return slices.Contains(builtins.Native(), name)
@@ -380,7 +380,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler),
-		interp.CallHandler(ziCallHandler(passthroughCall)),
+		interp.CallHandler(configCallHandler(ziCallHandler(passthroughCall))),
 	)
 	if err != nil {
 		return err
@@ -450,7 +450,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler),
-		interp.CallHandler(ziCallHandler(passthroughCall)),
+		interp.CallHandler(configCallHandler(ziCallHandler(passthroughCall))),
 	)
 	if err != nil {
 		return err
@@ -473,7 +473,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler),
-			interp.CallHandler(ziCallHandler(passthroughCall)),
+			interp.CallHandler(configCallHandler(ziCallHandler(passthroughCall))),
 		},
 		opts...,
 	)...)
