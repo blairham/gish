@@ -187,6 +187,31 @@ func TestConfigThemeColor(t *testing.T) {
 	}
 }
 
+func TestConfigThemeLayout(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc,
+		"config theme.lines 1\nconfig theme.sep powerline\n"+
+			"echo live=[$GISH_THEME_LINES $GISH_THEME_SEP]\nconfig theme.lines\nconfig theme.sep\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[1 powerline]") {
+		t.Errorf("layout not live: %q", out)
+	}
+	if !strings.Contains(out, "theme.lines = 1") || !strings.Contains(out, "theme.sep = powerline") {
+		t.Errorf("show missing: %q", out)
+	}
+
+	_, errOut, _ := runConfigScript(t, rc, "config theme.lines 3\n")
+	if !strings.Contains(errOut, "must be 1 or 2") {
+		t.Errorf("stderr = %q", errOut)
+	}
+	_, errOut, _ = runConfigScript(t, rc, "config theme.sep fancy\n")
+	if !strings.Contains(errOut, "plain or powerline") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}
+
 func TestConfigThemeGuardsLastSegment(t *testing.T) {
 	rc := filepath.Join(t.TempDir(), "gishrc")
 	_, errOut, _ := runConfigScript(t, rc, "config theme.segments dir\nconfig theme.dir off\n")

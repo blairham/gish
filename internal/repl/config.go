@@ -50,6 +50,8 @@ per-segment theme keys (#28):
   config theme.segments 'dir git exit'  pick and order themed segments
   config theme.git off                  toggle one segment on|off
   config theme.color.dir cyan           color override for one segment
+  config theme.lines 1                  one-line layout (2 = framed, default)
+  config theme.sep powerline            separator style (needs a nerd font)
 
 settings:
   theme   plain | p10k | starship  (GISH_THEME)
@@ -161,6 +163,18 @@ func runThemeConfig(hc interp.HandlerContext, fail func(error) []string, args []
 		}
 		return persistConfig(hc, fail, args[0], "GISH_THEME_SEGMENTS", strings.Join(ids, " "))
 
+	case key == "lines":
+		if value != "1" && value != "2" {
+			return fail(errors.New("theme.lines must be 1 or 2"))
+		}
+		return persistConfig(hc, fail, args[0], "GISH_THEME_LINES", value)
+
+	case key == "sep":
+		if value != "plain" && value != "powerline" {
+			return fail(errors.New("theme.sep must be plain or powerline (needs a nerd font)"))
+		}
+		return persistConfig(hc, fail, args[0], "GISH_THEME_SEP", value)
+
 	case strings.HasPrefix(key, "color."):
 		id := strings.TrimPrefix(key, "color.")
 		if !segmentIDRe.MatchString(id) {
@@ -234,6 +248,18 @@ func showThemeKey(hc interp.HandlerContext, key string) []string {
 	case key == "segments":
 		fmt.Fprintf(hc.Stdout, "theme.segments = %q (GISH_THEME_SEGMENTS)\n",
 			strings.Join(currentSegments(hc), " "))
+	case key == "lines":
+		lines := hc.Env.Get("GISH_THEME_LINES").String()
+		if lines == "" {
+			lines = "2"
+		}
+		fmt.Fprintf(hc.Stdout, "theme.lines = %s (GISH_THEME_LINES)\n", lines)
+	case key == "sep":
+		sep := hc.Env.Get("GISH_THEME_SEP").String()
+		if sep == "" {
+			sep = "plain"
+		}
+		fmt.Fprintf(hc.Stdout, "theme.sep = %s (GISH_THEME_SEP)\n", sep)
 	case strings.HasPrefix(key, "color."):
 		varName := themeColorVar(strings.TrimPrefix(key, "color."))
 		fmt.Fprintf(hc.Stdout, "theme.%s = %q (%s)\n", key, hc.Env.Get(varName).String(), varName)
