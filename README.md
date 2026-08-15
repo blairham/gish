@@ -42,6 +42,8 @@ GISH_PROMPT='%W %p{git} %?$ '  # or take full manual control (always wins):
 GISH_PROMPT_CONT='... '        # %u %h %w %W %? %% and %p{id} plugin segments
 ```
 
+Or skip the file editing: `config theme starship` sets it **live and** writes it to your rc file in one step. `config` lists everything tunable (`theme`, `lint`, `prompt`).
+
 Plugins are executables in `$XDG_DATA_HOME/gish/plugins` — `plugins` lists them. `gish-git` (in this repo) serves the `%p{git}` segment: branch, ahead/behind, staged/dirty/untracked, cached per-repo with fsnotify invalidation.
 
 ## The zi plugin manager

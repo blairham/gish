@@ -45,7 +45,7 @@ func notFoundMiddleware(getRunner func() *interp.Runner) func(interp.ExecHandler
 func suggestCommand(miss string, runner *interp.Runner) string {
 	extra := builtins.ShellBuiltins()
 	extra = append(extra, builtins.Native()...)
-	extra = append(extra, "zi")
+	extra = append(extra, "zi", "config")
 	for name := range runner.Funcs {
 		extra = append(extra, name)
 	}
