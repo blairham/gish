@@ -110,3 +110,110 @@ func TestComposePrefixEndToEnd(t *testing.T) {
 		t.Errorf("composed command appears to have executed:\n%q", got)
 	}
 }
+
+// TestAgentEndToEnd drives the full plan → approve → gated-execute flow
+// under a pty against the fixture provider.
+func TestAgentEndToEnd(t *testing.T) {
+	bin := buildGish(t)
+	base := t.TempDir()
+	pluginDir := filepath.Join(base, "data", "gish", "plugins")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	build := exec.Command("go", "build", "-o", filepath.Join(pluginDir, "fixture"),
+		"../../internal/pluginhost/testdata/fixture")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build fixture: %v\n%s", err, out)
+	}
+
+	cmd := exec.Command(bin)
+	cmd.Env = []string{
+		"HOME=" + base,
+		"XDG_CONFIG_HOME=" + filepath.Join(base, "config"),
+		"XDG_DATA_HOME=" + filepath.Join(base, "data"),
+		"TERM=xterm-256color",
+		"PATH=" + os.Getenv("PATH"),
+	}
+	cmd.Dir = base
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		f.Close()
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}()
+
+	chunks := make(chan []byte, 64)
+	go func() {
+		for {
+			chunk := make([]byte, 4096)
+			n, rerr := f.Read(chunk)
+			if n > 0 {
+				chunks <- chunk[:n]
+			}
+			if rerr != nil {
+				close(chunks)
+				return
+			}
+		}
+	}()
+	var buf bytes.Buffer
+	waitFor := func(want string) []byte {
+		t.Helper()
+		deadline := time.After(15 * time.Second)
+		for {
+			plain := ansiRe.ReplaceAll(buf.Bytes(), nil)
+			if bytes.Contains(plain, []byte(want)) {
+				return plain
+			}
+			select {
+			case chunk, ok := <-chunks:
+				if !ok {
+					t.Fatalf("pty closed before %q; got %q", want, buf.String())
+				}
+				buf.Write(chunk)
+			case <-deadline:
+				t.Fatalf("did not see %q within 15s; got %q", want, buf.String())
+			}
+		}
+	}
+
+	waitFor(" % ")
+	if _, err := f.WriteString("agent \"do the thing\"\r"); err != nil {
+		t.Fatal(err)
+	}
+	// The plan renders first — nothing has executed yet.
+	got := waitFor("run? [a]ll")
+	if !bytes.Contains(got, []byte("fixture plan for: do the thing")) {
+		t.Errorf("plan summary missing:\n%q", got)
+	}
+	// The plan listing shows "$ echo agent-step-one"; actual execution
+	// would print the word at the start of its own line.
+	if regexp.MustCompile(`(?m)^agent-step-one`).Match(got) {
+		t.Errorf("step output before approval:\n%q", got)
+	}
+	if _, err := f.WriteString("a\r"); err != nil { // all, destructive still gates
+		t.Fatal(err)
+	}
+	waitFor("agent-step-one") // step 1 actually executed
+	waitFor("(destructive)")  // step 2 gates individually even in all mode
+	if _, err := f.WriteString("r\r"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor("plan complete (2 step(s))")
+
+	// The plan is an artifact with outcomes recorded.
+	entries, err := os.ReadDir(filepath.Join(base, "data", "gish", "agent"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no plan artifact: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(base, "data", "gish", "agent", entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte("- step 1: ok")) || !bytes.Contains(data, []byte("- step 2: ok")) {
+		t.Errorf("artifact outcomes missing:\n%s", data)
+	}
+}

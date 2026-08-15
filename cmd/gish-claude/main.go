@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -52,6 +53,18 @@ func (ai) Compose(req *pluginapi.ComposeRequest, stream pluginapi.AIProvider_Com
 		Explanation: explanation,
 		Final:       true,
 	})
+}
+
+func (ai) Plan(ctx context.Context, req *pluginapi.PlanRequest) (*pluginapi.PlanResponse, error) {
+	out, err := runClaude(ctx, planPrompt(req))
+	if err != nil {
+		return nil, err
+	}
+	plan, err := parsePlan(out)
+	if err != nil {
+		return nil, err
+	}
+	return plan, nil
 }
 
 func (ai) Explain(ctx context.Context, req *pluginapi.ExplainRequest) (*pluginapi.ExplainResponse, error) {
@@ -104,6 +117,46 @@ func writeContext(b *strings.Builder, sc *pluginapi.ShellContext) {
 		n := min(len(recent), 5)
 		b.WriteString("Recent commands (newest first): " + strings.Join(recent[:n], " ; ") + "\n")
 	}
+}
+
+func planPrompt(req *pluginapi.PlanRequest) string {
+	var b strings.Builder
+	b.WriteString("Plan this multi-step shell task. Reply with ONLY a JSON object, no fences:\n")
+	b.WriteString(`{"summary":"one paragraph","steps":[{"title":"intent","command":"shell command","destructive":false}]}` + "\n")
+	b.WriteString("Mark any step that deletes, overwrites, force-pushes, or changes permissions as destructive.\n\n")
+	writeContext(&b, req.GetContext())
+	b.WriteString("Task: " + req.GetTask() + "\n")
+	return b.String()
+}
+
+// parsePlan decodes the model's JSON, tolerating fences it was told
+// not to use.
+func parsePlan(out string) (*pluginapi.PlanResponse, error) {
+	trimmed := strings.TrimSpace(out)
+	trimmed = strings.TrimPrefix(trimmed, "```json")
+	trimmed = strings.TrimPrefix(trimmed, "```")
+	trimmed = strings.TrimSuffix(trimmed, "```")
+	var decoded struct {
+		Summary string `json:"summary"`
+		Steps   []struct {
+			Title       string `json:"title"`
+			Command     string `json:"command"`
+			Destructive bool   `json:"destructive"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(trimmed)), &decoded); err != nil {
+		return nil, fmt.Errorf("claude returned unparsable plan: %w", err)
+	}
+	plan := &pluginapi.PlanResponse{Summary: decoded.Summary}
+	for _, s := range decoded.Steps {
+		if strings.TrimSpace(s.Command) == "" {
+			continue
+		}
+		plan.Steps = append(plan.Steps, &pluginapi.PlanStep{
+			Title: s.Title, Command: s.Command, Destructive: s.Destructive,
+		})
+	}
+	return plan, nil
 }
 
 // splitCandidate separates the command line from an optional
