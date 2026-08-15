@@ -192,24 +192,31 @@ func runPool(ctx context.Context, hc interp.HandlerContext, opts parallelOpts, t
 		})
 	}
 
+	// Workers drain a FIFO channel so tasks start in input order — with
+	// -j 1 this is strictly sequential, and fail-fast can never lose the
+	// race to a task queued behind the failure.
 	env := environList(hc.Env)
-	sem := make(chan struct{}, opts.jobs)
+	tasks := make(chan int)
 	var running sync.WaitGroup
-	for i, input := range inputs {
+	for range opts.jobs {
 		running.Go(func() {
-			defer close(done[i])
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			if ctx.Err() != nil {
-				results[i].status = 130 // canceled before starting
-				return
-			}
-			results[i] = runTask(ctx, hc, opts, env, taskArgv(template, input), input, &outMu)
-			if results[i].status != 0 && opts.failFast {
-				cancel()
+			for i := range tasks {
+				if ctx.Err() != nil {
+					results[i].status = 130 // canceled before starting
+				} else {
+					results[i] = runTask(ctx, hc, opts, env, taskArgv(template, inputs[i]), inputs[i], &outMu)
+					if results[i].status != 0 && opts.failFast {
+						cancel()
+					}
+				}
+				close(done[i])
 			}
 		})
 	}
+	for i := range inputs {
+		tasks <- i
+	}
+	close(tasks)
 	running.Wait()
 	if opts.collect {
 		flushed.Wait()
