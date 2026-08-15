@@ -240,3 +240,31 @@ func TestConfigCreatesXDGRCWhenNoneExists(t *testing.T) {
 		t.Errorf("rc = %q", got)
 	}
 }
+
+func TestConfigThemeRPrompt(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc,
+		"config theme.rprompt 'time exit'\necho live=[$GISH_THEME_RPROMPT]\nconfig theme.rprompt\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[time exit]") {
+		t.Errorf("rprompt not live: %q", out)
+	}
+	if !strings.Contains(out, `theme.rprompt = "time exit" (GISH_THEME_RPROMPT)`) {
+		t.Errorf("show missing: %q", out)
+	}
+
+	// Empty clears it; bad ids rejected.
+	out, _, err = runConfigScript(t, rc, "config theme.rprompt ''\necho live=[$GISH_THEME_RPROMPT]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[]") {
+		t.Errorf("rprompt not cleared: %q", out)
+	}
+	_, errOut, _ := runConfigScript(t, rc, "config theme.rprompt 'a;b'\n")
+	if !strings.Contains(errOut, "bad segment id") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}

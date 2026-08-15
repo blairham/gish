@@ -50,6 +50,7 @@ per-segment theme keys (#28):
   config theme.segments 'dir git exit'  pick and order themed segments
   config theme.git off                  toggle one segment on|off
   config theme.color.dir cyan           color override for one segment
+  config theme.rprompt 'time'           right-side segments (empty clears)
   config theme.lines 1                  one-line layout (2 = framed, default)
   config theme.sep powerline            separator style (needs a nerd font)
 
@@ -168,6 +169,16 @@ func runThemeConfig(hc interp.HandlerContext, fail func(error) []string, args []
 		}
 		return persistConfig(hc, fail, args[0], "GISH_THEME_SEGMENTS", strings.Join(ids, " "))
 
+	case key == "rprompt":
+		ids := strings.Fields(value)
+		for _, id := range ids {
+			if !segmentIDRe.MatchString(id) {
+				return fail(fmt.Errorf("bad segment id %q", id))
+			}
+		}
+		// Unlike theme.segments, empty is meaningful: no right prompt.
+		return persistConfig(hc, fail, args[0], "GISH_THEME_RPROMPT", strings.Join(ids, " "))
+
 	case key == "lines":
 		if value != "1" && value != "2" {
 			return fail(errors.New("theme.lines must be 1 or 2"))
@@ -253,6 +264,9 @@ func showThemeKey(hc interp.HandlerContext, key string) []string {
 	case key == "segments":
 		fmt.Fprintf(hc.Stdout, "theme.segments = %q (GISH_THEME_SEGMENTS)\n",
 			strings.Join(currentSegments(hc), " "))
+	case key == "rprompt":
+		fmt.Fprintf(hc.Stdout, "theme.rprompt = %q (GISH_THEME_RPROMPT)\n",
+			hc.Env.Get("GISH_THEME_RPROMPT").String())
 	case key == "lines":
 		lines := hc.Env.Get("GISH_THEME_LINES").String()
 		if lines == "" {

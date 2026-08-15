@@ -3,6 +3,7 @@ package repl
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -292,5 +293,54 @@ func TestToolPins(t *testing.T) {
 	// Cached second read.
 	if got := toolPins(dir); got != want {
 		t.Errorf("cached toolPins = %q", got)
+	}
+}
+
+func TestThemedRPrompt(t *testing.T) {
+	info := themeInfo()
+	info.exitCode = 3
+	cfg := themeConfig{
+		rprompt: []string{"exit", "time"},
+		colors:  map[string]string{"exit": "\x1b[33m"},
+	}
+	rp := themedRPrompt(info, cfg)
+	if !strings.Contains(rp, "\x1b[33m✘ 3") {
+		t.Errorf("rprompt missing colored exit segment: %q", rp)
+	}
+	// The time segment renders HH:MM:SS.
+	if !regexp.MustCompile(`\d{2}:\d{2}:\d{2}`).MatchString(rp) {
+		t.Errorf("rprompt missing time segment: %q", rp)
+	}
+	// Empty rprompt config renders nothing.
+	if got := themedRPrompt(info, themeConfig{}); got != "" {
+		t.Errorf("empty rprompt config rendered %q", got)
+	}
+}
+
+func TestRPromptString(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm-256color")
+	info := themeInfo()
+
+	// Plain theme: no right prompt.
+	runner := newTestRunner(t)
+	if rp := rpromptString(runner, info); rp != "" {
+		t.Errorf("plain theme rprompt = %q, want empty", rp)
+	}
+
+	// p10k with configured segments.
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; GISH_THEME_RPROMPT=time`)); err != nil {
+		t.Fatal(err)
+	}
+	if rp := rpromptString(runner, info); rp == "" {
+		t.Error("p10k rprompt empty despite GISH_THEME_RPROMPT=time")
+	}
+
+	// Manual GISH_PROMPT wins: the theme (and its rprompt) stand down.
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_PROMPT='mine> '`)); err != nil {
+		t.Fatal(err)
+	}
+	if rp := rpromptString(runner, info); rp != "" {
+		t.Errorf("manual prompt rprompt = %q, want empty", rp)
 	}
 }

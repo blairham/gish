@@ -166,6 +166,19 @@ func (r *renderer) clearScreen() {
 	r.curRow = 0
 }
 
+// withRPrompt right-aligns rprompt on the line, one column short of the
+// right edge (zsh's default indent). When the line's own content would
+// reach the rprompt, the line comes back unchanged: a right prompt
+// hides rather than wrap or crowd the text. Cursor arithmetic is
+// unaffected — the cursor always sits left of the added padding.
+func withRPrompt(line, rprompt string, width int) string {
+	pad := width - 1 - displayWidth(line) - displayWidth(rprompt)
+	if pad < 1 {
+		return line
+	}
+	return line + strings.Repeat(" ", pad) + rprompt
+}
+
 // displayWidth is the on-screen width of s, ignoring ANSI escapes.
 func displayWidth(s string) int {
 	total, state, rest := 0, -1, s

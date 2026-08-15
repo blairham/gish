@@ -113,3 +113,43 @@ func TestRendererFinishMovesBelowRegion(t *testing.T) {
 		t.Error("finish did not reset renderer state")
 	}
 }
+
+func TestWithRPrompt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		line    string
+		rprompt string
+		width   int
+		want    string
+	}{
+		{
+			// "gish$ ab" is 8 wide, "12:00" is 5: pad to column width-1.
+			name: "fits right-aligned with one-column indent",
+			line: "gish$ ab", rprompt: "12:00", width: 20,
+			want: "gish$ ab" + strings.Repeat(" ", 6) + "12:00",
+		},
+		{
+			name: "hides when the line reaches it",
+			line: "gish$ abcdefghij", rprompt: "12:00", width: 20,
+			want: "gish$ abcdefghij",
+		},
+		{
+			name: "hides at zero gap rather than touch the text",
+			line: "gish$ abcdefgh", rprompt: "12:00", width: 20,
+			want: "gish$ abcdefgh",
+		},
+		{
+			// ANSI escapes are zero-width on both sides of the math.
+			name: "ansi escapes do not count toward width",
+			line: "\x1b[36mgish$ ab\x1b[0m", rprompt: "\x1b[2m12:00\x1b[0m", width: 20,
+			want: "\x1b[36mgish$ ab\x1b[0m" + strings.Repeat(" ", 6) + "\x1b[2m12:00\x1b[0m",
+		},
+	}
+	for _, tt := range tests {
+		if got := withRPrompt(tt.line, tt.rprompt, tt.width); got != tt.want {
+			t.Errorf("%s: withRPrompt = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
