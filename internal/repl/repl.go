@@ -181,6 +181,7 @@ func runEditor(ctx context.Context, login bool) error {
 			}
 		}
 		ed.SetPrompt(promptStrings(runner, info))
+		ed.SetRPrompt(rpromptString(runner, info))
 
 		line, err := ed.ReadCommand(ctx)
 		switch {

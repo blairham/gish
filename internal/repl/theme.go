@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -96,6 +97,9 @@ var themeSegments = []themeSegment{
 		}
 		return ""
 	}},
+	// time is available but not in the default left-side list — it is
+	// the classic right-prompt segment.
+	{"time", cDim, func(promptInfo) string { return time.Now().Format("15:04:05") }},
 }
 
 func pluginSegment(info promptInfo, id string) string {
@@ -105,18 +109,18 @@ func pluginSegment(info promptInfo, id string) string {
 	return info.segment(id)
 }
 
+// defaultSegmentIDs is the out-of-box left-side order — deliberately an
+// explicit list, not the table above: time is available but renders on
+// the right by convention, and future additions must opt in here.
 func defaultSegmentIDs() []string {
-	ids := make([]string, len(themeSegments))
-	for i, s := range themeSegments {
-		ids[i] = s.id
-	}
-	return ids
+	return []string{"dir", "git", "pins", "jobs", "duration", "exit"}
 }
 
 // themeConfig is the resolved per-segment configuration (#28): which
 // segments render, in what order, color overrides, and layout.
 type themeConfig struct {
 	segments  []string
+	rprompt   []string          // GISH_THEME_RPROMPT: right-side segment ids
 	colors    map[string]string // segment id → SGR escape
 	oneLine   bool              // GISH_THEME_LINES=1: no frame, arrow inline
 	powerline bool              // GISH_THEME_SEP=powerline: chevron separators
@@ -135,9 +139,10 @@ func themeConfigFrom(runner *interp.Runner) themeConfig {
 	if v := shellVar(runner, "GISH_THEME_SEGMENTS", ""); strings.TrimSpace(v) != "" {
 		cfg.segments = strings.Fields(v)
 	}
+	cfg.rprompt = strings.Fields(shellVar(runner, "GISH_THEME_RPROMPT", ""))
 	cfg.oneLine = shellVar(runner, "GISH_THEME_LINES", "2") == "1"
 	cfg.powerline = shellVar(runner, "GISH_THEME_SEP", "plain") == "powerline"
-	for _, id := range cfg.segments {
+	for _, id := range slices.Concat(cfg.segments, cfg.rprompt) {
 		if sgr, ok := colorSGR(shellVar(runner, themeColorVar(id), "")); ok {
 			if cfg.colors == nil {
 				cfg.colors = map[string]string{}
@@ -179,6 +184,15 @@ func colorSGR(value string) (string, bool) {
 	return "", false
 }
 
+// themeSep is the between-segments separator: two spaces, or the
+// nerd-font thin chevron when powerline is on.
+func themeSep(cfg themeConfig) string {
+	if cfg.powerline {
+		return " " + cDim + "\ue0b1" + cReset + " "
+	}
+	return "  "
+}
+
 // themedPrompt renders the p10k-style layout — two-line by default:
 //
 //	╭─ ~/d/gish  main !2 ?1  go 1.26.1  ⚙1  2.3s  ✘ 7
@@ -188,10 +202,7 @@ func colorSGR(value string) (string, bool) {
 //
 //	~/d/gish  main !2 ?1  ✘ 7 ❯
 func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
-	sep := "  "
-	if cfg.powerline {
-		sep = " " + cDim + "\ue0b1" + cReset + " " // nerd-font thin chevron
-	}
+	sep := themeSep(cfg)
 
 	var b strings.Builder
 	if !cfg.oneLine {
@@ -229,6 +240,42 @@ func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
 		b.WriteString("\n" + cDim + "╰─" + cReset + arrow + "❯" + cReset + " ")
 	}
 	return b.String(), cDim + "│ " + cReset
+}
+
+// themedRPrompt renders the right-side prompt from cfg.rprompt — same
+// segment vocabulary as the left, joined with the configured separator.
+// Empty when no rprompt segments are configured or none have content.
+func themedRPrompt(info promptInfo, cfg themeConfig) string {
+	sep := themeSep(cfg)
+	var parts []string
+	for _, id := range cfg.rprompt {
+		text, color := renderSegment(info, id)
+		if text == "" {
+			continue
+		}
+		if c, ok := cfg.colors[id]; ok {
+			color = c
+		}
+		parts = append(parts, color+text+cReset)
+	}
+	return strings.Join(parts, sep)
+}
+
+// rpromptString resolves the right prompt for the next read. It follows
+// promptStrings' precedence but only the native theme produces one: a
+// manual GISH_PROMPT, plain, starship, NO_COLOR, and dumb terminals all
+// mean no right prompt.
+func rpromptString(runner *interp.Runner, info promptInfo) string {
+	if shellVar(runner, "GISH_PROMPT", "") != "" {
+		return ""
+	}
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return ""
+	}
+	if shellVar(runner, "GISH_THEME", "plain") != "p10k" {
+		return ""
+	}
+	return themedRPrompt(info, themeConfigFrom(runner))
 }
 
 // renderSegment resolves an id: built-ins from themeSegments, anything

@@ -22,6 +22,11 @@ type Config struct {
 	// Prompt precedes the first line; ContPrompt the continuation lines.
 	Prompt     string
 	ContPrompt string
+	// RPrompt renders right-aligned on the first edit line, one column
+	// short of the right edge (zsh's default indent). It hides whenever
+	// the typed line would reach it — a right prompt never wraps and
+	// never blocks input. Empty disables it.
+	RPrompt string
 	// AcceptWhen decides whether Enter submits the buffer (true) or
 	// inserts a newline to continue editing (false). nil always submits.
 	// The shell wires the parser's incomplete-detection here.
@@ -107,6 +112,11 @@ func New(t term.Terminal, out io.Writer, cfg Config) *Editor {
 func (e *Editor) SetPrompt(prompt, contPrompt string) {
 	e.cfg.Prompt = prompt
 	e.cfg.ContPrompt = contPrompt
+}
+
+// SetRPrompt updates the right-side prompt (empty disables it).
+func (e *Editor) SetRPrompt(rprompt string) {
+	e.cfg.RPrompt = rprompt
 }
 
 // ReadCommand runs one interactive read: it enters raw mode, edits until
@@ -206,6 +216,10 @@ func (e *Editor) render() {
 		} else {
 			lines = append(lines, e.cfg.ContPrompt+l)
 		}
+	}
+	if e.cfg.RPrompt != "" && !e.search.active {
+		idx := len(banner)
+		lines[idx] = withRPrompt(lines[idx], e.cfg.RPrompt, e.rend.width)
 	}
 	cl, before := e.buf.CursorLine()
 	prefix := linePrefix
