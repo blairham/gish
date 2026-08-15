@@ -123,6 +123,7 @@ type themeConfig struct {
 	rprompt   []string          // GISH_THEME_RPROMPT: right-side segment ids
 	colors    map[string]string // segment id → SGR escape
 	oneLine   bool              // GISH_THEME_LINES=1: no frame, arrow inline
+	noFrame   bool              // GISH_THEME_FRAME=off: two lines, no corners
 	powerline bool              // GISH_THEME_SEP=powerline: chevron separators
 }
 
@@ -141,6 +142,7 @@ func themeConfigFrom(runner *interp.Runner) themeConfig {
 	}
 	cfg.rprompt = strings.Fields(shellVar(runner, "GISH_THEME_RPROMPT", ""))
 	cfg.oneLine = shellVar(runner, "GISH_THEME_LINES", "2") == "1"
+	cfg.noFrame = shellVar(runner, "GISH_THEME_FRAME", "on") == "off"
 	cfg.powerline = shellVar(runner, "GISH_THEME_SEP", "plain") == "powerline"
 	for _, id := range slices.Concat(cfg.segments, cfg.rprompt) {
 		if sgr, ok := colorSGR(shellVar(runner, themeColorVar(id), "")); ok {
@@ -205,7 +207,7 @@ func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
 	sep := themeSep(cfg)
 
 	var b strings.Builder
-	if !cfg.oneLine {
+	if !cfg.oneLine && !cfg.noFrame {
 		b.WriteString(cDim + "╭─ " + cReset)
 	}
 	if os.Getenv("SSH_CONNECTION") != "" {
@@ -231,12 +233,15 @@ func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
 	if info.exitCode != 0 {
 		arrow = cRed
 	}
-	if cfg.oneLine {
+	switch {
+	case cfg.oneLine:
 		if !first {
 			b.WriteString(" ")
 		}
 		b.WriteString(arrow + "❯" + cReset + " ")
-	} else {
+	case cfg.noFrame: // spaceship-style: two lines, bare arrow
+		b.WriteString("\n" + arrow + "❯" + cReset + " ")
+	default:
 		b.WriteString("\n" + cDim + "╰─" + cReset + arrow + "❯" + cReset + " ")
 	}
 	return b.String(), cDim + "│ " + cReset

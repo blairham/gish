@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,8 +52,10 @@ per-segment theme keys (#28):
   config theme.git off                  toggle one segment on|off
   config theme.color.dir cyan           color override for one segment
   config theme.rprompt 'time'           right-side segments (empty clears)
-  config theme.lines 1                  one-line layout (2 = framed, default)
+  config theme.lines 1                  one-line layout (2 = two-line, default)
+  config theme.frame off                two-line without the ╭─/╰─ corners
   config theme.sep powerline            separator style (needs a nerd font)
+  config theme.preset spaceship         whole look from the same knobs (p10k resets)
 
 settings:
   theme   plain | p10k | starship  (GISH_THEME)
@@ -141,6 +144,63 @@ func persistConfig(hc interp.HandlerContext, fail func(error) []string, name, va
 
 var segmentIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
+// themePresets are whole looks built from the same knobs (#28): each is
+// the full variable set, so switching presets never leaves a stale knob
+// behind. Empty values read back as the built-in defaults.
+var themePresets = map[string][][2]string{
+	// The native default look: framed two-line, default colors.
+	"p10k": {
+		{"GISH_THEME", "p10k"},
+		{"GISH_THEME_SEGMENTS", ""},
+		{"GISH_THEME_RPROMPT", ""},
+		{"GISH_THEME_LINES", "2"},
+		{"GISH_THEME_SEP", "plain"},
+		{"GISH_THEME_FRAME", "on"},
+		{"GISH_THEME_COLOR_DIR", ""},
+		{"GISH_THEME_COLOR_GIT", ""},
+		{"GISH_THEME_COLOR_DURATION", ""},
+		{"GISH_THEME_COLOR_EXIT", ""},
+	},
+	// The spaceship look: open two-line (no corners), section colors.
+	"spaceship": {
+		{"GISH_THEME", "p10k"},
+		{"GISH_THEME_SEGMENTS", ""},
+		{"GISH_THEME_RPROMPT", ""},
+		{"GISH_THEME_LINES", "2"},
+		{"GISH_THEME_SEP", "plain"},
+		{"GISH_THEME_FRAME", "off"},
+		{"GISH_THEME_COLOR_DIR", "cyan"},
+		{"GISH_THEME_COLOR_GIT", "magenta"},
+		{"GISH_THEME_COLOR_DURATION", "yellow"},
+		{"GISH_THEME_COLOR_EXIT", "red"},
+	},
+}
+
+func presetNames() []string {
+	names := slices.Collect(maps.Keys(themePresets))
+	slices.Sort(names)
+	return names
+}
+
+// persistPairs quotes and writes each (varName, value) pair to the rc
+// file, returning the live assignment strings; a failure is reported on
+// hc.Stderr and returns ok=false.
+func persistPairs(hc interp.HandlerContext, pairs [][2]string) (assigns []string, ok bool) {
+	for _, p := range pairs {
+		quoted, err := syntax.Quote(p[1], syntax.LangBash)
+		if err != nil {
+			fmt.Fprintln(hc.Stderr, "config:", err)
+			return nil, false
+		}
+		if _, err := writeRCSetting(p[0], quoted); err != nil {
+			fmt.Fprintln(hc.Stderr, "config:", err)
+			return nil, false
+		}
+		assigns = append(assigns, p[0]+"="+quoted)
+	}
+	return assigns, true
+}
+
 // runThemeConfig handles the dotted per-segment theme keys (#28):
 //
 //	config theme.segments 'dir git exit'  pick and order segments
@@ -184,6 +244,26 @@ func runThemeConfig(hc interp.HandlerContext, fail func(error) []string, args []
 			return fail(errors.New("theme.lines must be 1 or 2"))
 		}
 		return persistConfig(hc, fail, args[0], "GISH_THEME_LINES", value)
+
+	case key == "frame":
+		if value != "on" && value != "off" {
+			return fail(errors.New("theme.frame must be on or off"))
+		}
+		return persistConfig(hc, fail, args[0], "GISH_THEME_FRAME", value)
+
+	case key == "preset":
+		pairs, ok := themePresets[value]
+		if !ok {
+			return fail(fmt.Errorf("unknown preset %q — presets: %s", value, strings.Join(presetNames(), " | ")))
+		}
+		assigns, ok := persistPairs(hc, pairs)
+		if !ok {
+			return []string{"false"}
+		}
+		if path, err := rcWritePath(); err == nil {
+			fmt.Fprintf(hc.Stdout, "theme.preset = %q — saved to %s\n", value, displayPath(path))
+		}
+		return []string{"eval", strings.Join(assigns, " ")}
 
 	case key == "sep":
 		if value != "plain" && value != "powerline" {
@@ -267,6 +347,14 @@ func showThemeKey(hc interp.HandlerContext, key string) []string {
 	case key == "rprompt":
 		fmt.Fprintf(hc.Stdout, "theme.rprompt = %q (GISH_THEME_RPROMPT)\n",
 			hc.Env.Get("GISH_THEME_RPROMPT").String())
+	case key == "preset":
+		fmt.Fprintf(hc.Stdout, "theme.preset: %s\n", strings.Join(presetNames(), " | "))
+	case key == "frame":
+		frame := hc.Env.Get("GISH_THEME_FRAME").String()
+		if frame == "" {
+			frame = "on"
+		}
+		fmt.Fprintf(hc.Stdout, "theme.frame = %s (GISH_THEME_FRAME)\n", frame)
 	case key == "lines":
 		lines := hc.Env.Get("GISH_THEME_LINES").String()
 		if lines == "" {

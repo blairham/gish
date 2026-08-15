@@ -268,3 +268,58 @@ func TestConfigThemeRPrompt(t *testing.T) {
 		t.Errorf("stderr = %q", errOut)
 	}
 }
+
+func TestConfigThemeFrame(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc, "config theme.frame off\necho live=[$GISH_THEME_FRAME]\nconfig theme.frame\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[off]") {
+		t.Errorf("frame not live: %q", out)
+	}
+	if !strings.Contains(out, "theme.frame = off") {
+		t.Errorf("show missing: %q", out)
+	}
+	_, errOut, _ := runConfigScript(t, rc, "config theme.frame sideways\n")
+	if !strings.Contains(errOut, "on or off") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}
+
+func TestConfigThemePreset(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc,
+		"config theme.preset spaceship\necho live=[$GISH_THEME $GISH_THEME_FRAME $GISH_THEME_COLOR_GIT]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[p10k off magenta]") {
+		t.Errorf("spaceship preset not live: %q", out)
+	}
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"GISH_THEME_FRAME=off\n", "GISH_THEME_COLOR_DIR=cyan\n"} {
+		if !strings.Contains(string(data), line) {
+			t.Errorf("rc missing %q:\n%s", line, data)
+		}
+	}
+
+	// Switching back to p10k resets every knob spaceship touched.
+	out, _, err = runConfigScript(t, rc,
+		"config theme.preset spaceship\nconfig theme.preset p10k\n"+
+			"echo live=[$GISH_THEME $GISH_THEME_FRAME $GISH_THEME_COLOR_GIT]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[p10k on ]") {
+		t.Errorf("p10k preset did not reset: %q", out)
+	}
+
+	_, errOut, _ := runConfigScript(t, rc, "config theme.preset klingon\n")
+	if !strings.Contains(errOut, "unknown preset") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}

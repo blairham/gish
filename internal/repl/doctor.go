@@ -155,6 +155,9 @@ func checkTheme(env expand.Environ) checkResult {
 	if v := env.Get("GISH_THEME_SEP").String(); v != "" && v != "plain" && v != "powerline" {
 		problems = append(problems, fmt.Sprintf("GISH_THEME_SEP=%q (want plain or powerline)", v))
 	}
+	if v := env.Get("GISH_THEME_FRAME").String(); v != "" && v != "on" && v != "off" {
+		problems = append(problems, fmt.Sprintf("GISH_THEME_FRAME=%q (want on or off)", v))
+	}
 	if len(problems) > 0 {
 		return checkResult{
 			checkWarn, "theme",

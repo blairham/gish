@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"mvdan.cc/sh/v3/interp"
-	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/blairham/gish/internal/term"
 )
@@ -117,6 +116,16 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 		answers["GISH_THEME_LINES"] = lines
 		cfg.oneLine = lines == "1"
 
+		if lines == "2" {
+			frame, fok := w.askOneOf("frame — ╭─/╰─ corners, or open like spaceship? [on/off]",
+				get("GISH_THEME_FRAME", "on"), []string{"on", "off"})
+			if !fok {
+				return abort()
+			}
+			answers["GISH_THEME_FRAME"] = frame
+			cfg.noFrame = frame == "off"
+		}
+
 		fmt.Fprintf(hc.Stdout, "\nsegments — built-ins: %s; any %%p{id} plugin id also works\n",
 			strings.Join(defaultSegmentIDs(), " "))
 		for {
@@ -152,26 +161,21 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 
 	// Persist every answer that differs from the session value, then
 	// hand the interpreter one eval with all the live assignments.
-	var assigns []string
-	for _, varName := range []string{"GISH_THEME", "GISH_THEME_SEP", "GISH_THEME_LINES", "GISH_THEME_SEGMENTS"} {
-		value, chosen := answers[varName]
-		if !chosen || value == hc.Env.Get(varName).String() {
-			continue
+	var pairs [][2]string
+	for _, varName := range []string{
+		"GISH_THEME", "GISH_THEME_SEP", "GISH_THEME_LINES", "GISH_THEME_FRAME", "GISH_THEME_SEGMENTS",
+	} {
+		if value, chosen := answers[varName]; chosen && value != hc.Env.Get(varName).String() {
+			pairs = append(pairs, [2]string{varName, value})
 		}
-		quoted, err := syntax.Quote(value, syntax.LangBash)
-		if err != nil {
-			fmt.Fprintln(hc.Stderr, "config:", err)
-			return []string{"false"}
-		}
-		if _, err := writeRCSetting(varName, quoted); err != nil {
-			fmt.Fprintln(hc.Stderr, "config:", err)
-			return []string{"false"}
-		}
-		assigns = append(assigns, varName+"="+quoted)
 	}
-	if len(assigns) == 0 {
+	if len(pairs) == 0 {
 		fmt.Fprintln(hc.Stdout, "nothing changed")
 		return []string{"true"}
+	}
+	assigns, ok := persistPairs(hc, pairs)
+	if !ok {
+		return []string{"false"}
 	}
 	if path, err := rcWritePath(); err == nil {
 		fmt.Fprintf(hc.Stdout, "saved to %s\n", displayPath(path))
