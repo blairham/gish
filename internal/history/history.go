@@ -224,6 +224,26 @@ func (s *Store) Search(query string, n int) (string, bool) {
 	})
 }
 
+// Recent returns up to n distinct commands, newest first. Because the
+// store never records secret-bearing commands (#10), the result is
+// safe to hand to an AIProvider as context (#20).
+func (s *Store) Recent(n int) []string {
+	s.reload()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, n)
+	seen := make(map[string]struct{})
+	for i := len(s.entries) - 1; i >= 0 && len(out) < n; i-- {
+		cmd := s.entries[i].Command
+		if _, dup := seen[cmd]; dup {
+			continue
+		}
+		seen[cmd] = struct{}{}
+		out = append(out, cmd)
+	}
+	return out
+}
+
 // scan walks entries newest-first, deduplicating so each command is
 // offered once, at its most recent position.
 func (s *Store) scan(n int, match func(string) bool) (string, bool) {
