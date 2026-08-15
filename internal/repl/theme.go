@@ -11,13 +11,16 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
-// The default theme (#26): a powerlevel10k-class two-line prompt built
-// natively on the segment engine — async plugin segments, budget
-// deadlines, stale-serve — rather than by running any theme's zsh code.
+// Themes. gish starts naked: the out-of-box prompt is the familiar
+// zsh/bash shape (user@host dir %) with no color and no branding —
+// switching shells shouldn't change how the terminal greets you until
+// you ask it to. The p10k-class two-line prompt (#26, built natively on
+// the segment engine — async plugin segments, budget deadlines,
+// stale-serve) and starship (#45) are explicit opt-ins.
 //
 // Precedence: a user-set GISH_PROMPT always wins (the bare-metal escape
-// hatch); otherwise GISH_THEME selects "p10k" (default) or "plain".
-// Dumb terminals and NO_COLOR fall back to plain automatically.
+// hatch); otherwise GISH_THEME selects "p10k", "starship", or the naked
+// default. Dumb terminals and NO_COLOR get the naked prompt regardless.
 
 const (
 	cReset = "\x1b[0m"
@@ -30,17 +33,17 @@ const (
 )
 
 // promptStrings resolves the prompt pair for the next read. Precedence:
-// manual GISH_PROMPT > GISH_THEME (starship | p10k default | plain) >
-// plain; NO_COLOR and dumb terminals degrade regardless.
+// manual GISH_PROMPT > GISH_THEME (starship | p10k) > the naked default;
+// NO_COLOR and dumb terminals degrade to naked regardless.
 func promptStrings(runner *interp.Runner, info promptInfo) (string, string) {
 	if v := shellVar(runner, "GISH_PROMPT", ""); v != "" {
 		return expandPrompt(v, info),
 			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info)
 	}
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
-		return prompt, contPrompt
+		return nakedPrompt(info)
 	}
-	switch shellVar(runner, "GISH_THEME", "p10k") {
+	switch shellVar(runner, "GISH_THEME", "plain") {
 	case "starship":
 		if p, cp, ok := starship.render(info, info.width); ok {
 			return p, cp
@@ -49,8 +52,14 @@ func promptStrings(runner *interp.Runner, info promptInfo) (string, string) {
 	case "p10k":
 		return themedPrompt(info)
 	default:
-		return prompt, contPrompt
+		return nakedPrompt(info)
 	}
+}
+
+// nakedPrompt is the default: what a stock zsh (or bash) prompt looks
+// like, so day one feels like the shell you came from.
+func nakedPrompt(info promptInfo) (string, string) {
+	return expandPrompt("%u@%h %W %% ", info), contPrompt
 }
 
 // themedPrompt renders the p10k-style layout:

@@ -57,19 +57,27 @@ func TestPromptStringsPrecedence(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	info := themeInfo()
 
-	// Default: themed.
+	// Default: naked — the stock zsh/bash shape, no theme until asked.
 	runner := newTestRunner(t)
 	p, _ := promptStrings(runner, info)
-	if !strings.Contains(p, "❯") {
-		t.Errorf("default prompt not themed: %q", p)
+	if p != "blair@mba gish % " {
+		t.Errorf("default prompt not naked: %q", p)
 	}
 
-	// GISH_THEME=plain: the bare prompt.
+	// GISH_THEME=p10k: the native theme, opt-in.
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ = promptStrings(runner, info); !strings.Contains(p, "❯") {
+		t.Errorf("p10k theme not themed: %q", p)
+	}
+
+	// GISH_THEME=plain: same naked prompt, explicitly.
 	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=plain`)); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ = promptStrings(runner, info); p != prompt {
-		t.Errorf("plain theme = %q, want %q", p, prompt)
+	if p, _ = promptStrings(runner, info); p != "blair@mba gish % " {
+		t.Errorf("plain theme = %q, want naked", p)
 	}
 
 	// Manual GISH_PROMPT beats everything.
@@ -84,9 +92,13 @@ func TestPromptStringsPrecedence(t *testing.T) {
 func TestPromptStringsRespectsNoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	runner := newTestRunner(t)
+	// Even with the theme opted in, NO_COLOR forces the naked prompt.
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+		t.Fatal(err)
+	}
 	p, _ := promptStrings(runner, themeInfo())
-	if p != prompt {
-		t.Errorf("NO_COLOR prompt = %q, want plain %q", p, prompt)
+	if p != "blair@mba gish % " {
+		t.Errorf("NO_COLOR prompt = %q, want naked", p)
 	}
 }
 
