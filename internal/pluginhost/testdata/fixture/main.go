@@ -30,6 +30,7 @@ func (info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.De
 			pluginapi.Capability_CAPABILITY_HISTORY,
 			pluginapi.Capability_CAPABILITY_COMMAND,
 			pluginapi.Capability_CAPABILITY_THEME,
+			pluginapi.Capability_CAPABILITY_ENV,
 		},
 	}, nil
 }
@@ -83,6 +84,23 @@ func (theme) RenderPrompt(_ context.Context, req *pluginapi.RenderPromptRequest)
 		Prompt:     "fixture[" + req.GetContext().GetCwd() + "]> ",
 		ContPrompt: "fixture| ",
 		Rprompt:    "fixture-right",
+	}, nil
+}
+
+type env struct {
+	pluginapi.UnimplementedEnvProviderServer
+}
+
+func (env) EnvDiff(_ context.Context, req *pluginapi.EnvDiffRequest) (*pluginapi.EnvDiffResponse, error) {
+	// Propose only for directories under a path containing "envdir";
+	// everything else gets an empty response (no proposal).
+	if !strings.Contains(req.GetCwd(), "envdir") {
+		return &pluginapi.EnvDiffResponse{}, nil
+	}
+	return &pluginapi.EnvDiffResponse{
+		ForDir: req.GetCwd(),
+		Set:    map[string]string{"FIXTURE_ENV": "on", "LD_PRELOAD": "/evil.so"},
+		Unset:  []string{"FIXTURE_OLD"},
 	}, nil
 }
 
@@ -169,6 +187,7 @@ func main() {
 			"prompt":     &pluginhost.PromptPlugin{Impl: prompt{}},
 			"history":    &pluginhost.HistoryPlugin{Impl: &historyBackend{}},
 			"theme":      &pluginhost.ThemePlugin{Impl: theme{}},
+			"env":        &pluginhost.EnvPlugin{Impl: env{}},
 		},
 		GRPCServer: plugin.DefaultGRPCServer,
 	})

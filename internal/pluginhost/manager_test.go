@@ -64,7 +64,7 @@ func TestDescribeAndCapabilities(t *testing.T) {
 	if st.Name != "fixture" || !st.Running || st.Version != "0.0.1-test" {
 		t.Errorf("status = %+v", st)
 	}
-	if len(st.Capabilities) != 5 {
+	if len(st.Capabilities) != 6 {
 		t.Errorf("capabilities = %v", st.Capabilities)
 	}
 }
@@ -223,5 +223,33 @@ func TestThemeProviderRoundtrip(t *testing.T) {
 	if resp.GetPrompt() != "fixture[/tmp/x]> " || resp.GetContPrompt() != "fixture| " ||
 		resp.GetRprompt() != "fixture-right" {
 		t.Errorf("render = %+v", resp)
+	}
+}
+
+func TestEnvProviderRoundtrip(t *testing.T) {
+	h := newHost(t)
+	provs := h.EnvProviders(context.Background())
+	if len(provs) != 1 {
+		t.Fatalf("env providers = %d", len(provs))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), pluginhost.DefaultEnvBudget)
+	defer cancel()
+
+	// No proposal outside the fixture's directory pattern.
+	resp, err := provs[0].Client.EnvDiff(ctx, &pluginapi.EnvDiffRequest{Cwd: "/plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetForDir() != "" {
+		t.Errorf("unexpected proposal: %+v", resp)
+	}
+
+	resp, err = provs[0].Client.EnvDiff(ctx, &pluginapi.EnvDiffRequest{Cwd: "/tmp/envdir/sub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetForDir() != "/tmp/envdir/sub" || resp.GetSet()["FIXTURE_ENV"] != "on" ||
+		len(resp.GetUnset()) != 1 {
+		t.Errorf("proposal = %+v", resp)
 	}
 }

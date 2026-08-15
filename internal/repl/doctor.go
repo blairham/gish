@@ -14,6 +14,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
 )
@@ -61,6 +62,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkLint(hc.Env),
 		checkHistory(),
 		checkPlugins(),
+		checkEnvTrust(),
 		checkTerminal(),
 	}
 
@@ -267,6 +269,28 @@ func checkPlugins() checkResult {
 		}
 	}
 	return checkResult{checkOK, "plugins", fmt.Sprintf("%d in %s", executable, displayPath(dir)), ""}
+}
+
+// checkEnvTrust verifies the env-diff allow list (#12): a corrupt file
+// disables env plugins for the session rather than resetting trust.
+func checkEnvTrust() checkResult {
+	path, err := envtrust.DefaultPath()
+	if err != nil {
+		return checkResult{checkFail, "env-trust", err.Error(), ""}
+	}
+	display := displayPath(path)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return checkResult{checkOK, "env-trust", "no env diffs allowed yet — `trust` records them", ""}
+	}
+	store, err := envtrust.Open(path)
+	if err != nil {
+		return checkResult{
+			checkFail, "env-trust",
+			display + " does not parse — env plugins are disabled this session",
+			"fix or remove " + display + " (recorded allows are lost either way)",
+		}
+	}
+	return checkResult{checkOK, "env-trust", fmt.Sprintf("%d allowed director(ies) in %s", len(store.Entries()), display), ""}
 }
 
 // checkTerminal explains the environment-driven degradations: they are
