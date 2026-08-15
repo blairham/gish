@@ -242,8 +242,9 @@ func checkUselessCat(n *syntax.BinaryCmd, add func(string, ...any)) {
 
 // shellcheckBudget bounds the whole pass: this runs between Enter and
 // execution, so it must stay under human-perception latency. A miss
-// means no findings, never a stall.
-const shellcheckBudget = 200 * time.Millisecond
+// means no findings, never a stall. Variable so tests can widen it —
+// exec latency under a loaded test machine is not what it measures.
+var shellcheckBudget = 200 * time.Millisecond
 
 // maxShellcheckWarnings caps output: a pathological paste shouldn't
 // scroll the terminal with lint.

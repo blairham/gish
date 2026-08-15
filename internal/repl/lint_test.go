@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFootgunWarnings(t *testing.T) {
@@ -110,6 +111,11 @@ exit 1
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
+	// The budget guards interactive latency, not a loaded CI machine's
+	// fork+exec time; widen it so the test can't flake on scheduling.
+	old := shellcheckBudget
+	shellcheckBudget = 5 * time.Second
+	t.Cleanup(func() { shellcheckBudget = old })
 
 	warns := shellcheckWarnings(context.Background(), "for f in $(ls)\ndo rm $f\ndone")
 	if len(warns) != 1 {
