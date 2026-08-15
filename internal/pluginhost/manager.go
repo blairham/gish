@@ -30,6 +30,9 @@ const (
 	DefaultRenderBudget = 50 * time.Millisecond
 	// DefaultCompleteBudget bounds time to the first completion batch.
 	DefaultCompleteBudget = 80 * time.Millisecond
+	// DefaultEnvBudget bounds an EnvDiff on directory change; a miss
+	// skips the diff for this prompt and retries on the next.
+	DefaultEnvBudget = 100 * time.Millisecond
 )
 
 // DefaultDir returns the plugin discovery directory: every executable in
@@ -289,6 +292,11 @@ func (h *Host) ThemeProviders(ctx context.Context) []Provider[pluginapi.ThemePro
 	return providers[pluginapi.ThemeProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_THEME, "theme")
 }
 
+// EnvProviders returns live env-diff clients (#12).
+func (h *Host) EnvProviders(ctx context.Context) []Provider[pluginapi.EnvProviderClient] {
+	return providers[pluginapi.EnvProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_ENV, "env")
+}
+
 // HistoryBackends returns live history backend clients.
 func (h *Host) HistoryBackends(ctx context.Context) []Provider[pluginapi.HistoryBackendClient] {
 	return providers[pluginapi.HistoryBackendClient](ctx, h, pluginapi.Capability_CAPABILITY_HISTORY, "history")
@@ -349,6 +357,8 @@ func capName(c pluginapi.Capability) string {
 		return "command"
 	case pluginapi.Capability_CAPABILITY_THEME:
 		return "theme"
+	case pluginapi.Capability_CAPABILITY_ENV:
+		return "env"
 	default:
 		return "unknown"
 	}

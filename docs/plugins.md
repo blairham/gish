@@ -22,6 +22,7 @@ blocking.
 | --- | --- | --- |
 | Prompt segment render | 50ms default (`SegmentDescriptor.budget_ms`) | render previous (stale) value or nothing; repaint in place when the response lands |
 | Whole-prompt theme render | 50ms default (`ThemeDescriptor.budget_ms`) | serve the theme's previous prompt set, else fall back to the built-in theme |
+| Env diff on cwd change | 100ms | skip for this prompt; ask again on the next directory change |
 | Completion request | ~80ms to first batch | show whatever batches arrived; stream stays open until the user types again |
 | History append | none — fire-and-forget | shell never waits; backend scrubs/stores on its own time |
 | History search (ctrl-r) | ~100ms to first batch | partial results render, best-first |
@@ -58,6 +59,19 @@ A theme plugin renders the entire prompt set — `prompt`, `cont_prompt`,
 user/host/ssh, width, color). It may serve several themes; a miss serves
 the previous set or falls back to the built-in p10k-class theme, so a
 broken theme costs its look, never the prompt.
+
+## Env providers (`EnvProvider`, #12)
+
+| Plugin | What | Fast/correct notes |
+| --- | --- | --- |
+| `gish-direnv` | evaluate `.envrc` via the user's direnv | Resident; direnv's own allow can be bypassed since gish's trust flow supersedes it |
+| `gish-dotenv` | plain `.env` file loading | Parse only — never execute; the trust prompt shows every value |
+
+Trust is the contract, enforced host-side: a proposal applies only after
+`trust allow` records (plugin, directory, diff-hash); a changed diff
+re-pends; deny-listed variables (loader hooks, `IFS`, `GISH_*`) are
+stripped before a proposal exists; requests carry allowlisted env only.
+Applied diffs revert when the shell leaves the proposal's subtree.
 
 ## Completion providers (`CompletionProvider`)
 

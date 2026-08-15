@@ -92,6 +92,6 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 - Prompt styling vocabulary for tier 2 (`RenderResponse.text`): markup subset vs. structured spans. Raw text until decided.
 - Tier-1 widget shim depth: which zle APIs are worth emulating vs. declaring out of scope.
-- **`EnvProvider`** (direnv-class): env diffs on cwd change need a trust model — direnv-style explicit per-directory `allow`, an allowlist of settable variables, or both. An env plugin must not be able to silently rewrite `PATH` for every directory.
+- ~~**`EnvProvider`** (direnv-class)~~ — resolved (#12): both mechanisms, layered. Trust is per-(plugin, directory, diff-hash) — nothing applies without an explicit `trust allow`, and a changed diff re-pends (direnv's edit-reprompts semantics). A deny-list (loader hooks, `IFS`, startup-file vars, `GISH_*`) is stripped host-side before a proposal exists; `PATH` is settable but only ever through the visible allow flow. Requests carry the allowlisted env subset. Applied diffs revert when the shell leaves the proposal's subtree.
 
 The plugin roadmap itself — which plugins, in what order, under which latency budgets — lives in [plugins.md](plugins.md).

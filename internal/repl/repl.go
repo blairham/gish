@@ -24,6 +24,7 @@ import (
 
 	"github.com/blairham/gish/internal/builtins"
 	"github.com/blairham/gish/internal/editor"
+	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/jobs"
 	"github.com/blairham/gish/internal/pluginhost"
@@ -79,6 +80,15 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("plugins", pluginsBuiltin(host, cmdIndex, dir))
 		segs = newSegmentRenderer(host)
 		themePlugins = newThemeRenderer(host)
+		// Env diffs (#12): a corrupt trust file disables the feature for
+		// the session (doctor explains); it must never reset silently.
+		if trustPath, terr := envtrust.DefaultPath(); terr == nil {
+			if store, serr := envtrust.Open(trustPath); serr == nil {
+				envMgr = newEnvManager(host, store, os.Stderr)
+			} else {
+				fmt.Fprintln(os.Stderr, "gish: env trust:", serr)
+			}
+		}
 	}
 
 	// Job control (#5): externals of each command line run in their own
@@ -107,12 +117,13 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
 	}
 	runnerRef = runner
+	trustRunner = func() *interp.Runner { return runnerRef }
 
 	// History failure degrades, never blocks the shell.
 	var hist editor.History
@@ -169,6 +180,11 @@ func runEditor(ctx context.Context, login bool) error {
 
 	lastDuration := time.Duration(0)
 	for {
+		// Env diffs (#12) run before the prompt renders: revert when the
+		// shell left a trusted subtree, propose/apply on dir change.
+		if envMgr != nil {
+			envMgr.atPrompt(ctx, runner)
+		}
 		info.dir = runner.Dir
 		info.exitCode = lastExit
 		info.duration = lastDuration
@@ -383,7 +399,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler),
-		interp.CallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))),
+		interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))),
 	)
 	if err != nil {
 		return err
@@ -453,7 +469,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler),
-		interp.CallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))),
+		interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))),
 	)
 	if err != nil {
 		return err
@@ -476,7 +492,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler),
-			interp.CallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))),
+			interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))),
 		},
 		opts...,
 	)...)
