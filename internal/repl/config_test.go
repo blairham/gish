@@ -108,6 +108,93 @@ func TestConfigShow(t *testing.T) {
 	}
 }
 
+func TestConfigThemeSegmentToggle(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc,
+		"config theme.git off\necho off=[$GISH_THEME_SEGMENTS]\n"+
+			"config theme.git on\necho on=[$GISH_THEME_SEGMENTS]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "off=[dir pins jobs duration exit]") {
+		t.Errorf("off toggle not live: %q", out)
+	}
+	// Re-adding a built-in restores its default-order slot.
+	if !strings.Contains(out, "on=[dir git pins jobs duration exit]") {
+		t.Errorf("on toggle not live in default order: %q", out)
+	}
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "GISH_THEME_SEGMENTS='dir git pins jobs duration exit'\n" {
+		t.Errorf("rc = %q", got)
+	}
+}
+
+func TestConfigThemePluginSegmentAppends(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc, "config theme.k8s on\necho live=[$GISH_THEME_SEGMENTS]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[dir git pins jobs duration exit k8s]") {
+		t.Errorf("plugin segment not appended: %q", out)
+	}
+}
+
+func TestConfigThemeSegments(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc,
+		"config theme.segments 'exit dir'\necho live=[$GISH_THEME_SEGMENTS]\nconfig theme.segments\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[exit dir]") {
+		t.Errorf("segments not live: %q", out)
+	}
+	if !strings.Contains(out, `theme.segments = "exit dir" (GISH_THEME_SEGMENTS)`) {
+		t.Errorf("show missing: %q", out)
+	}
+
+	_, errOut, _ := runConfigScript(t, filepath.Join(t.TempDir(), "gishrc"),
+		"config theme.segments 'dir;rm'\n")
+	if !strings.Contains(errOut, "bad segment id") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}
+
+func TestConfigThemeColor(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, _, err := runConfigScript(t, rc, "config theme.color.dir cyan\necho live=[$GISH_THEME_COLOR_DIR]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "live=[cyan]") {
+		t.Errorf("color not live: %q", out)
+	}
+	data, err := os.ReadFile(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "GISH_THEME_COLOR_DIR=cyan\n" {
+		t.Errorf("rc = %q", got)
+	}
+
+	_, errOut, _ := runConfigScript(t, rc, "config theme.color.dir rainbow\n")
+	if !strings.Contains(errOut, "bad color") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}
+
+func TestConfigThemeGuardsLastSegment(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	_, errOut, _ := runConfigScript(t, rc, "config theme.segments dir\nconfig theme.dir off\n")
+	if !strings.Contains(errOut, "last segment") {
+		t.Errorf("stderr = %q", errOut)
+	}
+}
+
 func TestConfigCreatesXDGRCWhenNoneExists(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("GISH_RC", "")
