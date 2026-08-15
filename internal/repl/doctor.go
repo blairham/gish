@@ -303,7 +303,7 @@ func checkTools(hc interp.HandlerContext) checkResult {
 	if hc.Env.Get("GISH_TOOLS").String() == "off" {
 		return checkResult{checkOK, "tools", "off (GISH_TOOLS)", ""}
 	}
-	res := tools.Resolve(hc.Dir, tools.InstallRoot())
+	res := tools.Resolve(hc.Dir, tools.InstallRoots())
 	if res.File == "" {
 		return checkResult{checkOK, "tools", "no .tool-versions in scope", ""}
 	}
