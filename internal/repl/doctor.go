@@ -18,6 +18,7 @@ import (
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/internal/sandbox"
+	"github.com/blairham/gish/internal/tools"
 )
 
 // The doctor command (#67): one command that checks the moving parts,
@@ -64,6 +65,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkHistory(),
 		checkPlugins(),
 		checkEnvTrust(),
+		checkTools(hc),
 		checkSandbox(),
 		checkTerminal(),
 	}
@@ -293,6 +295,33 @@ func checkEnvTrust() checkResult {
 		}
 	}
 	return checkResult{checkOK, "env-trust", fmt.Sprintf("%d allowed director(ies) in %s", len(store.Entries()), display), ""}
+}
+
+// checkTools reports what the directory's pins resolve to (#77): a
+// pinned-but-not-installed version is the one silent gap worth naming.
+func checkTools(hc interp.HandlerContext) checkResult {
+	if hc.Env.Get("GISH_TOOLS").String() == "off" {
+		return checkResult{checkOK, "tools", "off (GISH_TOOLS)", ""}
+	}
+	res := tools.Resolve(hc.Dir, tools.InstallRoot())
+	if res.File == "" {
+		return checkResult{checkOK, "tools", "no .tool-versions in scope", ""}
+	}
+	if len(res.Missing) > 0 {
+		var names []string
+		for _, pin := range res.Missing {
+			names = append(names, pin.Tool+" "+pin.Versions[0])
+		}
+		return checkResult{
+			checkWarn, "tools",
+			fmt.Sprintf("%s pins versions that are not installed: %s", displayPath(res.File), strings.Join(names, ", ")),
+			"asdf install " + names[0],
+		}
+	}
+	return checkResult{
+		checkOK, "tools",
+		fmt.Sprintf("%d bin dir(s) active from %s", len(res.Bins), displayPath(res.File)), "",
+	}
 }
 
 // checkSandbox reports the enforcement ceiling (#21) — a sandbox that

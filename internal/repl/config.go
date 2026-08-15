@@ -39,6 +39,7 @@ var configSettings = []configSetting{
 	{"theme", "GISH_THEME", []string{"plain", "p10k", "starship"}, "prompt theme — plain is the naked default"},
 	{"lint", "GISH_LINT", []string{"on", "native", "off"}, "footgun diagnostics — native skips shellcheck"},
 	{"prompt", "GISH_PROMPT", nil, "manual prompt escapes — beats any theme"},
+	{"tools", "GISH_TOOLS", []string{"on", "off"}, "native .tool-versions switching (#77)"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -61,6 +62,7 @@ settings:
   theme   plain | p10k | starship  (GISH_THEME)
   lint    on | native | off        (GISH_LINT)
   prompt  escape string            (GISH_PROMPT)
+  tools   on | off                 (GISH_TOOLS)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
                     exit, plus any plugin segment id  (GISH_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default

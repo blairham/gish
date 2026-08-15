@@ -179,10 +179,13 @@ func runEditor(ctx context.Context, login bool) error {
 	info := newPromptInfo()
 	lastExit := 0
 
+	toolsMgr := newToolsManager(os.Stderr)
 	lastDuration := time.Duration(0)
 	for {
-		// Env diffs (#12) run before the prompt renders: revert when the
-		// shell left a trusted subtree, propose/apply on dir change.
+		// Native tool-version switching (#77) rebuilds PATH first —
+		// first-party env work precedes EnvProvider plugins (#12), which
+		// revert/propose/apply on dir change after it.
+		toolsMgr.atPrompt(ctx, runner)
 		if envMgr != nil {
 			envMgr.atPrompt(ctx, runner)
 		}
