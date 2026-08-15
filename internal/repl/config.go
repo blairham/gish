@@ -43,7 +43,7 @@ var configSettings = []configSetting{
 const configUsage = `usage: config [setting [value]]
 
   config                 show all settings and their current values
-  config theme           show one setting
+  config theme           interactive theme walkthrough (plain show when piped)
   config theme starship  set it: live now, and saved to the rc file
 
 per-segment theme keys (#28):
@@ -99,6 +99,11 @@ func runConfig(hc interp.HandlerContext, args []string) []string {
 
 	switch len(args) {
 	case 1:
+		// `config theme` on a terminal is the interactive walkthrough
+		// (#28); piped or scripted stdin keeps the plain show.
+		if setting.name == "theme" && stdinIsTTY(hc.Stdin) {
+			return runThemeWizard(hc)
+		}
 		fmt.Fprintf(hc.Stdout, "%s = %q (%s)\n", setting.name, hc.Env.Get(setting.varName).String(), setting.varName)
 		return []string{"true"}
 	case 2: // set
