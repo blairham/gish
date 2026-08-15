@@ -43,7 +43,7 @@ Two invariants sit under all of these:
 | Plugin | What | Fast/correct notes |
 | --- | --- | --- |
 | `gish-git` | branch, dirty state, ahead/behind — gitstatusd-class | **Flagship; build first.** Resident, per-repo cache, fsevents/inotify invalidation (never poll). Cached render <1ms; cold scans happen off-prompt and repaint in place |
-| `gish-aws` | active profile + SSO token expiry countdown | Reads the local token cache only; never calls AWS on the prompt path |
+| `gish-aws` | ~~planned~~ **landed** (#79, cmd/gish-aws) | Four capabilities on one connection: %p{aws} segment (profile@region + SSO expiry from local config/token metadata — declared env_keys, deny-filtered host-side), --profile/--region completion, per-directory AWS_PROFILE via the #12 trust flow (.aws-profile), aws-whoami (5m TTL) / aws-login commands. Never calls AWS on the prompt path; never reads credential values |
 | `gish-k8s` | kubeconfig context/namespace | File-watch invalidated; never talks to the cluster for a prompt |
 | `gish-runtimes` | asdf/`.tool-versions` pins when they differ from global | One small file read, cached by cwd |
 

@@ -73,7 +73,12 @@ type SegmentDescriptor struct {
 	Description string `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	// Soft latency budget in milliseconds; the host derives Render
 	// deadlines from it. 0 means "use the host default" (currently 50ms).
-	BudgetMs      uint32 `protobuf:"varint,3,opt,name=budget_ms,json=budgetMs,proto3" json:"budget_ms,omitempty"`
+	BudgetMs uint32 `protobuf:"varint,3,opt,name=budget_ms,json=budgetMs,proto3" json:"budget_ms,omitempty"`
+	// Environment variable names this segment wants per render (e.g.
+	// AWS_PROFILE for an aws segment). The host filters the request
+	// through its deny policy — secret-shaped names, loader hooks, and
+	// shell internals are never sent, whatever a plugin declares.
+	EnvKeys       []string `protobuf:"bytes,4,rep,name=env_keys,json=envKeys,proto3" json:"env_keys,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -129,6 +134,13 @@ func (x *SegmentDescriptor) GetBudgetMs() uint32 {
 	return 0
 }
 
+func (x *SegmentDescriptor) GetEnvKeys() []string {
+	if x != nil {
+		return x.EnvKeys
+	}
+	return nil
+}
+
 type SegmentsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Segments      []*SegmentDescriptor   `protobuf:"bytes,1,rep,name=segments,proto3" json:"segments,omitempty"`
@@ -182,7 +194,10 @@ type RenderRequest struct {
 	LastExitCode int32 `protobuf:"varint,3,opt,name=last_exit_code,json=lastExitCode,proto3" json:"last_exit_code,omitempty"`
 	// Monotonic per-session sequence number; lets plugins drop stale
 	// requests that were superseded before they were served.
-	EventSeq      uint64 `protobuf:"varint,4,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
+	EventSeq uint64 `protobuf:"varint,4,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
+	// The values of the segment's declared env_keys that exist and pass
+	// the host's deny policy.
+	Env           map[string]string `protobuf:"bytes,5,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -245,6 +260,13 @@ func (x *RenderRequest) GetEventSeq() uint64 {
 	return 0
 }
 
+func (x *RenderRequest) GetEnv() map[string]string {
+	if x != nil {
+		return x.Env
+	}
+	return nil
+}
+
 type RenderResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Rendered segment text. Styling vocabulary is TBD (likely a small
@@ -305,19 +327,24 @@ var File_gish_plugin_v1_prompt_proto protoreflect.FileDescriptor
 const file_gish_plugin_v1_prompt_proto_rawDesc = "" +
 	"\n" +
 	"\x1bgish/plugin/v1/prompt.proto\x12\x0egish.plugin.v1\"\x11\n" +
-	"\x0fSegmentsRequest\"b\n" +
+	"\x0fSegmentsRequest\"}\n" +
 	"\x11SegmentDescriptor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1b\n" +
-	"\tbudget_ms\x18\x03 \x01(\rR\bbudgetMs\"Q\n" +
+	"\tbudget_ms\x18\x03 \x01(\rR\bbudgetMs\x12\x19\n" +
+	"\benv_keys\x18\x04 \x03(\tR\aenvKeys\"Q\n" +
 	"\x10SegmentsResponse\x12=\n" +
-	"\bsegments\x18\x01 \x03(\v2!.gish.plugin.v1.SegmentDescriptorR\bsegments\"\x83\x01\n" +
+	"\bsegments\x18\x01 \x03(\v2!.gish.plugin.v1.SegmentDescriptorR\bsegments\"\xf5\x01\n" +
 	"\rRenderRequest\x12\x1d\n" +
 	"\n" +
 	"segment_id\x18\x01 \x01(\tR\tsegmentId\x12\x10\n" +
 	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12$\n" +
 	"\x0elast_exit_code\x18\x03 \x01(\x05R\flastExitCode\x12\x1b\n" +
-	"\tevent_seq\x18\x04 \x01(\x04R\beventSeq\";\n" +
+	"\tevent_seq\x18\x04 \x01(\x04R\beventSeq\x128\n" +
+	"\x03env\x18\x05 \x03(\v2&.gish.plugin.v1.RenderRequest.EnvEntryR\x03env\x1a6\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\";\n" +
 	"\x0eRenderResponse\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x15\n" +
 	"\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs2\xaf\x01\n" +
@@ -337,25 +364,27 @@ func file_gish_plugin_v1_prompt_proto_rawDescGZIP() []byte {
 	return file_gish_plugin_v1_prompt_proto_rawDescData
 }
 
-var file_gish_plugin_v1_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_gish_plugin_v1_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_gish_plugin_v1_prompt_proto_goTypes = []any{
 	(*SegmentsRequest)(nil),   // 0: gish.plugin.v1.SegmentsRequest
 	(*SegmentDescriptor)(nil), // 1: gish.plugin.v1.SegmentDescriptor
 	(*SegmentsResponse)(nil),  // 2: gish.plugin.v1.SegmentsResponse
 	(*RenderRequest)(nil),     // 3: gish.plugin.v1.RenderRequest
 	(*RenderResponse)(nil),    // 4: gish.plugin.v1.RenderResponse
+	nil,                       // 5: gish.plugin.v1.RenderRequest.EnvEntry
 }
 var file_gish_plugin_v1_prompt_proto_depIdxs = []int32{
 	1, // 0: gish.plugin.v1.SegmentsResponse.segments:type_name -> gish.plugin.v1.SegmentDescriptor
-	0, // 1: gish.plugin.v1.PromptSegmentProvider.Segments:input_type -> gish.plugin.v1.SegmentsRequest
-	3, // 2: gish.plugin.v1.PromptSegmentProvider.Render:input_type -> gish.plugin.v1.RenderRequest
-	2, // 3: gish.plugin.v1.PromptSegmentProvider.Segments:output_type -> gish.plugin.v1.SegmentsResponse
-	4, // 4: gish.plugin.v1.PromptSegmentProvider.Render:output_type -> gish.plugin.v1.RenderResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5, // 1: gish.plugin.v1.RenderRequest.env:type_name -> gish.plugin.v1.RenderRequest.EnvEntry
+	0, // 2: gish.plugin.v1.PromptSegmentProvider.Segments:input_type -> gish.plugin.v1.SegmentsRequest
+	3, // 3: gish.plugin.v1.PromptSegmentProvider.Render:input_type -> gish.plugin.v1.RenderRequest
+	2, // 4: gish.plugin.v1.PromptSegmentProvider.Segments:output_type -> gish.plugin.v1.SegmentsResponse
+	4, // 5: gish.plugin.v1.PromptSegmentProvider.Render:output_type -> gish.plugin.v1.RenderResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_gish_plugin_v1_prompt_proto_init() }
@@ -369,7 +398,7 @@ func file_gish_plugin_v1_prompt_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_prompt_proto_rawDesc), len(file_gish_plugin_v1_prompt_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

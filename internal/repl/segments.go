@@ -31,8 +31,9 @@ type segmentRenderer struct {
 }
 
 type segmentEntry struct {
-	client pluginapi.PromptSegmentProviderClient
-	budget time.Duration
+	client  pluginapi.PromptSegmentProviderClient
+	budget  time.Duration
+	envKeys []string
 }
 
 func newSegmentRenderer(host *pluginhost.Host) *segmentRenderer {
@@ -65,7 +66,9 @@ func (r *segmentRenderer) warm() {
 			}
 			// First provider claiming an id wins (sorted by plugin name).
 			if _, taken := r.segments[seg.GetId()]; !taken {
-				r.segments[seg.GetId()] = segmentEntry{client: prov.Client, budget: budget}
+				r.segments[seg.GetId()] = segmentEntry{
+					client: prov.Client, budget: budget, envKeys: seg.GetEnvKeys(),
+				}
 			}
 		}
 		r.mu.Unlock()
@@ -75,7 +78,9 @@ func (r *segmentRenderer) warm() {
 // render returns the segment's current text. Unknown ids render empty;
 // budget misses render the previous value. If discovery is still warming
 // up, render waits for it only within the default budget.
-func (r *segmentRenderer) render(ctx context.Context, id, cwd string, lastExit int) string {
+func (r *segmentRenderer) render(
+	ctx context.Context, id, cwd string, lastExit int, envFor func(keys []string) map[string]string,
+) string {
 	select {
 	case <-r.warmed:
 	case <-time.After(pluginhost.DefaultRenderBudget):
@@ -90,6 +95,10 @@ func (r *segmentRenderer) render(ctx context.Context, id, cwd string, lastExit i
 	if !ok {
 		return ""
 	}
+	var env map[string]string
+	if len(entry.envKeys) > 0 && envFor != nil {
+		env = envFor(entry.envKeys)
+	}
 	rctx, cancel := context.WithTimeout(ctx, entry.budget)
 	defer cancel()
 	resp, err := entry.client.Render(rctx, &pluginapi.RenderRequest{
@@ -97,6 +106,7 @@ func (r *segmentRenderer) render(ctx context.Context, id, cwd string, lastExit i
 		Cwd:          cwd,
 		LastExitCode: int32(lastExit),
 		EventSeq:     r.host.NextSeq(),
+		Env:          env,
 	})
 	if err != nil {
 		return r.stale(id)

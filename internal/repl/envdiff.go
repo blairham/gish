@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -306,6 +307,25 @@ func allowedShellEnv(runner *interp.Runner) map[string]string {
 	for _, name := range []string{"PATH", "HOME", "TERM", "LANG", "LC_ALL", "USER"} {
 		if v, ok := runner.Vars[name]; ok && v.IsSet() {
 			out[name] = v.String()
+		}
+	}
+	return out
+}
+
+// secretishEnv matches env names that look credential-bearing — the
+// deny side of segment env requests, whatever a plugin declares.
+var secretishEnv = regexp.MustCompile(`(?i)(secret|token|passw|credential|api[_-]?key|access[_-]?key|private)`)
+
+// requestedEnv resolves a segment's declared env keys against the
+// session, refusing deny-listed and secret-shaped names.
+func requestedEnv(runner *interp.Runner, keys []string) map[string]string {
+	out := map[string]string{}
+	for _, key := range keys {
+		if envDenied(key) || secretishEnv.MatchString(key) {
+			continue
+		}
+		if v, ok := runner.Vars[key]; ok && v.IsSet() {
+			out[key] = v.String()
 		}
 	}
 	return out

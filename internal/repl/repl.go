@@ -201,7 +201,9 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 		if segs != nil {
 			info.segment = func(id string) string {
-				return segs.render(ctx, id, runner.Dir, lastExit)
+				return segs.render(ctx, id, runner.Dir, lastExit, func(keys []string) map[string]string {
+					return requestedEnv(runner, keys)
+				})
 			}
 		}
 		p, cp, rp := promptStrings(runner, info)
