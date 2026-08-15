@@ -22,6 +22,7 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true # setup-go's manifest lags fresh Go patch releases; resolve via go.dev
         cache: true
 
     - name: Run tests
@@ -36,6 +37,7 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true # setup-go's manifest lags fresh Go patch releases; resolve via go.dev
         cache: true
 
     - name: Run golangci-lint
@@ -56,6 +58,7 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true # setup-go's manifest lags fresh Go patch releases; resolve via go.dev
         cache: true
 
     - name: Build

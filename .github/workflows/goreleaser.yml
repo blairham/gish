@@ -29,6 +29,7 @@ jobs:
       uses: actions/setup-go@v6
       with:
         go-version: ${{ env.GO_VERSION }}
+        check-latest: true # setup-go's manifest lags fresh Go patch releases; resolve via go.dev
         cache: false # replaced by the release-scoped cache below
 
     # Release-scoped Go cache: setup-go's built-in cache is exact-match on
