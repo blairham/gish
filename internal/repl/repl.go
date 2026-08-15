@@ -134,7 +134,8 @@ func runEditor(ctx context.Context, login bool) error {
 	}
 	// The fish-parity pair (#38/#39): parser-driven highlighting and
 	// history ghost text — skipped where color is unwelcome.
-	if os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb" {
+	colorOK := os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"
+	if colorOK {
 		edCfg.Highlight = highlightFn(runner)
 		if store != nil {
 			edCfg.Suggest = func(text string) string {
@@ -145,6 +146,9 @@ func runEditor(ctx context.Context, login bool) error {
 			}
 		}
 	}
+	// Footgun diagnostics (#46) are content, not decoration: they stay on
+	// without color, just unstyled.
+	edCfg.Diagnose = lintFn(runner, colorOK)
 	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, edCfg)
 	parser := syntax.NewParser()
 
@@ -194,6 +198,14 @@ func runEditor(ctx context.Context, login bool) error {
 		if perr != nil {
 			fmt.Fprintln(os.Stderr, "gish:", perr)
 			continue
+		}
+		// Multi-line buffers get a shellcheck pass on Enter when it's
+		// installed (#46) — off the keystroke path, budget-bounded, and
+		// purely advisory: the command runs regardless.
+		if lintMode(runner) == "on" && strings.Contains(line, "\n") {
+			for _, w := range shellcheckWarnings(ctx, line) {
+				fmt.Fprintln(os.Stderr, w)
+			}
 		}
 
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
