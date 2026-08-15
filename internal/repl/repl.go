@@ -102,6 +102,7 @@ func runEditor(ctx context.Context, login bool) error {
 	var runnerRef *interp.Runner
 	execChain = append(execChain,
 		notFoundMiddleware(func() *interp.Runner { return runnerRef }),
+		sandboxExecMiddleware,
 		table.ExecMiddleware)
 	runnerOpts := []interp.RunnerOption{
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
@@ -117,7 +118,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -398,8 +399,8 @@ func acceptWhen(text string) bool {
 func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
-		interp.ExecHandlers(builtins.ExecHandler),
-		interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))),
+		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
+		interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))),
 	)
 	if err != nil {
 		return err
@@ -468,8 +469,8 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	}
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
-		interp.ExecHandlers(builtins.ExecHandler),
-		interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))),
+		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
+		interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))),
 	)
 	if err != nil {
 		return err
@@ -491,8 +492,8 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 	runner, err := interp.New(append(
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
-			interp.ExecHandlers(builtins.ExecHandler),
-			interp.CallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))),
+			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
+			interp.CallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))),
 		},
 		opts...,
 	)...)

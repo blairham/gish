@@ -17,6 +17,7 @@ import (
 	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
+	"github.com/blairham/gish/internal/sandbox"
 )
 
 // The doctor command (#67): one command that checks the moving parts,
@@ -63,6 +64,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkHistory(),
 		checkPlugins(),
 		checkEnvTrust(),
+		checkSandbox(),
 		checkTerminal(),
 	}
 
@@ -291,6 +293,18 @@ func checkEnvTrust() checkResult {
 		}
 	}
 	return checkResult{checkOK, "env-trust", fmt.Sprintf("%d allowed director(ies) in %s", len(store.Entries()), display), ""}
+}
+
+// checkSandbox reports the enforcement ceiling (#21) — a sandbox that
+// silently cannot enforce is worse than none, so doctor says so.
+func checkSandbox() checkResult {
+	avail := sandbox.Available()
+	for _, degraded := range []string{"unenforced", "unavailable", "not supported"} {
+		if strings.HasPrefix(avail, degraded) {
+			return checkResult{checkWarn, "sandbox", avail, ""}
+		}
+	}
+	return checkResult{checkOK, "sandbox", avail, ""}
 }
 
 // checkTerminal explains the environment-driven degradations: they are
