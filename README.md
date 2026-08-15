@@ -30,11 +30,14 @@ make build
 
 gish reads one rc file at interactive startup — `$GISH_RC`, else `$XDG_CONFIG_HOME/gish/gishrc`, else `~/.gishrc` — as ordinary shell script: functions, variables, and `cd` persist into your session.
 
-gish ships a p10k-class two-line prompt **by default** — smart-truncated path, git (via the gish-git plugin), runtime pins, job count, duration, exit status — all async and budget-bounded, so the prompt never waits on anything.
+gish starts **naked**: the prompt is the stock zsh/bash shape (`user@host dir %`), so day one looks like the shell you came from. Themes are opt-in — one line in your rc file:
 
 ```sh
 # ~/.gishrc
-GISH_THEME=plain               # the off switch, for the bare-metal crowd
+GISH_THEME=p10k                # the native p10k-class two-line prompt: smart path,
+                               # git, runtime pins, jobs, duration, exit status —
+                               # all async and budget-bounded, never waits on anything
+GISH_THEME=starship            # or your exact starship prompt, unchanged
 GISH_PROMPT='%W %p{git} %?$ '  # or take full manual control (always wins):
 GISH_PROMPT_CONT='... '        # %u %h %w %W %? %% and %p{id} plugin segments
 ```

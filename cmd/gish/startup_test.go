@@ -30,8 +30,9 @@ func buildGish(t *testing.T) string {
 	return bin
 }
 
-// timeToFirstPrompt execs gish under a pty and measures until the
-// themed prompt's arrow (or the plain fallback prompt) appears.
+// timeToFirstPrompt execs gish under a pty and measures until a prompt
+// appears: the naked default (" % "), a themed arrow, or the plain
+// non-TTY fallback.
 func timeToFirstPrompt(t *testing.T, bin string, env []string) time.Duration {
 	t.Helper()
 	cmd := exec.Command(bin)
@@ -55,7 +56,8 @@ func timeToFirstPrompt(t *testing.T, bin string, env []string) time.Duration {
 		n, _ := f.Read(chunk)
 		if n > 0 {
 			buf.Write(chunk[:n])
-			if bytes.Contains(buf.Bytes(), []byte("❯")) || bytes.Contains(buf.Bytes(), []byte("gish$")) {
+			if bytes.Contains(buf.Bytes(), []byte("❯")) || bytes.Contains(buf.Bytes(), []byte(" % ")) ||
+				bytes.Contains(buf.Bytes(), []byte("gish$")) {
 				return time.Since(start)
 			}
 		}
@@ -118,8 +120,8 @@ func TestStartupWithSlowHistoryFile(t *testing.T) {
 	// A fat history file (10k entries) must not blow the budget.
 	var home string
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "XDG_DATA_HOME=") {
-			home = strings.TrimPrefix(kv, "XDG_DATA_HOME=")
+		if v, ok := strings.CutPrefix(kv, "XDG_DATA_HOME="); ok {
+			home = v
 		}
 	}
 	dir := filepath.Join(home, "gish")
