@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/blairham/gish/internal/plugmgr/config"
 	"github.com/blairham/gish/internal/plugmgr/emit"
@@ -136,6 +137,16 @@ func (z *Zi) writePayload(id, payload string) (string, error) {
 	return runFile, nil
 }
 
+// ziUpdateJobs bounds the update fan-out. Updates are network-bound
+// (git pulls, release fetches), not CPU-bound, so the width is a fixed
+// politeness cap rather than a core count.
+const ziUpdateJobs = 8
+
+// Update refreshes one object, or every installed object concurrently
+// (#49): the same FIFO-admission, ordered-flush pool discipline as the
+// parallel builtin. Status lines print in listing order as each
+// object's turn completes; per-object hook output (make/atpull)
+// streams to the installer's writer as it happens.
 func (z *Zi) Update(target string, out io.Writer) error {
 	var dirs []string
 	if target == "" {
@@ -157,14 +168,37 @@ func (z *Zi) Update(target string, out io.Writer) error {
 		}
 		dirs = []string{dir}
 	}
-	for _, dir := range dirs {
-		outcome, err := z.inst.Update(dir)
-		if err != nil {
-			fmt.Fprintf(out, "%-40s %v\n", filepath.Base(dir), err)
-			continue
-		}
-		fmt.Fprintf(out, "%-40s %s\n", filepath.Base(dir), outcome)
+
+	results := make([]string, len(dirs))
+	done := make([]chan struct{}, len(dirs))
+	for i := range done {
+		done[i] = make(chan struct{})
 	}
+	tasks := make(chan int)
+	var workers sync.WaitGroup
+	for range min(ziUpdateJobs, len(dirs)) {
+		workers.Go(func() {
+			for i := range tasks {
+				outcome, err := z.inst.Update(dirs[i])
+				if err != nil {
+					outcome = err.Error()
+				}
+				results[i] = fmt.Sprintf("%-40s %s\n", filepath.Base(dirs[i]), outcome)
+				close(done[i])
+			}
+		})
+	}
+	// Workers never write to out, so feeding everything before flushing
+	// cannot deadlock; the flush then streams each line at its turn.
+	for i := range dirs {
+		tasks <- i
+	}
+	close(tasks)
+	for i := range dirs {
+		<-done[i]
+		io.WriteString(out, results[i]) //nolint:errcheck // status display only
+	}
+	workers.Wait()
 	return nil
 }
 
