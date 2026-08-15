@@ -125,6 +125,16 @@ func (ai) Explain(_ context.Context, req *pluginapi.ExplainRequest) (*pluginapi.
 	}, nil
 }
 
+func (ai) Plan(_ context.Context, req *pluginapi.PlanRequest) (*pluginapi.PlanResponse, error) {
+	return &pluginapi.PlanResponse{
+		Summary: "fixture plan for: " + req.GetTask(),
+		Steps: []*pluginapi.PlanStep{
+			{Title: "announce", Command: "echo agent-step-one"},
+			{Title: "tidy", Command: "rm -f ./agent-scratch.txt", Destructive: true},
+		},
+	}, nil
+}
+
 type historyBackend struct {
 	pluginapi.UnimplementedHistoryBackendServer
 	mu      sync.Mutex

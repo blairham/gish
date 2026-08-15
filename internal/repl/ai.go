@@ -160,12 +160,13 @@ func (m *aiManager) explain(ctx context.Context, runner *interp.Runner) (string,
 // — wrapping them in a sandboxed child would change their meaning.
 var noSandboxWrap = []string{"cd", "export", "unset", "alias", "unalias", "source", ".", "eval", "exit"}
 
-// composePrefill turns a candidate into what lands in the buffer: by
-// default the command arrives wrapped in a visible sandbox invocation
-// (#21's safe-by-construction pairing) that the user can edit away.
-// GISH_AI_SANDBOX names the profile ("off" disables).
-func composePrefill(runner *interp.Runner, command string) string {
-	profile := shellVar(runner, "GISH_AI_SANDBOX", "workspace")
+// sandboxWrap wraps an AI-proposed command in a visible sandbox
+// invocation (#21's safe-by-construction pairing) the user can see and
+// remove. profileVar names the knob (GISH_AI_SANDBOX for compose,
+// GISH_AGENT_SANDBOX for agent steps); "off" disables. Shell-state
+// commands and already-sandboxed sessions pass through unwrapped.
+func sandboxWrap(runner *interp.Runner, command, profileVar string) string {
+	profile := shellVar(runner, profileVar, "workspace")
 	if profile == "off" || sessionSandboxProfile != "" || strings.Contains(command, "\n") {
 		return command
 	}
@@ -176,6 +177,11 @@ func composePrefill(runner *interp.Runner, command string) string {
 		return command
 	}
 	return "sandbox --profile " + profile + " -- " + command
+}
+
+// composePrefill is the ?? flavor of sandboxWrap.
+func composePrefill(runner *interp.Runner, command string) string {
+	return sandboxWrap(runner, command, "GISH_AI_SANDBOX")
 }
 
 // handleCompose is the ?? path: query the provider, preload the editor

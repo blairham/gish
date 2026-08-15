@@ -362,6 +362,185 @@ func (x *ExplainResponse) GetExplanation() string {
 	return ""
 }
 
+type PlanRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The user's task, verbatim.
+	Task          string        `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	Context       *ShellContext `protobuf:"bytes,2,opt,name=context,proto3" json:"context,omitempty"`
+	EventSeq      uint64        `protobuf:"varint,3,opt,name=event_seq,json=eventSeq,proto3" json:"event_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanRequest) Reset() {
+	*x = PlanRequest{}
+	mi := &file_gish_plugin_v1_ai_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanRequest) ProtoMessage() {}
+
+func (x *PlanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gish_plugin_v1_ai_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanRequest.ProtoReflect.Descriptor instead.
+func (*PlanRequest) Descriptor() ([]byte, []int) {
+	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PlanRequest) GetTask() string {
+	if x != nil {
+		return x.Task
+	}
+	return ""
+}
+
+func (x *PlanRequest) GetContext() *ShellContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+func (x *PlanRequest) GetEventSeq() uint64 {
+	if x != nil {
+		return x.EventSeq
+	}
+	return 0
+}
+
+type PlanStep struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// One-line intent, shown in the plan spec.
+	Title string `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	// The command for this step, ready for the exec path. Raw command
+	// only — the host owns sandbox wrapping and approval gates.
+	Command string `protobuf:"bytes,2,opt,name=command,proto3" json:"command,omitempty"`
+	// The provider's own destructiveness assessment. Advisory: the shell
+	// makes its own judgment and gates on either being true.
+	Destructive   bool `protobuf:"varint,3,opt,name=destructive,proto3" json:"destructive,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanStep) Reset() {
+	*x = PlanStep{}
+	mi := &file_gish_plugin_v1_ai_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanStep) ProtoMessage() {}
+
+func (x *PlanStep) ProtoReflect() protoreflect.Message {
+	mi := &file_gish_plugin_v1_ai_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanStep.ProtoReflect.Descriptor instead.
+func (*PlanStep) Descriptor() ([]byte, []int) {
+	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PlanStep) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *PlanStep) GetCommand() string {
+	if x != nil {
+		return x.Command
+	}
+	return ""
+}
+
+func (x *PlanStep) GetDestructive() bool {
+	if x != nil {
+		return x.Destructive
+	}
+	return false
+}
+
+type PlanResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What the plan does, one paragraph.
+	Summary       string      `protobuf:"bytes,1,opt,name=summary,proto3" json:"summary,omitempty"`
+	Steps         []*PlanStep `protobuf:"bytes,2,rep,name=steps,proto3" json:"steps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanResponse) Reset() {
+	*x = PlanResponse{}
+	mi := &file_gish_plugin_v1_ai_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanResponse) ProtoMessage() {}
+
+func (x *PlanResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gish_plugin_v1_ai_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanResponse.ProtoReflect.Descriptor instead.
+func (*PlanResponse) Descriptor() ([]byte, []int) {
+	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PlanResponse) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *PlanResponse) GetSteps() []*PlanStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
 var File_gish_plugin_v1_ai_proto protoreflect.FileDescriptor
 
 const file_gish_plugin_v1_ai_proto_rawDesc = "" +
@@ -391,11 +570,23 @@ const file_gish_plugin_v1_ai_proto_rawDesc = "" +
 	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x126\n" +
 	"\acontext\x18\x03 \x01(\v2\x1c.gish.plugin.v1.ShellContextR\acontext\"3\n" +
 	"\x0fExplainResponse\x12 \n" +
-	"\vexplanation\x18\x01 \x01(\tR\vexplanation2\xa7\x01\n" +
+	"\vexplanation\x18\x01 \x01(\tR\vexplanation\"v\n" +
+	"\vPlanRequest\x12\x12\n" +
+	"\x04task\x18\x01 \x01(\tR\x04task\x126\n" +
+	"\acontext\x18\x02 \x01(\v2\x1c.gish.plugin.v1.ShellContextR\acontext\x12\x1b\n" +
+	"\tevent_seq\x18\x03 \x01(\x04R\beventSeq\"\\\n" +
+	"\bPlanStep\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x18\n" +
+	"\acommand\x18\x02 \x01(\tR\acommand\x12 \n" +
+	"\vdestructive\x18\x03 \x01(\bR\vdestructive\"X\n" +
+	"\fPlanResponse\x12\x18\n" +
+	"\asummary\x18\x01 \x01(\tR\asummary\x12.\n" +
+	"\x05steps\x18\x02 \x03(\v2\x18.gish.plugin.v1.PlanStepR\x05steps2\xea\x01\n" +
 	"\n" +
 	"AIProvider\x12M\n" +
 	"\aCompose\x12\x1e.gish.plugin.v1.ComposeRequest\x1a .gish.plugin.v1.ComposeCandidate0\x01\x12J\n" +
-	"\aExplain\x12\x1e.gish.plugin.v1.ExplainRequest\x1a\x1f.gish.plugin.v1.ExplainResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\aExplain\x12\x1e.gish.plugin.v1.ExplainRequest\x1a\x1f.gish.plugin.v1.ExplainResponse\x12A\n" +
+	"\x04Plan\x12\x1b.gish.plugin.v1.PlanRequest\x1a\x1c.gish.plugin.v1.PlanResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_ai_proto_rawDescOnce sync.Once
@@ -409,28 +600,35 @@ func file_gish_plugin_v1_ai_proto_rawDescGZIP() []byte {
 	return file_gish_plugin_v1_ai_proto_rawDescData
 }
 
-var file_gish_plugin_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_gish_plugin_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_gish_plugin_v1_ai_proto_goTypes = []any{
 	(*ShellContext)(nil),     // 0: gish.plugin.v1.ShellContext
 	(*ComposeRequest)(nil),   // 1: gish.plugin.v1.ComposeRequest
 	(*ComposeCandidate)(nil), // 2: gish.plugin.v1.ComposeCandidate
 	(*ExplainRequest)(nil),   // 3: gish.plugin.v1.ExplainRequest
 	(*ExplainResponse)(nil),  // 4: gish.plugin.v1.ExplainResponse
-	nil,                      // 5: gish.plugin.v1.ShellContext.EnvEntry
+	(*PlanRequest)(nil),      // 5: gish.plugin.v1.PlanRequest
+	(*PlanStep)(nil),         // 6: gish.plugin.v1.PlanStep
+	(*PlanResponse)(nil),     // 7: gish.plugin.v1.PlanResponse
+	nil,                      // 8: gish.plugin.v1.ShellContext.EnvEntry
 }
 var file_gish_plugin_v1_ai_proto_depIdxs = []int32{
-	5, // 0: gish.plugin.v1.ShellContext.env:type_name -> gish.plugin.v1.ShellContext.EnvEntry
+	8, // 0: gish.plugin.v1.ShellContext.env:type_name -> gish.plugin.v1.ShellContext.EnvEntry
 	0, // 1: gish.plugin.v1.ComposeRequest.context:type_name -> gish.plugin.v1.ShellContext
 	0, // 2: gish.plugin.v1.ExplainRequest.context:type_name -> gish.plugin.v1.ShellContext
-	1, // 3: gish.plugin.v1.AIProvider.Compose:input_type -> gish.plugin.v1.ComposeRequest
-	3, // 4: gish.plugin.v1.AIProvider.Explain:input_type -> gish.plugin.v1.ExplainRequest
-	2, // 5: gish.plugin.v1.AIProvider.Compose:output_type -> gish.plugin.v1.ComposeCandidate
-	4, // 6: gish.plugin.v1.AIProvider.Explain:output_type -> gish.plugin.v1.ExplainResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 3: gish.plugin.v1.PlanRequest.context:type_name -> gish.plugin.v1.ShellContext
+	6, // 4: gish.plugin.v1.PlanResponse.steps:type_name -> gish.plugin.v1.PlanStep
+	1, // 5: gish.plugin.v1.AIProvider.Compose:input_type -> gish.plugin.v1.ComposeRequest
+	3, // 6: gish.plugin.v1.AIProvider.Explain:input_type -> gish.plugin.v1.ExplainRequest
+	5, // 7: gish.plugin.v1.AIProvider.Plan:input_type -> gish.plugin.v1.PlanRequest
+	2, // 8: gish.plugin.v1.AIProvider.Compose:output_type -> gish.plugin.v1.ComposeCandidate
+	4, // 9: gish.plugin.v1.AIProvider.Explain:output_type -> gish.plugin.v1.ExplainResponse
+	7, // 10: gish.plugin.v1.AIProvider.Plan:output_type -> gish.plugin.v1.PlanResponse
+	8, // [8:11] is the sub-list for method output_type
+	5, // [5:8] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_gish_plugin_v1_ai_proto_init() }
@@ -444,7 +642,7 @@ func file_gish_plugin_v1_ai_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_ai_proto_rawDesc), len(file_gish_plugin_v1_ai_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

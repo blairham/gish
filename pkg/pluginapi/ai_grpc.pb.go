@@ -40,6 +40,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	AIProvider_Compose_FullMethodName = "/gish.plugin.v1.AIProvider/Compose"
 	AIProvider_Explain_FullMethodName = "/gish.plugin.v1.AIProvider/Explain"
+	AIProvider_Plan_FullMethodName    = "/gish.plugin.v1.AIProvider/Plan"
 )
 
 // AIProviderClient is the client API for AIProvider service.
@@ -53,6 +54,11 @@ type AIProviderClient interface {
 	// Explain answers "why did that fail" (or "what does this do") for
 	// one command.
 	Explain(ctx context.Context, in *ExplainRequest, opts ...grpc.CallOption) (*ExplainResponse, error)
+	// Plan turns a multi-step task into a spec the user approves before
+	// anything runs (#34). The provider only proposes: execution,
+	// approval gates, and sandboxing are the shell's, and a plugin never
+	// holds an exec channel.
+	Plan(ctx context.Context, in *PlanRequest, opts ...grpc.CallOption) (*PlanResponse, error)
 }
 
 type aIProviderClient struct {
@@ -92,6 +98,16 @@ func (c *aIProviderClient) Explain(ctx context.Context, in *ExplainRequest, opts
 	return out, nil
 }
 
+func (c *aIProviderClient) Plan(ctx context.Context, in *PlanRequest, opts ...grpc.CallOption) (*PlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PlanResponse)
+	err := c.cc.Invoke(ctx, AIProvider_Plan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AIProviderServer is the server API for AIProvider service.
 // All implementations must embed UnimplementedAIProviderServer
 // for forward compatibility.
@@ -103,6 +119,11 @@ type AIProviderServer interface {
 	// Explain answers "why did that fail" (or "what does this do") for
 	// one command.
 	Explain(context.Context, *ExplainRequest) (*ExplainResponse, error)
+	// Plan turns a multi-step task into a spec the user approves before
+	// anything runs (#34). The provider only proposes: execution,
+	// approval gates, and sandboxing are the shell's, and a plugin never
+	// holds an exec channel.
+	Plan(context.Context, *PlanRequest) (*PlanResponse, error)
 	mustEmbedUnimplementedAIProviderServer()
 }
 
@@ -118,6 +139,9 @@ func (UnimplementedAIProviderServer) Compose(*ComposeRequest, grpc.ServerStreami
 }
 func (UnimplementedAIProviderServer) Explain(context.Context, *ExplainRequest) (*ExplainResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Explain not implemented")
+}
+func (UnimplementedAIProviderServer) Plan(context.Context, *PlanRequest) (*PlanResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Plan not implemented")
 }
 func (UnimplementedAIProviderServer) mustEmbedUnimplementedAIProviderServer() {}
 func (UnimplementedAIProviderServer) testEmbeddedByValue()                    {}
@@ -169,6 +193,24 @@ func _AIProvider_Explain_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AIProvider_Plan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AIProviderServer).Plan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AIProvider_Plan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AIProviderServer).Plan(ctx, req.(*PlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AIProvider_ServiceDesc is the grpc.ServiceDesc for AIProvider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -179,6 +221,10 @@ var AIProvider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Explain",
 			Handler:    _AIProvider_Explain_Handler,
+		},
+		{
+			MethodName: "Plan",
+			Handler:    _AIProvider_Plan_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

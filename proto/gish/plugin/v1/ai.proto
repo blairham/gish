@@ -30,6 +30,11 @@ service AIProvider {
   // Explain answers "why did that fail" (or "what does this do") for
   // one command.
   rpc Explain(ExplainRequest) returns (ExplainResponse);
+  // Plan turns a multi-step task into a spec the user approves before
+  // anything runs (#34). The provider only proposes: execution,
+  // approval gates, and sandboxing are the shell's, and a plugin never
+  // holds an exec channel.
+  rpc Plan(PlanRequest) returns (PlanResponse);
 }
 
 // ShellContext is the shell's unfair advantage: real session state,
@@ -75,4 +80,28 @@ message ExplainRequest {
 
 message ExplainResponse {
   string explanation = 1;
+}
+
+message PlanRequest {
+  // The user's task, verbatim.
+  string task = 1;
+  ShellContext context = 2;
+  uint64 event_seq = 3;
+}
+
+message PlanStep {
+  // One-line intent, shown in the plan spec.
+  string title = 1;
+  // The command for this step, ready for the exec path. Raw command
+  // only — the host owns sandbox wrapping and approval gates.
+  string command = 2;
+  // The provider's own destructiveness assessment. Advisory: the shell
+  // makes its own judgment and gates on either being true.
+  bool destructive = 3;
+}
+
+message PlanResponse {
+  // What the plan does, one paragraph.
+  string summary = 1;
+  repeated PlanStep steps = 2;
 }

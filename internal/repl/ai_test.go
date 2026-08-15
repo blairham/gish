@@ -61,6 +61,12 @@ func (f *fakeAIClient) Explain(
 	return &pluginapi.ExplainResponse{Explanation: f.explainOut}, nil
 }
 
+func (f *fakeAIClient) Plan(
+	context.Context, *pluginapi.PlanRequest, ...grpc.CallOption,
+) (*pluginapi.PlanResponse, error) {
+	return nil, errors.New("fakeAIClient has no plan; use planningAIClient")
+}
+
 // aiHarness builds an aiManager over a fake provider and a real
 // (temp-dir) history store.
 func aiHarness(t *testing.T, fake *fakeAIClient) (*aiManager, *interp.Runner) {

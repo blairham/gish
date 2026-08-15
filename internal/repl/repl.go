@@ -220,6 +220,37 @@ func runEditor(ctx context.Context, login bool) error {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		// The agent surface (#34): plan first, approve, execute gated
+		// steps through the real exec path — intercepted before parsing,
+		// like ??, so the orchestration owns the whole interaction.
+		if task, isAgent := strings.CutPrefix(strings.TrimSpace(line), "agent "); isAgent || strings.TrimSpace(line) == "agent" {
+			drainSignals(sigs)
+			agentCtx, cancelAgent := context.WithCancel(ctx)
+			go func() {
+				select {
+				case <-sigs:
+					cancelAgent()
+				case <-agentCtx.Done():
+				}
+			}()
+			execStep := func(stepLine string) int {
+				file, perr := parser.Parse(strings.NewReader(stepLine), "agent-step")
+				if perr != nil {
+					fmt.Fprintln(os.Stderr, "gish:", perr)
+					return 2
+				}
+				drainSignals(sigs)
+				table.BeginLine(stepLine)
+				rerr := runInterruptible(agentCtx, runner, file, sigs)
+				if n, ok := table.EndLine(); ok && n.Stopped {
+					fmt.Printf("[%d]  Stopped  %s\n", n.ID, n.Command)
+				}
+				return exitCode(rerr)
+			}
+			handleAgent(agentCtx, agentDeps{runner: runner, in: os.Stdin, out: os.Stdout, exec: execStep}, task)
+			cancelAgent()
+			continue
+		}
 		// The ?? compose prefix (#20): the query goes to the AI provider
 		// and the candidate lands in the next buffer for review — it is
 		// never executed here. Ctrl-C cancels the model call.
