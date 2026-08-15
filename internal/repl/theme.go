@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -48,9 +49,9 @@ func promptStrings(runner *interp.Runner, info promptInfo) (string, string) {
 		if p, cp, ok := starship.render(info, info.width); ok {
 			return p, cp
 		}
-		return themedPrompt(info) // missing binary: native fallback
+		return themedPrompt(info, themeConfigFrom(runner)) // missing binary: native fallback
 	case "p10k":
-		return themedPrompt(info)
+		return themedPrompt(info, themeConfigFrom(runner))
 	default:
 		return nakedPrompt(info)
 	}
@@ -62,34 +63,143 @@ func nakedPrompt(info promptInfo) (string, string) {
 	return expandPrompt("%u@%h %W %% ", info), contPrompt
 }
 
+// themeSegment is one slot in the themed first line: an id addressable
+// from GISH_THEME_SEGMENTS, its default color, and a renderer that
+// returns empty when the segment has nothing to say.
+type themeSegment struct {
+	id     string
+	color  string
+	render func(info promptInfo) string
+}
+
+// themeSegments is the built-in set, in default display order. Ids not
+// in this table address %p{id} plugin segments.
+var themeSegments = []themeSegment{
+	{"dir", cCyan, func(info promptInfo) string { return smartPath(info.dir, info.home) }},
+	{"git", cMag, func(info promptInfo) string { return pluginSegment(info, "git") }},
+	{"pins", cDim, func(info promptInfo) string { return toolPins(info.dir) }},
+	{"jobs", cDim, func(info promptInfo) string {
+		if info.jobs > 0 {
+			return fmt.Sprintf("⚙%d", info.jobs)
+		}
+		return ""
+	}},
+	{"duration", cDim, func(info promptInfo) string {
+		if info.duration >= 3*time.Second {
+			return fmtDuration(info.duration)
+		}
+		return ""
+	}},
+	{"exit", cRed, func(info promptInfo) string {
+		if info.exitCode != 0 {
+			return fmt.Sprintf("✘ %d", info.exitCode)
+		}
+		return ""
+	}},
+}
+
+func pluginSegment(info promptInfo, id string) string {
+	if info.segment == nil {
+		return ""
+	}
+	return info.segment(id)
+}
+
+func defaultSegmentIDs() []string {
+	ids := make([]string, len(themeSegments))
+	for i, s := range themeSegments {
+		ids[i] = s.id
+	}
+	return ids
+}
+
+// themeConfig is the resolved per-segment configuration (#28): which
+// segments render, in what order, and any color overrides.
+type themeConfig struct {
+	segments []string
+	colors   map[string]string // segment id → SGR escape
+}
+
+func defaultThemeConfig() themeConfig {
+	return themeConfig{segments: defaultSegmentIDs()}
+}
+
+// themeConfigFrom reads GISH_THEME_SEGMENTS (ordered ids; unknown ids
+// address plugin segments) and GISH_THEME_COLOR_<ID> overrides. Invalid
+// or empty values fall back to the defaults — a bad rc line degrades,
+// it never breaks the prompt.
+func themeConfigFrom(runner *interp.Runner) themeConfig {
+	cfg := defaultThemeConfig()
+	if v := shellVar(runner, "GISH_THEME_SEGMENTS", ""); strings.TrimSpace(v) != "" {
+		cfg.segments = strings.Fields(v)
+	}
+	for _, id := range cfg.segments {
+		if sgr, ok := colorSGR(shellVar(runner, themeColorVar(id), "")); ok {
+			if cfg.colors == nil {
+				cfg.colors = map[string]string{}
+			}
+			cfg.colors[id] = sgr
+		}
+	}
+	return cfg
+}
+
+// themeColorVar maps a segment id to its color override variable:
+// dir → GISH_THEME_COLOR_DIR.
+func themeColorVar(id string) string {
+	return "GISH_THEME_COLOR_" + strings.ToUpper(strings.ReplaceAll(id, "-", "_"))
+}
+
+// themeColors is the named palette accepted by GISH_THEME_COLOR_* and
+// `config theme.color.<id>`; raw SGR parameter strings ("38;5;208")
+// pass through untranslated.
+var themeColors = map[string]string{
+	"black": "30", "red": "31", "green": "32", "yellow": "33",
+	"blue": "34", "magenta": "35", "cyan": "36", "white": "37",
+	"bright-black": "90", "bright-red": "91", "bright-green": "92",
+	"bright-yellow": "93", "bright-blue": "94", "bright-magenta": "95",
+	"bright-cyan": "96", "bright-white": "97", "dim": "2",
+}
+
+var sgrRe = regexp.MustCompile(`^[0-9]+(;[0-9]+)*$`)
+
+// colorSGR resolves a color name or raw SGR parameter string to its
+// escape sequence, reporting whether the value was usable.
+func colorSGR(value string) (string, bool) {
+	if params, ok := themeColors[value]; ok {
+		return "\x1b[" + params + "m", true
+	}
+	if sgrRe.MatchString(value) {
+		return "\x1b[" + value + "m", true
+	}
+	return "", false
+}
+
 // themedPrompt renders the p10k-style layout:
 //
 //	╭─ ~/d/gish  main !2 ?1  go 1.26.1  ⚙1  2.3s  ✘ 7
 //	╰─❯
-func themedPrompt(info promptInfo) (string, string) {
+func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
 	var b strings.Builder
 	b.WriteString(cDim + "╭─ " + cReset)
 
 	if os.Getenv("SSH_CONNECTION") != "" {
 		fmt.Fprintf(&b, "%s%s@%s%s ", cYel, info.username, info.host, cReset)
 	}
-	b.WriteString(cCyan + smartPath(info.dir, info.home) + cReset)
-	if info.segment != nil {
-		if git := info.segment("git"); git != "" {
-			b.WriteString("  " + cMag + git + cReset)
+	first := true
+	for _, id := range cfg.segments {
+		text, color := renderSegment(info, id)
+		if text == "" {
+			continue
 		}
-	}
-	if pins := toolPins(info.dir); pins != "" {
-		b.WriteString("  " + cDim + pins + cReset)
-	}
-	if info.jobs > 0 {
-		fmt.Fprintf(&b, "  %s⚙%d%s", cDim, info.jobs, cReset)
-	}
-	if info.duration >= 3*time.Second {
-		fmt.Fprintf(&b, "  %s%s%s", cDim, fmtDuration(info.duration), cReset)
-	}
-	if info.exitCode != 0 {
-		fmt.Fprintf(&b, "  %s✘ %d%s", cRed, info.exitCode, cReset)
+		if c, ok := cfg.colors[id]; ok {
+			color = c
+		}
+		if !first {
+			b.WriteString("  ")
+		}
+		first = false
+		b.WriteString(color + text + cReset)
 	}
 	b.WriteString("\n")
 
@@ -99,6 +209,17 @@ func themedPrompt(info promptInfo) (string, string) {
 	}
 	b.WriteString(cDim + "╰─" + cReset + arrow + "❯" + cReset + " ")
 	return b.String(), cDim + "│ " + cReset
+}
+
+// renderSegment resolves an id: built-ins from themeSegments, anything
+// else a plugin segment (dim by default).
+func renderSegment(info promptInfo, id string) (text, color string) {
+	for _, s := range themeSegments {
+		if s.id == id {
+			return s.render(info), s.color
+		}
+	}
+	return pluginSegment(info, id), cDim
 }
 
 // smartPath is the p10k-style directory: ~ abbreviation, and when the
