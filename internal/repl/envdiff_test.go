@@ -212,3 +212,27 @@ func TestTrustBuiltinUnavailableWithoutHost(t *testing.T) {
 		t.Errorf("stderr = %q", errOut)
 	}
 }
+
+func TestRequestedEnv(t *testing.T) {
+	runner := newTestRunner(t)
+	script := `export AWS_PROFILE=prod
+export SECRET_TOKEN=hunter2
+export LD_PRELOAD=/evil.so
+export KUBECONFIG=/tmp/kc`
+	if err := runEnvScript(t.Context(), runner, script+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	got := requestedEnv(runner, []string{"AWS_PROFILE", "SECRET_TOKEN", "LD_PRELOAD", "KUBECONFIG", "UNSET_VAR"})
+	if got["AWS_PROFILE"] != "prod" || got["KUBECONFIG"] != "/tmp/kc" {
+		t.Errorf("benign keys missing: %v", got)
+	}
+	if _, leaked := got["SECRET_TOKEN"]; leaked {
+		t.Error("secret-shaped key served to a segment")
+	}
+	if _, leaked := got["LD_PRELOAD"]; leaked {
+		t.Error("deny-listed key served to a segment")
+	}
+	if len(got) != 2 {
+		t.Errorf("requestedEnv = %v", got)
+	}
+}
