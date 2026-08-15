@@ -38,6 +38,11 @@ type Config struct {
 	// Suggest returns the full suggested line for the current buffer
 	// prefix (fish-style ghost text). nil disables suggestions.
 	Suggest func(text string) string
+	// Diagnose returns caution lines for the buffer text (parser-driven
+	// footgun warnings, shell-side). They render below the edit line on
+	// the completion-candidates surface, advisory only — the editor
+	// never blocks acceptance on them. nil disables diagnostics.
+	Diagnose func(text string) []string
 }
 
 type loopState int
@@ -208,6 +213,12 @@ func (e *Editor) render() {
 		prefix = e.cfg.ContPrompt
 	}
 	lines = append(lines, candidateRows(e.candList, e.rend.width)...)
+	// Diagnostics share the candidate surface (candidates win for their
+	// one-event lifetime) and vanish from the final accepted render so
+	// scrollback stays clean.
+	if e.state == stateRunning && len(e.candList) == 0 && e.cfg.Diagnose != nil && !e.search.active {
+		lines = append(lines, e.cfg.Diagnose(e.buf.String())...)
+	}
 	e.rend.render(lines, len(banner)+cl, displayWidth(prefix+before))
 }
 
