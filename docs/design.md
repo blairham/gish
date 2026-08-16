@@ -68,6 +68,24 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **Structured data uses `test`'s operator vocabulary, or not at all**
+  (2026-08, [#104](https://github.com/blairham/gish/issues/104),
+  docs/structured.md): the exploration turned up that the shape everyone
+  writes for this feature — `... | where %cpu > 50` — parses today as
+  `where %cpu` with stdout redirected, silently **creating a file named
+  `50`**. "Zero new grammar" and "nushell's comparison syntax" cannot
+  both hold, because `>`/`<`/`|` are the most load-bearing characters in
+  shell grammar, and the bash parser being the contract is the entire
+  differentiator over nushell.
+
+  POSIX already solved this for `test` in the 1970s for the same reason,
+  so the verbs speak the operators shell users already have in their
+  fingers: `where %cpu -gt 50`. Plain words, no quoting, no redirect, no
+  new grammar. It does not look like nushell, which is the correct trade
+  — looking like nushell is worth nothing while having nushell's
+  adoption problem. Sequenced after v1; if cut, the honest reason is
+  that the native eight-tool stack already covers the jq/awk slot.
+
 - **One prompt pipeline; a small, frozen escape set** (2026-08,
   [#109](https://github.com/blairham/gish/issues/109)): the #6
   `GISH_PROMPT` expander was explicitly a stopgap until the prompt
