@@ -5,15 +5,21 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/blairham/gish/internal/editor"
 	"github.com/blairham/gish/internal/term"
 )
 
-// fakeTerm scripts a sequence of input events.
+// fakeTerm scripts a sequence of input events. Events are *consumed*:
+// a second Events call (the editor restarts decoding around an
+// external edit) picks up where the first left off, like a real
+// terminal — replaying would loop forever.
 type fakeTerm struct {
+	mu     sync.Mutex
 	events []term.Event
+	pos    int
 }
 
 func (f *fakeTerm) EnterRaw() (func() error, error) { return func() error { return nil }, nil }
@@ -23,9 +29,22 @@ func (f *fakeTerm) Events(ctx context.Context) (<-chan term.Event, error) {
 	ch := make(chan term.Event)
 	go func() {
 		defer close(ch)
-		for _, ev := range f.events {
+		for {
+			f.mu.Lock()
+			if f.pos >= len(f.events) {
+				f.mu.Unlock()
+				return
+			}
+			ev := f.events[f.pos]
+			f.mu.Unlock()
 			select {
 			case ch <- ev:
+				// Advance only on delivery: an event still in flight
+				// when the context dies must survive for the next
+				// decoder session (the shell's type-ahead rule).
+				f.mu.Lock()
+				f.pos++
+				f.mu.Unlock()
 			case <-ctx.Done():
 				return
 			}

@@ -171,6 +171,8 @@ func runEditor(ctx context.Context, login bool) error {
 	// Footgun diagnostics (#46) are content, not decoration: they stay on
 	// without color, just unstyled.
 	edCfg.Diagnose = lintFn(runner, colorOK)
+	// Ctrl-X Ctrl-E: edit the line in $EDITOR (#96).
+	edCfg.ExternalEdit = externalEditFn(runner)
 	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, edCfg)
 	parser := syntax.NewParser()
 
@@ -230,6 +232,20 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 		if strings.TrimSpace(line) == "" {
 			continue
+		}
+		// History expansion (#96): !!, !$, !^, !:N, !prefix, ^old^new.
+		// bash echoes the expansion so the user sees what runs.
+		if store != nil {
+			expanded, changed, herr := expandHistory(line, store.Match)
+			switch {
+			case herr != nil:
+				fmt.Fprintln(os.Stderr, "gish:", herr)
+				lastExit = 1
+				continue
+			case changed:
+				fmt.Fprintln(os.Stdout, expanded)
+				line = expanded
+			}
 		}
 		// The agent surface (#34): plan first, approve, execute gated
 		// steps through the real exec path — intercepted before parsing,

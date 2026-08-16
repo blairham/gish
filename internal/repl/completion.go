@@ -2,6 +2,7 @@ package repl
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"mvdan.cc/sh/v3/interp"
@@ -20,6 +21,17 @@ import (
 func completionFn(runner *interp.Runner, host *pluginhost.Host) func(string, int) editor.CompleteResult {
 	return func(text string, cursor int) editor.CompleteResult {
 		word, start, isCmd := complete.Analyze(text, cursor)
+
+		// Tab expands $VAR and ~ under the cursor (#96) — the zsh
+		// behavior fish converts document missing. A word that names a
+		// set variable becomes its value; the single candidate inserts
+		// as the expansion.
+		if expanded, ok := expandWord(runner, word); ok {
+			return editor.CompleteResult{
+				WordStart:  start,
+				Candidates: []editor.Candidate{{Value: expanded, Display: expanded}},
+			}
+		}
 
 		var core []complete.Candidate
 		if isCmd && !strings.ContainsAny(word, "/~") {
@@ -48,6 +60,28 @@ func completionFn(runner *interp.Runner, host *pluginhost.Host) func(string, int
 		}
 		return res
 	}
+}
+
+// expandWord resolves $VAR/${VAR} and ~ words to their values;
+// ok=false leaves completion to the normal providers.
+func expandWord(runner *interp.Runner, word string) (string, bool) {
+	switch {
+	case strings.HasPrefix(word, "${") && strings.HasSuffix(word, "}") && len(word) > 3:
+		name := word[2 : len(word)-1]
+		if v, ok := runner.Vars[name]; ok && v.IsSet() {
+			return v.String(), true
+		}
+	case strings.HasPrefix(word, "$") && len(word) > 1:
+		name := word[1:]
+		if v, ok := runner.Vars[name]; ok && v.IsSet() {
+			return v.String(), true
+		}
+	case word == "~":
+		if home, err := os.UserHomeDir(); err == nil {
+			return home, true
+		}
+	}
+	return "", false
 }
 
 // pathVar resolves PATH: session modifications first, environment after.
