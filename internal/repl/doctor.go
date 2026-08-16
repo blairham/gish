@@ -17,6 +17,7 @@ import (
 
 	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/gish/internal/p10k"
 	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/internal/sandbox"
 	"github.com/blairham/gish/internal/tools"
@@ -130,11 +131,20 @@ func checkTheme(env expand.Environ) checkResult {
 	if theme == "" {
 		theme = "plain"
 	}
-	if !slices.Contains([]string{"plain", "p10k", "starship"}, theme) {
+	if !slices.Contains([]string{"plain", "p10k", "gish", "starship"}, theme) {
 		return checkResult{
 			checkWarn, "theme",
 			fmt.Sprintf("GISH_THEME=%q is not built-in — a plugin theme may claim it; otherwise the native theme renders", theme),
-			"config theme p10k   (or plain | starship, or install the plugin that serves it)",
+			"config theme p10k   (or plain | gish | starship, or install the plugin that serves it)",
+		}
+	}
+	if theme == "p10k" {
+		if preset := env.Get("GISH_P10K_PRESET").String(); preset != "" && p10k.Preset(preset) == nil {
+			return checkResult{
+				checkWarn, "theme",
+				fmt.Sprintf("GISH_P10K_PRESET=%q is not a preset — rendering %s instead", preset, p10k.DefaultPreset),
+				"p10k configure   (presets: " + strings.Join(p10k.Presets(), " | ") + ")",
+			}
 		}
 	}
 	if theme == "starship" {

@@ -47,7 +47,14 @@ var builtinThemes = map[string]func(*interp.Runner, promptInfo) (string, string,
 		p, cp := nakedPrompt(info)
 		return p, cp, ""
 	},
-	"p10k": nativeTheme,
+	// p10k is the native powerlevel10k engine (internal/p10k): the
+	// presets, the segment set and the layout, rendered in-process.
+	"p10k": p10kTheme,
+	// gish is this shell's own segment-knob theme — the one GISH_THEME_*
+	// configures. It predates the p10k engine and stays because those
+	// knobs are a documented surface, and because it is the fallback
+	// when a named theme cannot render.
+	"gish": nativeTheme,
 	// literal: the GISH_PROMPT override, rendered as a theme so there is
 	// exactly one prompt pipeline (#109).
 	"literal": func(runner *interp.Runner, info promptInfo) (string, string, string) {
