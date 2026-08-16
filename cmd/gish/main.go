@@ -35,11 +35,31 @@ func run() int {
 		return runSandboxExec(os.Args[2:])
 	}
 
+	// `gish ssh host` (#98). Intercepted before flag parsing because the
+	// flags after it belong to ssh, not to gish. A script literally named
+	// `ssh` is still runnable as `gish ./ssh`.
+	if len(os.Args) >= 2 && os.Args[1] == "ssh" {
+		return runSSH(context.Background(), os.Args[2:])
+	}
+
 	command := flag.String("c", "", "run `command` and exit")
 	loginFlag := flag.Bool("l", false, "act as a login shell (source profile files)")
 	sandboxFlag := flag.String("sandbox", "", "run every external command under sandbox `profile`")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	// The far side of `gish ssh`: gish was copied to this host, not
+	// installed on it. --rc names the pushed settings bundle; passing a
+	// path (never the contents) keeps the settings out of argv, which is
+	// world-readable through /proc.
+	remoteSession := flag.Bool("remote-session", false, "this session was brought here by `gish ssh`")
+	rcPath := flag.String("rc", "", "read startup settings from `file`")
 	flag.Parse()
+
+	if *rcPath != "" {
+		os.Setenv("GISH_RC", *rcPath) //nolint:errcheck // process-local
+	}
+	if *remoteSession {
+		os.Setenv("GISH_REMOTE_SESSION", "1") //nolint:errcheck // process-local
+	}
 
 	if *showVersion {
 		fmt.Printf("gish %s (commit %s, built %s)\n", version, commit, date)

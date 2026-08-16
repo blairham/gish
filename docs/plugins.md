@@ -91,6 +91,36 @@ Applied diffs revert when the shell leaves the proposal's subtree.
 | *(native)* backend fan-out | async, deadline-bounded Append to every HistoryBackend after a successful local store | Fire-and-forget: the next prompt never waits; `stored=false` governs only a backend's own store |
 | `gish-sync` | local-first SQLite history, cross-machine sync, frecency + directory-locality ctrl-r ranking | Local file is authoritative; sync is eventual and conflict-free (append-only log) |
 
+## Plugin locality: where does a plugin belong when the shell is remote?
+
+`gish ssh` (#98, docs/ssh.md) copies gish to a remote box and execs it
+there. Plugins deliberately do **not** travel in v1 — the deadline-bounded
+degradation already makes their absence safe, and a plugin is not a
+single static file the way the shell is. But it raises a question the
+contract has to answer before third-party plugins exist, because
+retrofitting a default onto plugins already in the wild means guessing
+wrong for half of them.
+
+Every plugin is one of two kinds, and the distinction is not about speed:
+
+- **Remote-local** — it describes the machine the shell is running on.
+  `gish-git` reads the repo you are standing in; a version-manager
+  segment reads that box's install tree. Running these anywhere else
+  produces a confidently wrong answer, which is worse than no answer.
+- **Identity-local** — it describes *you*, not the box. `gish-aws` reads
+  your SSO tokens, a history backend holds your command record, a
+  credential-backed completion source holds your secrets. The right place
+  for these is the machine you sat down at, reached over a
+  reverse-forwarded socket — which is also the strong security story:
+  those tokens and that history never land on the server.
+
+v1 ships neither: no plugins on the remote at all. When the reverse
+socket lands, the kind becomes a declared field on `DescribeResponse`
+(additive, so no version bump), and the host routes accordingly. Until
+then, plugin authors should assume a remote session has no plugins and
+make sure their segment's absence reads as "not shown" rather than
+"broken".
+
 ## Needs new proto services (v1 is frozen-additive — new services are fine)
 
 | Plugin | New surface | Notes |
