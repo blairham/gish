@@ -43,6 +43,14 @@ remote box. It's a local daily driver whose bash compatibility means
 zero context-switch when you land on a server. #98 is the real answer,
 and saying "not yet, here's the plan" beats deflecting.
 
+**Host agents; don't claim to be one.** The AI line is `??` and
+`explain` — opt-in, preview-before-execute, bring-your-own-provider. The
+`agent` builtin exists but is experimental and frozen (#111) and stays
+out of the pitch entirely: "shell with a built-in AI agent" is the
+Warp-shaped red flag. The *strong* AI claim is the inverse — run your
+coding agent under `gish --sandbox workspace` and the shell confines what
+it can touch. That is a claim no agent CLI can make about itself.
+
 **No "future of the terminal" tone.** Warp poisoned that well. Say what
 it does; let the numbers carry the ambition.
 

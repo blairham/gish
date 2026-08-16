@@ -65,6 +65,30 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **Host agents; do not be one** (2026-08,
+  [#111](https://github.com/blairham/gish/issues/111)): the `??` compose
+  and `explain` surfaces match the researched demand for AI in a shell
+  point for point; *plan orchestration* was nowhere in that signal, and
+  competing with funded agentic CLIs that already run inside the shell
+  is a losing trade. The stronger position is that gish is the best
+  **host** for other people's agents — sandbox profiles on the exec path
+  (#21), permission-gated env (#12), secret-free history (#10) — which
+  is a claim no agent CLI can make about itself.
+
+  The #34 `agent` builtin is **frozen, not deleted**: experimental,
+  unadvertised, and receiving no further investment. It is not cut,
+  because the proposed alternative does not survive contact with the
+  architecture — moving orchestration behind the plugin boundary would
+  require giving a plugin an exec channel, which the tier-2 contract
+  forbids precisely so a plugin can never run commands on the user's
+  behalf. A plugin-side agent could only *propose*, which is `??` with
+  extra ceremony. The existing implementation already holds execution
+  where it belongs (the shell), so freezing costs nothing and deleting
+  would trade a working safety property for a smaller diff.
+
+  It stays out of the announcement regardless: "shell with a built-in AI
+  agent" is the Warp-shaped red flag the launch playbook exists to avoid.
+
 - **Tier-1 zsh compat is an escape hatch, not the adoption story**
   (2026-08, [#105](https://github.com/blairham/gish/issues/105)):
   the Aug 2026 research is unambiguous — config fatigue is the #1
