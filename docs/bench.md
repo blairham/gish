@@ -13,15 +13,16 @@ both, because quoting only your best number is how benchmarks lie.
 
 | configuration | median | best | what it includes |
 | --- | ---: | ---: | --- |
-| gish (naked default) | 7.9 ms | 7.2 ms | out-of-box: no rc, no plugins, stock prompt |
-| gish (p10k theme) | 5.9 ms | 5.8 ms | native two-line theme engine loaded |
-| gish (lint + highlight + suggestions) | 5.6 ms | 5.5 ms | every interactive feature on |
-| bash (no rc) | 5.5 ms | 5.3 ms | empty rc: the floor for a bash-family shell |
-| zsh (no rc) | 8.6 ms | 8.4 ms | empty rc: zsh's own floor |
+| gish (naked default) | 7.2 ms | 6.8 ms | out-of-box: no rc, no plugins, stock prompt |
+| gish (p10k theme) | 5.9 ms | 5.7 ms | the full native powerlevel10k engine, every segment resolved |
+| gish (lint + highlight + suggestions) | 5.9 ms | 5.6 ms | every interactive feature on |
+| bash (no rc) | 5.6 ms | 5.4 ms | empty rc: the floor for a bash-family shell |
+| zsh (no rc) | 9.0 ms | 8.8 ms | empty rc: zsh's own floor |
 | dash (POSIX baseline) | 1.5 ms | 1.4 ms | not a competitor — the floor a process-spawn can reach |
 | fish | — | — | *not installed on the measuring machine* |
 | nushell | — | — | *not installed on the measuring machine* |
-| zsh (this machine's real config) | 266.3 ms | 260.1 ms | the measuring user's own 129-line .zshrc (plugin manager, theme, tool hooks) |
+| zsh + powerlevel10k | 87.3 ms | 86.2 ms | powerlevel10k with the measuring user's own .p10k.zsh — the thing gish's p10k theme is a port of |
+| zsh (this machine's real config) | 304.4 ms | 302.6 ms | the measuring user's own 129-line .zshrc (plugin manager, theme, tool hooks) |
 
 ### What the loaded-config row means
 
@@ -47,10 +48,10 @@ what the terminal sees is the honest measurement.
 | scenario | p50 | p99 | what is active |
 | --- | ---: | ---: | --- |
 | plain insert | 0.1 ms | 0.2 ms | no highlighting, no suggestions: the editor floor |
-| insert with highlighting | 0.2 ms | 0.4 ms | parser-driven syntax highlighting active |
-| insert with highlight + suggestions | 0.2 ms | 0.4 ms | highlighting, history ghost text, and footgun lint all on |
+| insert with highlighting | 0.2 ms | 0.3 ms | parser-driven syntax highlighting active |
+| insert with highlight + suggestions | 0.2 ms | 0.3 ms | highlighting, history ghost text, and footgun lint all on |
 | insert mid-command with lint | 0.2 ms | 0.3 ms | the lint path with a real finding to report |
-| Tab completion (core providers) | 0.4 ms | 0.6 ms | command-name completion, no plugins installed |
+| Tab completion (core providers) | 0.4 ms | 0.5 ms | command-name completion, no plugins installed |
 
 ## Methodology and honesty notes
 

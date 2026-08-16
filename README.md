@@ -13,11 +13,12 @@ and never auto-execute — a composed command lands in your editor buffer
 for you to read, edit, and run.
 
 ```
-                      startup      what it includes
-gish                   5.6 ms      theme + highlighting + suggestions + lint, all on
-bash (no rc)           5.5 ms      empty rc
-zsh (no rc)            8.6 ms      empty rc
-zsh (real config)    266.3 ms      a 129-line .zshrc: plugin manager, theme, tool hooks
+                          startup      what it includes
+gish                       5.9 ms      theme + highlighting + suggestions + lint, all on
+bash (no rc)               5.6 ms      empty rc
+zsh (no rc)                9.0 ms      empty rc
+zsh + powerlevel10k       87.3 ms      the prompt gish's p10k theme is a port of
+zsh (real config)        304.4 ms      a real .zshrc: plugin manager, theme, tool hooks
 ```
 
 Keystroke latency, measured end to end from byte-in to repaint-out:
@@ -70,9 +71,10 @@ gish starts **naked**: the prompt is the stock zsh/bash shape (`user@host dir %`
 
 ```sh
 # ~/.gishrc
-GISH_THEME=p10k                # the native p10k-class two-line prompt: smart path,
-                               # git, runtime pins, jobs, duration, exit status —
-                               # all async and budget-bounded, never waits on anything
+GISH_THEME=p10k                # a native port of powerlevel10k: its presets, its
+                               # ~50 segments, its config vocabulary — in Go, and
+                               # 15x faster to first prompt (see docs/p10k.md)
+GISH_THEME=gish                # or gish's own segment-knob theme (GISH_THEME_*)
 GISH_THEME=starship            # or your exact starship prompt, unchanged
 GISH_PROMPT='%~ %p{git} %?$ '  # or take full manual control (always wins)
 GISH_PROMPT_CONT='... '        # zsh spellings work: %n user, %m host, %~ cwd,
@@ -81,6 +83,8 @@ GISH_PROMPT_CONT='... '        # zsh spellings work: %n user, %m host, %~ cwd,
 ```
 
 Or skip the file editing: `config theme starship` sets it **live and** writes it to your rc file in one step. `config` lists everything tunable (`theme`, `lint`, `prompt`).
+
+Coming from powerlevel10k? `p10k configure` is the wizard and `p10k import` brings your existing `~/.p10k.zsh` across — [docs/p10k.md](docs/p10k.md) covers the presets, what imports cleanly, and what deliberately does not.
 
 Plugins are executables in `$XDG_DATA_HOME/gish/plugins` — `plugins` lists them. `gish-git` (in this repo) serves the `%p{git}` segment: branch, ahead/behind, staged/dirty/untracked, cached per-repo with fsnotify invalidation.
 

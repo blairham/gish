@@ -31,9 +31,17 @@ func StartupConfigs(gishBin string) []Config {
 		},
 		{
 			Label: "gish (p10k theme)", Bin: gishBin,
+			// The marker cannot be GISH_PROMPT here: a manual prompt
+			// outranks the theme, so setting it would measure a string
+			// literal and call it a theme. Instead the theme renders in
+			// full — directory, git, every segment — and its prompt
+			// character *is* the marker, so the clock stops only once
+			// the whole prompt has been computed.
 			Env: append(slicesClone(gishEnv),
-				"GISH_THEME=p10k", "GISH_PROMPT_MARKER=1", "GISH_PROMPT="+marker+" "),
-			Note: "native two-line theme engine loaded",
+				"GISH_THEME=p10k",
+				"POWERLEVEL9K_PROMPT_CHAR_OK_CONTENT_EXPANSION="+marker,
+				"POWERLEVEL9K_PROMPT_CHAR_ERROR_CONTENT_EXPANSION="+marker),
+			Note: "the full native powerlevel10k engine, every segment resolved",
 		},
 		{
 			Label: "gish (lint + highlight + suggestions)", Bin: gishBin,
@@ -102,6 +110,89 @@ func StartupConfigs(gishBin string) []Config {
 		configs = append(configs, Config{Label: "nushell", Note: "not installed on the measuring machine"})
 	}
 	return configs
+}
+
+// PowerlevelConfig is the head-to-head: real zsh running real
+// powerlevel10k, against gish running its native port of it.
+//
+// This is the only comparison that answers "is the port actually
+// faster", and it is deliberately generous to upstream — instant prompt
+// is left on, since that is how people run it, and the marker is
+// appended as the last precmd so the clock stops when the *real* prompt
+// is ready rather than when the cached one is painted. Without that, a
+// theme with an instant prompt appears to start in no time at all, which
+// is exactly the illusion instant prompt exists to create.
+//
+// Returns false when powerlevel10k is not installed, and the row is
+// reported as missing rather than estimated.
+func PowerlevelConfig() (Config, bool) {
+	zsh := look("zsh")
+	if zsh == "" {
+		return Config{}, false
+	}
+	themeFile, ok := findPowerlevel10k()
+	if !ok {
+		return Config{}, false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Config{}, false
+	}
+
+	// Use the measuring user's own p10k configuration when they have
+	// one: a stock config measures a prompt nobody runs.
+	rc := "source " + themeFile + "\n"
+	note := "powerlevel10k with its shipped defaults"
+	if p10krc := filepath.Join(home, ".p10k.zsh"); fileExists(p10krc) {
+		rc += "source " + p10krc + "\n"
+		note = "powerlevel10k with the measuring user's own .p10k.zsh"
+	}
+	rc += "gish_bench_marker() { print -n '" + marker + " ' }\n" +
+		"precmd_functions+=(gish_bench_marker)\n"
+
+	return Config{
+		Label: "zsh + powerlevel10k", Bin: zsh,
+		Args: []string{"-i"},
+		Env: []string{
+			"HOME=" + home, "ZDOTDIR={{home}}",
+			"TERM=xterm-256color", "PATH=" + os.Getenv("PATH"),
+		},
+		RC:   rc,
+		Note: note + " — the thing gish's p10k theme is a port of",
+	}, true
+}
+
+// findPowerlevel10k looks where the common installers put it.
+func findPowerlevel10k() (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false
+	}
+	candidates := []string{
+		".zi/plugins/romkatv---powerlevel10k",
+		".oh-my-zsh/custom/themes/powerlevel10k",
+		".zinit/plugins/romkatv---powerlevel10k",
+		"powerlevel10k",
+		".config/zsh/powerlevel10k",
+	}
+	for _, dir := range candidates {
+		path := filepath.Join(home, dir, "powerlevel10k.zsh-theme")
+		if fileExists(path) {
+			return path, true
+		}
+	}
+	for _, prefix := range []string{"/opt/homebrew/share", "/usr/local/share", "/usr/share"} {
+		path := filepath.Join(prefix, "powerlevel10k", "powerlevel10k.zsh-theme")
+		if fileExists(path) {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // RealZshConfig measures the measuring user's actual zsh setup when
