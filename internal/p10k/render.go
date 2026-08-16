@@ -91,6 +91,59 @@ func Render(cfg *Config, ctx *Context) Prompt {
 	return Prompt{Prompt: prompt, Cont: contPrompt(cfg), RPrompt: rprompt}
 }
 
+// RenderTransient produces the prompt an accepted line is left with: the
+// last line's left-hand segments only, with no frame, no right side and
+// no banner above it.
+//
+// The point is scrollback. A two-line framed prompt with a clock and a
+// git status is worth looking at while you are typing into it; twenty of
+// them stacked above your output is just noise you have to read past.
+// Upstream calls this the transient prompt, and it is the single
+// setting most responsible for a themed prompt staying usable.
+//
+// ok is false when the configuration does not ask for one.
+func RenderTransient(cfg *Config, ctx *Context) (string, bool) {
+	mode := strings.ToLower(cfg.Str("TRANSIENT_PROMPT", "off"))
+	switch mode {
+	case "always":
+	case "same-dir":
+		// Upstream's reasoning: when a command changed directory, the
+		// full prompt is the record of where you were, so it stays.
+		if ctx.PrevCwd != "" && ctx.PrevCwd != ctx.Cwd {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+
+	left := splitLines(cfg.List("LEFT_PROMPT_ELEMENTS"))
+	if len(left) == 0 {
+		return "", false
+	}
+	line := renderSide(cfg, ctx, sideLeft, left[len(left)-1])
+	if strings.TrimSpace(plainText(line)) == "" {
+		// A last line with nothing on it (an element list that ends in a
+		// newline) would collapse the accepted command onto a bare line
+		// with no marker at all. Keep the full prompt instead.
+		return "", false
+	}
+	return line, true
+}
+
+// plainText drops escapes, for emptiness checks.
+func plainText(s string) string {
+	var b strings.Builder
+	for len(s) > 0 {
+		if rest, ok := skipEscape(s); ok {
+			s = rest
+			continue
+		}
+		b.WriteByte(s[0])
+		s = s[1:]
+	}
+	return b.String()
+}
+
 // joinLine puts the two halves of a banner line at opposite edges,
 // filling the middle with the gap character. When the width is unknown
 // or the halves would collide, the right half is dropped rather than
@@ -100,7 +153,12 @@ func joinLine(cfg *Config, ctx *Context, left, right string, lineIdx int) string
 		return left
 	}
 	if ctx.Width <= 0 {
-		return left + " " + right
+		// Width unknown: there is no way to place the right side, and
+		// gluing it on wraps the line at whatever the real edge turns
+		// out to be — which smears the frame on every repaint after it.
+		// The editor's rule for a right prompt applies here too: hide
+		// rather than wrap.
+		return left
 	}
 	gap := ctx.Width - displayWidth(left) - displayWidth(right)
 	if gap < 1 {

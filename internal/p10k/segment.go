@@ -50,6 +50,10 @@ type Context struct {
 	// and segments must not be able to tell the difference.
 	Getenv func(string) string
 
+	// PrevCwd is the directory the previous prompt rendered in, which is
+	// how the same-dir transient mode tells "I moved" from "I stayed".
+	PrevCwd string
+
 	// upCache memoizes FindUp for the life of this render.
 	upCache map[string]string
 }

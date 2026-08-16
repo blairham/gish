@@ -35,6 +35,21 @@ import (
 // anything layered on top happens on a clone.
 var presetCache sync.Map // preset name -> *p10k.Config
 
+// lastPromptDir is the directory the previous prompt rendered in. The
+// same-dir transient mode needs it, and prompt resolution is
+// single-threaded per session, so a package variable is the honest
+// shape — the same one starship and the segment renderer already use.
+//
+// A note on what same-dir can mean here. Upstream describes it as "trim
+// the prompt unless the command changed directory", but the trim happens
+// when the line is accepted, before the command has run — nobody can
+// know yet. So this reads it the other way round: a prompt is trimmed
+// unless the *previous* command changed directory. Either way a
+// directory change leaves one full prompt in the scrollback as a
+// landmark, which is the point of the setting; the landmark lands just
+// below the cd rather than just above it.
+var lastPromptDir string
+
 // p10kTheme is the builtinThemes entry for "p10k".
 func p10kTheme(runner *interp.Runner, info promptInfo) (string, string, string) {
 	out := p10k.Render(p10kConfigFor(runner), p10kContext(runner, info))
@@ -167,6 +182,7 @@ func p10kContext(runner *interp.Runner, info promptInfo) *p10k.Context {
 	if runner != nil {
 		ctx.Getenv = func(name string) string { return shellVar(runner, name, "") }
 	}
+	ctx.PrevCwd = lastPromptDir
 	// The branch is read here and now — one cached file read. Counts come
 	// from whoever is scanning the repository and are merged when they
 	// describe this same working tree.

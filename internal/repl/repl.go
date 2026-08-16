@@ -227,6 +227,11 @@ func runEditor(ctx context.Context, login bool) error {
 		p, cp, rp := promptStrings(runner, info)
 		ed.SetPrompt(p, cp)
 		ed.SetRPrompt(rp)
+		// The short prompt the accepted line is left with (#p10k
+		// TRANSIENT_PROMPT). Resolved before the read so the editor can
+		// swap it in without asking anything at accept time.
+		ed.SetTransientPrompt(transientPrompt(runner, info))
+		lastPromptDir = info.dir
 
 		line, err := ed.ReadCommand(ctx)
 		switch {
