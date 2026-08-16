@@ -145,9 +145,10 @@ remote host. See `internal/remote/remote_test.go`.
 
 ## Not yet
 
-- **OSC-52 clipboard** ([#140](https://github.com/blairham/gish/issues/140)):
-  copy from a remote gish to the local clipboard with zero forwarding and
-  zero remote support. Independent of everything above.
+- ~~OSC-52 clipboard~~ **landed** (#140): `… | clip` copies to the
+  clipboard of the terminal you are sitting at, not the machine the shell
+  runs on — zero forwarding, zero remote support. `doctor` names your
+  terminal and, when it ships OSC 52 switched off, which setting to flip.
 - **Local-identity plugins over a reverse-forwarded socket**, so a remote
   session can reach local plugins while AWS SSO tokens, the history
   store, and the credential store never land on the server.

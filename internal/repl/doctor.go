@@ -21,6 +21,7 @@ import (
 	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/internal/remote"
 	"github.com/blairham/gish/internal/sandbox"
+	"github.com/blairham/gish/internal/term"
 	"github.com/blairham/gish/internal/tools"
 	"github.com/blairham/gish/internal/ui"
 )
@@ -74,6 +75,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkSemanticMarks(hc),
 		checkHistorySync(),
 		checkRemoteSSH(hc),
+		checkClipboard(),
 		checkTerminal(),
 	}
 
@@ -421,6 +423,19 @@ func checkRemoteSSH(hc interp.HandlerContext) checkResult {
 		}
 	}
 	return checkResult{checkOK, "ssh", fmt.Sprintf("`gish ssh` ready, bring=%s (static build)", mode), ""}
+}
+
+// checkClipboard reports OSC 52 support (#140). Several terminals ship
+// it switched off — for the good reason that a shell able to *read* the
+// clipboard could exfiltrate whatever you last copied — so "clip does
+// nothing" is usually a setting rather than a bug, and doctor should
+// name which one.
+func checkClipboard() checkResult {
+	detail, known := term.ClipboardTerminal()
+	if !known {
+		return checkResult{checkOK, "clipboard", "OSC 52 " + detail, ""}
+	}
+	return checkResult{checkOK, "clipboard", detail, ""}
 }
 
 // checkTerminal explains the environment-driven degradations: they are
