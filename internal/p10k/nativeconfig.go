@@ -102,7 +102,7 @@ func LoadConfigFile(path string) *Config {
 			continue
 		}
 		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		value = unquoteValue(value)
 		if isListKey(key) {
 			cfg.SetList(key, strings.Fields(value))
 			continue
@@ -110,6 +110,46 @@ func LoadConfigFile(path string) *Config {
 		cfg.Set(key, value)
 	}
 	return cfg
+}
+
+// unquoteValue reads the right-hand side of a setting.
+//
+// Whitespace is significant here, which is easy to miss: the lean preset
+// and every configuration derived from it separate segments by setting
+// LEFT_SUBSEGMENT_SEPARATOR to a single space. Trimming the value on the
+// way in turns that space into the empty string, and the prompt renders
+// with its segments run together — `~/dev/gishmain` instead of
+// `~/dev/gish main`. So surrounding space is stripped only for unquoted
+// values; a quoted value keeps exactly what is between the quotes.
+func unquoteValue(raw string) string {
+	v := strings.TrimSpace(raw)
+	if len(v) >= 2 {
+		if q := v[0]; (q == '"' || q == '\'') && v[len(v)-1] == q {
+			return v[1 : len(v)-1]
+		}
+	}
+	return v
+}
+
+// quoteValue is unquoteValue's inverse: it quotes only when writing the
+// value bare would not read back identically.
+func quoteValue(v string) string {
+	if v == "" || v == strings.TrimSpace(v) && !needsQuotes(v) {
+		return v
+	}
+	return `"` + v + `"`
+}
+
+// needsQuotes reports whether a value would be misread unquoted — one
+// that already looks quoted, or that a comment-stripping reader would
+// cut short.
+func needsQuotes(v string) bool {
+	if len(v) >= 2 {
+		if q := v[0]; (q == '"' || q == '\'') && v[len(v)-1] == q {
+			return true // would be unquoted on the way back in
+		}
+	}
+	return false
 }
 
 // isListKey names the settings that hold several values. Keeping this an
@@ -141,7 +181,7 @@ func SaveNativeConfig(cfg *Config) (string, error) {
 			fmt.Fprintf(&b, "%s = %s\n", key, strings.Join(values, " "))
 			continue
 		}
-		fmt.Fprintf(&b, "%s = %s\n", key, cfg.scalars[key])
+		fmt.Fprintf(&b, "%s = %s\n", key, quoteValue(cfg.scalars[key]))
 	}
 
 	tmp := path + ".tmp"
