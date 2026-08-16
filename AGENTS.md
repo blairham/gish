@@ -151,7 +151,12 @@ runner would fail an honest shell); #37's budget test remains the
 gish-vs-gish guard. Two harness rules learned the hard way: `SetReadDeadline`
 is unsupported on ptys, so pty reads must be a goroutine plus select, and
 benchmarks must start in a neutral cwd or they measure the measuring
-directory.
+directory. Both rules bind `cmd/gish/startup_test.go` too: a bare pty
+read there once turned a single missed prompt marker into a 10-minute CI
+timeout with no evidence, so the gate reads via goroutine plus select and
+fails with the bytes it did see. Its prompt marker is the OSC 133;B mark
+(#99) — the exact "prompt ended" signal — with the glyph markers kept as
+the `GISH_SEMANTIC_MARKS=off` fallback.
 
 ## CI/CD
 
