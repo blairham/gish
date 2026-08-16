@@ -91,7 +91,7 @@ func runP10k(hc interp.HandlerContext, args []string) []string {
 
 // showP10k reports what is in effect and where each layer came from.
 func showP10k(hc interp.HandlerContext) {
-	cfg := p10kConfigFor(nil)
+	cfg := p10kConfigFromEnv(hc.Env)
 	fmt.Fprintf(hc.Stdout, "theme      %s\n", hc.Env.Get("GISH_THEME").String())
 	fmt.Fprintf(hc.Stdout, "preset     %s\n", p10kPresetName(hc))
 	if path, err := p10k.ConfigPath(); err == nil {

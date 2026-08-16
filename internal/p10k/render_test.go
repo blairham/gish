@@ -8,10 +8,15 @@ import (
 
 // sampleContext is a realistic prompt state: a git repo with a little of
 // everything outstanding, a slow last command, and a known clock.
+//
+// The fake home deliberately avoids /home: on macOS that path is an
+// autofs mount, so stat'ing a non-existent file under it wakes the
+// automounter and costs ~24ms — which made the segments that search up
+// the tree look 1000x slower than they are.
 func sampleContext() *Context {
 	return &Context{
-		Cwd:      "/home/you/dev/gish",
-		Home:     "/home/you",
+		Cwd:      "/fixture/you/dev/gish",
+		Home:     "/fixture/you",
 		Username: "you",
 		Hostname: "host",
 		ExitCode: 0,
@@ -19,7 +24,7 @@ func sampleContext() *Context {
 		Width:    100,
 		Now:      time.Date(2026, 8, 16, 14, 5, 6, 0, time.UTC),
 		Git: &GitStatus{
-			Dir: "/home/you/dev/gish", Branch: "main",
+			Dir: "/fixture/you/dev/gish", Branch: "main",
 			Ahead: 2, Modified: 3, Untracked: 1,
 		},
 		Getenv: func(string) string { return "" },

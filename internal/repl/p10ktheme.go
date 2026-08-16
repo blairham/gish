@@ -43,12 +43,30 @@ func p10kTheme(runner *interp.Runner, info promptInfo) (string, string, string) 
 
 // p10kConfigFor assembles the configuration for this prompt.
 func p10kConfigFor(runner *interp.Runner) *p10k.Config {
-	// A nil runner means a caller outside the prompt loop (`p10k show`),
-	// which reads the same settings from the environment.
-	name := os.Getenv("GISH_P10K_PRESET")
-	if runner != nil {
-		name = shellVar(runner, "GISH_P10K_PRESET", p10k.DefaultPreset)
+	return p10kConfig(shellVar(runner, "GISH_P10K_PRESET", p10k.DefaultPreset), sessionOverrides(runner))
+}
+
+// p10kConfigFromEnv is the same assembly for callers that hold a handler
+// context rather than the runner (`p10k show`). It has to exist: a
+// setting assigned in the session is a *shell* variable, not an exported
+// one, so reading os.Environ would report a configuration the prompt is
+// not actually using.
+func p10kConfigFromEnv(env expand.Environ) *p10k.Config {
+	name := env.Get("GISH_P10K_PRESET").String()
+	if name == "" {
+		name = p10k.DefaultPreset
 	}
+	var overrides *p10k.Config
+	env.Each(func(varName string, v expand.Variable) bool {
+		overrides = addOverride(overrides, varName, v.String())
+		return true
+	})
+	return p10kConfig(name, overrides)
+}
+
+// p10kConfig layers the preset, the config file and any session
+// overrides into the configuration one render will read.
+func p10kConfig(name string, overrides *p10k.Config) *p10k.Config {
 	if name == "" {
 		name = p10k.DefaultPreset
 	}
@@ -68,7 +86,6 @@ func p10kConfigFor(runner *interp.Runner) *p10k.Config {
 	// The file layer is mtime-cached rather than session-cached, so an
 	// edit shows up on the next prompt instead of the next shell.
 	file := p10k.LoadNativeConfig()
-	overrides := sessionOverrides(runner)
 	if file == nil && overrides == nil {
 		return base
 	}
@@ -83,44 +100,48 @@ func p10kConfigFor(runner *interp.Runner) *p10k.Config {
 // no clone and no merge.
 func sessionOverrides(runner *interp.Runner) *p10k.Config {
 	var out *p10k.Config
-	each := func(name, value string) {
-		key, ok := strings.CutPrefix(name, "POWERLEVEL9K_")
-		if !ok {
-			return
-		}
-		if out == nil {
-			out = p10k.NewConfig()
-			out.Sources = append(out.Sources, "session")
-		}
-		// Element lists are the one place a value is plural. Everything
-		// else is a scalar, so splitting is opt-in by key rather than by
-		// guessing at the contents.
-		if strings.HasSuffix(key, "_PROMPT_ELEMENTS") {
-			out.SetList(key, strings.Fields(value))
-			return
-		}
-		out.Set(key, value)
-	}
-
 	if runner == nil {
 		for _, kv := range os.Environ() {
 			if name, value, found := strings.Cut(kv, "="); found {
-				each(name, value)
+				out = addOverride(out, name, value)
 			}
 		}
 		return out
 	}
-	// Shell variables first, then the inherited environment — the same
-	// precedence shellVar uses, so one rule governs both.
+	// The inherited environment first, then shell variables on top — the
+	// same precedence shellVar uses, so one rule governs both.
 	if runner.Env != nil {
 		runner.Env.Each(func(name string, v expand.Variable) bool {
-			each(name, v.String())
+			out = addOverride(out, name, v.String())
 			return true
 		})
 	}
 	for name, v := range runner.Vars {
-		each(name, v.String())
+		out = addOverride(out, name, v.String())
 	}
+	return out
+}
+
+// addOverride records one POWERLEVEL9K_* setting, allocating the config
+// only once something actually matches — the common case is that nothing
+// does, and a prompt should not pay for a map it will not use.
+func addOverride(out *p10k.Config, name, value string) *p10k.Config {
+	key, ok := strings.CutPrefix(name, "POWERLEVEL9K_")
+	if !ok {
+		return out
+	}
+	if out == nil {
+		out = p10k.NewConfig()
+		out.Sources = append(out.Sources, "session")
+	}
+	// Element lists are the one place a value is plural. Everything else
+	// is a scalar, so splitting is opt-in by key rather than a guess at
+	// the contents.
+	if strings.HasSuffix(key, "_PROMPT_ELEMENTS") {
+		out.SetList(key, strings.Fields(value))
+		return out
+	}
+	out.Set(key, value)
 	return out
 }
 

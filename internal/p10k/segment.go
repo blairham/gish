@@ -2,6 +2,7 @@ package p10k
 
 import (
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -48,6 +49,9 @@ type Context struct {
 	// map because the plugin front door serves an allowlisted subset,
 	// and segments must not be able to tell the difference.
 	Getenv func(string) string
+
+	// upCache memoizes FindUp for the life of this render.
+	upCache map[string]string
 }
 
 // Env reads an environment variable through the context's lookup.
@@ -56,6 +60,62 @@ func (c *Context) Env(name string) string {
 		return os.Getenv(name)
 	}
 	return c.Getenv(name)
+}
+
+// FindUp looks for a file in the current directory and its ancestors,
+// returning its path and whether it was found.
+//
+// A prompt can easily carry a dozen version-manager segments, and each
+// one wants the nearest .python-version or .tool-versions or stack.yaml.
+// Walking independently would be a hundred stats per keystroke's worth
+// of prompt, so the answers are memoized for the life of one Context —
+// which is exactly one render, so nothing is ever served stale.
+func (c *Context) FindUp(name string) (string, bool) {
+	if c.upCache == nil {
+		c.upCache = map[string]string{}
+	}
+	if hit, ok := c.upCache[name]; ok {
+		return hit, hit != ""
+	}
+	found := ""
+	dir := c.Cwd
+	for range maxWalkUp {
+		candidate := filepath.Join(dir, name)
+		if _, err := os.Stat(candidate); err == nil {
+			found = candidate
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	c.upCache[name] = found
+	return found, found != ""
+}
+
+// maxWalkUp bounds the ancestor search. Deep enough for any real project
+// layout, shallow enough that a prompt in a pathological directory does
+// not turn into a filesystem crawl.
+const maxWalkUp = 24
+
+// firstLine reads the first line of a file, which is the shape every
+// version manager stores its pin in.
+func firstLine(path string) string {
+	line, _, _ := strings.Cut(readFile(path), "\n")
+	return strings.TrimSpace(line)
+}
+
+// readFile reads a small file, treating any failure as absence. Every
+// caller here is asking "is this pinned?", and an unreadable pin file
+// answers that question the same way a missing one does.
+func readFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // clock returns the render time, defaulting to now.

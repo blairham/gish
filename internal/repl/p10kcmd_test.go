@@ -47,9 +47,16 @@ func TestP10kShowReportsResolvedState(t *testing.T) {
 			t.Errorf("p10k show missing %q: %q", want, out)
 		}
 	}
-	// Elements with no implementation must be named, not silently absent.
-	if !strings.Contains(out, "not yet") {
-		t.Errorf("p10k show did not report unimplemented elements: %q", out)
+}
+
+func TestP10kShowNamesUnimplementedElements(t *testing.T) {
+	// An element with no implementation renders as nothing, which is
+	// indistinguishable from "this tool isn't active here" unless we say
+	// so. Ask for one and check it is named.
+	out, _, _ := runP10kScript(t, "",
+		"POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS='time battery'\np10k show\n")
+	if !strings.Contains(out, "not yet") || !strings.Contains(out, "battery") {
+		t.Errorf("unimplemented element not reported: %q", out)
 	}
 }
 
