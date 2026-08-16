@@ -25,6 +25,12 @@ const scoreboardPath = "../../docs/compat.md"
 // recordedRe pulls the pass count out of the published headline.
 var recordedRe = regexp.MustCompile(`\*\*(\d+) of (\d+) cases pass`)
 
+// recordedBashRe pulls the oracle version the scoreboard was generated
+// against. The pass count is only comparable against the same bash
+// major: macOS ships bash 3.2 (2007), where *bash itself* rejects
+// `${s,,}` and `declare -A` and gish is ahead of the oracle.
+var recordedBashRe = regexp.MustCompile(`against bash (\d+)\.`)
+
 func TestCompatScoreboard(t *testing.T) {
 	bashBin, err := exec.LookPath("bash")
 	if err != nil {
@@ -44,8 +50,14 @@ func TestCompatScoreboard(t *testing.T) {
 		return
 	}
 
-	// Regression gate: never fewer passes than published.
+	// Regression gate: never fewer passes than published — but only
+	// against the same bash major the scoreboard was generated with.
 	recorded, recordedTotal := readRecorded(t)
+	if got, want := bashMajor(t, bashBin), recordedBashMajor(t); got != want {
+		t.Skipf("oracle is bash %s, scoreboard was generated against bash %s: "+
+			"pass counts are not comparable across majors (this run: %d/%d)",
+			got, want, summary.Passed, summary.Total)
+	}
 	if summary.Passed < recorded {
 		for _, f := range compat.Failures(results) {
 			t.Logf("FAIL %s (%s): %s — %s", f.Name, f.Category, f.Reason, f.Diff())
@@ -90,6 +102,32 @@ func buildGish(t *testing.T) string {
 		t.Fatalf("build gish: %v\n%s", err, out)
 	}
 	return bin
+}
+
+// bashMajor is the oracle's major version ("5"), or "?" when unknown.
+func bashMajor(t *testing.T, bashBin string) string {
+	t.Helper()
+	v := bashVersion(t, bashBin)
+	if i := strings.Index(v, "bash "); i >= 0 {
+		v = v[i+len("bash "):]
+	}
+	if i := strings.IndexByte(v, '.'); i > 0 {
+		return v[:i]
+	}
+	return "?"
+}
+
+// recordedBashMajor is the major version the scoreboard records.
+func recordedBashMajor(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(scoreboardPath)
+	if err != nil {
+		return "?"
+	}
+	if m := recordedBashRe.FindSubmatch(data); m != nil {
+		return string(m[1])
+	}
+	return "?"
 }
 
 func bashVersion(t *testing.T, bashBin string) string {

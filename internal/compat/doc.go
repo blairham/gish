@@ -63,6 +63,13 @@ and tool init hooks) is a deliberate open decision, not a bug:
   refuses a lower pass count than this file records.
 - Interactive behavior (line editing, completion, prompts) is out of
   scope here; this measures the scripting substrate only.
+- **Which bash you compare against changes the answer.** macOS still
+  ships bash 3.2 (2007, the last GPLv2 release), where *bash itself*
+  rejects ` + "`${s,,}`" + ` and ` + "`declare -A`" + ` — against that oracle gish is
+  *ahead* on those cases, and the differential dutifully reports a
+  difference. The number above is against the bash named in the
+  headline; CI enforces the regression gate only when the runner's
+  bash major matches, and reports without enforcing otherwise.
 `)
 	return b.String()
 }
