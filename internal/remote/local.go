@@ -44,6 +44,7 @@ func (l *Local) Run(ctx context.Context, script string, stdin io.Reader) ([]byte
 	cmd.Stdin = stdin
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
+	cmd.WaitDelay = waitDelay // see SSH.Run: kill-on-deadline is not return-on-deadline
 	if err := cmd.Run(); err != nil {
 		return out.Bytes(), fmt.Errorf("local: %w: %s", err, strings.TrimSpace(errb.String()))
 	}

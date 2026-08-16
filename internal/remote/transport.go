@@ -20,7 +20,14 @@ package remote
 import (
 	"context"
 	"io"
+	"time"
 )
+
+// waitDelay bounds how long a killed command's pipes are drained after
+// its context ends. Small, because it only ever elapses when a
+// grandchild has outlived its parent and is holding a pipe open — the
+// wedged-remote case the deadlines exist for.
+const waitDelay = 500 * time.Millisecond
 
 // Transport runs commands on the far side. Factoring this out from the
 // first commit buys two things immediately: `kubectl exec` and `docker

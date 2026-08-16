@@ -214,16 +214,18 @@ func TestPushWithoutHashToolFallsBackToSize(t *testing.T) {
 
 func TestProbeTimeoutIsBounded(t *testing.T) {
 	h := newHarness(t)
-	h.local.Shell = "/bin/sh"
-	// A transport that never answers. The probe must give up on its own
-	// deadline, because the whole feature is void if it makes getting a
-	// shell slower than plain ssh.
 	slow := &Local{Env: h.local.Env}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	// `sleep &` then `wait` is the shape that actually catches this:
+	// killing the shell on deadline does not kill the backgrounded
+	// grandchild, which still holds the stdout pipe open — so Wait
+	// blocks for the full 30s unless WaitDelay caps the drain. A plain
+	// `sleep 30` misses the bug wherever /bin/sh execs the last command
+	// instead of forking it.
 	start := time.Now()
-	_, err := runProbeScript(ctx, slow, "sleep 30")
+	_, err := runProbeScript(ctx, slow, "sleep 30 & wait")
 	if err == nil {
 		t.Fatal("a hung probe returned success")
 	}

@@ -73,6 +73,13 @@ func (s *SSH) Run(ctx context.Context, script string, stdin io.Reader) ([]byte, 
 	cmd.Stdin = stdin
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
+	// Killing the process on deadline is not enough to return on
+	// deadline: Wait also drains the stdout/stderr pipes, and a
+	// grandchild that outlives ssh keeps the write end open, so Wait
+	// blocks long past the timeout. WaitDelay caps that — without it the
+	// probe's 2s budget is advisory, and "never slower than plain ssh"
+	// stops being true exactly when the remote is wedged.
+	cmd.WaitDelay = waitDelay
 	if err := cmd.Run(); err != nil {
 		return out.Bytes(), fmt.Errorf("ssh %s: %w: %s", s.host, err, strings.TrimSpace(errb.String()))
 	}

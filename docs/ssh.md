@@ -55,6 +55,18 @@ are about to exec. The threat model is deliberately narrow: this is not
 a defense against a rooted host — that box already owns the session — it
 is a defense against a dropped connection and a shared `/tmp`.
 
+**Killing on deadline is not returning on deadline.** `exec.CommandContext`
+kills the process when the context ends, but `Wait` still drains the
+command's stdout and stderr pipes — and a grandchild that outlived its
+parent keeps the write end open, so `Wait` blocks long past the timeout.
+Every command here therefore sets `WaitDelay`. Without it the 2s probe
+budget is advisory, and "never slower than plain ssh" stops being true
+in exactly the case the deadline exists for: a wedged remote. The
+regression test backgrounds a sleep so the grandchild really does hold
+the pipe — a plain `sleep 30` misses the bug wherever `/bin/sh` execs
+its last command instead of forking it, which is why this reproduced on
+Linux CI and not on macOS.
+
 **Static linking is the premise.** `uname -sm` reports `linux x86_64`
 and says nothing about glibc versus musl. A cgo-linked binary lands on
 Alpine and fails with an error that *looks like the file is missing*.
