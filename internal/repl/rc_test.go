@@ -28,6 +28,7 @@ func writeFile(t *testing.T, path, content string) string {
 func TestRCPathPrecedence(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // UserHomeDir reads this on Windows
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GISH_RC", "")
 
@@ -127,8 +128,8 @@ func TestExpandPrompt(t *testing.T) {
 	info := promptInfo{
 		username: "blair",
 		host:     "mba",
-		home:     "/home/blair",
-		dir:      "/home/blair/dev/gish",
+		home:     filepath.FromSlash("/home/blair"),
+		dir:      filepath.FromSlash("/home/blair/dev/gish"),
 		exitCode: 7,
 	}
 	tests := []struct {
@@ -136,7 +137,7 @@ func TestExpandPrompt(t *testing.T) {
 	}{
 		{"gish$ ", "gish$ "},
 		{"%u@%h ", "blair@mba "},
-		{"%w $ ", "~/dev/gish $ "},
+		{"%w $ ", filepath.FromSlash("~/dev/gish") + " $ "},
 		{"%W $ ", "gish $ "},
 		{"[%?] ", "[7] "},
 		{"100%% ", "100% "},
@@ -151,7 +152,7 @@ func TestExpandPrompt(t *testing.T) {
 
 	// At home, %w and %W both show ~.
 	atHome := info
-	atHome.dir = "/home/blair"
+	atHome.dir = filepath.FromSlash("/home/blair")
 	if got := expandPrompt("%w|%W", atHome); got != "~|~" {
 		t.Errorf("at home = %q, want ~|~", got)
 	}

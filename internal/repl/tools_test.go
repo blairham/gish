@@ -13,12 +13,13 @@ import (
 // toolsHarness: a fake asdf tree, two directories (one pinned), and a
 // runner whose PATH starts known.
 type toolsHarness struct {
-	mgr     *toolsManager
-	runner  *interp.Runner
-	notices *strings.Builder
-	pinned  string // has .tool-versions
-	plain   string // has none
-	goBin   string // the install's bin dir
+	mgr      *toolsManager
+	runner   *interp.Runner
+	notices  *strings.Builder
+	pinned   string // has .tool-versions
+	plain    string // has none
+	goBin    string // the install's bin dir
+	basePath string // the fixture PATH before any prepends
 }
 
 func newToolsHarness(t *testing.T) *toolsHarness {
@@ -44,7 +45,10 @@ func newToolsHarness(t *testing.T) *toolsHarness {
 	if err := os.WriteFile(filepath.Join(h.pinned, ".tool-versions"), []byte(pins), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := runEnvScript(t.Context(), h.runner, "export PATH=/usr/bin:/bin\n"); err != nil {
+	// Two entries joined with the platform separator — a ":"-joined
+	// literal would read as one entry on Windows.
+	h.basePath = "/usr/bin" + string(os.PathListSeparator) + "/bin"
+	if err := runEnvScript(t.Context(), h.runner, "export PATH="+quoteArg(t, h.basePath)+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	return h
@@ -75,8 +79,8 @@ func TestToolsSwitchOnDirChange(t *testing.T) {
 
 	// Leaving the pinned tree restores the original PATH.
 	h.cd(t, h.plain)
-	if h.path() != "/usr/bin:/bin" {
-		t.Fatalf("PATH not restored: %q", h.path())
+	if h.path() != h.basePath {
+		t.Fatalf("PATH not restored: %q (applied=%q lastDir=%q)", h.path(), h.mgr.applied, h.mgr.lastDir)
 	}
 
 	// Re-entering warns only once per file+pin.
@@ -91,13 +95,15 @@ func TestToolsPreserveUserPathEdits(t *testing.T) {
 	h := newToolsHarness(t)
 	h.cd(t, h.pinned)
 
-	// The user prepends their own entry mid-session.
-	if err := runEnvScript(t.Context(), h.runner, `export PATH="/opt/mine:$PATH"`+"\n"); err != nil {
+	// The user prepends their own entry mid-session, with the platform
+	// list separator.
+	sep := string(os.PathListSeparator)
+	if err := runEnvScript(t.Context(), h.runner, `export PATH="/opt/mine`+sep+`$PATH"`+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	h.cd(t, h.plain)
-	if got := h.path(); got != "/opt/mine:/usr/bin:/bin" {
-		t.Fatalf("user PATH edit lost on revert: %q", got)
+	if got := h.path(); got != "/opt/mine"+sep+h.basePath {
+		t.Fatalf("user PATH edit lost on revert: %q (applied=%q)", got, h.mgr.applied)
 	}
 }
 
@@ -107,7 +113,7 @@ func TestToolsDisabledByConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.cd(t, h.pinned)
-	if h.path() != "/usr/bin:/bin" {
+	if h.path() != h.basePath {
 		t.Fatalf("GISH_TOOLS=off still touched PATH: %q", h.path())
 	}
 

@@ -13,8 +13,8 @@ func themeInfo() promptInfo {
 	return promptInfo{
 		username: "blair",
 		host:     "mba",
-		home:     "/home/blair",
-		dir:      "/home/blair/dev/gish",
+		home:     filepath.FromSlash("/home/blair"),
+		dir:      filepath.FromSlash("/home/blair/dev/gish"),
 	}
 }
 
@@ -31,7 +31,7 @@ func TestThemedPromptLayout(t *testing.T) {
 	info.jobs = 2
 
 	p, cont := themedPrompt(info, defaultThemeConfig())
-	for _, want := range []string{"~/dev/gish", "main !2", "✘ 7", "5.0s", "⚙2", "\n", "❯"} {
+	for _, want := range []string{filepath.FromSlash("~/dev/gish"), "main !2", "✘ 7", "5.0s", "⚙2", "\n", "❯"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("themed prompt missing %q:\n%q", want, p)
 		}
@@ -65,7 +65,7 @@ func TestThemeSegmentsPickAndOrder(t *testing.T) {
 
 	// exit before dir, git dropped entirely.
 	p, _ := themedPrompt(info, themeConfig{segments: []string{"exit", "dir"}})
-	exitAt, dirAt := strings.Index(p, "✘ 7"), strings.Index(p, "~/dev/gish")
+	exitAt, dirAt := strings.Index(p, "✘ 7"), strings.Index(p, filepath.FromSlash("~/dev/gish"))
 	if exitAt == -1 || dirAt == -1 || exitAt > dirAt {
 		t.Errorf("segment order not respected (exit@%d dir@%d):\n%q", exitAt, dirAt, p)
 	}
@@ -94,10 +94,10 @@ func TestThemeColorOverride(t *testing.T) {
 		colors:   map[string]string{"dir": "\x1b[33m"},
 	}
 	p, _ := themedPrompt(themeInfo(), cfg)
-	if !strings.Contains(p, "\x1b[33m~/dev/gish") {
+	if !strings.Contains(p, "\x1b[33m"+filepath.FromSlash("~/dev/gish")) {
 		t.Errorf("color override not applied: %q", p)
 	}
-	if strings.Contains(p, cCyan+"~/dev/gish") {
+	if strings.Contains(p, cCyan+filepath.FromSlash("~/dev/gish")) {
 		t.Errorf("default color still applied over override: %q", p)
 	}
 }
@@ -112,7 +112,7 @@ func TestThemeOneLineLayout(t *testing.T) {
 	if !strings.HasSuffix(p, "❯"+cReset+" ") {
 		t.Errorf("one-line prompt should end with the arrow: %q", p)
 	}
-	if !strings.Contains(p, "~/dev/gish") || !strings.Contains(p, "✘ 7") {
+	if !strings.Contains(p, filepath.FromSlash("~/dev/gish")) || !strings.Contains(p, "✘ 7") {
 		t.Errorf("one-line prompt missing segments: %q", p)
 	}
 }
@@ -251,7 +251,7 @@ func TestSmartPath(t *testing.T) {
 		{"/etc/nginx/conf.d", "/etc/nginx/conf.d"},
 	}
 	for _, tt := range tests {
-		if got := smartPath(tt.dir, "/home/blair"); got != tt.want {
+		if got := smartPath(filepath.FromSlash(tt.dir), filepath.FromSlash("/home/blair")); got != filepath.FromSlash(tt.want) {
 			t.Errorf("smartPath(%q) = %q, want %q", tt.dir, got, tt.want)
 		}
 	}
