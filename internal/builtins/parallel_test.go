@@ -167,7 +167,7 @@ func TestParallelUsageErrors(t *testing.T) {
 	t.Parallel()
 
 	for _, src := range []string{
-		`parallel ::: a b`,               // no command
+		`parallel ::: a b`,            // no command
 		`parallel -j nope -- x ::: a`, // bad -j
 	} {
 		out, err := runShell(t, src, "")
