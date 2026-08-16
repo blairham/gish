@@ -367,3 +367,79 @@ func TestThemeFramelessTwoLine(t *testing.T) {
 		t.Errorf("frameless layout missing arrow: %q", p)
 	}
 }
+
+func TestPromptEscapeSet(t *testing.T) {
+	t.Parallel()
+
+	info := promptInfo{
+		username: "blair",
+		host:     "mba",
+		home:     filepath.FromSlash("/home/blair"),
+		dir:      filepath.FromSlash("/home/blair/dev/gish"),
+		exitCode: 7,
+		segment:  func(id string) string { return "seg-" + id },
+	}
+	tests := []struct{ format, want string }{
+		// zsh spellings and gish spellings are the same escape.
+		{"%n|%u", "blair|blair"},
+		{"%m|%h", "mba|mba"},
+		{"%~|%w", filepath.FromSlash("~/dev/gish") + "|" + filepath.FromSlash("~/dev/gish")},
+		{"%d", filepath.FromSlash("/home/blair/dev/gish")},
+		{"%W", "gish"},
+		{"%?", "7"},
+		{"%p{git}", "seg-git"},
+		{"100%%", "100%"},
+		// Unknown escapes pass through rather than vanishing.
+		{"%x", "%x"},
+		{"trailing%", "trailing%"},
+	}
+	for _, tt := range tests {
+		if got := expandPrompt(tt.format, info); got != tt.want {
+			t.Errorf("expandPrompt(%q) = %q, want %q", tt.format, got, tt.want)
+		}
+	}
+	// %# is a user's % (this test never runs as root in CI, but assert
+	// the shape rather than the euid).
+	if got := expandPrompt("%#", info); got != "%" && got != "#" {
+		t.Errorf("%%# = %q", got)
+	}
+}
+
+func TestThemeNamePrecedence(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm-256color")
+	runner := newTestRunner(t)
+
+	if got := themeName(runner); got != "plain" {
+		t.Errorf("default theme = %q", got)
+	}
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := themeName(runner); got != "p10k" {
+		t.Errorf("GISH_THEME ignored: %q", got)
+	}
+	// A manual prompt outranks the theme — one pipeline, one precedence.
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_PROMPT='mine> '`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := themeName(runner); got != "literal" {
+		t.Errorf("GISH_PROMPT did not win: %q", got)
+	}
+	// The literal theme renders through the same dispatch as any theme.
+	p, cp, rp := promptStrings(runner, themeInfo())
+	if p != "mine> " || rp != "" {
+		t.Errorf("literal theme = %q / %q / %q", p, cp, rp)
+	}
+}
+
+func TestColorlessTerminalForcesPlain(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	runner := newTestRunner(t)
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := themeName(runner); got != "plain" {
+		t.Errorf("NO_COLOR did not force plain: %q", got)
+	}
+}

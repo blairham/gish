@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,12 @@ var builtinThemes = map[string]func(*interp.Runner, promptInfo) (string, string,
 		return p, cp, ""
 	},
 	"p10k": nativeTheme,
+	// literal: the GISH_PROMPT override, rendered as a theme so there is
+	// exactly one prompt pipeline (#109).
+	"literal": func(runner *interp.Runner, info promptInfo) (string, string, string) {
+		return expandPrompt(shellVar(runner, "GISH_PROMPT", ""), info),
+			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info), ""
+	},
 	"starship": func(runner *interp.Runner, info promptInfo) (string, string, string) {
 		if p, cp, ok := starship.render(info, info.width); ok {
 			return p, cp, ""
@@ -70,15 +77,7 @@ func nativeTheme(runner *interp.Runner, info promptInfo) (string, string, string
 // else the native theme > plain when nothing was asked for. NO_COLOR
 // and dumb terminals degrade to naked regardless of source.
 func promptStrings(runner *interp.Runner, info promptInfo) (prompt, cont, rprompt string) {
-	if v := shellVar(runner, "GISH_PROMPT", ""); v != "" {
-		return expandPrompt(v, info),
-			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info), ""
-	}
-	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
-		p, cp := nakedPrompt(info)
-		return p, cp, ""
-	}
-	name := shellVar(runner, "GISH_THEME", "plain")
+	name := themeName(runner)
 	if theme, ok := builtinThemes[name]; ok {
 		return theme(runner, info)
 	}
@@ -90,6 +89,19 @@ func promptStrings(runner *interp.Runner, info promptInfo) (prompt, cont, rpromp
 	// A theme was asked for by name but nothing serves it: the native
 	// theme beats silently going naked (doctor explains the why).
 	return nativeTheme(runner, info)
+}
+
+// themeName resolves which theme renders the next prompt. Precedence:
+// a manual GISH_PROMPT (the "literal" theme) wins; colorless terminals
+// force plain; otherwise GISH_THEME names a built-in or a plugin theme.
+func themeName(runner *interp.Runner) string {
+	if shellVar(runner, "GISH_PROMPT", "") != "" {
+		return "literal"
+	}
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return "plain"
+	}
+	return shellVar(runner, "GISH_THEME", "plain")
 }
 
 // nakedPrompt is the default: what a stock zsh (or bash) prompt looks
@@ -298,6 +310,90 @@ func themedRPrompt(info promptInfo, cfg themeConfig) string {
 		parts = append(parts, color+text+cReset)
 	}
 	return strings.Join(parts, sep)
+}
+
+// The manual prompt surface: a free-form string with escapes, rendered
+// through the theme engine like everything else (#109). Overriding the
+// prompt with a literal string is table stakes, so GISH_PROMPT stays —
+// but it is now the "literal" theme rather than a second pipeline.
+//
+// The escape set is deliberately small and deliberately *zsh-spelled*
+// where zsh has a spelling, because the person writing GISH_PROMPT is
+// usually porting a zsh PROMPT and their fingers know %n/%m/%~ (#96):
+//
+//	%n %u  username        %~ %w  cwd, ~-abbreviated
+//	%m %h  hostname        %W     cwd basename
+//	%d     cwd, full       %?     last exit status
+//	%#     %% for a user, # for root
+//	%p{id} a plugin prompt segment
+//	%%     a literal %
+//
+// Anything else passes through untouched. That list is the contract:
+// gish does not accrete zsh's full PROMPT_SUBST surface by accident.
+func expandPrompt(format string, info promptInfo) string {
+	var b strings.Builder
+	runes := []rune(format)
+	for i := 0; i < len(runes); i++ {
+		if runes[i] != '%' || i+1 >= len(runes) {
+			b.WriteRune(runes[i])
+			continue
+		}
+		i++
+		switch runes[i] {
+		case '%':
+			b.WriteByte('%')
+		case 'u', 'n': // %n is zsh's spelling
+			b.WriteString(info.username)
+		case 'h', 'm': // %m is zsh's spelling
+			b.WriteString(info.host)
+		case 'w', '~': // %~ is zsh's spelling
+			b.WriteString(tildify(info.dir, info.home))
+		case 'd':
+			b.WriteString(info.dir)
+		case '#':
+			if os.Geteuid() == 0 {
+				b.WriteByte('#')
+			} else {
+				b.WriteByte('%')
+			}
+		case 'W':
+			if info.home != "" && info.dir == info.home {
+				b.WriteByte('~')
+			} else {
+				b.WriteString(filepath.Base(info.dir))
+			}
+		case '?':
+			b.WriteString(strconv.Itoa(info.exitCode))
+		case 'p':
+			id, next, ok := bracedArg(runes, i)
+			if !ok {
+				b.WriteString("%p")
+				continue
+			}
+			i = next
+			if info.segment != nil {
+				b.WriteString(info.segment(id))
+			}
+		default:
+			b.WriteByte('%')
+			b.WriteRune(runes[i])
+		}
+	}
+	return b.String()
+}
+
+// bracedArg parses {arg} starting right after the escape rune at i;
+// returns the arg and the index of the closing brace.
+func bracedArg(runes []rune, i int) (arg string, next int, ok bool) {
+	if i+1 >= len(runes) || runes[i+1] != '{' {
+		return "", i, false
+	}
+	for j := i + 2; j < len(runes); j++ {
+		if runes[j] == '}' {
+			return string(runes[i+2 : j]), j, true
+		}
+	}
+	return "", i, false
 }
 
 // renderSegment resolves an id: built-ins from themeSegments, anything

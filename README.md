@@ -74,8 +74,10 @@ GISH_THEME=p10k                # the native p10k-class two-line prompt: smart pa
                                # git, runtime pins, jobs, duration, exit status —
                                # all async and budget-bounded, never waits on anything
 GISH_THEME=starship            # or your exact starship prompt, unchanged
-GISH_PROMPT='%W %p{git} %?$ '  # or take full manual control (always wins):
-GISH_PROMPT_CONT='... '        # %u %h %w %W %? %% and %p{id} plugin segments
+GISH_PROMPT='%~ %p{git} %?$ '  # or take full manual control (always wins)
+GISH_PROMPT_CONT='... '        # zsh spellings work: %n user, %m host, %~ cwd,
+                               # %# prompt char — plus %W basename, %d full cwd,
+                               # %? exit status, %p{id} plugin segment, %% literal
 ```
 
 Or skip the file editing: `config theme starship` sets it **live and** writes it to your rc file in one step. `config` lists everything tunable (`theme`, `lint`, `prompt`).

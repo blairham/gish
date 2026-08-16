@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -157,76 +156,6 @@ func newPromptInfo() promptInfo {
 		info.home = home
 	}
 	return info
-}
-
-// expandPrompt renders the minimal zsh-style escape set. This is a
-// deliberate stopgap: the real prompt engine (plugin segments, styling)
-// arrives with M3 — see docs/plugins.md.
-//
-//	%u  username         %w  cwd, ~-abbreviated
-//	%h  hostname         %W  cwd basename (~ at home)
-//	%?  last exit code   %%  literal %
-//	%p{id}  tier-2 prompt segment (e.g. %p{git}); empty when no plugin
-//	        serves the id or the render misses its budget with no cache
-//
-// Unknown escapes pass through verbatim so future additions aren't
-// breaking.
-func expandPrompt(format string, info promptInfo) string {
-	var b strings.Builder
-	runes := []rune(format)
-	for i := 0; i < len(runes); i++ {
-		if runes[i] != '%' || i+1 >= len(runes) {
-			b.WriteRune(runes[i])
-			continue
-		}
-		i++
-		switch runes[i] {
-		case '%':
-			b.WriteByte('%')
-		case 'u':
-			b.WriteString(info.username)
-		case 'h':
-			b.WriteString(info.host)
-		case 'w':
-			b.WriteString(tildify(info.dir, info.home))
-		case 'W':
-			if info.home != "" && info.dir == info.home {
-				b.WriteByte('~')
-			} else {
-				b.WriteString(filepath.Base(info.dir))
-			}
-		case '?':
-			b.WriteString(strconv.Itoa(info.exitCode))
-		case 'p':
-			id, next, ok := bracedArg(runes, i)
-			if !ok {
-				b.WriteString("%p")
-				continue
-			}
-			i = next
-			if info.segment != nil {
-				b.WriteString(info.segment(id))
-			}
-		default:
-			b.WriteByte('%')
-			b.WriteRune(runes[i])
-		}
-	}
-	return b.String()
-}
-
-// bracedArg parses {arg} starting right after the escape rune at i;
-// returns the arg and the index of the closing brace.
-func bracedArg(runes []rune, i int) (arg string, next int, ok bool) {
-	if i+1 >= len(runes) || runes[i+1] != '{' {
-		return "", i, false
-	}
-	for j := i + 2; j < len(runes); j++ {
-		if runes[j] == '}' {
-			return string(runes[i+2 : j]), j, true
-		}
-	}
-	return "", i, false
 }
 
 // tildify abbreviates home to ~ at the start of dir.
