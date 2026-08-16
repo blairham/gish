@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/blairham/gish/internal/plugmgr/ice"
@@ -105,5 +106,55 @@ func TestUpdateUnknownTarget(t *testing.T) {
 	z := fakeHome(t, 1)
 	if err := z.Update("no-such-thing", io.Discard); err == nil {
 		t.Error("want an error for an unknown target")
+	}
+}
+
+func TestUpdateWithProgressEvents(t *testing.T) {
+	z := fakeHome(t, 5)
+
+	var mu sync.Mutex
+	var events []UpdateEvent
+	var out strings.Builder
+	err := z.UpdateWithProgress("", &out, func(ev UpdateEvent) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The observer is the display: no line output.
+	if out.Len() != 0 {
+		t.Errorf("line output despite observer: %q", out.String())
+	}
+
+	// Queued events arrive first, one per object, in listing order.
+	for i := range 5 {
+		if events[i].State != UpdateQueued || events[i].Index != i {
+			t.Fatalf("event %d = %+v, want queued index %d", i, events[i], i)
+		}
+		if events[i].Name == "" {
+			t.Errorf("queued event %d has no name", i)
+		}
+	}
+	// Every object starts and finishes exactly once, with an outcome.
+	started, done := map[int]int{}, map[int]int{}
+	for _, ev := range events[5:] {
+		switch ev.State {
+		case UpdateStarted:
+			started[ev.Index]++
+		case UpdateDone:
+			done[ev.Index]++
+			if ev.Outcome == "" {
+				t.Errorf("done event %+v has no outcome", ev)
+			}
+		case UpdateQueued:
+			t.Errorf("queued event after work began: %+v", ev)
+		}
+	}
+	for i := range 5 {
+		if started[i] != 1 || done[i] != 1 {
+			t.Errorf("object %d: started %d, done %d", i, started[i], done[i])
+		}
 	}
 }

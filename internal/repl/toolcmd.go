@@ -13,6 +13,7 @@ import (
 
 	"github.com/blairham/gish/internal/plugmgr/ghr"
 	"github.com/blairham/gish/internal/tools"
+	"github.com/blairham/gish/internal/ui"
 )
 
 // The tool command (#77 v2): the user surface over native version
@@ -162,15 +163,18 @@ func showToolOverview(hc interp.HandlerContext, roots []string) {
 		fmt.Fprintln(hc.Stdout, "no .tool-versions in scope — tool pin <name> <version> creates one")
 		return
 	}
+	style := ui.Styles(ui.Enabled(hc.Stdout))
 	fmt.Fprintf(hc.Stdout, "pins from %s:\n", displayPath(res.File))
 	for _, pin := range tools.ParseFile(res.File) {
+		name := style.Bold.Render(fmt.Sprintf("%-12s", pin.Tool))
 		if active := activeVersion(hc.Dir, roots, pin.Tool); active != "" {
-			fmt.Fprintf(hc.Stdout, "  %-12s %s\n", pin.Tool, active)
+			fmt.Fprintf(hc.Stdout, "  %s %s\n", name, style.Accent.Render(active))
 		} else if pin.Resolves(roots) {
-			fmt.Fprintf(hc.Stdout, "  %-12s %s\n", pin.Tool, pin.Versions[0])
+			fmt.Fprintf(hc.Stdout, "  %s %s\n", name, pin.Versions[0])
 		} else {
-			fmt.Fprintf(hc.Stdout, "  %-12s %s — NOT INSTALLED (tool install %s %s)\n",
-				pin.Tool, pin.Versions[0], pin.Tool, pin.Versions[0])
+			fmt.Fprintf(hc.Stdout, "  %s %s — %s %s\n",
+				name, pin.Versions[0], style.Fail.Render("NOT INSTALLED"),
+				style.Dim.Render(fmt.Sprintf("(tool install %s %s)", pin.Tool, pin.Versions[0])))
 		}
 	}
 }
