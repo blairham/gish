@@ -2,6 +2,7 @@ package repl
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	"google.golang.org/grpc"
 	"mvdan.cc/sh/v3/interp"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/pluginhost"
@@ -64,7 +66,7 @@ func newEnvHarness(t *testing.T) *envHarness {
 		providers: []pluginhost.Provider[pluginapi.EnvProviderClient]{{Plugin: "fake-env", Client: h.fake}},
 	}
 	for _, dir := range []string{h.proj, h.away} {
-		if err := runEnvScript(t.Context(), h.runner, "mkdir -p "+dir+"\n"); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -73,10 +75,21 @@ func newEnvHarness(t *testing.T) *envHarness {
 
 func (h *envHarness) cd(t *testing.T, dir string) {
 	t.Helper()
-	if err := runEnvScript(t.Context(), h.runner, "cd "+dir+"\n"); err != nil {
+	if err := runEnvScript(t.Context(), h.runner, "cd "+quoteArg(t, dir)+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	h.m.atPrompt(t.Context(), h.runner)
+}
+
+// quoteArg shell-quotes one word — Windows paths carry backslashes,
+// which an unquoted shell word would eat as escapes.
+func quoteArg(t *testing.T, s string) string {
+	t.Helper()
+	quoted, err := syntax.Quote(s, syntax.LangBash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return quoted
 }
 
 func (h *envHarness) varValue(name string) (string, bool) {

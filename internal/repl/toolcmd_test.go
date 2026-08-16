@@ -28,7 +28,7 @@ func TestToolPinAndOverview(t *testing.T) {
 	work := toolEnv(t)
 	rc := filepath.Join(t.TempDir(), "gishrc")
 	out, _, err := runConfigScript(t, rc,
-		"cd "+work+"\ntool pin golang 1.26.6\ntool pin nodejs 22.0.0\ntool\ntool list golang\n")
+		"cd "+quoteArg(t, work)+"\ntool pin golang 1.26.6\ntool pin nodejs 22.0.0\ntool\ntool list golang\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestToolPinAndOverview(t *testing.T) {
 func TestToolGlobalWritesHomeFile(t *testing.T) {
 	work := toolEnv(t)
 	rc := filepath.Join(t.TempDir(), "gishrc")
-	if _, _, err := runConfigScript(t, rc, "cd "+work+"\ntool global golang 1.26.6\n"); err != nil {
+	if _, _, err := runConfigScript(t, rc, "cd "+quoteArg(t, work)+"\ntool global golang 1.26.6\n"); err != nil {
 		t.Fatal(err)
 	}
 	home, _ := os.UserHomeDir()

@@ -3,6 +3,7 @@ package repl
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -51,7 +52,7 @@ func newToolsHarness(t *testing.T) *toolsHarness {
 
 func (h *toolsHarness) cd(t *testing.T, dir string) {
 	t.Helper()
-	if err := runEnvScript(t.Context(), h.runner, "cd "+dir+"\n"); err != nil {
+	if err := runEnvScript(t.Context(), h.runner, "cd "+quoteArg(t, dir)+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	h.mgr.atPrompt(t.Context(), h.runner)
@@ -118,4 +119,13 @@ func TestToolsDisabledByConfig(t *testing.T) {
 	if !strings.HasPrefix(h.path(), h.goBin) {
 		t.Fatalf("re-enable did not re-resolve: %q", h.path())
 	}
+}
+
+// exeFixture names a fake executable for this platform: Windows keys
+// executables on extension, not mode.
+func exeFixture(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }

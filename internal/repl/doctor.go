@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -259,17 +260,21 @@ func checkPlugins() checkResult {
 		if ferr != nil {
 			continue
 		}
-		if fi.Mode()&0o111 != 0 {
+		if pluginhost.ExecutablePlugin(fi) {
 			executable++
 		} else {
 			stuck = append(stuck, e.Name())
 		}
 	}
 	if len(stuck) > 0 {
+		fix := "chmod +x " + filepath.Join(displayPath(dir), stuck[0])
+		if runtime.GOOS == "windows" {
+			fix = "give it an executable extension (.exe): " + filepath.Join(displayPath(dir), stuck[0])
+		}
 		return checkResult{
 			checkWarn, "plugins",
 			fmt.Sprintf("%d not executable (invisible to discovery): %s", len(stuck), strings.Join(stuck, ", ")),
-			fmt.Sprintf("chmod +x %s", filepath.Join(displayPath(dir), stuck[0])),
+			fix,
 		}
 	}
 	return checkResult{checkOK, "plugins", fmt.Sprintf("%d in %s", executable, displayPath(dir)), ""}

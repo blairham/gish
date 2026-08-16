@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -332,5 +333,12 @@ func requestedEnv(runner *interp.Runner, keys []string) map[string]string {
 }
 
 func underDir(dir, root string) bool {
-	return dir == root || strings.HasPrefix(dir, strings.TrimSuffix(root, "/")+"/")
+	if dir == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

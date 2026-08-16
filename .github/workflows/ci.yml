@@ -48,7 +48,7 @@ jobs:
       run: go build ./...
 
     - name: Run portable tests
-      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./cmd/gish-aws/ ./cmd/gish-claude/
+      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./cmd/gish-aws/ ./cmd/gish-claude/
 
   lint:
     runs-on: ubuntu-latest

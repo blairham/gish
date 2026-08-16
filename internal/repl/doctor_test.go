@@ -3,6 +3,7 @@ package repl
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -100,6 +101,8 @@ func TestDoctorFlagsNonExecutablePlugin(t *testing.T) {
 	if err := os.MkdirAll(plugins, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Not a plugin candidate on any platform: no exec bit on unix, no
+	// executable extension on Windows.
 	if err := os.WriteFile(filepath.Join(plugins, "gish-thing"), []byte("#!/bin/sh\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +115,11 @@ func TestDoctorFlagsNonExecutablePlugin(t *testing.T) {
 		interp.StdIO(nil, &out, &out)); err != nil {
 		t.Fatalf("non-executable plugin is a warning, not a failure: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "not executable") || !strings.Contains(out.String(), "chmod +x") {
+	fixHint := "chmod +x"
+	if runtime.GOOS == "windows" {
+		fixHint = "executable extension"
+	}
+	if !strings.Contains(out.String(), "not executable") || !strings.Contains(out.String(), fixHint) {
 		t.Errorf("plugin diagnosis missing:\n%s", out.String())
 	}
 }
