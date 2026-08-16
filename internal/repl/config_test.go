@@ -324,3 +324,24 @@ func TestConfigThemePreset(t *testing.T) {
 		t.Errorf("stderr = %q", errOut)
 	}
 }
+
+// TestHeadlessSurfacesEmitNoEscapes pins the #90 degradation contract
+// across invocation modes: when stdout is not a terminal (headless -c,
+// pipes, scripts, CI — login or not), every styled surface emits plain
+// bytes. One escape character in piped output is a regression.
+func TestHeadlessSurfacesEmitNoEscapes(t *testing.T) {
+	rc := filepath.Join(t.TempDir(), "gishrc")
+	out, errOut, _ := runConfigScript(t, rc, "doctor\nzi\nzi help\ntool\ntool list golang\nconfig\n")
+	for name, s := range map[string]string{"stdout": out, "stderr": errOut} {
+		if strings.Contains(s, "\x1b") {
+			t.Errorf("%s carries escape sequences in headless mode: %q", name, s)
+		}
+	}
+	// The words are all still there — styled and plain forms carry the
+	// same content.
+	for _, want := range []string{"⟨ Zi ⟩", "buffer ice modifiers", "terminal"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("headless output missing %q", want)
+		}
+	}
+}

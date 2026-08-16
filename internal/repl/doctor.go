@@ -20,6 +20,7 @@ import (
 	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/internal/sandbox"
 	"github.com/blairham/gish/internal/tools"
+	"github.com/blairham/gish/internal/ui"
 )
 
 // The doctor command (#67): one command that checks the moving parts,
@@ -71,11 +72,17 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkTerminal(),
 	}
 
+	style := ui.Styles(ui.Enabled(hc.Stdout))
+	markStyle := map[checkStatus]func(...string) string{
+		checkOK: style.OK.Render, checkWarn: style.Warn.Render, checkFail: style.Fail.Render,
+	}
 	healthy := true
 	for _, r := range results {
-		fmt.Fprintf(hc.Stdout, "%s %-9s %s\n", statusMark[r.status], r.label, r.detail)
+		fmt.Fprintf(hc.Stdout, "%s %s %s\n",
+			markStyle[r.status](statusMark[r.status]),
+			style.Bold.Render(fmt.Sprintf("%-9s", r.label)), r.detail)
 		if r.fix != "" {
-			fmt.Fprintf(hc.Stdout, "  %-9s fix: %s\n", "", r.fix)
+			fmt.Fprintf(hc.Stdout, "  %-9s %s\n", "", style.Dim.Render("fix: "+r.fix))
 		}
 		if r.status == checkFail {
 			healthy = false

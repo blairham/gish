@@ -70,7 +70,7 @@ func runZi(mgr plugmgr.Manager, hc interp.HandlerContext, args []string) []strin
 		return []string{"false"}
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(hc.Stdout, ziUsage)
+		printZiHelp(hc.Stdout)
 		return []string{"true"}
 	}
 	switch args[0] {
@@ -102,7 +102,7 @@ func runZi(mgr plugmgr.Manager, hc interp.HandlerContext, args []string) []strin
 		if len(args) > 1 {
 			target = args[1]
 		}
-		if err := mgr.Update(target, hc.Stdout); err != nil {
+		if err := ziUpdate(mgr, target, hc); err != nil {
 			return fail(err)
 		}
 		return []string{"true"}
@@ -120,7 +120,7 @@ func runZi(mgr plugmgr.Manager, hc interp.HandlerContext, args []string) []strin
 		}
 		return []string{"true"}
 	case "help", "-h", "--help":
-		fmt.Fprintln(hc.Stdout, ziUsage)
+		printZiHelp(hc.Stdout)
 		return []string{"true"}
 	default:
 		return fail(fmt.Errorf("unknown command %q\n%s", args[0], ziUsage))

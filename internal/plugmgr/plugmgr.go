@@ -142,12 +142,47 @@ func (z *Zi) writePayload(id, payload string) (string, error) {
 // politeness cap rather than a core count.
 const ziUpdateJobs = 8
 
+// UpdateEvent reports one object's lifecycle in the update fan-out —
+// the seam the live board renders from (#90). Queued events arrive for
+// every object before work starts, in listing order.
+type UpdateEvent struct {
+	Index   int
+	Name    string
+	State   UpdateState
+	Outcome string // Done only
+	Failed  bool   // Done only
+}
+
+// UpdateState is an UpdateEvent's lifecycle position.
+type UpdateState int
+
+// The lifecycle: queued (announced upfront), started (a worker picked
+// it), done (outcome known).
+const (
+	UpdateQueued UpdateState = iota
+	UpdateStarted
+	UpdateDone
+)
+
+// ProgressUpdater is the optional Manager extension a live progress
+// display uses; managers without it get the plain line output.
+type ProgressUpdater interface {
+	UpdateWithProgress(target string, out io.Writer, observe func(UpdateEvent)) error
+}
+
 // Update refreshes one object, or every installed object concurrently
 // (#49): the same FIFO-admission, ordered-flush pool discipline as the
 // parallel builtin. Status lines print in listing order as each
 // object's turn completes; per-object hook output (make/atpull)
 // streams to the installer's writer as it happens.
 func (z *Zi) Update(target string, out io.Writer) error {
+	return z.UpdateWithProgress(target, out, nil)
+}
+
+// UpdateWithProgress is Update with an observer: when observe is
+// non-nil it becomes the display (line output is suppressed) and is
+// called from worker goroutines — observers must be safe for that.
+func (z *Zi) UpdateWithProgress(target string, out io.Writer, observe func(UpdateEvent)) error {
 	var dirs []string
 	if target == "" {
 		for _, root := range []string{z.cfg.PluginsDir(), z.cfg.SnippetsDir()} {
@@ -169,6 +204,11 @@ func (z *Zi) Update(target string, out io.Writer) error {
 		dirs = []string{dir}
 	}
 
+	if observe != nil {
+		for i, dir := range dirs {
+			observe(UpdateEvent{Index: i, Name: filepath.Base(dir), State: UpdateQueued})
+		}
+	}
 	results := make([]string, len(dirs))
 	done := make([]chan struct{}, len(dirs))
 	for i := range done {
@@ -179,9 +219,18 @@ func (z *Zi) Update(target string, out io.Writer) error {
 	for range min(ziUpdateJobs, len(dirs)) {
 		workers.Go(func() {
 			for i := range tasks {
+				if observe != nil {
+					observe(UpdateEvent{Index: i, Name: filepath.Base(dirs[i]), State: UpdateStarted})
+				}
 				outcome, err := z.inst.Update(dirs[i])
 				if err != nil {
 					outcome = err.Error()
+				}
+				if observe != nil {
+					observe(UpdateEvent{
+						Index: i, Name: filepath.Base(dirs[i]),
+						State: UpdateDone, Outcome: outcome, Failed: err != nil,
+					})
 				}
 				results[i] = fmt.Sprintf("%-40s %s\n", filepath.Base(dirs[i]), outcome)
 				close(done[i])
@@ -196,7 +245,9 @@ func (z *Zi) Update(target string, out io.Writer) error {
 	close(tasks)
 	for i := range dirs {
 		<-done[i]
-		io.WriteString(out, results[i]) //nolint:errcheck // status display only
+		if observe == nil { // the observer is the display
+			io.WriteString(out, results[i]) //nolint:errcheck // status display only
+		}
 	}
 	workers.Wait()
 	return nil

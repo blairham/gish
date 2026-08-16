@@ -398,21 +398,7 @@ func pluginsBuiltin(host *pluginhost.Host, cmdIndex *pluginhost.CommandIndex, di
 			fmt.Fprintf(hc.Stdout, "no plugins installed — drop executables in %s\n", dir)
 			return nil
 		}
-		for _, st := range statuses {
-			state := "stopped"
-			switch {
-			case st.Running:
-				state = "running"
-			case time.Now().Before(st.BackoffUntil):
-				state = "backoff"
-			}
-			line := fmt.Sprintf("%-20s %-8s %-12s %s",
-				st.Name, state, st.Version, strings.Join(st.Capabilities, ","))
-			if cmds := cmdIndex.CommandsOf(st.Name); len(cmds) > 0 {
-				line += "  cmds: " + strings.Join(cmds, ",")
-			}
-			fmt.Fprintln(hc.Stdout, line)
-		}
+		printPluginStatuses(hc.Stdout, statuses, cmdIndex)
 		return nil
 	}
 }
