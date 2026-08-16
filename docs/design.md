@@ -68,6 +68,23 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **One prompt pipeline; a small, frozen escape set** (2026-08,
+  [#109](https://github.com/blairham/gish/issues/109)): the #6
+  `GISH_PROMPT` expander was explicitly a stopgap until the prompt
+  engine existed. It does now, so the manual override became the
+  **"literal" theme** — every prompt (plain, p10k, starship, plugin,
+  manual) renders through one dispatch, and renderer fixes land once
+  instead of twice or drifting.
+
+  The escape set was decided rather than accreted, because v1 freezes
+  it: `%n`/`%u` user, `%m`/`%h` host, `%~`/`%w` cwd, `%W` basename,
+  `%d` full cwd, `%?` exit status, `%#` prompt char, `%p{id}` plugin
+  segment, `%%` literal. zsh's spellings are first-class aliases — the
+  person writing `GISH_PROMPT` is usually porting a zsh `PROMPT` and
+  their fingers know `%n`/`%m`/`%~` (the #96 lesson). Unknown escapes
+  pass through untouched; gish does not grow zsh's full `PROMPT_SUBST`
+  surface by accident.
+
 - **A manifest, not a modifier language** (2026-08,
   [#108](https://github.com/blairham/gish/issues/108)): plugin
   configuration is data — `source`, `kind`, `pin`, `lazy` in
@@ -188,6 +205,30 @@ The line editor and prompt engine consume both tiers through one internal interf
   budget; Ctrl-C rides context cancellation. Discovery uses an
   mtime-keyed command-index cache so warm sessions route names without
   launching plugins.
+
+- **The ssh story is a pushed binary, not a presence on the box**
+  (2026-08, [#98](https://github.com/blairham/gish/issues/98)):
+  **`gish ssh` copies a binary, execs it for the interactive session,
+  and leaves nothing else behind.** The remote `$SHELL` is never
+  changed and remote dotfiles are never written — the POSIX-clean
+  non-interactive contract (#41) exists precisely so `ssh host cmd`,
+  `scp`, `rsync`, and git-over-ssh keep working, and a shell that
+  announces itself from a remote rc file breaks all four. Every failure
+  path — no writable directory, `noexec` on every candidate, unsupported
+  platform, probe timeout — lands in plain `ssh` with one line on
+  stderr: the scenario being sold is the 2AM incident box, so
+  bring-along machinery that delays a shell is negative value. Ruled
+  out: **a persistent remote daemon** (mosh/Eternal Terminal), which
+  contradicts "nothing persists beyond the dropped binary" and makes
+  every remote box a support and security surface — the whole point of
+  the single static binary is that there is nothing to run; **shipping
+  commands from a local shell to a remote executor**, which buys a fully
+  local UX by reimplementing `cd` persistence, job control, Ctrl-C, and
+  every full-screen program over a command channel (a one-shot
+  `gish exec host -- cmd` is fine; a session is not); and
+  **auto-launching from the remote `~/.bashrc`**, the obvious shortcut
+  to "gish on every login", which is the rc-file rule above restated as
+  a footgun. Do not re-propose without new facts.
 
 ## Open questions
 
