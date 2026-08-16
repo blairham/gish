@@ -30,13 +30,28 @@ func buildGish(t *testing.T) string {
 	return bin
 }
 
+// promptMarkers are the byte sequences that mean "the first prompt is
+// on screen". The OSC 133;B mark (#99) is the exact signal — it is
+// written when the prompt ends and input begins — so it leads; the
+// glyph markers stay for a run with GISH_SEMANTIC_MARKS=off.
+var promptMarkers = [][]byte{
+	[]byte("\x1b]133;B"),
+	[]byte("❯"),
+	[]byte(" % "),
+	[]byte("gish$"),
+}
+
 // timeToFirstPrompt execs gish under a pty and measures until a prompt
-// appears: the naked default (" % "), a themed arrow, or the plain
-// non-TTY fallback.
+// appears.
 func timeToFirstPrompt(t *testing.T, bin string, env []string) time.Duration {
 	t.Helper()
 	cmd := exec.Command(bin)
 	cmd.Env = env
+	// Start in the hermetic home, not the package directory: a startup
+	// measurement must not be charged for whatever the measuring
+	// directory contains (this repo's .tool-versions, its git tree) —
+	// the same rule internal/bench learned.
+	cmd.Dir = homeFrom(env)
 	start := time.Now()
 	f, err := pty.Start(cmd)
 	if err != nil {
@@ -48,22 +63,63 @@ func timeToFirstPrompt(t *testing.T, bin string, env []string) time.Duration {
 		_, _ = cmd.Process.Wait()
 	}()
 
+	// Read from a goroutine and time out in a select: SetReadDeadline is
+	// unsupported on a pty ("file type does not support deadline"), so a
+	// bare Read blocks forever once the shell goes quiet — which turns a
+	// missed marker into a 10-minute CI timeout instead of a failure
+	// that says what was on screen.
+	chunks := ptyChunks(f)
 	var buf bytes.Buffer
-	chunk := make([]byte, 4096)
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		_ = f.SetReadDeadline(time.Now().Add(200 * time.Millisecond)) //nolint:errcheck // best-effort
-		n, _ := f.Read(chunk)
-		if n > 0 {
-			buf.Write(chunk[:n])
-			if bytes.Contains(buf.Bytes(), []byte("❯")) || bytes.Contains(buf.Bytes(), []byte(" % ")) ||
-				bytes.Contains(buf.Bytes(), []byte("gish$")) {
-				return time.Since(start)
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case chunk, ok := <-chunks:
+			if !ok {
+				t.Fatalf("gish exited before prompting; got %q", buf.String())
 			}
+			buf.Write(chunk)
+			for _, marker := range promptMarkers {
+				if bytes.Contains(buf.Bytes(), marker) {
+					return time.Since(start)
+				}
+			}
+		case <-deadline:
+			t.Fatalf("no prompt within 5s; got %q", buf.String())
 		}
 	}
-	t.Fatalf("no prompt within 5s; got %q", buf.String())
-	return 0
+}
+
+// ptyChunks streams a pty's output; the channel closes when the pty
+// does. One goroutine per launch, ended by closing the pty.
+func ptyChunks(f *os.File) <-chan []byte {
+	ch := make(chan []byte, 64)
+	go func() {
+		defer close(ch)
+		for {
+			chunk := make([]byte, 4096)
+			n, err := f.Read(chunk)
+			if n > 0 {
+				ch <- chunk[:n]
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return ch
+}
+
+// homeFrom returns the HOME set by hermeticEnv.
+func homeFrom(env []string) string { return envValue(env, "HOME") }
+
+// envValue reads one variable out of an exec-style env slice.
+func envValue(env []string, key string) string {
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, key+"="); ok {
+			return v
+		}
+	}
+	return ""
 }
 
 // hermeticEnv gives gish empty config/state homes: no rc, no plugins,
@@ -118,13 +174,7 @@ func TestStartupWithSlowHistoryFile(t *testing.T) {
 	env := hermeticEnv(t)
 
 	// A fat history file (10k entries) must not blow the budget.
-	var home string
-	for _, kv := range env {
-		if v, ok := strings.CutPrefix(kv, "XDG_DATA_HOME="); ok {
-			home = v
-		}
-	}
-	dir := filepath.Join(home, "gish")
+	dir := filepath.Join(envValue(env, "XDG_DATA_HOME"), "gish")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

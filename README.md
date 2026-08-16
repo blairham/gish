@@ -189,6 +189,15 @@ which gish | sudo tee -a /etc/shells
 chsh -s "$(which gish)"
 ```
 
+## Blocks and terminal integration
+
+gish emits OSC 133 semantic marks, so terminals that speak them —
+kitty, WezTerm, Ghostty, iTerm2, VS Code — give you
+scroll-to-previous-prompt, select-command-output, and click-to-rerun
+with no configuration. `doctor` tells you what your terminal supports.
+Full command+output blocks (capture, search, re-run) are designed in
+[docs/blocks.md](docs/blocks.md) and staged behind that.
+
 ## Platforms
 
 macOS and Linux are first-class today. Windows builds and its portable
