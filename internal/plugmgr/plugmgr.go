@@ -261,6 +261,34 @@ func (z *Zi) Delete(target string) error {
 	return os.RemoveAll(dir)
 }
 
+// ObjectInfo is one installed object for structured listings (#90).
+type ObjectInfo struct {
+	Kind, Raw, Ices string
+}
+
+// ObjectLister is the optional Manager extension structured views use;
+// managers without it get the plain List output.
+type ObjectLister interface {
+	Objects() ([]ObjectInfo, error)
+}
+
+// Objects returns the installed objects, plugins then snippets.
+func (z *Zi) Objects() ([]ObjectInfo, error) {
+	var out []ObjectInfo
+	for _, root := range []struct{ kind, dir string }{
+		{"plugin", z.cfg.PluginsDir()}, {"snippet", z.cfg.SnippetsDir()},
+	} {
+		objs, err := state.ListObjects(root.dir, root.kind)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range objs {
+			out = append(out, ObjectInfo{Kind: o.Kind, Raw: o.Raw, Ices: ice.FromMap(o.Ices).String()})
+		}
+	}
+	return out, nil
+}
+
 func (z *Zi) List(out io.Writer) error {
 	for kind, root := range map[string]string{"plugin": z.cfg.PluginsDir(), "snippet": z.cfg.SnippetsDir()} {
 		objs, err := state.ListObjects(root, kind)
