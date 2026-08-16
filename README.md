@@ -126,13 +126,27 @@ And the AI surface, which is opt-in and never runs anything on its own:
 ?? find the biggest files here      # composes a command into your editor buffer,
                                     # sandbox-wrapped, for you to read and run
 explain                             # why did that last command fail
-agent "migrate these repos to the new CI config"
-                                    # plans first, you approve, destructive steps
-                                    # gate individually, escalation is its own answer
 ```
 
 Bring your own provider — the reference plugin drives the `claude` CLI you
 already have, and any local model behind the same contract works identically.
+
+### Hosting other people's agents
+
+The more useful thing a shell can do for AI is not to be one. Coding
+agents already live *inside* your shell, and gish is built to be the
+place they run:
+
+```sh
+gish --sandbox workspace            # every command the agent runs, in or out of
+                                    # its own tooling, is confined to this tree
+```
+
+Least-privilege exec on the shell's own exec path (macOS Seatbelt, Linux
+Landlock), a permission-gated environment where nothing applies to a
+directory until you allow it, and history that never records a secret.
+Point Claude Code, aider, or your own script at a sandboxed gish session
+and the confinement is the shell's, not the agent's promise.
 
 ## Making it your daily driver
 

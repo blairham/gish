@@ -17,6 +17,16 @@ import (
 	"github.com/blairham/gish/pkg/pluginapi"
 )
 
+// EXPERIMENTAL, FROZEN (#111). gish's position is that it hosts other
+// people's agents rather than being one: the researched demand for AI in
+// a shell is `??` and `explain`, and sandbox profiles plus gated env are
+// what a shell uniquely contributes to agents that already run inside
+// it. This surface stays because execution belongs to the shell — a
+// plugin may never hold an exec channel, so orchestration cannot move
+// behind the plugin boundary without weakening that — but it is
+// unadvertised and receives no further investment. Do not extend it
+// without new demand data.
+//
 // The agent surface (#34), Kiro-style: give it a task, it plans first —
 // the spec renders in the terminal and saves as an artifact — and
 // nothing executes until approved. The intelligence is any AIProvider
