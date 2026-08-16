@@ -43,7 +43,15 @@ func p10kTheme(runner *interp.Runner, info promptInfo) (string, string, string) 
 
 // p10kConfigFor assembles the configuration for this prompt.
 func p10kConfigFor(runner *interp.Runner) *p10k.Config {
-	name := shellVar(runner, "GISH_P10K_PRESET", p10k.DefaultPreset)
+	// A nil runner means a caller outside the prompt loop (`p10k show`),
+	// which reads the same settings from the environment.
+	name := os.Getenv("GISH_P10K_PRESET")
+	if runner != nil {
+		name = shellVar(runner, "GISH_P10K_PRESET", p10k.DefaultPreset)
+	}
+	if name == "" {
+		name = p10k.DefaultPreset
+	}
 	cached, ok := presetCache.Load(name)
 	if !ok {
 		cfg := p10k.Preset(name)
