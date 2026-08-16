@@ -26,7 +26,10 @@ demonstrated demand for named plugins pattern-compat cannot carry.
 There is no delegation fallback: the long tail keeps running in zsh,
 where it already works — see the `zsh -c` decision below.
 
-Built-in plugin *management* (the zi rethink) is native: declarative manifest, lazy loading by default, one obvious way to install/pin/update. No `ice` modifiers to memorize.
+Built-in plugin *management* (the zi rethink) is native and **shipped**:
+a declarative manifest (`plugins.toml`) with four knobs — source, kind,
+pin, lazy — edited by `plugin add|remove|pin|enable|disable|update`. No
+`ice` modifiers to memorize; see the decision below.
 
 ### Tier 2 — native gRPC plugins (differentiator)
 
@@ -64,6 +67,22 @@ The line editor and prompt engine consume both tiers through one internal interf
 7. **Windows hardening** *(paused per #110 — resumes post-v1)* — ConPTY line editor path, job-object process groups.
 
 ## Decisions
+
+- **A manifest, not a modifier language** (2026-08,
+  [#108](https://github.com/blairham/gish/issues/108)): plugin
+  configuration is data — `source`, `kind`, `pin`, `lazy` in
+  `$XDG_CONFIG_HOME/gish/plugins.toml` — not a vocabulary of ice
+  modifiers (`from"gh-r" as"program" pick"bin/fzf" wait"1" lucid`) to
+  learn before installing one plugin. The #23 port carried zi's full
+  surface in because it was the engine's native idiom; reproducing that
+  idiom faithfully pointed the wrong way for a shell whose pitch is
+  escaping the framework tax, and pre-1.0 was the free window to shrink
+  it (our frozen-additive discipline would otherwise keep it forever).
+
+  The zi engine stays as the implementation and existing installs carry
+  over; `zi migrate` converts them, and the `zi` command keeps working
+  with a one-time notice. Ice syntax is documented only on the migration
+  path.
 
 - **The native/delegate line** (2026-08,
   [#112](https://github.com/blairham/gish/issues/112)): gish ships

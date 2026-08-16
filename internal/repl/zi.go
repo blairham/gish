@@ -73,7 +73,12 @@ func runZi(mgr plugmgr.Manager, hc interp.HandlerContext, args []string) []strin
 		printZiHelp(hc.Stdout)
 		return []string{"true"}
 	}
+	if args[0] != "migrate" {
+		ziDeprecationNotice(hc)
+	}
 	switch args[0] {
+	case "migrate":
+		return ziMigrate(mgr, hc)
 	case "ice":
 		if err := mgr.SetIces(args[1:]); err != nil {
 			return fail(err)
