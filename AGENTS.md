@@ -10,7 +10,7 @@ The name expands bash-style: **gish = gRPC Interactive SHell** — the tier-2 pl
 
 The design bet is a **two-tier plugin system**:
 
-- **Tier 1 — script plugins**: the existing zsh plugin ecosystem (zi/zinit/oh-my-zsh style). These run in-process against a zsh-compat layer so users keep their plugins on day one. This tier is the adoption story; the compat layer is by far the hardest part of the project and lands incrementally.
+- **Tier 1 — script plugins**: the existing zsh plugin ecosystem (zi/zinit/oh-my-zsh style), run in-process against a *pattern-compat* layer — aliases, exports, PATH edits, precmd/preexec, completion registration. Demoted from adoption story to **migration escape hatch** (#105): the adoption story is fish-grade defaults + bash paste-compat + the native stack; a switcher's must-have plugin shouldn't block the move, but the .zshrc pile is what people are fleeing. No compsys emulation, no zle shims beyond the trivial, no zsh dialect on the critical path.
 - **Tier 2 — native gRPC plugins**: resident subprocesses over hashicorp/go-plugin with a versioned protobuf API (`proto/gish/plugin/v1`). Completion providers, prompt segments, history backends. This tier is the differentiator: plugins get a real contract instead of poking shell internals, and can be written in any language. Precedent: gitstatusd and carapace already prove out-of-process is how fast shell tooling works.
 
 Non-negotiable latency rule for tier 2: every host→plugin call carries a deadline; a slow plugin degrades (stale segment, missing completions), it never blocks a keystroke or the prompt.

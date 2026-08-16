@@ -9,18 +9,22 @@
 
 ## Two-tier plugin system
 
-### Tier 1 — script plugins (adoption)
+### Tier 1 — script plugins (migration escape hatch)
 
-The existing zsh ecosystem: zi/zinit/oh-my-zsh plugins, themes, completions. These are zsh *scripts* that expect `zle`, `zstyle`, `autoload`, `precmd`/`preexec`, compsys. They must run in-process — per-keystroke widgets can't pay IPC costs, and the scripts assume shell state.
+*Demoted from "the adoption story" by [#105](https://github.com/blairham/gish/issues/105) — see Decisions.*
+The adoption story is fish-grade defaults + bash paste-compat + the
+native stack; tier 1 exists so a switcher's handful of
+must-have zsh plugins is not a blocker, not so the .zshrc pile moves in.
 
-Strategy, in order of effort/payoff:
+Scope — **pattern compat only**: aliases, exports, PATH edits,
+`precmd`/`preexec` hooks, and completion registration — the surface the
+zi manager already feeds. No zle-widget shim beyond what maps
+trivially; compsys emulation is explicitly out of scope. Corpus-driven
+zsh-dialect growth is off the critical path, revisited only on
+demonstrated demand for named plugins pattern-compat cannot carry.
 
-1. **Pattern compat first**: most popular plugins reduce to aliases, exports, PATH edits, precmd/preexec hooks, completions, and a handful of zle widgets. Implement that surface and the top-N plugins run.
-2. **zsh-dialect growth**: extend the parser/interpreter toward the zsh constructs plugins actually use, driven by a corpus of real plugins, not by the zsh manual.
-
-There is no step 3: the long tail that pattern-compat misses keeps
-running in zsh, where it already works — see the `zsh -c` delegation
-decision below.
+There is no delegation fallback: the long tail keeps running in zsh,
+where it already works — see the `zsh -c` decision below.
 
 Built-in plugin *management* (the zi rethink) is native: declarative manifest, lazy loading by default, one obvious way to install/pin/update. No `ice` modifiers to memorize.
 
@@ -47,7 +51,7 @@ Precedent that this architecture wins: powerlevel10k is fast *because* gitstatus
 
 ### How the tiers meet
 
-The line editor and prompt engine consume both tiers through one internal interface; tier 1 hooks and tier 2 RPCs are two providers behind it. Long-term, tier 1 is the on-ramp and tier 2 is where the ecosystem settles — the tier with the contract.
+The line editor and prompt engine consume both tiers through one internal interface; tier 1 hooks and tier 2 RPCs are two providers behind it. Tier 2 is where the ecosystem settles — the tier with the contract; tier 1 is the escape hatch that keeps a migration from stalling on one beloved script.
 
 ## Roadmap (milestone sketch)
 
@@ -55,11 +59,28 @@ The line editor and prompt engine consume both tiers through one internal interf
 2. **Line editor** — raw-mode editor (keymap, kill-ring, undo), history file, incremental search. This is where gish starts feeling like a shell.
 3. **Tier-2 dispatch** — plugin discovery/config, resident lifecycle, deadlines; first real plugins: git prompt segment, file/carapace-style completion.
 4. **Completion UI** — menu selection, descriptions, multi-provider merge.
-5. **Tier-1 compat, wave 1** — precmd/preexec, aliases/exports, simple widget shims; run the top oh-my-zsh plugins unmodified.
-6. **zsh dialect** — corpus-driven parser/interpreter extensions.
+5. **Tier-1 pattern compat** — precmd/preexec, aliases/exports, completion registration; the top plugins' *behaviors*, natively or by pattern.
+6. ~~**zsh dialect** — corpus-driven parser/interpreter extensions.~~ *Off the critical path per #105; revisit on demonstrated demand.*
 7. **Windows hardening** *(paused per #110 — resumes post-v1)* — ConPTY line editor path, job-object process groups.
 
 ## Decisions
+
+- **Tier-1 zsh compat is an escape hatch, not the adoption story**
+  (2026-08, [#105](https://github.com/blairham/gish/issues/105)):
+  the Aug 2026 research is unambiguous — config fatigue is the #1
+  switching trigger (people flee the .zshrc pile, they don't pack it);
+  fish built the largest post-zsh user base with zero compat while
+  Oils' 8-year maximal-bash-compat effort bought ~272 brew installs a
+  year; and gish already ships the top zsh plugins' behaviors natively
+  (autosuggestions, highlighting, p10k-class prompt, completions,
+  direnv/asdf). Acquisition-critical compat is bash *paste* compat
+  (mvdan/sh, proven by the #101 scoreboard). Tier 1 is therefore
+  scoped to pattern compat, the zsh dialect milestone leaves the
+  critical path, and the freed effort goes to the differentiators that
+  win threads (#99 blocks, #98 ssh, #101/#102 published numbers). The
+  escape hatch stays — elvish/nushell show an ecosystem of zero is
+  worse than an ecosystem of sourced scripts — it just stops being
+  the bet.
 
 - **No `zsh -c` delegation shim** (2026-08, [#107](https://github.com/blairham/gish/issues/107)):
   **the compat boundary is honest, not smoothed over with a chimera.**
