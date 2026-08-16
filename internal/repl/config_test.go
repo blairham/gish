@@ -331,7 +331,12 @@ func TestConfigThemePreset(t *testing.T) {
 // bytes. One escape character in piped output is a regression.
 func TestHeadlessSurfacesEmitNoEscapes(t *testing.T) {
 	rc := filepath.Join(t.TempDir(), "gishrc")
-	out, errOut, _ := runConfigScript(t, rc, "doctor\nzi\nzi help\ntool\ntool list golang\nconfig\n")
+	// `plugin browse` and `config theme` are the two surfaces that open a
+	// form on a terminal (#90); headless they must print, not hang, and
+	// not style. They are in this list rather than only in their own
+	// tests so one place fails when a new surface forgets the rule.
+	out, errOut, _ := runConfigScript(t, rc,
+		"doctor\nzi\nzi help\ntool\ntool list golang\nconfig\nplugin browse\nconfig theme\n")
 	for name, s := range map[string]string{"stdout": out, "stderr": errOut} {
 		if strings.Contains(s, "\x1b") {
 			t.Errorf("%s carries escape sequences in headless mode: %q", name, s)

@@ -148,6 +148,7 @@ func (p *pluginManager) take(command string) (manifest.Plugin, bool) {
 const pluginUsage = `usage: plugin [add|remove|pin|enable|disable|update] …
 
   plugin                          list configured plugins
+  plugin browse                   pick what loads, or add from a starter list
   plugin add zsh-users/zsh-autosuggestions
   plugin add junegunn/fzf --kind release --pin 0.55.0
   plugin add ohmyzsh/ohmyzsh --lazy command:git
@@ -195,6 +196,13 @@ func runPlugin(ctx context.Context, hc interp.HandlerContext, args []string) []s
 	case args[0] == "help", args[0] == "-h", args[0] == "--help":
 		fmt.Fprintln(hc.Stdout, pluginUsage)
 		return []string{"true"}
+
+	case args[0] == "browse":
+		// The interactive manager (#90). It edits the same manifest the
+		// other subcommands do — the form is a way of filling it in, not
+		// a second source of truth.
+		return runPluginBrowse(handlerIO{Stdin: hc.Stdin, Stdout: hc.Stdout, Stderr: hc.Stderr},
+			pluginMgr.path, pluginMgr.man)
 
 	case args[0] == "add" && len(args) >= 2:
 		entry, err := parseAdd(args[1:])
