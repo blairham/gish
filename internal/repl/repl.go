@@ -118,7 +118,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(zCallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -139,6 +139,12 @@ func runEditor(ctx context.Context, login bool) error {
 	}
 	if host != nil {
 		aiMgr = newAIManager(host, store)
+	}
+	// Native z (#94): the loop is the tracking point; the index saves
+	// on exit and bootstraps from history on first run.
+	jumpMgr = newJumpManager(store)
+	if jumpMgr != nil {
+		defer jumpMgr.save()
 	}
 
 	edCfg := editor.Config{
@@ -191,6 +197,9 @@ func runEditor(ctx context.Context, login bool) error {
 		toolsMgr.atPrompt(ctx, runner)
 		if envMgr != nil {
 			envMgr.atPrompt(ctx, runner)
+		}
+		if jumpMgr != nil {
+			jumpMgr.note(runner)
 		}
 		info.dir = runner.Dir
 		info.exitCode = lastExit
@@ -448,7 +457,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))),
+		interp.CallHandler(zCallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))),
 	)
 	if err != nil {
 		return err
@@ -518,7 +527,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))),
+		interp.CallHandler(zCallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))),
 	)
 	if err != nil {
 		return err
@@ -541,7 +550,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))),
+			interp.CallHandler(zCallHandler(explainCallHandler(toolCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))),
 		},
 		opts...,
 	)...)

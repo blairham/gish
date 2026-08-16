@@ -40,6 +40,7 @@ var configSettings = []configSetting{
 	{"lint", "GISH_LINT", []string{"on", "native", "off"}, "footgun diagnostics — native skips shellcheck"},
 	{"prompt", "GISH_PROMPT", nil, "manual prompt escapes — beats any theme"},
 	{"tools", "GISH_TOOLS", []string{"on", "off"}, "native .tool-versions switching (#77)"},
+	{"jump", "GISH_JUMP", []string{"on", "off"}, "native z directory tracking (#94)"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -63,6 +64,7 @@ settings:
   lint    on | native | off        (GISH_LINT)
   prompt  escape string            (GISH_PROMPT)
   tools   on | off                 (GISH_TOOLS)
+  jump    on | off                 (GISH_JUMP)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
                     exit, plus any plugin segment id  (GISH_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default

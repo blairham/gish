@@ -244,6 +244,22 @@ func (s *Store) Recent(n int) []string {
 	return out
 }
 
+// DirCounts tallies how many recorded commands ran in each directory —
+// the native-z bootstrap (#94): a fresh jump index seeds from where
+// the user has actually been working.
+func (s *Store) DirCounts() map[string]int {
+	s.reload()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[string]int{}
+	for _, e := range s.entries {
+		if e.Cwd != "" {
+			out[e.Cwd]++
+		}
+	}
+	return out
+}
+
 // scan walks entries newest-first, deduplicating so each command is
 // offered once, at its most recent position.
 func (s *Store) scan(n int, match func(string) bool) (string, bool) {
