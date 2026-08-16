@@ -89,7 +89,7 @@ Read these before touching `pluginhost` or the protos.
 - **Plugins are resident**: launched lazily on first use, kept alive for the session. Never spawn-per-call.
 - **Environment is allowlisted**: completion/prompt requests carry a filtered env map, never the full environment.
 - **The shell owns history**: a HistoryBackend plugin observes and serves search; the local history file works with zero plugins installed.
-- **Windows is a target, not a port**: go-plugin falls back to TCP loopback where unix sockets are unavailable; don't introduce unix-socket-only assumptions.
+- **Windows is a target, not a port — sequenced to v1.x (#110)**: keep the invariants that make the port a resume rather than a restart (no unix-socket-only assumptions — go-plugin falls back to TCP loopback; PATHEXT-aware executable checks; USERPROFILE beside HOME in tests; the windows-latest CI job gates every PR). Native interactive work (ConPTY, job objects, installer — #87/#89) is deliberately paused until after a v1 that wins on macOS/Linux; WSL2 is the documented Windows story meanwhile.
 
 ## Code Conventions
 

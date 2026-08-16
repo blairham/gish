@@ -5,7 +5,7 @@
 1. **Interactive experience of zsh** — completion menus, widgets, rich prompts — with cleaner, discoverable configuration.
 2. **Scripting substrate of bash/POSIX** — scripts and muscle memory carry over; `mvdan.cc/sh` gives us a battle-tested parser/interpreter to grow a zsh dialect on top of.
 3. **Plugins with a contract** — the headline feature. Two tiers, below.
-4. **Cross-platform** — macOS and Linux first-class from day one; Windows a real target (Windows Terminal-native, not just WSL), revisited milestone by milestone.
+4. **Cross-platform** — macOS and Linux first-class from day one; Windows a real target, *sequenced* (#110): the portability invariants and the windows CI gate hold now, native interactive (Windows Terminal, not just WSL) lands in v1.x after the unix beachhead. WSL2 is the supported Windows story until then.
 
 ## Two-tier plugin system
 
@@ -54,7 +54,7 @@ The line editor and prompt engine consume both tiers through one internal interf
 4. **Completion UI** — menu selection, descriptions, multi-provider merge.
 5. **Tier-1 compat, wave 1** — precmd/preexec, aliases/exports, simple widget shims; run the top oh-my-zsh plugins unmodified.
 6. **zsh dialect** — corpus-driven parser/interpreter extensions.
-7. **Windows hardening** — ConPTY line editor path, job-object process groups.
+7. **Windows hardening** *(paused per #110 — resumes post-v1)* — ConPTY line editor path, job-object process groups.
 
 ## Decisions
 
