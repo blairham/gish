@@ -10,6 +10,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 
 	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/internal/ui"
 )
 
@@ -24,20 +25,35 @@ const historyPickCount = 5000
 
 // historyPickFn returns the editor's HistoryPick hook, or nil when
 // there is no history to pick from.
-func historyPickFn(store *history.Store) func(string) (string, bool) {
+//
+// host may be nil (no plugin host, or none installed). When it is not,
+// HistoryBackend plugins are asked for matches too (#97) and merged
+// behind the local ones — the local store answers first and always, so a
+// slow or broken backend costs reach, never the picker.
+func historyPickFn(store *history.Store, host *pluginhost.Host) func(string) (string, bool) {
 	if store == nil {
 		return nil
 	}
 	return func(query string) (string, bool) {
-		entries := store.RecentEntries(historyPickCount)
+		local := store.RecentEntries(historyPickCount)
+		localSet := commandSet(local)
+		entries := mergeHistory(local,
+			searchBackends(context.Background(), host, query, currentDir(), historyPickCount, false),
+			historyPickCount)
 		if len(entries) == 0 {
 			return "", false
 		}
 		items := make([]ui.PickerItem, 0, len(entries))
 		for _, e := range entries {
+			detail := historyDetail(e)
+			if _, isLocal := localSet[e.Command]; !isLocal {
+				// Say where it came from. A command this machine never
+				// ran, appearing unlabelled, reads as a bug.
+				detail = strings.TrimSpace(remoteMark + " " + detail)
+			}
 			items = append(items, ui.PickerItem{
 				Value:  e.Command,
-				Detail: historyDetail(e),
+				Detail: detail,
 				Bad:    e.ExitCode != 0,
 			})
 		}
@@ -183,4 +199,14 @@ func readLines(r interface{ Read([]byte) (int, error) }) []string {
 		return nil
 	}
 	return lines
+}
+
+// currentDir is the cwd a backend may rank by. An unknowable cwd is not
+// worth failing over — the backend simply ranks without locality.
+func currentDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return dir
 }

@@ -25,7 +25,7 @@ blocking.
 | Env diff on cwd change | 100ms | skip for this prompt; ask again on the next directory change |
 | Completion request | ~80ms to first batch | show whatever batches arrived; stream stays open until the user types again |
 | History append | none — fire-and-forget | shell never waits; backend scrubs/stores on its own time |
-| History search (ctrl-r) | ~100ms to first batch | partial results render, best-first |
+| History search (ctrl-r) | ~100ms to first batch (`DefaultHistorySearchBudget`) | local history renders alone; backend rows are additive, so a miss costs reach, not the picker |
 | Command-not-found | human-scale (command already failed) | skip suggestion |
 
 Two invariants sit under all of these:
@@ -89,7 +89,8 @@ Applied diffs revert when the shell leaves the proposal's subtree.
 | --- | --- | --- |
 | *(native)* secret scrubbing | gitleaks-style rules in the shell's own store (#10) | Moved shell-side by design: a plugin cannot unwrite the authoritative local file. Matching commands are skipped entirely (ignorespace posture) with a notice; backends only ever receive scrubbed entries |
 | *(native)* backend fan-out | async, deadline-bounded Append to every HistoryBackend after a successful local store | Fire-and-forget: the next prompt never waits; `stored=false` governs only a backend's own store |
-| `gish-sync` | local-first SQLite history, cross-machine sync, frecency + directory-locality ctrl-r ranking | Local file is authoritative; sync is eventual and conflict-free (append-only log) |
+| `gish-atuin` | ~~bridge to the user's own atuin~~ **landed** (#97, cmd/gish-atuin) | Append mirrors each command (`history start` + `end`; **`--duration` is nanoseconds** while the proto is milliseconds), Search serves ctrl-r from atuin's database. A bridge, not a reimplementation: atuin's opt-in, self-hostable, E2EE posture is the point, and gish reimplementing sync would inherit none of it. Commands travel in `ATUIN_COMMAND_LINE` (`--command-from-env`) so nothing is escaped, and results come back `--print0`-separated because commands contain newlines. No atuin installed = empty results, never errors |
+| `gish-sync` | local-first SQLite history, cross-machine sync, frecency + directory-locality ctrl-r ranking | Local file is authoritative; sync is eventual and conflict-free (append-only log). Only worth building if the atuin bridge proves the demand |
 
 ## Plugin locality: where does a plugin belong when the shell is remote?
 

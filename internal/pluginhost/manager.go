@@ -34,6 +34,11 @@ const (
 	// DefaultEnvBudget bounds an EnvDiff on directory change; a miss
 	// skips the diff for this prompt and retries on the next.
 	DefaultEnvBudget = 100 * time.Millisecond
+	// DefaultHistorySearchBudget bounds time to the first ctrl-r batch
+	// (#97). A miss shows local history alone — the picker opens on the
+	// shell's own store either way, so a slow backend costs breadth, not
+	// the feature.
+	DefaultHistorySearchBudget = 100 * time.Millisecond
 	// AITimeout bounds Compose/Explain: human-scale — explicitly
 	// invoked, never on the keystroke path, canceled by Ctrl-C.
 	AITimeout = 90 * time.Second
