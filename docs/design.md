@@ -65,6 +65,26 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **The native/delegate line** (2026-08,
+  [#112](https://github.com/blairham/gish/issues/112)): gish ships
+  natively what lives in the **keystroke, prompt, and cd path** —
+  highlighting, suggestions, completion, prompt segments, env diffs,
+  version *switching*, directory jumping — because those are the places
+  a shell can be uniquely fast and where an external tool costs a hook,
+  a subprocess, or a stall. Everything else is delegated to the tool
+  whose full-time job it is.
+
+  The first feature on the wrong side of that line was `tool install
+  --from`, a GitHub-release downloader: it carried package-manager
+  obligations (archive formats, binary provenance, rate limits,
+  platform matrices, "it didn't work on my machine" threads) that mise,
+  ubi, and asdf already own. It now prints the equivalent one-liner for
+  those tools instead. The `ghr` code stays — plugin installation is
+  gish's own artifact class, which it legitimately owns.
+
+  The guardrail matters more than the flag: "ship the eight-tool stack
+  natively" is a strategy that needs a stopping rule, and this is it.
+
 - **Host agents; do not be one** (2026-08,
   [#111](https://github.com/blairham/gish/issues/111)): the `??` compose
   and `explain` surfaces match the researched demand for AI in a shell

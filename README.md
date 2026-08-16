@@ -112,7 +112,8 @@ The things you would otherwise install and wire up:
 z api                  # zoxide-class jumping — frecency-ranked, seeded from your
                        # history, with a picker built in. No shell hook to install.
 tool pin golang 1.26.6 # .tool-versions switching without shims: PATH is rebuilt on
-                       # cd, your asdf/mise installs are reused as-is
+                       # cd, your asdf/mise installs are reused as-is. gish switches
+                       # versions; installing stays your package manager's job
 trust                  # direnv-class per-directory env, with a real trust model:
                        # nothing applies until you allow it, and edits re-prompt
 sandbox --profile readonly -- make test
