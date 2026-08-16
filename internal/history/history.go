@@ -260,6 +260,26 @@ func (s *Store) DirCounts() map[string]int {
 	return out
 }
 
+// RecentEntries returns up to n distinct entries, newest first, with
+// their metadata — what the ctrl-r picker shows so a choice is
+// informed rather than a guess (#100).
+func (s *Store) RecentEntries(n int) []Entry {
+	s.reload()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Entry, 0, n)
+	seen := make(map[string]struct{})
+	for i := len(s.entries) - 1; i >= 0 && len(out) < n; i-- {
+		e := s.entries[i]
+		if _, dup := seen[e.Command]; dup {
+			continue
+		}
+		seen[e.Command] = struct{}{}
+		out = append(out, e)
+	}
+	return out
+}
+
 // scan walks entries newest-first, deduplicating so each command is
 // offered once, at its most recent position.
 func (s *Store) scan(n int, match func(string) bool) (string, bool) {

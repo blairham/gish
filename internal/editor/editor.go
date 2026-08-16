@@ -52,6 +52,12 @@ type Config struct {
 	// editor cedes the terminal (cooked mode, decoder stopped) around
 	// the call; ok=false keeps the original text. nil disables it.
 	ExternalEdit func(text string) (string, bool)
+	// HistoryPick is Ctrl-R when a full-screen picker is available
+	// (#100). It receives the current buffer as the initial query and
+	// returns the chosen command; ok=false leaves the line alone. The
+	// terminal is ceded around it exactly like ExternalEdit. nil falls
+	// back to the incremental search.
+	HistoryPick func(query string) (string, bool)
 }
 
 type loopState int
@@ -61,7 +67,10 @@ const (
 	stateAccepted
 	stateCancelled
 	stateEOF
-	stateExternalEdit
+	// stateHandover: a full-screen program (an $EDITOR, a picker) needs
+	// the terminal. ReadCommand suspends raw mode and the decoder, runs
+	// the pending handover, and resumes.
+	stateHandover
 )
 
 // Editor reads commands interactively. Not safe for concurrent use; the
@@ -92,6 +101,9 @@ type Editor struct {
 
 	// pendingCtrlX arms the Ctrl-X chord for exactly one key.
 	pendingCtrlX bool
+	// pendingHandover is the function to run while the terminal is
+	// ceded; it maps the current buffer to its replacement.
+	pendingHandover func(current string) (string, bool)
 
 	// History navigation (see history.go): histPos is the entry shown
 	// (-1 = the live pending line), histPrefix the filter captured when
@@ -160,13 +172,16 @@ func (e *Editor) ReadCommand(ctx context.Context) (_ string, err error) {
 		if done {
 			return line, rerr
 		}
-		// External edit (Ctrl-X Ctrl-E): cede the terminal — cooked
-		// mode, decoder stopped — run $EDITOR, then take it back.
+		// Cede the terminal — cooked mode, decoder stopped — run the
+		// handover ($EDITOR, a picker), then take it back.
 		if cerr := restore(); cerr != nil {
 			return "", cerr
 		}
-		if text, ok := e.cfg.ExternalEdit(e.buf.String()); ok {
-			e.buf.Set(text, len([]rune(text)))
+		if handover := e.pendingHandover; handover != nil {
+			e.pendingHandover = nil
+			if text, ok := handover(e.buf.String()); ok {
+				e.buf.Set(text, len([]rune(text)))
+			}
 		}
 		if restore, err = e.term.EnterRaw(); err != nil {
 			restore = func() error { return nil }
@@ -207,7 +222,7 @@ func (e *Editor) readEvents(ctx context.Context) (line string, done bool, err er
 		case stateEOF:
 			e.rend.finish()
 			return "", true, io.EOF
-		case stateExternalEdit:
+		case stateHandover:
 			e.rend.finish()
 			return "", false, nil
 		case stateRunning:
