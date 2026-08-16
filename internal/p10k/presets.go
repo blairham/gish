@@ -80,7 +80,9 @@ func baseConfig() *Config {
 	c.Set("CONTEXT_TEMPLATE", "%n@%m")
 	c.Set("TIME_FORMAT", "%D{%H:%M:%S}")
 	c.Set("TRANSIENT_PROMPT", "off")
-	c.Set("INSTANT_PROMPT", "verbose")
+	// No INSTANT_PROMPT default: the setting is accepted from imported
+	// configurations but not implemented, so a preset must not imply it
+	// is doing something. See instantPromptNote in internal/repl.
 	return c
 }
 

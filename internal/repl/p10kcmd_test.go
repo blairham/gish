@@ -145,7 +145,7 @@ func TestP10kImportMissingFile(t *testing.T) {
 // TestP10kConfigureWizard drives the whole walkthrough through the line
 // frontend: look, glyphs, three settings, then confirm.
 func TestP10kConfigureWizard(t *testing.T) {
-	answers := "classic\ny\ntrue\nalways\nquiet\ny\n"
+	answers := "classic\ny\ntrue\nalways\ny\n"
 	out, _, dir := runP10kScript(t, answers, "p10k configure\n")
 
 	if !strings.Contains(out, "Which look?") {
@@ -163,10 +163,26 @@ func TestP10kConfigureWizard(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf := string(data)
-	for _, want := range []string{"TRANSIENT_PROMPT = always", "INSTANT_PROMPT = quiet", "PROMPT_ADD_NEWLINE = true"} {
+	for _, want := range []string{"TRANSIENT_PROMPT = always", "PROMPT_ADD_NEWLINE = true"} {
 		if !strings.Contains(conf, want) {
 			t.Errorf("answer not saved (%s): %s", want, conf)
 		}
+	}
+}
+
+// TestP10kInstantPromptIsExplained pins the one upstream feature this
+// port declines to implement. Accepting the setting silently would leave
+// someone believing a prompt cache is in play; erroring on it would
+// break every imported config. Say so instead.
+func TestP10kInstantPromptIsExplained(t *testing.T) {
+	out, _, _ := runP10kScript(t, "", "POWERLEVEL9K_INSTANT_PROMPT=quiet\np10k show\n")
+	if !strings.Contains(out, "INSTANT_PROMPT") || !strings.Contains(out, "nothing to cache") {
+		t.Errorf("instant prompt not explained: %q", out)
+	}
+	// And it must stay quiet when nobody asked for it.
+	plain, _, _ := runP10kScript(t, "", "p10k show\n")
+	if strings.Contains(plain, "INSTANT_PROMPT") {
+		t.Errorf("unasked-for note: %q", plain)
 	}
 }
 

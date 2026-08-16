@@ -119,6 +119,9 @@ func showP10k(hc interp.HandlerContext) {
 	for _, u := range cfg.Unsupported {
 		fmt.Fprintf(hc.Stdout, "skipped    %s\n", u)
 	}
+	if v := cfg.Str("INSTANT_PROMPT", "off"); v != "off" && v != "" {
+		fmt.Fprintf(hc.Stdout, "note       %s\n", instantPromptNote)
+	}
 }
 
 func p10kPresetName(hc interp.HandlerContext) string {
@@ -287,17 +290,28 @@ func p10kQuestions() []p10kQuestion {
 				{"off", "no — leave them as they were"},
 			},
 		},
-		{
-			key:    "INSTANT_PROMPT",
-			prompt: "Paint a cached prompt at startup, before anything is resolved?",
-			options: []chooseOption{
-				{"verbose", "yes, and say when it is doing it"},
-				{"quiet", "yes, silently"},
-				{"off", "no"},
-			},
-		},
 	}
+	// There is deliberately no INSTANT_PROMPT question. See instantPromptNote.
 }
+
+// instantPromptNote explains the one upstream feature this port does not
+// implement, for `p10k show` to print when a config asks for it.
+//
+// Upstream's instant prompt paints a cached prompt at startup because
+// the real one is not ready for tens of milliseconds — zsh has to load
+// the framework before it can render anything. gish measures 7ms from
+// exec to a fully resolved p10k prompt, which is the same number it
+// measures for the naked one (cmd/gish/startup_p10k_test.go). There is
+// nothing to hide behind a cache.
+//
+// So the setting is accepted and ignored rather than implemented. A
+// prompt cache is not free: it has to be invalidated, it goes stale
+// across directory changes, and upstream's version is well known for the
+// console-output warnings it produces when something prints during
+// startup. Carrying that to solve a problem this shell does not have
+// would be the wrong kind of faithful.
+const instantPromptNote = "INSTANT_PROMPT is accepted but not needed: " +
+	"gish resolves the real prompt in ~7ms at startup, so there is nothing to cache ahead of it"
 
 // asciiOnly strips everything that needs a patched font, so the prompt
 // is plain text end to end.
