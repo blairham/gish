@@ -103,6 +103,13 @@ func (e *Editor) startCtrlX() {
 // loop, where raw mode and the input decoder can be safely suspended.
 func (e *Editor) externalEditRequest() {
 	if e.cfg.ExternalEdit != nil {
-		e.state = stateExternalEdit
+		e.handover(e.cfg.ExternalEdit)
 	}
+}
+
+// handover schedules fn to run with the terminal ceded — raw mode off,
+// decoder stopped — so a full-screen program owns stdin for real.
+func (e *Editor) handover(fn func(string) (string, bool)) {
+	e.pendingHandover = fn
+	e.state = stateHandover
 }

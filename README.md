@@ -116,7 +116,7 @@ manifest is the supported surface; see [the
 decision](docs/design.md#decisions) for why a modifier language was the
 wrong thing to reproduce.
 
-History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions; Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
+History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, **Ctrl-R opens a full-screen fuzzy picker** showing where each command ran, how long ago, how long it took, and whether it failed (red), a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions; Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
 
 gish also warns **before Enter**: it holds a real parse tree of the line, so the classic footguns — `rm $dir/*` unquoted, `cd /tmp; rm -rf *` unchained, `[ $x = y ]`, useless `cat`, `sort f > f` — draw a dim caution line under the prompt as you type. Multi-line buffers get a `shellcheck` pass on Enter when it's installed (budget-bounded, findings with codes). Warnings never block execution; `GISH_LINT=native` skips shellcheck, `GISH_LINT=off` silences everything.
 
@@ -137,6 +137,7 @@ trust                  # direnv-class per-directory env, with a real trust model
 sandbox --profile readonly -- make test
                        # least-privilege exec: macOS Seatbelt, Linux Landlock
 doctor                 # what's configured, what's broken, and the fix for each
+ls | pick -m           # fzf's selection primitive, built in: Tab marks, Enter prints
 ```
 
 And the AI surface, which is opt-in and never runs anything on its own:

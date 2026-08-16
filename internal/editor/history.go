@@ -78,6 +78,13 @@ func (e *Editor) startSearch() {
 	if e.hist() == nil {
 		return
 	}
+	// The full-screen picker (#100) is the modern ctrl-r: it shows
+	// metadata and fuzzy-matches. Incremental search remains the
+	// fallback for terminals that cannot host it.
+	if e.cfg.HistoryPick != nil && !e.search.active {
+		e.handover(e.cfg.HistoryPick)
+		return
+	}
 	if e.search.active {
 		// Ctrl-R inside the search steps to the next older match.
 		e.searchStep(e.search.n + 1)
