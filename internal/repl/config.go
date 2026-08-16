@@ -36,7 +36,7 @@ type configSetting struct {
 
 // configSettings is ordered for display.
 var configSettings = []configSetting{
-	{"theme", "GISH_THEME", []string{"plain", "p10k", "starship"}, "prompt theme — plain is the naked default"},
+	{"theme", "GISH_THEME", []string{"plain", "p10k", "gish", "starship"}, "prompt theme — plain is the naked default"},
 	{"lint", "GISH_LINT", []string{"on", "native", "off"}, "footgun diagnostics — native skips shellcheck"},
 	{"prompt", "GISH_PROMPT", nil, "manual prompt escapes — beats any theme"},
 	{"tools", "GISH_TOOLS", []string{"on", "off"}, "native .tool-versions switching (#77)"},

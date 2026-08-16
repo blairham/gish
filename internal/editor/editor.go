@@ -58,6 +58,12 @@ type Config struct {
 	// terminal is ceded around it exactly like ExternalEdit. nil falls
 	// back to the incremental search.
 	HistoryPick func(query string) (string, bool)
+	// Transient replaces Prompt for the final render — the one that
+	// stays in the scrollback once a line is accepted. A themed prompt
+	// is worth several lines while you are typing at it and worth almost
+	// nothing afterwards, so this is what stops a screen of history
+	// being mostly decoration. Empty leaves the accepted line as it was.
+	Transient string
 }
 
 type loopState int
@@ -145,6 +151,12 @@ func (e *Editor) SetRPrompt(rprompt string) {
 	e.cfg.RPrompt = rprompt
 }
 
+// SetTransientPrompt updates the prompt the accepted line is left with
+// (empty disables it).
+func (e *Editor) SetTransientPrompt(prompt string) {
+	e.cfg.Transient = prompt
+}
+
 // ReadCommand runs one interactive read: it enters raw mode, edits until
 // the buffer is accepted, and restores the terminal before returning —
 // on every path — so the shell always executes commands in cooked mode.
@@ -210,6 +222,13 @@ func (e *Editor) readEvents(ctx context.Context) (line string, done bool, err er
 		switch e.state {
 		case stateAccepted:
 			e.buf.MoveEnd()
+			// Swap in the transient prompt for the last render, so the
+			// line left behind carries the short form. The renderer
+			// diffs against what is on screen, so a taller prompt
+			// collapsing to a shorter one clears the difference.
+			if e.cfg.Transient != "" {
+				e.cfg.Prompt, e.cfg.RPrompt = e.cfg.Transient, ""
+			}
 			e.render()
 			e.rend.finish()
 			return e.buf.String(), true, nil

@@ -338,12 +338,14 @@ func TestRPromptString(t *testing.T) {
 		t.Errorf("plain theme rprompt = %q, want empty", rp)
 	}
 
-	// p10k with configured segments.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; GISH_THEME_RPROMPT=time`)); err != nil {
+	// The gish theme with configured segments. GISH_THEME_RPROMPT is
+	// this theme's knob; the p10k engine takes its right-hand side from
+	// RIGHT_PROMPT_ELEMENTS instead (see TestP10kThemeRenders).
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=gish; GISH_THEME_RPROMPT=time`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, rp := promptStrings(runner, info); rp == "" {
-		t.Error("p10k rprompt empty despite GISH_THEME_RPROMPT=time")
+		t.Error("gish rprompt empty despite GISH_THEME_RPROMPT=time")
 	}
 
 	// Manual GISH_PROMPT wins: the theme (and its rprompt) stand down.

@@ -31,6 +31,17 @@ func TestBenchmarkReport(t *testing.T) {
 	gishBin := buildGish(t)
 
 	configs := bench.StartupConfigs(gishBin)
+	// The head-to-head for the native p10k port. Reported as missing
+	// rather than omitted when upstream is not installed, so a reader
+	// can tell "we lost that row" from "we never ran it".
+	if p10k, ok := bench.PowerlevelConfig(); ok {
+		configs = append(configs, p10k)
+	} else {
+		configs = append(configs, bench.Config{
+			Label: "zsh + powerlevel10k",
+			Note:  "powerlevel10k not installed on the measuring machine",
+		})
+	}
 	if real, ok := bench.RealZshConfig(); ok {
 		configs = append(configs, real)
 	}
