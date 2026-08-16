@@ -46,6 +46,14 @@ check: fmt vet test
 bench-startup:
 	go test -run TestStartupBudget -v ./cmd/gish/ | grep 'startup runs'
 
+.PHONY: compat
+compat: ## Regenerate docs/compat.md from a live bash-vs-gish run (#101)
+	go test ./internal/compat/ -run TestCompatScoreboard -update -v
+
+.PHONY: compat-check
+compat-check: ## Fail if the corpus passes fewer cases than published
+	go test ./internal/compat/
+
 # Regenerate pkg/pluginapi from proto/gish/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.
 proto:
