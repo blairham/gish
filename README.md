@@ -189,6 +189,28 @@ which gish | sudo tee -a /etc/shells
 chsh -s "$(which gish)"
 ```
 
+## Your shell follows you over ssh
+
+```sh
+gish ssh prod-web-3
+```
+
+The most-cited reason people give for not switching shells is the box
+they only have ssh to — the 2AM incident host they did not provision and
+cannot change. `gish ssh` probes it, copies one static binary plus your
+prompt settings into a cache directory under your own home there, and
+opens an interactive gish. Repeat visits copy nothing.
+
+It never installs anything: no `chsh`, no remote dotfile edits, no
+daemon, and it does not shadow your `ssh`. It asks once per host before
+touching it, `gish ssh --uninstall host` undoes it, and **every** failure
+falls back to plain `ssh` with one line on stderr — during an incident, a
+feature that delays your shell is worse than no feature.
+
+The details that make it work on hardened hosts — the `noexec` exec test,
+`cat` instead of `sftp`, content-addressed verification, why terminfo is
+not pushed — are in [docs/ssh.md](docs/ssh.md).
+
 ## Blocks and terminal integration
 
 gish emits OSC 133 semantic marks, so terminals that speak them —

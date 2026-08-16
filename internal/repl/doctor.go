@@ -19,6 +19,7 @@ import (
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/p10k"
 	"github.com/blairham/gish/internal/pluginhost"
+	"github.com/blairham/gish/internal/remote"
 	"github.com/blairham/gish/internal/sandbox"
 	"github.com/blairham/gish/internal/tools"
 	"github.com/blairham/gish/internal/ui"
@@ -71,6 +72,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkTools(hc),
 		checkSandbox(),
 		checkSemanticMarks(hc),
+		checkRemoteSSH(hc),
 		checkTerminal(),
 	}
 
@@ -371,6 +373,31 @@ func checkSemanticMarks(hc interp.HandlerContext) checkResult {
 		return checkResult{checkOK, "blocks", "OSC 133 marks " + detail, ""}
 	}
 	return checkResult{checkOK, "blocks", detail, ""}
+}
+
+// checkRemoteSSH reports what `gish ssh` (#98) would be able to do from
+// here. The one finding that actually bites is a cgo-linked binary:
+// `uname -sm` says "linux x86_64" and nothing about glibc versus musl,
+// so such a build lands on Alpine and fails with an error that looks
+// like the file is missing.
+func checkRemoteSSH(hc interp.HandlerContext) checkResult {
+	if os.Getenv("GISH_REMOTE_SESSION") != "" {
+		return checkResult{checkOK, "ssh", "this session was brought here by `gish ssh`", ""}
+	}
+	mode := hc.Env.Get("GISH_SSH_BRING").String()
+	if mode == "" {
+		mode = "ask"
+	}
+	if _, err := exec.LookPath("ssh"); err != nil {
+		return checkResult{checkWarn, "ssh", "no ssh binary — `gish ssh` unavailable", "install openssh-client"}
+	}
+	if ok, detail := remote.StaticCheck(); !ok {
+		return checkResult{
+			checkWarn, "ssh", detail,
+			"go build -ldflags='-s -w' with CGO_ENABLED=0, or install a release build",
+		}
+	}
+	return checkResult{checkOK, "ssh", fmt.Sprintf("`gish ssh` ready, bring=%s (static build)", mode), ""}
 }
 
 // checkTerminal explains the environment-driven degradations: they are
