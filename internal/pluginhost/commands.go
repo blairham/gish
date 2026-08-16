@@ -33,10 +33,24 @@ type CommandIndex struct {
 	reserved func(string) bool
 	cachedAt string
 
+	// persisting tracks in-flight cache writes. The interrogation runs
+	// detached so discovery never blocks a prompt, but that goroutine
+	// creates and writes $XDG_STATE_HOME/gish — so something has to be
+	// able to wait for it. Without this, a shell (or a test) that exits
+	// while it is running races the write against its own teardown; on
+	// Windows that surfaces as "directory is not empty" when the state
+	// dir is removed out from under it.
+	persisting sync.WaitGroup
+
 	mu     sync.Mutex
 	byName map[string]string          // command → plugin
 	specs  map[string][]cachedCommand // plugin → its commands
 }
+
+// Wait blocks until any in-flight cache persistence has finished.
+// Callers that are about to remove or inspect the cache directory —
+// shutdown paths and tests — need it; the interactive loop does not.
+func (ci *CommandIndex) Wait() { ci.persisting.Wait() }
 
 type indexFile struct {
 	Plugins map[string]indexEntry `json:"plugins"`
@@ -101,7 +115,9 @@ func (h *Host) NewCommandIndex(reserved func(string) bool) *CommandIndex {
 	}
 
 	if len(stale) > 0 {
+		ci.persisting.Add(1)
 		go func() {
+			defer ci.persisting.Done()
 			for _, ps := range stale {
 				commands := ci.interrogate(ps)
 				ci.setCommands(ps.name, commands)
