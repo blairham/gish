@@ -70,6 +70,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkEnvTrust(),
 		checkTools(hc),
 		checkSandbox(),
+		checkSemanticMarks(hc),
 		checkTerminal(),
 	}
 
@@ -356,6 +357,20 @@ func checkSandbox() checkResult {
 		}
 	}
 	return checkResult{checkOK, "sandbox", avail, ""}
+}
+
+// checkSemanticMarks reports OSC 133 block-navigation support (#99):
+// gish emits the marks, and this says whether the terminal is one
+// known to act on them.
+func checkSemanticMarks(hc interp.HandlerContext) checkResult {
+	if hc.Env.Get("GISH_SEMANTIC_MARKS").String() == "off" {
+		return checkResult{checkOK, "blocks", "semantic marks off (GISH_SEMANTIC_MARKS)", ""}
+	}
+	detail, known := doctorSemanticMarks()
+	if !known {
+		return checkResult{checkOK, "blocks", "OSC 133 marks " + detail, ""}
+	}
+	return checkResult{checkOK, "blocks", detail, ""}
 }
 
 // checkTerminal explains the environment-driven degradations: they are

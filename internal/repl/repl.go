@@ -225,6 +225,10 @@ func runEditor(ctx context.Context, login bool) error {
 			}
 		}
 		p, cp, rp := promptStrings(runner, info)
+		// OSC 133 (#99): mark the prompt so terminals can navigate
+		// blocks. Zero-width, so the renderer is unaffected.
+		marks := semanticMarksOn(runner)
+		p = markPrompt(p, marks)
 		ed.SetPrompt(p, cp)
 		ed.SetRPrompt(rp)
 		// The short prompt the accepted line is left with (#p10k
@@ -325,6 +329,7 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
+		markOutputStart(os.Stdout, marks)
 		start := time.Now()
 		table.BeginLine(line)
 		rerr := runInterruptible(ctx, runner, file, sigs)
@@ -332,6 +337,7 @@ func runEditor(ctx context.Context, login bool) error {
 			fmt.Printf("[%d]  Stopped  %s\n", n.ID, n.Command)
 		}
 		lastExit = exitCode(rerr)
+		markCommandDone(os.Stdout, marks, lastExit)
 		lastDuration = time.Since(start)
 		if aiMgr != nil {
 			aiMgr.note(lastExit)
