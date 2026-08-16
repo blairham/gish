@@ -61,7 +61,7 @@ func TestHumanAge(t *testing.T) {
 func TestHistoryPickFnNilWithoutStore(t *testing.T) {
 	t.Parallel()
 
-	if historyPickFn(nil) != nil {
+	if historyPickFn(nil, nil) != nil {
 		t.Error("a picker was offered with no history to pick from")
 	}
 }

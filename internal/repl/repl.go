@@ -175,7 +175,7 @@ func runEditor(ctx context.Context, login bool) error {
 	edCfg.ExternalEdit = externalEditFn(runner)
 	// Ctrl-R is the full-screen fuzzy picker when the terminal can host
 	// it (#100); incremental search remains the fallback.
-	edCfg.HistoryPick = historyPickFn(store)
+	edCfg.HistoryPick = historyPickFn(store, host)
 	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, edCfg)
 	parser := syntax.NewParser()
 

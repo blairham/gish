@@ -72,6 +72,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkTools(hc),
 		checkSandbox(),
 		checkSemanticMarks(hc),
+		checkHistorySync(),
 		checkRemoteSSH(hc),
 		checkTerminal(),
 	}
@@ -373,6 +374,28 @@ func checkSemanticMarks(hc interp.HandlerContext) checkResult {
 		return checkResult{checkOK, "blocks", "OSC 133 marks " + detail, ""}
 	}
 	return checkResult{checkOK, "blocks", detail, ""}
+}
+
+// checkHistorySync explains the gish-atuin bridge's state (#97). The
+// failure it exists to catch is silent: the plugin installed but atuin
+// itself missing, which leaves ctrl-r working perfectly on local history
+// while the sync the user installed the plugin for does nothing.
+func checkHistorySync() checkResult {
+	dir, err := pluginhost.DefaultDir()
+	if err != nil {
+		return checkResult{checkOK, "sync", "no plugin dir — local history only", ""}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "gish-atuin")); err != nil {
+		return checkResult{checkOK, "sync", "not installed — local history only", ""}
+	}
+	if _, err := exec.LookPath("atuin"); err != nil {
+		return checkResult{
+			checkWarn, "sync",
+			"gish-atuin is installed but atuin is not on PATH — ctrl-r is local-only",
+			"install atuin (https://atuin.sh), or remove " + displayPath(filepath.Join(dir, "gish-atuin")),
+		}
+	}
+	return checkResult{checkOK, "sync", "gish-atuin bridging to your atuin", ""}
 }
 
 // checkRemoteSSH reports what `gish ssh` (#98) would be able to do from
