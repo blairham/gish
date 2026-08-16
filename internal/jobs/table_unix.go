@@ -13,9 +13,13 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
+
+	"github.com/blairham/gish/internal/capture"
 )
 
 // Supported reports whether job control is available on this platform.
@@ -71,6 +75,15 @@ type Table struct {
 	jobs      map[int]*Job
 	nextID    int
 	current   *Job
+
+	// Output capture (#99 stage 2), off unless enabled. It lives here
+	// rather than in the repl because this is the only place a
+	// foreground child's stdio is chosen, and capture is exactly a
+	// substitution of that stdio.
+	captureLimit int
+	capturing    *capture.Session
+	lastCapture  []byte
+	lastTrunc    bool
 }
 
 // NewTable creates the session job table. tty is the controlling
@@ -84,11 +97,69 @@ func NewTable(tty *os.File) *Table {
 	}
 }
 
-// BeginLine opens a job slot for the next foreground command line.
+// EnableCapture turns on per-line output capture with a byte cap.
+// A zero or negative limit uses the package default; capture stays off
+// until this is called.
+func (t *Table) EnableCapture(limit int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if limit <= 0 {
+		limit = capture.DefaultLimit
+	}
+	t.captureLimit = limit
+}
+
+// BeginLine opens a job slot for the next foreground command line, and
+// with capture enabled, the session that line's output flows through.
 func (t *Table) BeginLine(cmdline string) {
 	t.mu.Lock()
 	t.current = newJob(cmdline)
+	t.lastCapture, t.lastTrunc = nil, false
+	limit, tty := t.captureLimit, t.tty
 	t.mu.Unlock()
+
+	if limit <= 0 || tty == nil {
+		return
+	}
+	cols, rows := terminalSize(tty)
+	sess, err := capture.Start(os.Stdout, cols, rows, limit)
+	if err != nil {
+		// A shell that cannot allocate a pty still has to run commands.
+		// Capture is the optional half.
+		return
+	}
+	t.mu.Lock()
+	t.capturing = sess
+	t.mu.Unlock()
+}
+
+// LastCapture returns the previous line's output and whether it was
+// truncated. Empty when capture is off or the line produced nothing.
+func (t *Table) LastCapture() (out []byte, truncated bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.lastCapture, t.lastTrunc
+}
+
+// Resize keeps a live capture's pty matching the real terminal, so a
+// program reading its width from stdout is not told a stale one.
+func (t *Table) Resize(cols, rows int) {
+	t.mu.Lock()
+	sess := t.capturing
+	t.mu.Unlock()
+	if sess != nil {
+		sess.Resize(cols, rows)
+	}
+}
+
+// terminalSize reads the real terminal's dimensions, falling back to a
+// conventional size rather than zero — a zero-width terminal makes
+// well-behaved programs behave strangely.
+func terminalSize(tty *os.File) (cols, rows int) {
+	if ws, err := pty.GetsizeFull(tty); err == nil && ws.Cols > 0 && ws.Rows > 0 {
+		return int(ws.Cols), int(ws.Rows)
+	}
+	return 80, 24
 }
 
 // EndLine closes out the foreground line: the shell takes the terminal
@@ -98,7 +169,15 @@ func (t *Table) EndLine() (Notice, bool) {
 	t.mu.Lock()
 	job := t.current
 	t.current = nil
+	sess := t.capturing
+	t.capturing = nil
 	t.mu.Unlock()
+	if sess != nil {
+		out, trunc := sess.Close(), sess.Truncated()
+		t.mu.Lock()
+		t.lastCapture, t.lastTrunc = out, trunc
+		t.mu.Unlock()
+	}
 	t.takeTerminal()
 	if job == nil || job.Pgid == 0 {
 		return Notice{}, false // no external process was spawned
@@ -188,6 +267,31 @@ func (t *Table) spawn(hc interp.HandlerContext, job *Job, args []string, stdin, 
 	// serialize: the first Start creates the group (and takes the
 	// terminal in the child, pre-exec, via Foreground — race-free),
 	// later stages join it.
+	// Output capture (#99): swap the child's stdout and stderr for the
+	// capture pty, and *only* those.
+	//
+	// Its controlling terminal is untouched, which is the whole reason
+	// this is safe: Ctrl-C, Ctrl-Z and SIGWINCH still come from the real
+	// terminal to the child's process group exactly as before, so job
+	// control keeps working without being reimplemented.
+	//
+	// Substitution is skipped when the destination is not a terminal —
+	// `cmd > file` or a pipeline stage already has somewhere to go, and
+	// redirecting it through a pty would both mangle it (the line
+	// discipline translates newlines) and capture what the user asked
+	// to be sent elsewhere.
+	t.mu.Lock()
+	sess := t.capturing
+	t.mu.Unlock()
+	if sess != nil {
+		if isTerminal(stdout) {
+			stdout = sess.Slave()
+		}
+		if isTerminal(stderr) {
+			stderr = sess.Slave()
+		}
+	}
+
 	job.mu.Lock()
 	attr := &syscall.SysProcAttr{Setpgid: true}
 	leader := job.Pgid == 0
@@ -502,4 +606,20 @@ func (t *Table) Commands() []string {
 		}
 	}
 	return out
+}
+
+// isTerminal reports whether f is a terminal, the test for whether
+// capture should stand in for it. x/term rather than a raw ioctl: the
+// termios request differs between Linux and the BSDs, and this file
+// builds for both.
+func isTerminal(f *os.File) bool {
+	return f != nil && term.IsTerminal(int(f.Fd()))
+}
+
+// DisableCapture turns per-line capture back off. A line already in
+// flight keeps its session; the next one runs uncaptured.
+func (t *Table) DisableCapture() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.captureLimit = 0
 }
