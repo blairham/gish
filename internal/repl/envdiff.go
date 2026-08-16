@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
@@ -207,9 +209,57 @@ func (m *envManager) allowPending(ctx context.Context, runner *interp.Runner) (s
 	if err := m.trust.Allow(p.plugin, p.forDir, p.hash); err != nil {
 		return "", err
 	}
+	// One gesture, both trust models (#137). A plugin wrapping a tool
+	// with its own approval — direnv is the motivating case — gets told
+	// the user said yes, so nobody is asked twice for one action. The
+	// call is best-effort: gish's own record is authoritative for gish,
+	// so a plugin that cannot record it still gets its diff applied,
+	// with a note, because the alternative is refusing an approval the
+	// user already gave.
+	note := m.notifyAllowed(ctx, runner, p)
+
 	m.applyLocked(ctx, runner, p)
 	m.pending = nil
-	return fmt.Sprintf("allowed %q for %s — %d change(s) applied", p.plugin, displayPath(p.forDir), len(p.set)+len(p.unset)), nil
+	msg := fmt.Sprintf("allowed %q for %s — %d change(s) applied", p.plugin, displayPath(p.forDir), len(p.set)+len(p.unset))
+	if note != "" {
+		msg += "\n" + note
+	}
+	return msg, nil
+}
+
+// notifyAllowed calls the plugin's Allow. It returns a one-line note
+// when the plugin could not record the approval, and "" otherwise —
+// including when the plugin does not implement Allow at all, which is
+// the ordinary case and not worth mentioning.
+func (m *envManager) notifyAllowed(ctx context.Context, runner *interp.Runner, p *envProposal) string {
+	ctx, cancel := context.WithTimeout(ctx, pluginhost.DefaultEnvBudget*10)
+	defer cancel()
+
+	for _, prov := range m.providers {
+		if prov.Plugin != p.plugin {
+			continue
+		}
+		resp, err := prov.Client.Allow(ctx, &pluginapi.AllowRequest{
+			ForDir: p.forDir,
+			Env:    allowedShellEnv(runner),
+		})
+		if err != nil {
+			// Unimplemented is the expected answer from every plugin
+			// that has no second trust model; it is not a problem.
+			if status.Code(err) == codes.Unimplemented {
+				return ""
+			}
+			return fmt.Sprintf("note: %s could not record the approval: %v", p.plugin, err)
+		}
+		if resp.GetRecorded() {
+			return ""
+		}
+		if detail := resp.GetDetail(); detail != "" {
+			return fmt.Sprintf("note: %s did not record the approval: %s", p.plugin, detail)
+		}
+		return fmt.Sprintf("note: %s did not record the approval", p.plugin)
+	}
+	return ""
 }
 
 // revokeDir removes trust for dir and reverts the active diff if it

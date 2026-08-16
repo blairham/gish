@@ -2,6 +2,7 @@ package repl
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,10 @@ import (
 // fakeEnvClient proposes whatever resp holds, for any cwd under forDir.
 type fakeEnvClient struct {
 	resp atomic.Pointer[pluginapi.EnvDiffResponse]
+	// allowed records the for_dir values passed to Allow (#137), so a
+	// test can assert the one-gesture flow reached the plugin.
+	allowed  []string
+	allowErr error
 }
 
 func (f *fakeEnvClient) EnvDiff(
@@ -29,6 +34,18 @@ func (f *fakeEnvClient) EnvDiff(
 		return r, nil
 	}
 	return &pluginapi.EnvDiffResponse{}, nil
+}
+
+// Allow records the approval. A plugin with no second trust model would
+// return unimplemented here; this one pretends to have one.
+func (f *fakeEnvClient) Allow(
+	_ context.Context, req *pluginapi.AllowRequest, _ ...grpc.CallOption,
+) (*pluginapi.AllowResponse, error) {
+	f.allowed = append(f.allowed, req.GetForDir())
+	if f.allowErr != nil {
+		return &pluginapi.AllowResponse{Recorded: false, Detail: f.allowErr.Error()}, nil
+	}
+	return &pluginapi.AllowResponse{Recorded: true}, nil
 }
 
 // envHarness builds an envManager over a temp trust store and a fake
@@ -247,5 +264,43 @@ export KUBECONFIG=/tmp/kc`
 	}
 	if len(got) != 2 {
 		t.Errorf("requestedEnv = %v", got)
+	}
+}
+
+// The one-gesture trust flow (#137): approving in gish must also tell a
+// plugin that wraps a tool with its own approval model, or the user is
+// asked twice for one action.
+func TestAllowNotifiesThePlugin(t *testing.T) {
+	h := newEnvHarness(t)
+	h.propose(map[string]string{"PROJECT": "demo"})
+	h.cd(t, h.proj) // the cd moment pends it
+
+	if _, err := h.m.allowPending(t.Context(), h.runner); err != nil {
+		t.Fatalf("allow: %v", err)
+	}
+	if len(h.fake.allowed) != 1 || h.fake.allowed[0] != h.proj {
+		t.Errorf("plugin Allow got %v, want [%s]", h.fake.allowed, h.proj)
+	}
+}
+
+// A plugin that cannot record the approval must not block it: gish's
+// own trust record is authoritative for gish, so the diff still
+// applies — but the user is told, because the next shell may see the
+// proposal again.
+func TestAllowAppliesEvenWhenThePluginCannotRecord(t *testing.T) {
+	h := newEnvHarness(t)
+	h.fake.allowErr = errors.New("direnv: permission denied")
+	h.propose(map[string]string{"PROJECT": "demo"})
+	h.cd(t, h.proj)
+
+	msg, err := h.m.allowPending(t.Context(), h.runner)
+	if err != nil {
+		t.Fatalf("allow: %v", err)
+	}
+	if !strings.Contains(msg, "did not record") {
+		t.Errorf("message does not mention the failure: %q", msg)
+	}
+	if got := h.runner.Vars["PROJECT"].String(); got != "demo" {
+		t.Errorf("diff was not applied: PROJECT=%q", got)
 	}
 }

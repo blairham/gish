@@ -39,6 +39,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	EnvProvider_EnvDiff_FullMethodName = "/gish.plugin.v1.EnvProvider/EnvDiff"
+	EnvProvider_Allow_FullMethodName   = "/gish.plugin.v1.EnvProvider/Allow"
 )
 
 // EnvProviderClient is the client API for EnvProvider service.
@@ -48,6 +49,21 @@ type EnvProviderClient interface {
 	// EnvDiff proposes environment changes for a directory. An empty
 	// response (no for_dir) means the plugin has nothing for this cwd.
 	EnvDiff(ctx context.Context, in *EnvDiffRequest, opts ...grpc.CallOption) (*EnvDiffResponse, error)
+	// Allow tells the plugin the user approved this directory, so a
+	// plugin wrapping a tool with its *own* approval model can satisfy it
+	// in the same gesture (#137).
+	//
+	// The motivating case is direnv: it has `direnv allow`, and gish has
+	// the trust flow above. Prompting twice for one action is
+	// unacceptable, and letting the wrapped tool's prompt replace gish's
+	// would give up the host-enforced guarantees. So `trust allow` calls
+	// this first, then re-asks for the diff.
+	//
+	// Optional: a plugin with no second trust model returns unimplemented
+	// (or an empty response) and the host carries on. Never called
+	// without an explicit user approval — this is not a way to
+	// pre-authorize anything.
+	Allow(ctx context.Context, in *AllowRequest, opts ...grpc.CallOption) (*AllowResponse, error)
 }
 
 type envProviderClient struct {
@@ -68,6 +84,16 @@ func (c *envProviderClient) EnvDiff(ctx context.Context, in *EnvDiffRequest, opt
 	return out, nil
 }
 
+func (c *envProviderClient) Allow(ctx context.Context, in *AllowRequest, opts ...grpc.CallOption) (*AllowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AllowResponse)
+	err := c.cc.Invoke(ctx, EnvProvider_Allow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EnvProviderServer is the server API for EnvProvider service.
 // All implementations must embed UnimplementedEnvProviderServer
 // for forward compatibility.
@@ -75,6 +101,21 @@ type EnvProviderServer interface {
 	// EnvDiff proposes environment changes for a directory. An empty
 	// response (no for_dir) means the plugin has nothing for this cwd.
 	EnvDiff(context.Context, *EnvDiffRequest) (*EnvDiffResponse, error)
+	// Allow tells the plugin the user approved this directory, so a
+	// plugin wrapping a tool with its *own* approval model can satisfy it
+	// in the same gesture (#137).
+	//
+	// The motivating case is direnv: it has `direnv allow`, and gish has
+	// the trust flow above. Prompting twice for one action is
+	// unacceptable, and letting the wrapped tool's prompt replace gish's
+	// would give up the host-enforced guarantees. So `trust allow` calls
+	// this first, then re-asks for the diff.
+	//
+	// Optional: a plugin with no second trust model returns unimplemented
+	// (or an empty response) and the host carries on. Never called
+	// without an explicit user approval — this is not a way to
+	// pre-authorize anything.
+	Allow(context.Context, *AllowRequest) (*AllowResponse, error)
 	mustEmbedUnimplementedEnvProviderServer()
 }
 
@@ -87,6 +128,9 @@ type UnimplementedEnvProviderServer struct{}
 
 func (UnimplementedEnvProviderServer) EnvDiff(context.Context, *EnvDiffRequest) (*EnvDiffResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnvDiff not implemented")
+}
+func (UnimplementedEnvProviderServer) Allow(context.Context, *AllowRequest) (*AllowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Allow not implemented")
 }
 func (UnimplementedEnvProviderServer) mustEmbedUnimplementedEnvProviderServer() {}
 func (UnimplementedEnvProviderServer) testEmbeddedByValue()                     {}
@@ -127,6 +171,24 @@ func _EnvProvider_EnvDiff_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EnvProvider_Allow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AllowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EnvProviderServer).Allow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EnvProvider_Allow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EnvProviderServer).Allow(ctx, req.(*AllowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EnvProvider_ServiceDesc is the grpc.ServiceDesc for EnvProvider service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -137,6 +199,10 @@ var EnvProvider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EnvDiff",
 			Handler:    _EnvProvider_EnvDiff_Handler,
+		},
+		{
+			MethodName: "Allow",
+			Handler:    _EnvProvider_Allow_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

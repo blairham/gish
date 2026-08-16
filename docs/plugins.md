@@ -64,7 +64,7 @@ broken theme costs its look, never the prompt.
 
 | Plugin | What | Fast/correct notes |
 | --- | --- | --- |
-| `gish-direnv` | evaluate `.envrc` via the user's direnv | Resident; direnv's own allow can be bypassed since gish's trust flow supersedes it |
+| `gish-direnv` | ~~planned~~ **landed** (#137, cmd/gish-direnv) | Delegates `.envrc` evaluation and the whole stdlib (`use nix`, `layout python`, `source_up`) to real direnv; gish owns the cd moment, the approval UX, and apply/revert. Checks `direnv status --json` **before** exporting — export fails identically for blocked, denied, and broken-`.envrc`, and only the status enum tells them apart. `DIRENV_*` bookkeeping is stripped (the host does not send it back, so it has no consumer). direnv reports symlink-resolved paths, so `for_dir` is mapped into the caller's namespace or the host discards every proposal on macOS |
 | `gish-dotenv` | plain `.env` file loading | Parse only — never execute; the trust prompt shows every value |
 
 Trust is the contract, enforced host-side: a proposal applies only after
@@ -72,6 +72,19 @@ Trust is the contract, enforced host-side: a proposal applies only after
 re-pends; deny-listed variables (loader hooks, `IFS`, `GISH_*`) are
 stripped before a proposal exists; requests carry allowlisted env only.
 Applied diffs revert when the shell leaves the proposal's subtree.
+
+**Two trust models, one gesture** (#137). A plugin wrapping a tool that
+has its own approval — direnv's `direnv allow` — implements the additive
+`EnvProvider.Allow` RPC. `trust allow` calls it before applying, so
+nobody is asked twice for one action, and gish keeps its UI and its
+record while the wrapped tool stays authoritative about what it will
+evaluate. One gesture is only safe because both sides key on *content*:
+editing the `.envrc` re-blocks direnv and changes gish's diff hash, so
+the two re-prompt together instead of drifting. That was tested against
+real direnv, not assumed. A plugin with no second trust model returns
+unimplemented and nothing changes; a plugin that cannot record the
+approval does not block it — gish's record is authoritative for gish —
+but the user is told, since the next shell may re-prompt.
 
 ## Completion providers (`CompletionProvider`)
 
