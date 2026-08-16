@@ -32,6 +32,10 @@ type toolsManager struct {
 	lastDir string
 	applied []string        // our current PATH prepends
 	warned  map[string]bool // file+tool notices already printed
+	// lastRes is the most recent resolution, so session recording (#103)
+	// can report which pins are actually in effect without re-walking
+	// the tree at every prompt.
+	lastRes tools.Resolution
 }
 
 func newToolsManager(notices io.Writer) *toolsManager {
@@ -57,6 +61,7 @@ func (t *toolsManager) atPrompt(ctx context.Context, runner *interp.Runner) {
 	t.lastDir = dir
 
 	res := tools.Resolve(dir, tools.InstallRoots())
+	t.lastRes = res
 	for _, pin := range res.Missing {
 		key := res.File + "\x00" + pin.Tool
 		if t.warned[key] {
@@ -67,6 +72,31 @@ func (t *toolsManager) atPrompt(ctx context.Context, runner *interp.Runner) {
 			displayPath(res.File), pin.Tool, pin.Versions[0], pin.Tool, pin.Versions[0])
 	}
 	t.setPrepends(ctx, runner, res.Bins)
+}
+
+// activePins reports the pins in effect: everything the nearest
+// .tool-versions asks for, minus the ones with no installed version.
+// A pin that cannot resolve is not "active" — recording it would tell a
+// restored session it had a toolchain it never had.
+func (t *toolsManager) activePins() map[string]string {
+	if t == nil || t.lastRes.File == "" {
+		return nil
+	}
+	missing := make(map[string]bool, len(t.lastRes.Missing))
+	for _, pin := range t.lastRes.Missing {
+		missing[pin.Tool] = true
+	}
+	out := map[string]string{}
+	for _, pin := range tools.ParseFile(t.lastRes.File) {
+		if missing[pin.Tool] || len(pin.Versions) == 0 {
+			continue
+		}
+		out[pin.Tool] = pin.Versions[0]
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // setPrepends swaps our prepends at the front of PATH, keeping every

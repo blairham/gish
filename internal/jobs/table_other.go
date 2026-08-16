@@ -46,3 +46,6 @@ func (t *Table) Bg(_ context.Context, hc interp.HandlerContext, _ []string) erro
 
 // Count reports filed jobs; always zero without job control.
 func (t *Table) Count() int { return 0 }
+
+// Commands is the no-job-control stub; see table_unix.go.
+func (t *Table) Commands() []string { return nil }

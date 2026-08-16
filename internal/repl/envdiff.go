@@ -392,3 +392,50 @@ func underDir(dir, root string) bool {
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// pendRestored offers a restored session's environment (#103) through
+// the same trust flow a plugin's diff goes through, and reports how many
+// changes it pended.
+//
+// The plugin name is not a plugin: trust is keyed on (source, dir,
+// hash), and a restored environment is a genuinely different source from
+// any plugin's proposal for the same directory. Sharing a key would let
+// approving a plugin's diff silently authorize a session file's, which
+// is exactly the confusion the trust record exists to prevent.
+//
+// Deny-listed names are stripped here too. The session store already
+// filters on write, so this is the second of two independent gates —
+// worth keeping, because the file on disk may predate any change to
+// those rules.
+func (m *envManager) pendRestored(dir string, env map[string]string) int {
+	if len(env) == 0 {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	p := &envProposal{
+		plugin: restoredEnvSource,
+		forDir: dir,
+		set:    map[string]string{},
+	}
+	for name, value := range env {
+		if envDenied(name) {
+			p.stripped = append(p.stripped, name)
+			continue
+		}
+		p.set[name] = value
+	}
+	if len(p.set) == 0 {
+		return 0
+	}
+	slices.Sort(p.stripped)
+	p.hash = envtrust.Hash(p.set, p.unset)
+	m.pending = p
+	m.notified = "" // let the prompt loop re-announce it
+	return len(p.set)
+}
+
+// restoredEnvSource names the trust source for a restored session, kept
+// distinct from every plugin name so the two can never share a record.
+const restoredEnvSource = "session-restore"

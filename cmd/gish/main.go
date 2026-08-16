@@ -51,6 +51,9 @@ func run() int {
 	// path (never the contents) keeps the settings out of argv, which is
 	// world-readable through /proc.
 	remoteSession := flag.Bool("remote-session", false, "this session was brought here by `gish ssh`")
+	// Session restore (#103). The value is a session id or a unique
+	// prefix; `sessions` lists them.
+	restore := flag.String("restore", "", "start in the directory of recorded session `id`")
 	rcPath := flag.String("rc", "", "read startup settings from `file`")
 	flag.Parse()
 
@@ -59,6 +62,12 @@ func run() int {
 	}
 	if *remoteSession {
 		os.Setenv("GISH_REMOTE_SESSION", "1") //nolint:errcheck // process-local
+	}
+	if *restore != "" {
+		// Read by the interactive loop once its runner exists: landing
+		// somewhere needs the runner, and the environment is proposed
+		// through the trust flow rather than applied here.
+		os.Setenv("GISH_RESTORE_SESSION", *restore) //nolint:errcheck // process-local
 	}
 
 	if *showVersion {
