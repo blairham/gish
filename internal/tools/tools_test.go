@@ -132,7 +132,7 @@ func TestFindFileWalksUp(t *testing.T) {
 }
 
 func TestResolveNoFile(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // no global fallback either
+	t.Setenv("HOME", t.TempDir())        // no global fallback either
 	t.Setenv("USERPROFILE", t.TempDir()) // UserHomeDir reads this on Windows
 	res := Resolve(t.TempDir(), nil)
 	if res.File != "" || len(res.Bins) != 0 || len(res.Missing) != 0 {

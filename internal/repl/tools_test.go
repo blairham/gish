@@ -26,7 +26,7 @@ func newToolsHarness(t *testing.T) *toolsHarness {
 	t.Helper()
 	base := t.TempDir()
 	t.Setenv("ASDF_DATA_DIR", filepath.Join(base, "asdf"))
-	t.Setenv("HOME", base) // no global .tool-versions fallback
+	t.Setenv("HOME", base)        // no global .tool-versions fallback
 	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 
 	h := &toolsHarness{
