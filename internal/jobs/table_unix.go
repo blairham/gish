@@ -488,3 +488,18 @@ func (t *Table) Count() int {
 	defer t.mu.Unlock()
 	return len(t.jobs)
 }
+
+// Commands returns the command line of every tracked job, for session
+// recording (#103). The processes themselves do not survive a restart;
+// their command lines do, as re-runnable text.
+func (t *Table) Commands() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]string, 0, len(t.jobs))
+	for _, j := range t.jobs {
+		if j.Command != "" {
+			out = append(out, j.Command)
+		}
+	}
+	return out
+}

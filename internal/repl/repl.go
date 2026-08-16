@@ -118,7 +118,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -198,7 +198,20 @@ func runEditor(ctx context.Context, login bool) error {
 	lastExit := 0
 
 	toolsMgr = newToolsManager(os.Stderr)
+	// Session recording (#103): the prompt is both when the state is
+	// meaningful and when the shell is idle.
+	sessionMgr = newSessionRecorder(sessionID, runner, table.Commands)
+	defer sessionMgr.close()
+	if id := os.Getenv("GISH_RESTORE_SESSION"); id != "" {
+		os.Unsetenv("GISH_RESTORE_SESSION") //nolint:errcheck // consume it once
+		if detail, ok := restoreOnStart(id, runner); ok {
+			fmt.Fprintf(os.Stderr, "gish: restored %s\n", detail)
+		} else {
+			fmt.Fprintf(os.Stderr, "gish: --restore: %s\n", detail)
+		}
+	}
 	lastDuration := time.Duration(0)
+	lastCommandText := "" // what session recording (#103) reports as "last"
 	for {
 		// Native tool-version switching (#77) rebuilds PATH first —
 		// first-party env work precedes EnvProvider plugins (#12), which
@@ -210,6 +223,7 @@ func runEditor(ctx context.Context, login bool) error {
 		if jumpMgr != nil {
 			jumpMgr.note(runner)
 		}
+		sessionMgr.atPrompt(runner, lastCommandText)
 		info.dir = runner.Dir
 		info.exitCode = lastExit
 		info.duration = lastDuration
@@ -332,6 +346,7 @@ func runEditor(ctx context.Context, login bool) error {
 		markOutputStart(os.Stdout, marks)
 		start := time.Now()
 		table.BeginLine(line)
+		lastCommandText = line
 		rerr := runInterruptible(ctx, runner, file, sigs)
 		if n, ok := table.EndLine(); ok && n.Stopped {
 			fmt.Printf("[%d]  Stopped  %s\n", n.ID, n.Command)
@@ -491,7 +506,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))),
+		interp.CallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -561,7 +576,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))),
+		interp.CallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -584,7 +599,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))),
+			interp.CallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))),
 		},
 		opts...,
 	)...)
