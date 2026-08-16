@@ -249,7 +249,10 @@ func runEditor(ctx context.Context, login bool) error {
 				}
 				return exitCode(rerr)
 			}
-			handleAgent(agentCtx, agentDeps{runner: runner, in: os.Stdin, out: os.Stdout, exec: execStep}, task)
+			handleAgent(agentCtx, agentDeps{
+				runner: runner, in: os.Stdin, out: os.Stdout, exec: execStep,
+				choose: interactiveChooser(os.Stdin, os.Stdout),
+			}, task)
 			cancelAgent()
 			continue
 		}

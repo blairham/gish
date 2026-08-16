@@ -184,8 +184,9 @@ func TestAgentEndToEnd(t *testing.T) {
 	if _, err := f.WriteString("agent \"do the thing\"\r"); err != nil {
 		t.Fatal(err)
 	}
-	// The plan renders first — nothing has executed yet.
-	got := waitFor("run? [a]ll")
+	// The plan renders first — nothing has executed yet. The gate is a
+	// huh select on a real terminal: Enter picks the focused option.
+	got := waitFor("run this plan?")
 	if !bytes.Contains(got, []byte("fixture plan for: do the thing")) {
 		t.Errorf("plan summary missing:\n%q", got)
 	}
@@ -194,12 +195,12 @@ func TestAgentEndToEnd(t *testing.T) {
 	if regexp.MustCompile(`(?m)^agent-step-one`).Match(got) {
 		t.Errorf("step output before approval:\n%q", got)
 	}
-	if _, err := f.WriteString("a\r"); err != nil { // all, destructive still gates
+	if _, err := f.WriteString("\r"); err != nil { // select "run all"; destructive still gates
 		t.Fatal(err)
 	}
-	waitFor("agent-step-one") // step 1 actually executed
-	waitFor("(destructive)")  // step 2 gates individually even in all mode
-	if _, err := f.WriteString("r\r"); err != nil {
+	waitFor("agent-step-one")                      // step 1 actually executed
+	waitFor("run step 2 (destructive)?")           // step 2 gates individually even in all mode
+	if _, err := f.WriteString("\r"); err != nil { // select "run (sandboxed)"
 		t.Fatal(err)
 	}
 	waitFor("plan complete (2 step(s))")

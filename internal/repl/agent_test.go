@@ -1,6 +1,7 @@
 package repl
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"path/filepath"
@@ -162,5 +163,35 @@ func TestStepDestructive(t *testing.T) {
 		if got := stepDestructive(tt.command); got != tt.want {
 			t.Errorf("stepDestructive(%q) = %v, want %v", tt.command, got, tt.want)
 		}
+	}
+}
+
+func TestInteractiveChooserNilOffTTY(t *testing.T) {
+	// Builders are not terminals: the huh frontend must stay out of
+	// headless runs and tests.
+	var out strings.Builder
+	if c := interactiveChooser(strings.NewReader(""), &out); c != nil {
+		t.Error("chooser built without a terminal")
+	}
+}
+
+func TestAgentDecideLineFallback(t *testing.T) {
+	// With no chooser the gate speaks the single-rune line protocol and
+	// prints every option's key and label as the hint.
+	var out strings.Builder
+	deps := agentDeps{out: &out}
+	scanner := bufio.NewScanner(strings.NewReader("x\nk\n"))
+	answer, ok := deps.decide(scanner, "run step 1?", []chooseOption{
+		{"r", "run (sandboxed)"}, {"k", "skip this step"},
+	})
+	if !ok || answer != "k" {
+		t.Fatalf("decide = %q, %v", answer, ok)
+	}
+	if !strings.Contains(out.String(), "r=run (sandboxed)") || !strings.Contains(out.String(), "k=skip") {
+		t.Errorf("hint missing options: %q", out.String())
+	}
+	// The invalid first answer was re-asked.
+	if !strings.Contains(out.String(), "answer one of") {
+		t.Errorf("invalid answer not re-asked: %q", out.String())
 	}
 }

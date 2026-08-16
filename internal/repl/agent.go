@@ -36,6 +36,23 @@ type agentDeps struct {
 	in     io.Reader
 	out    io.Writer
 	exec   func(line string) int
+	// choose is the interactive frontend (huh select); nil falls back
+	// to single-rune line input — same keys either way.
+	choose chooser
+}
+
+// decide asks one gate question through whichever frontend exists.
+func (d agentDeps) decide(scanner *bufio.Scanner, prompt string, options []chooseOption) (string, bool) {
+	if d.choose != nil {
+		return d.choose(prompt, options)
+	}
+	keys := make([]string, len(options))
+	hints := make([]string, len(options))
+	for i, o := range options {
+		keys[i] = o.key
+		hints[i] = o.key + "=" + o.label
+	}
+	return ask(d.out, scanner, prompt+" ("+strings.Join(hints, " / ")+")", strings.Join(keys, ""))
 }
 
 // plan asks the provider for a step spec.
@@ -119,7 +136,11 @@ func handleAgent(ctx context.Context, deps agentDeps, task string) {
 	}
 
 	scanner := bufio.NewScanner(deps.in)
-	mode, ok := ask(deps.out, scanner, "run? [a]ll (destructive steps still gate) / [s]tep-by-step / [q]uit", "asq")
+	mode, ok := deps.decide(scanner, "run this plan?", []chooseOption{
+		{"a", "run all — destructive steps still gate individually"},
+		{"s", "step-by-step"},
+		{"q", "quit — nothing executes"},
+	})
 	if !ok || mode == "q" {
 		fmt.Fprintln(deps.out, "agent: nothing executed")
 		return
@@ -133,8 +154,12 @@ func handleAgent(ctx context.Context, deps agentDeps, task string) {
 			if gated[i] {
 				warn = " (destructive)"
 			}
-			answer, aok := ask(deps.out, scanner,
-				fmt.Sprintf("run step %d%s? [r]un / [!]no sandbox / [k]skip / [q]uit", i+1, warn), "r!kq")
+			answer, aok := deps.decide(scanner, fmt.Sprintf("run step %d%s?", i+1, warn), []chooseOption{
+				{"r", "run (sandboxed)"},
+				{"!", "run WITHOUT the sandbox — escalate"},
+				{"k", "skip this step"},
+				{"q", "quit the plan"},
+			})
 			switch {
 			case !aok || answer == "q":
 				appendOutcome(artifact, i, "halted by user")

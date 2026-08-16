@@ -115,7 +115,7 @@ func runZi(mgr plugmgr.Manager, hc interp.HandlerContext, args []string) []strin
 		}
 		return []string{"true"}
 	case "list", "status":
-		if err := mgr.List(hc.Stdout); err != nil {
+		if err := ziList(mgr, hc); err != nil {
 			return fail(err)
 		}
 		return []string{"true"}

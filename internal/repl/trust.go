@@ -50,7 +50,7 @@ func runTrust(ctx context.Context, hc interp.HandlerContext, args []string) []st
 	switch {
 	case len(args) == 0:
 		showTrust(hc, runner)
-		return []string{"true"}
+		return reviewPending(ctx, hc, runner)
 	case args[0] == "help" || args[0] == "-h" || args[0] == "--help":
 		fmt.Fprintln(hc.Stdout, trustUsage)
 		return []string{"true"}
@@ -79,6 +79,43 @@ func runTrust(ctx context.Context, hc interp.HandlerContext, args []string) []st
 	default:
 		return fail(fmt.Errorf("unknown arguments %q\n%s", strings.Join(args, " "), trustUsage))
 	}
+}
+
+// reviewPending turns a pending proposal into an interactive decision
+// on a real terminal (#90); anywhere else the printed summary stands
+// and the trust allow/revoke commands do the work.
+func reviewPending(ctx context.Context, hc interp.HandlerContext, runner *interp.Runner) []string {
+	envMgr.mu.Lock()
+	pending := envMgr.pending
+	envMgr.mu.Unlock()
+	choose := interactiveChooser(hc.Stdin, hc.Stdout)
+	if pending == nil || choose == nil {
+		return []string{"true"}
+	}
+	answer, ok := choose("apply this environment diff?", []chooseOption{
+		{"a", "allow — apply now and remember this exact diff"},
+		{"n", "not now — keep it pending"},
+		{"r", "revoke " + displayPath(pending.forDir) + " — stop proposing here"},
+	})
+	if !ok || answer == "n" {
+		return []string{"true"}
+	}
+	switch answer {
+	case "a":
+		msg, err := envMgr.allowPending(ctx, runner)
+		if err != nil {
+			fmt.Fprintln(hc.Stderr, "trust:", err)
+			return []string{"false"}
+		}
+		fmt.Fprintln(hc.Stdout, msg)
+	case "r":
+		if _, err := envMgr.revokeDir(ctx, runner, pending.forDir); err != nil {
+			fmt.Fprintln(hc.Stderr, "trust:", err)
+			return []string{"false"}
+		}
+		fmt.Fprintf(hc.Stdout, "revoked %s\n", displayPath(pending.forDir))
+	}
+	return []string{"true"}
 }
 
 func showTrust(hc interp.HandlerContext, runner *interp.Runner) {
