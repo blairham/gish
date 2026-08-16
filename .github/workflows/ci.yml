@@ -28,6 +28,11 @@ jobs:
     - name: Run tests
       run: make test
 
+    # The published compat claim must stay true (#101): the corpus is
+    # run differentially against the runner's real bash.
+    - name: Bash-compat scoreboard
+      run: make compat-check
+
   # Windows is a target, not a port (#47): everything must build, and
   # the portable packages must pass on a real Windows runner. The
   # unix-only surfaces (job control, sandbox enforcement, pty tests)

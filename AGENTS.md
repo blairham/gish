@@ -101,6 +101,19 @@ Read these before touching `pluginhost` or the protos.
 - **Exit codes**: `errors.As` with `interp.ExitStatus` distinguishes a script's exit status (propagated as the process exit code) from real gish errors (stderr + exit 1)
 - **Commits/PRs**: no AI-attribution trailers — do not add `Co-Authored-By: Claude`, "Generated with Claude Code", or similar to commit messages or PR bodies
 
+## Bash compatibility
+
+`docs/compat.md` is the published scoreboard (#101): a curated corpus of
+real-world snippets (`internal/compat`) run **differentially** — the same
+script through the machine's real bash and through `gish -c`, comparing
+combined output and exit status. bash is the oracle; nothing encodes what
+we think bash ought to do. `make compat` regenerates the doc from a live
+run; `make compat-check` is the CI gate that refuses a lower pass count
+than the doc records. The corpus is meant to grow, so the percentage can
+fall without a regression — that is the point. Substrate gaps go upstream
+to mvdan/sh (#119); shell identity (`BASH_VERSION` and tool init hooks) is
+an open decision (#120), not a bug.
+
 ## CI/CD
 
 - **ci.yml**: `test` (ubuntu + macos matrix, `make test`), `lint` (golangci-lint-action), then `build` — on push to main and PRs
