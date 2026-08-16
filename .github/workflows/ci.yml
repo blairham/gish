@@ -52,6 +52,13 @@ jobs:
     - name: Build everything
       run: go build ./...
 
+    # `go build` skips _test.go, so a unix-only test file in an otherwise
+    # portable package compiled fine here and broke anyone vetting for
+    # Windows. vet type-checks tests too, across every package — not just
+    # the portable list below.
+    - name: Vet everything (test files included)
+      run: go vet ./...
+
     - name: Run portable tests
       run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./cmd/gish-aws/ ./cmd/gish-claude/
 
