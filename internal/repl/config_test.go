@@ -225,6 +225,7 @@ func TestConfigCreatesXDGRCWhenNoneExists(t *testing.T) {
 	t.Setenv("GISH_RC", "")
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 
 	var out strings.Builder
 	err := RunReader(t.Context(), strings.NewReader("config lint native\n"), "test",

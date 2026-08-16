@@ -21,6 +21,7 @@ func toolEnv(t *testing.T) (workDir string) {
 	t.Setenv("ASDF_DATA_DIR", filepath.Join(base, "asdf"))
 	t.Setenv("MISE_DATA_DIR", filepath.Join(base, "mise"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	return work
 }
 

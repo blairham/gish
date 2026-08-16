@@ -18,6 +18,7 @@ func runDoctorScript(t *testing.T, src string) (stdout string, err error) {
 	t.Setenv("GISH_RC", filepath.Join(base, "gishrc"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")
 	var out strings.Builder
@@ -56,6 +57,7 @@ func TestDoctorReportsBrokenRC(t *testing.T) {
 	t.Setenv("GISH_RC", rc)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	var out strings.Builder
 	err := RunReader(t.Context(), strings.NewReader("doctor\n"), "test",
@@ -109,6 +111,7 @@ func TestDoctorFlagsNonExecutablePlugin(t *testing.T) {
 	t.Setenv("GISH_RC", filepath.Join(base, "gishrc"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	var out strings.Builder
 	if err := RunReader(t.Context(), strings.NewReader("doctor\n"), "test",
@@ -137,6 +140,7 @@ func TestDoctorWarnsOnUnparsableHistoryTail(t *testing.T) {
 	t.Setenv("GISH_RC", filepath.Join(base, "gishrc"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	var out strings.Builder
 	if err := RunReader(t.Context(), strings.NewReader("doctor\n"), "test",

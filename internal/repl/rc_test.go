@@ -102,6 +102,7 @@ func TestLoadRCMissingFileIsSilent(t *testing.T) {
 	t.Setenv("GISH_RC", "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir()) // UserHomeDir reads this on Windows
 
 	runner := newTestRunner(t)
 	loadRC(context.Background(), runner) // no file anywhere: no-op
