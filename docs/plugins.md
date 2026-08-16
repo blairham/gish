@@ -137,6 +137,16 @@ make sure their segment's absence reads as "not shown" rather than
 
 ## Needs new proto services (v1 is frozen-additive — new services are fine)
 
+`ShellEvents` (#83) is defined in proto/gish/plugin/v1/events.proto and
+allocated `CAPABILITY_EVENTS`, but **the host does not serve it yet** —
+contract first, internals after, the same order the rest of this package
+was built in. docs/events.md has the design and the three rules it
+cannot break: no exec channel ever (proposals only, #111's line), the
+host never blocks on a subscriber (bidi stream, bounded buffer,
+drop-oldest — a request/response per event would make every `cd` wait on
+a plugin), and events carry allowlisted scrub-safe data only (a command
+*name*, never its argument list).
+
 | Plugin | New surface | Notes |
 | --- | --- | --- |
 | command-not-found | one unary RPC | "did you mean", brew package suggestions; inherently off the hot path |

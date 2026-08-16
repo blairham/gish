@@ -48,6 +48,7 @@ const (
 	Capability_CAPABILITY_THEME          Capability = 5 // ThemeProvider (#30)
 	Capability_CAPABILITY_ENV            Capability = 6 // EnvProvider (#12)
 	Capability_CAPABILITY_AI             Capability = 7 // AIProvider (#20)
+	Capability_CAPABILITY_EVENTS         Capability = 8 // ShellEvents (#83) — contract only, not served yet
 )
 
 // Enum value maps for Capability.
@@ -61,6 +62,7 @@ var (
 		5: "CAPABILITY_THEME",
 		6: "CAPABILITY_ENV",
 		7: "CAPABILITY_AI",
+		8: "CAPABILITY_EVENTS",
 	}
 	Capability_value = map[string]int32{
 		"CAPABILITY_UNSPECIFIED":    0,
@@ -71,6 +73,7 @@ var (
 		"CAPABILITY_THEME":          5,
 		"CAPABILITY_ENV":            6,
 		"CAPABILITY_AI":             7,
+		"CAPABILITY_EVENTS":         8,
 	}
 )
 
@@ -210,7 +213,7 @@ const file_gish_plugin_v1_common_proto_rawDesc = "" +
 	"\x10DescribeResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12>\n" +
-	"\fcapabilities\x18\x03 \x03(\x0e2\x1a.gish.plugin.v1.CapabilityR\fcapabilities*\xcf\x01\n" +
+	"\fcapabilities\x18\x03 \x03(\x0e2\x1a.gish.plugin.v1.CapabilityR\fcapabilities*\xe6\x01\n" +
 	"\n" +
 	"Capability\x12\x1a\n" +
 	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -220,7 +223,8 @@ const file_gish_plugin_v1_common_proto_rawDesc = "" +
 	"\x12CAPABILITY_COMMAND\x10\x04\x12\x14\n" +
 	"\x10CAPABILITY_THEME\x10\x05\x12\x12\n" +
 	"\x0eCAPABILITY_ENV\x10\x06\x12\x11\n" +
-	"\rCAPABILITY_AI\x10\a2[\n" +
+	"\rCAPABILITY_AI\x10\a\x12\x15\n" +
+	"\x11CAPABILITY_EVENTS\x10\b2[\n" +
 	"\n" +
 	"PluginInfo\x12M\n" +
 	"\bDescribe\x12\x1f.gish.plugin.v1.DescribeRequest\x1a .gish.plugin.v1.DescribeResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
