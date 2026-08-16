@@ -109,7 +109,10 @@ func TestP10kImport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, _, dir := runP10kScript(t, "", "p10k import "+zsh+"\necho theme=$GISH_THEME\n")
+	// Quote the path: a Windows temp directory is full of backslashes,
+	// and unquoted they are escapes to the parser — the import then gets
+	// a mangled path and quietly does nothing.
+	out, _, dir := runP10kScript(t, "", "p10k import '"+zsh+"'\necho theme=$GISH_THEME\n")
 	if !strings.Contains(out, "imported") {
 		t.Errorf("no import summary: %q", out)
 	}
