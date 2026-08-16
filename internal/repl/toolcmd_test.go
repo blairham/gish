@@ -81,12 +81,29 @@ func TestToolInstallWithoutAsdf(t *testing.T) {
 	}
 }
 
-func TestToolInstallBadFrom(t *testing.T) {
+// TestToolInstallFromDelegates pins the #112 scope line: gish switches
+// versions and names the tool that installs them, rather than shipping
+// a downloader of its own.
+func TestToolInstallFromDelegates(t *testing.T) {
 	toolEnv(t)
 	rc := filepath.Join(t.TempDir(), "gishrc")
-	_, errOut, _ := runConfigScript(t, rc, "tool install thing 1.0.0 --from not-a-repo\n")
-	if !strings.Contains(errOut, "owner/repo") {
-		t.Errorf("stderr = %q", errOut)
+	out, errOut, err := runConfigScript(t, rc,
+		"tool install shellcheck v0.10.0 --from koalaman/shellcheck\n")
+	if err == nil {
+		t.Error("delegation should exit nonzero: nothing was installed")
+	}
+	if !strings.Contains(errOut, "does not install them") {
+		t.Errorf("no delegation notice: %q", errOut)
+	}
+	// It names the actual alternatives, with the destination that makes
+	// the result resolvable by the switcher.
+	for _, want := range []string{"ubi ", "mise ", "asdf ", "koalaman/shellcheck", "0.10.0"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("delegation message missing %q: %q", want, errOut)
+		}
+	}
+	if strings.Contains(out, "downloading") {
+		t.Errorf("still downloading: %q", out)
 	}
 }
 

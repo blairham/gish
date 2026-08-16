@@ -11,7 +11,6 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/plugmgr/ghr"
 	"github.com/blairham/gish/internal/tools"
 	"github.com/blairham/gish/internal/ui"
 )
@@ -28,10 +27,9 @@ const toolUsage = `usage: tool [list <name> | pin <name> <ver> | global <name> <
   tool list golang           installed versions of one tool
   tool pin golang 1.26.6     write the nearest .tool-versions — live now
   tool global golang 1.26.6  write the ~/.tool-versions global
-  tool install golang 1.26.6            via asdf (plugin ecosystem)
-  tool install shellcheck v0.10.0 --from koalaman/shellcheck
-                             native GitHub-release download into the
-                             asdf tree (single-binary tools)`
+  tool install golang 1.26.6  via asdf (installing is a package
+                             manager's job; --from prints the ubi/mise
+                             one-liner for the tool you want)`
 
 // toolCallHandler intercepts `tool`, config-style.
 func toolCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
@@ -101,11 +99,10 @@ func runTool(hc interp.HandlerContext, args []string) []string {
 		return []string{"asdf", "install", args[1], args[2]}
 
 	case args[0] == "install" && len(args) == 5 && args[3] == "--from":
-		if err := installFromGitHub(hc, args[1], args[2], args[4]); err != nil {
-			return fail(err)
-		}
-		toolsChanged()
-		return []string{"true"}
+		// Descoped (#112): installing software is a package manager's
+		// job. gish switches versions; it does not ship a downloader.
+		printInstallDelegation(hc, args[1], args[2], args[4])
+		return []string{"false"}
 
 	default:
 		return fail(fmt.Errorf("unknown arguments %q\n%s", strings.Join(args, " "), toolUsage))
@@ -179,82 +176,29 @@ func showToolOverview(hc interp.HandlerContext, roots []string) {
 	}
 }
 
-// installFromGitHub downloads a release asset into the asdf tree — the
-// ubi shape: explicit repo, OS/arch asset heuristics from plugmgr/ghr.
-func installFromGitHub(hc interp.HandlerContext, tool, version, repo string) error {
-	owner, name, ok := strings.Cut(repo, "/")
-	if !ok || owner == "" || name == "" {
-		return fmt.Errorf("--from wants owner/repo, got %q", repo)
-	}
-	release, err := ghr.FetchRelease(owner, name, version)
-	if err != nil {
-		// Release tags are usually v-prefixed; try the other spelling.
-		alt := "v" + version
-		if strings.HasPrefix(version, "v") {
-			alt = strings.TrimPrefix(version, "v")
-		}
-		release, err = ghr.FetchRelease(owner, name, alt)
-		if err != nil {
-			return fmt.Errorf("fetch %s %s: %w", repo, version, err)
-		}
-	}
-	asset, err := ghr.PickAsset(release.Assets, "")
-	if err != nil {
-		return err
-	}
-	dir, err := tools.AsdfInstallDir(tool, strings.TrimPrefix(version, "v"))
-	if err != nil {
-		return err
-	}
-	// Extract into a staging dir, then flatten: release archives nest
-	// their binaries (shellcheck-v0.10.0/shellcheck), and PATH needs
-	// them directly in bin/.
-	stage := filepath.Join(dir, ".stage")
-	binDir := filepath.Join(dir, "bin")
-	if err := os.MkdirAll(stage, 0o755); err != nil {
-		return err
-	}
-	cleanup := func() { _ = os.RemoveAll(dir) } //nolint:errcheck // partial install
-	fmt.Fprintf(hc.Stdout, "downloading %s (%s %s)…\n", asset.Name, repo, release.TagName)
-	if err := ghr.Download(asset, stage); err != nil {
-		cleanup()
-		return err
-	}
-	moved, err := flattenExecutables(stage, binDir)
-	if err != nil {
-		cleanup()
-		return err
-	}
-	if moved == 0 {
-		cleanup()
-		return fmt.Errorf("no executables found in %s — not a single-binary release?", asset.Name)
-	}
-	_ = os.RemoveAll(stage) //nolint:errcheck // best-effort tidy
-	fmt.Fprintf(hc.Stdout, "installed %s %s to %s (%d executable(s))\n",
-		tool, strings.TrimPrefix(version, "v"), displayPath(binDir), moved)
-	return nil
+// printInstallDelegation names the tool that should do this install.
+// The scope line (#112): gish is native for the keystroke, prompt, and
+// cd path — switching versions is its job — and delegates everything
+// else. A release downloader carries package-manager obligations
+// (archive formats, provenance, platform matrices, rate limits) that
+// mise, ubi, and asdf already own full time.
+func printInstallDelegation(hc interp.HandlerContext, tool, version, repo string) {
+	v := strings.TrimPrefix(version, "v")
+	fmt.Fprintf(hc.Stderr, "tool: gish switches versions, it does not install them.\n")
+	fmt.Fprintf(hc.Stderr, "  ubi  --project %s --tag %s --in %s\n",
+		repo, version, asdfBinDir(tool, v))
+	fmt.Fprintf(hc.Stderr, "  mise use -g %s@%s        (if mise has a backend for it)\n", tool, v)
+	fmt.Fprintf(hc.Stderr, "  asdf plugin add %s && asdf install %s %s\n", tool, tool, v)
+	fmt.Fprintf(hc.Stderr, "Any of those installs into a tree gish already resolves; `tool list %s` will show it.\n", tool)
 }
 
-// flattenExecutables moves every executable regular file under stage
-// into binDir, whatever directory nesting the archive used.
-func flattenExecutables(stage, binDir string) (int, error) {
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		return 0, err
+// asdfBinDir is where a manually installed version must land for the
+// switcher to find it.
+func asdfBinDir(tool, version string) string {
+	dir, err := tools.AsdfInstallDir(tool, version)
+	if err != nil {
+		// Home is unknown: name the conventional location literally.
+		return "~/.asdf/installs/" + tool + "/" + version + "/bin"
 	}
-	moved := 0
-	err := filepath.WalkDir(stage, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil || info.Mode()&0o111 == 0 || !info.Mode().IsRegular() {
-			return err
-		}
-		if err := os.Rename(path, filepath.Join(binDir, d.Name())); err != nil {
-			return err
-		}
-		moved++
-		return nil
-	})
-	return moved, err
+	return filepath.Join(dir, "bin")
 }
