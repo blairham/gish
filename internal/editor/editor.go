@@ -48,6 +48,10 @@ type Config struct {
 	// the completion-candidates surface, advisory only — the editor
 	// never blocks acceptance on them. nil disables diagnostics.
 	Diagnose func(text string) []string
+	// ExternalEdit is Ctrl-X Ctrl-E: edit the buffer in $EDITOR. The
+	// editor cedes the terminal (cooked mode, decoder stopped) around
+	// the call; ok=false keeps the original text. nil disables it.
+	ExternalEdit func(text string) (string, bool)
 }
 
 type loopState int
@@ -57,6 +61,7 @@ const (
 	stateAccepted
 	stateCancelled
 	stateEOF
+	stateExternalEdit
 )
 
 // Editor reads commands interactively. Not safe for concurrent use; the
@@ -76,11 +81,17 @@ type Editor struct {
 
 	// Coalescing state: consecutive kills merge in the kill ring,
 	// consecutive self-inserts share one undo entry, yank-pop only
-	// follows a yank.
-	lastWasKill, thisKill     bool
-	lastWasInsert, thisInsert bool
-	lastWasYank, thisYank     bool
-	yankStart, yankEnd        int
+	// follows a yank, repeated Alt-. cycles older last-args.
+	lastWasKill, thisKill       bool
+	lastWasInsert, thisInsert   bool
+	lastWasYank, thisYank       bool
+	lastWasYankArg, thisYankArg bool
+	yankStart, yankEnd          int
+	yankArgStart, yankArgEnd    int
+	yankArgN                    int
+
+	// pendingCtrlX arms the Ctrl-X chord for exactly one key.
+	pendingCtrlX bool
 
 	// History navigation (see history.go): histPos is the entry shown
 	// (-1 = the live pending line), histPrefix the filter captured when
@@ -138,20 +149,46 @@ func (e *Editor) ReadCommand(ctx context.Context) (_ string, err error) {
 		}
 	}()
 
+	if w, _, serr := e.term.Size(); serr == nil {
+		e.rend.setWidth(w)
+	}
+	e.reset()
+	e.render()
+
+	for {
+		line, done, rerr := e.readEvents(ctx)
+		if done {
+			return line, rerr
+		}
+		// External edit (Ctrl-X Ctrl-E): cede the terminal — cooked
+		// mode, decoder stopped — run $EDITOR, then take it back.
+		if cerr := restore(); cerr != nil {
+			return "", cerr
+		}
+		if text, ok := e.cfg.ExternalEdit(e.buf.String()); ok {
+			e.buf.Set(text, len([]rune(text)))
+		}
+		if restore, err = e.term.EnterRaw(); err != nil {
+			restore = func() error { return nil }
+			return "", err
+		}
+		e.state = stateRunning
+		e.render()
+	}
+}
+
+// readEvents runs one decoder session until the buffer is decided
+// (done=true) or an external edit is requested (done=false — the
+// caller suspends the terminal and calls back in).
+func (e *Editor) readEvents(ctx context.Context) (line string, done bool, err error) {
 	// Input decoding stops with this context: once a command is accepted
 	// the shell (or its children) own stdin again.
 	evctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	events, err := e.term.Events(evctx)
 	if err != nil {
-		return "", err
+		return "", true, err
 	}
-
-	if w, _, serr := e.term.Size(); serr == nil {
-		e.rend.setWidth(w)
-	}
-	e.reset()
-	e.render()
 
 	for ev := range events {
 		e.dispatch(ev)
@@ -160,16 +197,19 @@ func (e *Editor) ReadCommand(ctx context.Context) (_ string, err error) {
 			e.buf.MoveEnd()
 			e.render()
 			e.rend.finish()
-			return e.buf.String(), nil
+			return e.buf.String(), true, nil
 		case stateCancelled:
 			e.buf.MoveEnd()
 			e.render()
 			fmt.Fprint(e.out, "^C")
 			e.rend.finish()
-			return "", ErrInterrupted
+			return "", true, ErrInterrupted
 		case stateEOF:
 			e.rend.finish()
-			return "", io.EOF
+			return "", true, io.EOF
+		case stateExternalEdit:
+			e.rend.finish()
+			return "", false, nil
 		case stateRunning:
 			e.render()
 		}
@@ -178,9 +218,9 @@ func (e *Editor) ReadCommand(ctx context.Context) (_ string, err error) {
 	// the input closed underneath us.
 	e.rend.finish()
 	if cerr := ctx.Err(); cerr != nil {
-		return "", cerr
+		return "", true, cerr
 	}
-	return "", io.EOF
+	return "", true, io.EOF
 }
 
 // Preload seeds the next ReadCommand's buffer (cursor at the end) —
@@ -254,7 +294,7 @@ func promptParts(prompt string) (banner []string, prefix string) {
 }
 
 func (e *Editor) dispatch(ev term.Event) {
-	e.thisKill, e.thisInsert, e.thisYank = false, false, false
+	e.thisKill, e.thisInsert, e.thisYank, e.thisYankArg = false, false, false, false
 	e.candList = nil // completion lists live for exactly one event
 
 	if e.search.active {
@@ -266,6 +306,7 @@ func (e *Editor) dispatch(ev term.Event) {
 	e.lastWasKill = e.thisKill
 	e.lastWasInsert = e.thisInsert
 	e.lastWasYank = e.thisYank
+	e.lastWasYankArg = e.thisYankArg
 }
 
 func (e *Editor) dispatchEvent(ev term.Event) {
@@ -281,6 +322,13 @@ func (e *Editor) dispatchEvent(ev term.Event) {
 }
 
 func (e *Editor) dispatchKey(ev term.KeyEvent) {
+	if e.pendingCtrlX {
+		e.pendingCtrlX = false
+		if ev.Key == term.KeyRune && ev.Rune == 'e' && ev.Mod == term.ModCtrl {
+			e.externalEditRequest()
+		}
+		return
+	}
 	if cmd, ok := e.keymap[binding{key: ev.Key, r: ev.Rune, mod: ev.Mod}]; ok {
 		cmd(e)
 		return
@@ -473,5 +521,12 @@ func defaultKeymap() map[binding]func(*Editor) {
 		{r: '_', mod: term.ModCtrl}:                (*Editor).undoCmd,
 		{r: '/', mod: term.ModCtrl}:                (*Editor).undoCmd,
 		{r: 'l', mod: term.ModCtrl}:                (*Editor).clearScreen,
+		// The muscle-memory set (#96).
+		{r: '.', mod: term.ModAlt}:  (*Editor).yankLastArg,
+		{r: '_', mod: term.ModAlt}:  (*Editor).yankLastArg,
+		{r: '#', mod: term.ModAlt}:  (*Editor).commentAccept,
+		{r: 't', mod: term.ModCtrl}: (*Editor).transposeChars,
+		{r: 'o', mod: term.ModCtrl}: (*Editor).operateAndGetNext,
+		{r: 'x', mod: term.ModCtrl}: (*Editor).startCtrlX,
 	}
 }
