@@ -25,6 +25,10 @@ func newIndex(t *testing.T, reserved func(string) bool) (*pluginhost.Host, *plug
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if cmds := ci.CommandsOf(fixtureName()); len(cmds) > 0 {
+			// The index is populated before its cache is written, so the
+			// test must not race the detached save against t.TempDir()
+			// cleanup — which is exactly how this went flaky on Windows.
+			t.Cleanup(ci.Wait)
 			return h, ci
 		}
 		if time.Now().After(deadline) {
