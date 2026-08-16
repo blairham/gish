@@ -336,7 +336,8 @@ func TestHeadlessSurfacesEmitNoEscapes(t *testing.T) {
 	// not style. They are in this list rather than only in their own
 	// tests so one place fails when a new surface forgets the rule.
 	out, errOut, _ := runConfigScript(t, rc,
-		"doctor\nzi\nzi help\ntool\ntool list golang\nconfig\nplugin browse\nconfig theme\n")
+		"doctor\nzi\nzi help\ntool\ntool list golang\nconfig\nplugin browse\nconfig theme\n"+
+			"echo hi | clip\nsessions\n")
 	for name, s := range map[string]string{"stdout": out, "stderr": errOut} {
 		if strings.Contains(s, "\x1b") {
 			t.Errorf("%s carries escape sequences in headless mode: %q", name, s)
