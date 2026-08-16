@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -187,5 +188,34 @@ func TestExpandPromptSegments(t *testing.T) {
 	// nil segment func renders empty rather than panicking.
 	if got := expandPrompt("x%p{git}y", promptInfo{}); got != "xy" {
 		t.Errorf("nil segment = %q, want %q", got, "xy")
+	}
+}
+
+// TestShellVarReadsEnvironment pins the contract that `GISH_THEME=p10k
+// gish` works: settings come from shell variables first, then the
+// inherited environment. Before this, only rc assignments were seen —
+// found by the #102 benchmark harness, which could not set a prompt.
+func TestShellVarReadsEnvironment(t *testing.T) {
+	runner, err := interp.New(interp.Env(expand.ListEnviron(
+		"GISH_THEME=p10k", "GISH_EMPTY=", "PATH=/usr/bin")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := shellVar(runner, "GISH_THEME", "plain"); got != "p10k" {
+		t.Errorf("env setting ignored: %q", got)
+	}
+	// An empty env value is not a setting; the fallback stands.
+	if got := shellVar(runner, "GISH_EMPTY", "fallback"); got != "fallback" {
+		t.Errorf("empty env value = %q", got)
+	}
+	if got := shellVar(runner, "GISH_UNSET", "fallback"); got != "fallback" {
+		t.Errorf("unset = %q", got)
+	}
+	// A shell assignment beats the environment: `config` and rc win.
+	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=starship`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := shellVar(runner, "GISH_THEME", "plain"); got != "starship" {
+		t.Errorf("shell assignment did not win: %q", got)
 	}
 }

@@ -106,12 +106,22 @@ func loadProfile(ctx context.Context, runner *interp.Runner) {
 	}
 }
 
-// shellVar reads a scalar shell variable from the runner, falling back
-// when unset or empty.
+// shellVar reads a scalar setting from the runner: shell variables
+// first (an rc assignment or a live `config` change wins), then the
+// inherited environment, so `GISH_THEME=p10k gish` works the way
+// every other env-configured program does. runner.Vars holds only
+// variables the session set; inherited ones live in runner.Env.
 func shellVar(runner *interp.Runner, name, fallback string) string {
 	if v, ok := runner.Vars[name]; ok {
 		if s := v.String(); s != "" {
 			return s
+		}
+	}
+	if runner.Env != nil {
+		if v := runner.Env.Get(name); v.IsSet() {
+			if s := v.String(); s != "" {
+				return s
+			}
 		}
 	}
 	return fallback

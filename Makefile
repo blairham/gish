@@ -46,6 +46,10 @@ check: fmt vet test
 bench-startup:
 	go test -run TestStartupBudget -v ./cmd/gish/ | grep 'startup runs'
 
+.PHONY: bench
+bench: ## Regenerate docs/bench.md: startup table + keystroke p50/p99 (#102)
+	go test ./internal/bench/ -run TestBenchmarkReport -update -v
+
 .PHONY: compat
 compat: ## Regenerate docs/compat.md from a live bash-vs-gish run (#101)
 	go test ./internal/compat/ -run TestCompatScoreboard -update -v
