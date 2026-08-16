@@ -1,23 +1,59 @@
 # gish
 
-> **gish** — the **g**RPC **i**nteractive **sh**ell.
+**fish-quality interactive UX, and your bash muscle memory and pasted one-liners still work.**
 
-A new interactive shell: **zsh's interactive experience, bash's ubiquity, and a native plugin system with an actual contract.** Cross-platform (macOS, Linux, Windows), one static Go binary.
+One static Go binary. Syntax highlighting, autosuggestions, a p10k-class
+prompt, completions, directory jumping, and version switching are *built
+in* — not eight `eval "$(tool init)"` hooks you assembled over five
+years.
 
-**Fast is a guarantee, not an accident**: ~6ms to first prompt warm (10ms with a 10,000-entry history), enforced by a CI regression gate. Plugin discovery never blocks the first paint.
+**Open source, local-first, no account, no telemetry.** The AI features
+are opt-in (`??` only), bring-your-own-provider including local models,
+and never auto-execute — a composed command lands in your editor buffer
+for you to read, edit, and run.
 
-**Status: early scaffold.** The interactive loop runs real POSIX/bash today (via [`mvdan.cc/sh`](https://github.com/mvdan/sh)); everything that makes it *gish* is in front of us.
+```
+                      startup      what it includes
+gish                   5.6 ms      theme + highlighting + suggestions + lint, all on
+bash (no rc)           5.5 ms      empty rc
+zsh (no rc)            8.6 ms      empty rc
+zsh (real config)    266.3 ms      a 129-line .zshrc: plugin manager, theme, tool hooks
+```
+
+Keystroke latency, measured end to end from byte-in to repaint-out:
+**p50 0.2 ms, p99 0.3 ms** — with highlighting, suggestions, and the
+footgun linter all running. Full methodology and numbers in
+[docs/bench.md](docs/bench.md); the bash-compatibility scoreboard, gaps
+included, is in [docs/compat.md](docs/compat.md).
+
+**Try it without commitment.** Run `gish` in one tab — no `chsh`
+required, nothing to undo but two directories. Coming from bash or zsh,
+start with [docs/porting.md](docs/porting.md).
 
 ## The idea
 
-Shell plugins today are zsh scripts poking at shell internals with no contract, glued together by plugin managers of wildly varying ergonomics. Gish's design bet is a **two-tier plugin system**:
+Most of what people install plugins *for* — a fast git prompt, autosuggestions,
+highlighting, completions, env and version switching — gish ships natively, so a
+fresh install already behaves like a tuned setup.
 
-- **Tier 1 — your existing zsh plugins keep working.** A zsh-compat layer runs the zi/zinit/oh-my-zsh ecosystem in-process, so switching shells doesn't mean abandoning your setup.
-- **Tier 2 — native plugins get a real API.** Resident subprocesses over gRPC ([hashicorp/go-plugin](https://github.com/hashicorp/go-plugin)) with a versioned protobuf contract: completion providers, prompt segments, history backends. Written in any language. Deadline on every call — a slow plugin can never block a keystroke. (This is how the fast parts of the shell world already work — gitstatusd, carapace — promoted from workaround to architecture.)
+What's left gets a real contract. **Plugins run out of process, in any
+language, crash-isolated and deadline-bounded: a slow or broken plugin
+degrades its own feature and can never block a keystroke or take down
+your shell.** Kill one mid-session and the prompt doesn't flinch. (This
+is how the fast parts of the shell world already work — gitstatusd,
+carapace — promoted from workaround to architecture.)
 
-See [docs/design.md](docs/design.md) for the full architecture and roadmap.
+The existing zsh ecosystem is an escape hatch, not the pitch: a
+pattern-compat layer runs the common plugin shapes so one beloved script
+can't block your migration, but the .zshrc pile is the thing most people
+are trying to leave. See [docs/design.md](docs/design.md) for the
+architecture, roadmap, and the decisions behind both.
 
-## Try the skeleton
+*(The name expands to "gRPC interactive shell" — that's the plumbing the
+plugin contract runs on. It's an implementation detail you should never
+have to think about, which is why it isn't the pitch.)*
+
+## Try it
 
 ```bash
 make build
@@ -60,7 +96,7 @@ zi update                         # refresh everything
 zi list
 ```
 
-A load is installed by the engine and `source`d directly in your live session — functions, variables, and PATH changes persist. (Plugins written in heavy zsh dialect await the tier-1 compat layer; snippets, POSIX-style plugins, and `gh-r` binaries work today. `wait` turbo ices are accepted but load immediately for now.) The manager itself sits behind a contract, so an alternative manager can replace it.
+A load is installed by the engine and `source`d directly in your live session — functions, variables, and PATH changes persist. (Snippets, POSIX-style plugins, and `gh-r` release binaries work today; plugins written in heavy zsh dialect are the escape-hatch case — see [the tier-1 decision](docs/design.md#decisions). `wait` turbo ices are accepted but load immediately for now.) The manager itself sits behind a contract, so an alternative manager can replace it.
 
 History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions; Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
 
@@ -68,14 +104,60 @@ gish also warns **before Enter**: it holds a real parse tree of the line, so the
 
 And because the shell owns the scheduler, parallelism is a builtin, not a package: `parallel -j 4 -- gzip -9 {} ::: *.log` runs a goroutine pool of process children with output discipline GNU parallel never had by default — per-task prefixed streaming, or `--collect` for whole outputs in input order, never interleaved garbage. `--fail-fast` cancels the rest on first failure, Ctrl-C stops the lot, and the exit status is the worst task's.
 
-## Using gish as your login shell
+## What's built in
+
+The things you would otherwise install and wire up:
+
+```sh
+z api                  # zoxide-class jumping — frecency-ranked, seeded from your
+                       # history, with a picker built in. No shell hook to install.
+tool pin golang 1.26.6 # .tool-versions switching without shims: PATH is rebuilt on
+                       # cd, your asdf/mise installs are reused as-is
+trust                  # direnv-class per-directory env, with a real trust model:
+                       # nothing applies until you allow it, and edits re-prompt
+sandbox --profile readonly -- make test
+                       # least-privilege exec: macOS Seatbelt, Linux Landlock
+doctor                 # what's configured, what's broken, and the fix for each
+```
+
+And the AI surface, which is opt-in and never runs anything on its own:
+
+```sh
+?? find the biggest files here      # composes a command into your editor buffer,
+                                    # sandbox-wrapped, for you to read and run
+explain                             # why did that last command fail
+agent "migrate these repos to the new CI config"
+                                    # plans first, you approve, destructive steps
+                                    # gate individually, escalation is its own answer
+```
+
+Bring your own provider — the reference plugin drives the `claude` CLI you
+already have, and any local model behind the same contract works identically.
+
+## Making it your daily driver
+
+**Start with your terminal emulator, not `chsh`.** Point your profile's
+"command" setting at the gish binary and you get it in new tabs while
+every existing habit — including "open a normal shell" — keeps working.
+Nothing to undo but two directories under `$XDG_CONFIG_HOME/gish` and
+`$XDG_DATA_HOME/gish`.
 
 The non-interactive contract is POSIX-clean — tools that spawn `$SHELL -c` (editors, IDEs, cron, ssh, scp) get a fast, silent, script-compatible shell with no prompt machinery loaded. Login invocations (`-l`, or argv[0] beginning with `-`) source `/etc/profile`, then `~/.gish_profile` or `~/.profile`.
+
+When you're sure, the login-shell route is the usual one:
 
 ```sh
 which gish | sudo tee -a /etc/shells
 chsh -s "$(which gish)"
 ```
+
+## Platforms
+
+macOS and Linux are first-class today. Windows builds and its portable
+test suite run in CI on every change, but the native interactive port
+(ConPTY, job objects, installer) is deliberately sequenced after v1 —
+WSL2 is the supported Windows story until then. The reasoning is in
+[docs/design.md](docs/design.md#decisions).
 
 ## Development
 
