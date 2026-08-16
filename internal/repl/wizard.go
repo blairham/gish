@@ -35,6 +35,10 @@ type wizardIO struct {
 	out io.Writer
 }
 
+func newWizardIO(in io.Reader, out io.Writer) *wizardIO {
+	return &wizardIO{in: bufio.NewScanner(in), out: out}
+}
+
 // ask prints "prompt (def): " and returns the trimmed answer, the
 // default when the answer is empty, and ok=false on EOF.
 func (w *wizardIO) ask(prompt, def string) (string, bool) {
@@ -72,7 +76,7 @@ type wizardAnswers map[string]string
 // on confirmation, persists every changed variable and returns the live
 // assignments. Abort (Ctrl-D or answering n) saves nothing.
 func runThemeWizard(hc interp.HandlerContext) []string {
-	w := &wizardIO{in: bufio.NewScanner(hc.Stdin), out: hc.Stdout}
+	w := newWizardPrompt(hc.Stdin, hc.Stdout)
 	get := func(varName, def string) string {
 		if v := hc.Env.Get(varName).String(); v != "" {
 			return v
@@ -84,11 +88,11 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 		return []string{"true"}
 	}
 
-	fmt.Fprintln(hc.Stdout, "gish theme configurator — Enter keeps the current value, Ctrl-D aborts.")
+	w.note("gish theme configurator — Enter keeps the current value, Ctrl-C aborts.")
 	answers := wizardAnswers{}
 
-	theme, ok := w.askOneOf("theme [plain/p10k/starship]", get("GISH_THEME", "plain"),
-		[]string{"plain", "p10k", "starship"})
+	theme, ok := w.selectOne("theme", "plain is the naked default; p10k is the native two-line theme",
+		get("GISH_THEME", "plain"), []string{"plain", "p10k", "starship"})
 	if !ok {
 		return abort()
 	}
@@ -96,11 +100,11 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 
 	cfg := themeConfig{segments: strings.Fields(get("GISH_THEME_SEGMENTS", strings.Join(defaultSegmentIDs(), " ")))}
 	if theme == "p10k" {
-		// Separators: show the glyph and ask, p10k-style — rendering is a
-		// font property only the human can judge.
-		fmt.Fprintf(hc.Stdout, "\nseparator preview   plain:  dir  main !2   powerline:  dir %s\ue0b1%s main !2\n",
-			cDim, cReset)
-		sepAnswer, sok := w.askOneOf("separators — did the powerline chevron render? [plain/powerline]",
+		// Ask, don't detect: whether the chevron renders is a property of
+		// the user's font, p10k-style — only the human can see it.
+		w.note(fmt.Sprintf("\nseparator preview   plain:  dir  main !2   powerline:  dir %s\ue0b1%s main !2",
+			cDim, cReset))
+		sepAnswer, sok := w.selectOne("separators", "did the powerline chevron above render?",
 			get("GISH_THEME_SEP", "plain"), []string{"plain", "powerline"})
 		if !sok {
 			return abort()
@@ -108,8 +112,8 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 		answers["GISH_THEME_SEP"] = sepAnswer
 		cfg.powerline = sepAnswer == "powerline"
 
-		lines, lok := w.askOneOf("layout — framed two-line or single line? [2/1]",
-			get("GISH_THEME_LINES", "2"), []string{"1", "2"})
+		lines, lok := w.selectOne("layout", "2 = framed two-line, 1 = inline arrow",
+			get("GISH_THEME_LINES", "2"), []string{"2", "1"})
 		if !lok {
 			return abort()
 		}
@@ -117,7 +121,7 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 		cfg.oneLine = lines == "1"
 
 		if lines == "2" {
-			frame, fok := w.askOneOf("frame — ╭─/╰─ corners, or open like spaceship? [on/off]",
+			frame, fok := w.selectOne("frame", "on = ╭─/╰─ corners, off = open like spaceship",
 				get("GISH_THEME_FRAME", "on"), []string{"on", "off"})
 			if !fok {
 				return abort()
@@ -126,36 +130,23 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 			cfg.noFrame = frame == "off"
 		}
 
-		fmt.Fprintf(hc.Stdout, "\nsegments — built-ins: %s; any %%p{id} plugin id also works\n",
-			strings.Join(defaultSegmentIDs(), " "))
-		for {
-			list, gok := w.ask("segments, in order", strings.Join(cfg.segments, " "))
-			if !gok {
-				return abort()
-			}
-			ids := strings.Fields(list)
-			valid := len(ids) > 0
-			for _, id := range ids {
-				if !segmentIDRe.MatchString(id) {
-					fmt.Fprintf(hc.Stdout, "  bad segment id %q\n", id)
-					valid = false
-				}
-			}
-			if valid {
-				cfg.segments = ids
-				answers["GISH_THEME_SEGMENTS"] = list
-				break
-			}
+		list, gok := w.freeText("segments, in order",
+			"built-ins: "+strings.Join(defaultSegmentIDs(), " ")+"; any %p{id} plugin id also works",
+			strings.Join(cfg.segments, " "), validateSegments)
+		if !gok {
+			return abort()
 		}
+		cfg.segments = strings.Fields(list)
+		answers["GISH_THEME_SEGMENTS"] = list
 
-		fmt.Fprintln(hc.Stdout, "\npreview:")
 		preview, _ := themedPrompt(wizardSampleInfo(), cfg)
-		fmt.Fprintln(hc.Stdout, preview)
-		fmt.Fprintln(hc.Stdout, "\nper-segment colors stay available as `config theme.color.<id> <color>`.")
+		w.note("\npreview:")
+		w.note(preview)
+		w.note("\nper-segment colors stay available as `config theme.color.<id> <color>`.")
 	}
 
-	confirm, ok := w.askOneOf("save? [y/n]", "y", []string{"y", "n"})
-	if !ok || confirm == "n" {
+	save, ok := w.confirm("save?", true)
+	if !ok || !save {
 		return abort()
 	}
 
