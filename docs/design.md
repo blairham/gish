@@ -17,7 +17,10 @@ Strategy, in order of effort/payoff:
 
 1. **Pattern compat first**: most popular plugins reduce to aliases, exports, PATH edits, precmd/preexec hooks, completions, and a handful of zle widgets. Implement that surface and the top-N plugins run.
 2. **zsh-dialect growth**: extend the parser/interpreter toward the zsh constructs plugins actually use, driven by a corpus of real plugins, not by the zsh manual.
-3. **Escape hatch**: a `zsh -c` delegation shim for the long tail (where zsh is installed). Never the fast path.
+
+There is no step 3: the long tail that pattern-compat misses keeps
+running in zsh, where it already works — see the `zsh -c` delegation
+decision below.
 
 Built-in plugin *management* (the zi rethink) is native: declarative manifest, lazy loading by default, one obvious way to install/pin/update. No `ice` modifiers to memorize.
 
@@ -57,6 +60,20 @@ The line editor and prompt engine consume both tiers through one internal interf
 7. **Windows hardening** *(paused per #110 — resumes post-v1)* — ConPTY line editor path, job-object process groups.
 
 ## Decisions
+
+- **No `zsh -c` delegation shim** (2026-08, [#107](https://github.com/blairham/gish/issues/107)):
+  **the compat boundary is honest, not smoothed over with a chimera.**
+  The once-planned escape hatch — delegating unparsed zsh constructs to
+  an installed zsh — is struck before any code existed. It contradicted
+  every story gish tells: an out-of-process zsh dependency inside a
+  shell that markets "no sourced-script soup"; a latency wildcard on
+  deadline-bounded surfaces; a hidden runtime dependency reintroducing
+  "works differently on different boxes", which the single static
+  binary exists to kill; and a support surface where every delegated
+  plugin bug becomes an unfixable gish bug report. The answer for a
+  plugin that pattern-compat cannot run is the truthful one: it keeps
+  running in zsh, where the user already had it working. Do not
+  re-propose without new facts.
 
 - **TTY input approach** (2026-08, [#1](https://github.com/blairham/gish/issues/1)):
   **own the editor core; borrow the terminal plumbing.** gish writes the
