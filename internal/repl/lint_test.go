@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -101,15 +102,9 @@ func TestLintFnKnobAndStyle(t *testing.T) {
 // hermetic, no dependency on a real install.
 func TestShellcheckWarnings(t *testing.T) {
 	dir := t.TempDir()
-	stub := filepath.Join(dir, "shellcheck")
-	script := `#!/bin/sh
-echo '[{"line":2,"column":5,"level":"warning","code":2086,"message":"Double quote to prevent globbing and word splitting."},` +
-		`{"line":3,"column":1,"level":"style","code":2006,"message":"Use $(...) notation."}]'
-exit 1
-`
-	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil { //nolint:gosec // test stub must be executable
-		t.Fatal(err)
-	}
+	const findings = `[{"line":2,"column":5,"level":"warning","code":2086,"message":"Double quote to prevent globbing and word splitting."},` +
+		`{"line":3,"column":1,"level":"style","code":2006,"message":"Use $(...) notation."}]`
+	writeShellcheckStub(t, dir, findings)
 	t.Setenv("PATH", dir)
 	// The budget guards interactive latency, not a loaded CI machine's
 	// fork+exec time; widen it so the test can't flake on scheduling.
@@ -123,6 +118,23 @@ exit 1
 	}
 	if !strings.Contains(warns[0], "SC2086") || !strings.Contains(warns[0], "2:5") {
 		t.Errorf("warning missing code or position: %q", warns[0])
+	}
+}
+
+// writeShellcheckStub fakes a shellcheck on PATH for this platform: a
+// shell script on unix, a batch file on Windows (PATHEXT finds it).
+func writeShellcheckStub(t *testing.T, dir, findings string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		script := "@echo off\r\necho " + findings + "\r\nexit /b 1\r\n"
+		if err := os.WriteFile(filepath.Join(dir, "shellcheck.bat"), []byte(script), 0o755); err != nil { //nolint:gosec // test stub
+			t.Fatal(err)
+		}
+		return
+	}
+	script := "#!/bin/sh\necho '" + findings + "'\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "shellcheck"), []byte(script), 0o755); err != nil { //nolint:gosec // test stub must be executable
+		t.Fatal(err)
 	}
 }
 

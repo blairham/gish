@@ -34,7 +34,7 @@ func TestEditDistance(t *testing.T) {
 func TestNotFoundSuggests(t *testing.T) {
 	// A fake PATH with one executable to suggest.
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "mycommand"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, exeFixture("mycommand")), []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // fake PATH entry
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin)

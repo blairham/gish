@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -242,6 +243,11 @@ func describe(ctx context.Context, proto plugin.ClientProtocol) (*pluginapi.Desc
 func hasCap(info *pluginapi.DescribeResponse, c pluginapi.Capability) bool {
 	return slices.Contains(info.GetCapabilities(), c)
 }
+
+// ExecutablePlugin reports whether a file can be a plugin binary on
+// this platform — the same test Discover applies (exec bit on unix,
+// executable extension on Windows). Exposed for doctor.
+func ExecutablePlugin(fi fs.FileInfo) bool { return executableCandidate(fi) }
 
 // Provider pairs a live capability client with the plugin it came from.
 type Provider[T any] struct {

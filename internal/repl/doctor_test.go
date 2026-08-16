@@ -3,6 +3,7 @@ package repl
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ func runDoctorScript(t *testing.T, src string) (stdout string, err error) {
 	t.Setenv("GISH_RC", filepath.Join(base, "gishrc"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")
 	var out strings.Builder
@@ -55,6 +57,7 @@ func TestDoctorReportsBrokenRC(t *testing.T) {
 	t.Setenv("GISH_RC", rc)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	var out strings.Builder
 	err := RunReader(t.Context(), strings.NewReader("doctor\n"), "test",
@@ -100,19 +103,26 @@ func TestDoctorFlagsNonExecutablePlugin(t *testing.T) {
 	if err := os.MkdirAll(plugins, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Not a plugin candidate on any platform: no exec bit on unix, no
+	// executable extension on Windows.
 	if err := os.WriteFile(filepath.Join(plugins, "gish-thing"), []byte("#!/bin/sh\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GISH_RC", filepath.Join(base, "gishrc"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	var out strings.Builder
 	if err := RunReader(t.Context(), strings.NewReader("doctor\n"), "test",
 		interp.StdIO(nil, &out, &out)); err != nil {
 		t.Fatalf("non-executable plugin is a warning, not a failure: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "not executable") || !strings.Contains(out.String(), "chmod +x") {
+	fixHint := "chmod +x"
+	if runtime.GOOS == "windows" {
+		fixHint = "executable extension"
+	}
+	if !strings.Contains(out.String(), "not executable") || !strings.Contains(out.String(), fixHint) {
 		t.Errorf("plugin diagnosis missing:\n%s", out.String())
 	}
 }
@@ -130,6 +140,7 @@ func TestDoctorWarnsOnUnparsableHistoryTail(t *testing.T) {
 	t.Setenv("GISH_RC", filepath.Join(base, "gishrc"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	t.Setenv("HOME", base)
+	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
 	t.Setenv("TERM", "xterm-256color")
 	var out strings.Builder
 	if err := RunReader(t.Context(), strings.NewReader("doctor\n"), "test",

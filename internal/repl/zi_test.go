@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -80,7 +81,12 @@ func TestZiIceAsProgramExtendsPath(t *testing.T) {
 	if got := shellVar(runner, "PATH", ""); !strings.Contains(got, toolDir) {
 		t.Errorf("PATH = %q, missing %q", got, toolDir)
 	}
-	// And the tool actually runs through the session PATH.
+	// And the tool actually runs through the session PATH. Windows
+	// cannot exec a shebang script; the PATH extension above is the
+	// portable half, execution is asserted where sh exists.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	if err := run(t, runner, "mytool"); err != nil {
 		t.Fatalf("running installed tool: %v", err)
 	}
