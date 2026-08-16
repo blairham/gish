@@ -82,21 +82,37 @@ Or skip the file editing: `config theme starship` sets it **live and** writes it
 
 Plugins are executables in `$XDG_DATA_HOME/gish/plugins` — `plugins` lists them. `gish-git` (in this repo) serves the `%p{git}` segment: branch, ahead/behind, staged/dirty/untracked, cached per-repo with fsnotify invalidation.
 
-## The zi plugin manager
+## Plugins
 
-gish ships [Zi](https://github.com/z-shell/zi) natively — the Go engine from [zi-go](https://github.com/blairham/zi-go) built in, no shim, existing syntax and `~/.zi-go` installs carry over:
+One file, four knobs, no modifier language to memorize:
 
 ```sh
-# ~/.gishrc
-zi ice from"gh-r" as"program"
-zi load junegunn/fzf              # release binary onto PATH
-
-zi snippet OMZP::git              # oh-my-zsh snippets
-zi update                         # refresh everything
-zi list
+plugin add zsh-users/zsh-autosuggestions
+plugin add junegunn/fzf --kind release --pin 0.55.0
+plugin add ohmyzsh/ohmyzsh --lazy command:git   # loads the first time you run git
+plugin                                          # what's configured, and its state
+plugin disable fzf                              # keep the entry, stop loading it
+plugin update
 ```
 
-A load is installed by the engine and `source`d directly in your live session — functions, variables, and PATH changes persist. (Snippets, POSIX-style plugins, and `gh-r` release binaries work today; plugins written in heavy zsh dialect are the escape-hatch case — see [the tier-1 decision](docs/design.md#decisions). `wait` turbo ices are accepted but load immediately for now.) The manager itself sits behind a contract, so an alternative manager can replace it.
+Those commands write `$XDG_CONFIG_HOME/gish/plugins.toml`, and hand-editing
+it is equally supported:
+
+```toml
+[[plugin]]
+source = "junegunn/fzf"
+kind   = "release"      # plugin (default) | release | snippet
+pin    = "0.55.0"       # omit for latest
+lazy   = "command:fzf"  # omit to load at startup
+```
+
+The [Zi](https://github.com/z-shell/zi) engine does the installing
+underneath — existing `~/.zi-go` trees and installs carry over, and `zi
+migrate` converts what you already have into the manifest. The `zi`
+command with its ice modifiers still works for compatibility, but the
+manifest is the supported surface; see [the
+decision](docs/design.md#decisions) for why a modifier language was the
+wrong thing to reproduce.
 
 History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, Ctrl-R is incremental search, a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions; Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
 
