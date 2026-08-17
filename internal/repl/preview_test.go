@@ -26,8 +26,8 @@ func TestPreviewFallsBackToTheFirstLine(t *testing.T) {
 	}
 }
 
-// Captured output is full of colour, and the picker renders the preview
-// dim — a stray colour code would fight that.
+// Captured output is full of color, and the picker renders the preview
+// dim — a stray color code would fight that.
 func TestPreviewStripsColour(t *testing.T) {
 	out := "\x1b[31merror:\x1b[0m missing symbol\n"
 	got := firstInterestingLine(out)
@@ -107,12 +107,12 @@ func TestLooksLikeError(t *testing.T) {
 		"cannot open file", "no such file or directory",
 	} {
 		if !looksLikeError(yes) {
-			t.Errorf("%q not recognised as an error", yes)
+			t.Errorf("%q not recognized as an error", yes)
 		}
 	}
 	for _, no := range []string{"built 3 targets", "all tests passed", "cloning into repo"} {
 		if looksLikeError(no) {
-			t.Errorf("%q wrongly recognised as an error", no)
+			t.Errorf("%q wrongly recognized as an error", no)
 		}
 	}
 }

@@ -305,6 +305,6 @@ func looksLikeError(line string) bool {
 	return false
 }
 
-// ansiEscapes strips colour from captured output: the preview is
-// rendered dim by the picker, and a stray colour code would fight it.
+// ansiEscapes strips color from captured output: the preview is
+// rendered dim by the picker, and a stray color code would fight it.
 var ansiEscapes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a|\x1b[=><]`)
