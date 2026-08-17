@@ -195,6 +195,21 @@ func (t *Table) EndLine() (Notice, bool) {
 		return Notice{}, false
 	}
 	t.file(job)
+	if stopped {
+		// Nothing owns the wait at this point. waitProc returned as soon
+		// as it saw the stop, and until now the only ensureReaper call
+		// was in resume — so a job stopped with Ctrl-Z and then left
+		// alone had no reaper at all. When it later died, by `kill %1`
+		// or anything else, no one wait()ed for it: the process became a
+		// zombie and `jobs` listed it forever.
+		//
+		// Stopped is exactly the state ensureReaper documents as safe to
+		// take over from, because the per-process handlers have already
+		// returned. It is deliberately not called for a merely-live job,
+		// where waitProc may still own the wait and a second Wait4 would
+		// race it for the status.
+		t.ensureReaper(job)
+	}
 	return Notice{ID: job.ID, Command: job.Command, Stopped: stopped}, true
 }
 

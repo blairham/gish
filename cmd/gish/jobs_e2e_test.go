@@ -203,6 +203,48 @@ func TestKillByJobSpec(t *testing.T) {
 	if !s.seen("resPG1") {
 		t.Errorf("`kill %%1` left the job running:\n%s", s.plain())
 	}
+
+	// And the table notices. This is the half that was broken (#59):
+	// nothing owned the wait for a stopped job, so the process became a
+	// zombie and the entry outlived it.
+	s.buf.Reset()
+	s.send(`jobs; printf "res%s\n" LIST` + "\r")
+	s.waitFor("resLIST")
+	if s.seen("sleep 45") {
+		t.Errorf("jobs still lists a job whose process is gone:\n%s", s.plain())
+	}
+}
+
+// TestStoppedJobKilledExternallyIsReaped is the same invariant without
+// gish's kill involved at all.
+//
+// It is the test that told the two bugs apart: when `kill %1` left a
+// stale entry, an external pkill left exactly the same one, which said
+// the fault was in the table rather than in signaling. Keeping it means
+// a future regression is attributed correctly the first time.
+func TestStoppedJobKilledExternallyIsReaped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := startPTY(t, ptyOptions{})
+	s.waitForPrompt()
+
+	s.send(runningCmd + "\r")
+	s.waitFor("resRUNNING")
+	s.buf.Reset()
+	s.send("\x1a")
+	s.waitFor("Stopped")
+
+	s.buf.Reset()
+	s.send(`pkill -KILL -f "sleep 45"; sleep 1; printf "res%s\n" KILLED` + "\r")
+	s.waitFor("resKILLED")
+
+	s.buf.Reset()
+	s.send(`jobs; printf "res%s\n" LIST` + "\r")
+	s.waitFor("resLIST")
+	if s.seen("sleep 45") {
+		t.Errorf("a stopped job killed from outside was never reaped:\n%s", s.plain())
+	}
 }
 
 // TestKillRejectsUnknownJobSpec: a spec naming nothing must say so,
