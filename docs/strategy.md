@@ -102,6 +102,11 @@ without one.
 
 ## Competitors worth watching
 
+Re-measured 2026-08-17 from the GitHub API, in
+[docs/competitors.md](competitors.md) — including one correction: brush
+is *actively* developed (81 commits in the last quarter), so "cadence
+slowed" was reading a slow release schedule as a slow project.
+
 | project | what it is | why it matters |
 | --- | --- | --- |
 | **brush** (Rust, 2,154★) | our exact top-line pitch: run your scripts and .bashrc unchanged, with highlighting and autosuggestions; ~1,700 compat tests | real, and beatable — no plugin system, TOML config, 416 brew installs/yr, two releases in twelve months |
