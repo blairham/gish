@@ -24,8 +24,6 @@ import (
 // host→plugin call carries one; a plugin that misses is skipped or served
 // stale, never awaited.
 const (
-	// DescribeTimeout bounds plugin startup + Describe.
-	DescribeTimeout = 2 * time.Second
 	// DefaultRenderBudget is the prompt segment budget when a segment
 	// declares none.
 	DefaultRenderBudget = 50 * time.Millisecond
@@ -43,6 +41,39 @@ const (
 	// invoked, never on the keystroke path, canceled by Ctrl-C.
 	AITimeout = 90 * time.Second
 )
+
+// defaultDescribeTimeout bounds plugin startup + Describe.
+//
+// It is the odd one out above: every other budget bounds what a plugin
+// *does*, while this one covers getting a whole process off the ground —
+// fork, exec, a gRPC handshake — which is the single host→plugin cost
+// that depends on how busy the machine is rather than on the plugin.
+// Two seconds is the right answer for a person's shell, where a plugin
+// that cannot start promptly should simply be treated as absent.
+const defaultDescribeTimeout = 2 * time.Second
+
+// DescribeTimeout is that deadline, overridable through the environment.
+//
+// It is a var for one reason (#189): a test that asserts a plugin-backed
+// feature is asserting something this deadline is allowed to withdraw.
+// Under `go test -race ./...` with every package running at once, a
+// fixture plugin has repeatedly failed to launch inside two seconds; the
+// host then did the correct thing and reported no provider, and the e2e
+// test sat waiting for a candidate that was never coming. That is not a
+// flaky test in the usual sense — no amount of patience in the test
+// fixes it, because the plugin had already been given up on.
+//
+// So the product default is untouched and the tests that need a real
+// plugin raise it. It doubles as an escape hatch for anyone on a machine
+// slow enough to lose plugins to the same race.
+var DescribeTimeout = describeTimeoutFromEnv()
+
+func describeTimeoutFromEnv() time.Duration {
+	if d, err := time.ParseDuration(os.Getenv("GISH_PLUGIN_DESCRIBE_TIMEOUT")); err == nil && d > 0 {
+		return d
+	}
+	return defaultDescribeTimeout
+}
 
 // DefaultDir returns the plugin discovery directory: every executable in
 // $XDG_DATA_HOME/gish/plugins is a tier-2 plugin.

@@ -244,8 +244,25 @@ func RunPasteAll(ctx context.Context, bashBin, gishBin string) []PasteResult {
 	return out
 }
 
-// pasteTimeout bounds one pasted case, generously. See pasteIntoGish.
-const pasteTimeout = 60 * time.Second
+// pasteTimeout caps one pasted case outright, as a backstop against a
+// shell that emits forever without ever printing the mark. See
+// pasteIntoGish.
+const pasteTimeout = 4 * time.Minute
+
+// pasteIdle is the bound that actually fires: how long the terminal may
+// say *nothing* before the case is called stuck (#189).
+//
+// The paste gate is enforced as an absolute pass count, on the reasoning
+// that it "is hermetic — it depends on nothing but bash and gish". That
+// is true of its dependencies and false of its scheduling: `go test
+// -race ./...` runs every package at once, and one starved case drops
+// 18/18 to 17/18 and hard-fails a build whose diff was innocent. Exactly
+// that happened, with `saw ""` — not a wrong answer, no answer at all.
+//
+// So the two are separated: a case that is being served slowly keeps
+// resetting this and passes; a case whose shell has wedged trips it, and
+// sooner than the old 60s total did.
+const pasteIdle = 30 * time.Second
 
 // Semantic marks (#99) delimit each command's output exactly: C opens
 // it, D closes it and carries the status. Parsing the screen without
@@ -326,6 +343,10 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 	}()
 
 	var seen bytes.Buffer
+	// Silence, not elapsed time, is what says the shell is not coming
+	// back (#189). ctx still caps the case outright — see pasteIdle.
+	idle := time.NewTimer(pasteIdle)
+	defer idle.Stop()
 	waitFor := func(want string) error {
 		for !bytes.Contains(seen.Bytes(), []byte(want)) {
 			select {
@@ -334,6 +355,9 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 					return fmt.Errorf("shell exited before %q", want)
 				}
 				seen.Write(chunk)
+				idle.Reset(pasteIdle)
+			case <-idle.C:
+				return fmt.Errorf("no output for %s waiting for %q; saw %q", pasteIdle, want, plainText(seen.String()))
 			case <-ctx.Done():
 				return fmt.Errorf("timeout waiting for %q; saw %q", want, plainText(seen.String()))
 			}

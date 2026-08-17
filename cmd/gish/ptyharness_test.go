@@ -28,11 +28,33 @@ import (
 // where the next person will trip over it rather than in a commit
 // message nobody reads.
 
-// e2eBudget is generous on purpose: these drive a real shell through a
-// real pty, and a busy CI runner redraws the prompt for every echoed
-// keystroke — roughly a third of a second each. The tests are not
-// measuring speed, so a tight bound only buys flakes.
-const e2eBudget = 60 * time.Second
+// The two budgets below exist because "slow" and "stuck" are different
+// failures and only one of them is a bug (#189).
+//
+// These drive a real shell through a real pty, and a busy CI runner
+// redraws the prompt for every echoed keystroke — roughly a third of a
+// second each. A single total-elapsed deadline cannot tell a shell that
+// is answering slowly from one that has wedged, so it fails the first
+// and calls it the second. That is what it did: `go test -race ./...`
+// runs every package at once, and on a loaded runner these tests failed
+// after reading *thousands* of bytes — visibly making progress, killed
+// for taking too long in total. Five distinct tests failed that way in
+// one afternoon, including on an unchanged `main`.
+//
+// So the primary bound is silence. e2eIdleBudget is how long the
+// terminal may produce *nothing at all* before we conclude the shell is
+// not coming back. A test that is being served slowly keeps resetting
+// it and passes; a test whose shell has hung trips it, and does so
+// faster than the old total bound did.
+const e2eIdleBudget = 30 * time.Second
+
+// e2eBudget then caps one wait outright. It is a backstop against
+// livelock — output arriving forever without the marker ever appearing,
+// which no idle bound can catch — so it is deliberately far longer than
+// any honest wait. The cost of raising it is only how long a genuinely
+// wedged test takes to report; the cost of lowering it is flakes, which
+// is the more expensive mistake by a distance.
+const e2eBudget = 4 * time.Minute
 
 // retryQuiet is how long the terminal must be silent before a keystroke
 // is assumed lost and resent. Resending on every chunk of output instead
@@ -177,9 +199,13 @@ func (s *ptySession) plain() string {
 }
 
 // waitFor blocks until want appears, and returns the stripped output.
+//
+// It gives up on silence rather than on elapsed time — see e2eIdleBudget.
 func (s *ptySession) waitFor(want string) string {
 	s.t.Helper()
-	deadline := time.After(e2eBudget)
+	hard := time.After(e2eBudget)
+	idle := time.NewTimer(e2eIdleBudget)
+	defer idle.Stop()
 	for {
 		if s.seen(want) {
 			return s.plain()
@@ -190,7 +216,14 @@ func (s *ptySession) waitFor(want string) string {
 				s.t.Fatalf("shell exited before %q %s; got:\n%s", want, s.diagnose(), s.plain())
 			}
 			s.buf.Write(chunk)
-		case <-deadline:
+			// Progress: the shell is alive and answering, however
+			// slowly. Go 1.23+ makes a bare Reset safe — a stale value
+			// is never delivered after it.
+			idle.Reset(e2eIdleBudget)
+		case <-idle.C:
+			s.t.Fatalf("no output for %s while waiting for %q %s; got:\n%s",
+				e2eIdleBudget, want, s.diagnose(), s.plain())
+		case <-hard:
 			s.t.Fatalf("did not see %q within %s %s; got:\n%s", want, e2eBudget, s.diagnose(), s.plain())
 		}
 	}
@@ -242,6 +275,8 @@ func (s *ptySession) sendUntil(keys, want string) {
 	}
 	send()
 	quiet := time.After(retryQuiet)
+	idle := time.NewTimer(e2eIdleBudget)
+	defer idle.Stop()
 	for {
 		if s.seen(want) {
 			return
@@ -252,9 +287,16 @@ func (s *ptySession) sendUntil(keys, want string) {
 				s.t.Fatalf("shell exited before %q %s; got:\n%s", want, s.diagnose(), s.plain())
 			}
 			s.buf.Write(chunk)
+			idle.Reset(e2eIdleBudget)
 		case <-quiet:
 			send()
 			quiet = time.After(retryQuiet)
+		case <-idle.C:
+			// Silence here is louder than in waitFor: the keys have
+			// been resent every retryQuiet the whole time and the
+			// terminal has still said nothing back.
+			s.t.Fatalf("no output for %s while resending %q and waiting for %q %s; got:\n%s",
+				e2eIdleBudget, keys, want, s.diagnose(), s.plain())
 		case <-deadline:
 			s.t.Fatalf("did not see %q within %s %s; got:\n%s", want, e2eBudget, s.diagnose(), s.plain())
 		}

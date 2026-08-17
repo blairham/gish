@@ -42,6 +42,10 @@ func TestComposePrefixEndToEnd(t *testing.T) {
 		"XDG_DATA_HOME=" + filepath.Join(base, "data"),
 		"TERM=xterm-256color",
 		"PATH=" + os.Getenv("PATH"),
+		// This test asserts a plugin-backed feature, so it must not
+		// lose the plugin to the launch deadline under a loaded run
+		// (#189). The product default stays 2s.
+		"GISH_PLUGIN_DESCRIBE_TIMEOUT=60s",
 	}
 	cmd.Dir = base // a quiet cwd: no repo pins, no tools notices
 	// Wide pty: the preloaded buffer must not wrap mid-assertion.
@@ -74,25 +78,7 @@ func TestComposePrefixEndToEnd(t *testing.T) {
 	}()
 
 	var buf bytes.Buffer
-	waitFor := func(want string) []byte {
-		t.Helper()
-		deadline := time.After(15 * time.Second)
-		for {
-			plain := ansiRe.ReplaceAll(buf.Bytes(), nil)
-			if bytes.Contains(plain, []byte(want)) {
-				return plain
-			}
-			select {
-			case chunk, ok := <-chunks:
-				if !ok {
-					t.Fatalf("pty closed before %q; got %q", want, buf.String())
-				}
-				buf.Write(chunk)
-			case <-deadline:
-				t.Fatalf("did not see %q within 15s; got %q", want, buf.String())
-			}
-		}
-	}
+	waitFor := func(want string) []byte { return aiWaitFor(t, chunks, &buf, want) }
 
 	waitFor(" % ") // the naked first prompt
 	if _, err := f.WriteString("?? list files\r"); err != nil {
@@ -133,6 +119,10 @@ func TestAgentEndToEnd(t *testing.T) {
 		"XDG_DATA_HOME=" + filepath.Join(base, "data"),
 		"TERM=xterm-256color",
 		"PATH=" + os.Getenv("PATH"),
+		// This test asserts a plugin-backed feature, so it must not
+		// lose the plugin to the launch deadline under a loaded run
+		// (#189). The product default stays 2s.
+		"GISH_PLUGIN_DESCRIBE_TIMEOUT=60s",
 	}
 	cmd.Dir = base
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 200})
@@ -160,25 +150,7 @@ func TestAgentEndToEnd(t *testing.T) {
 		}
 	}()
 	var buf bytes.Buffer
-	waitFor := func(want string) []byte {
-		t.Helper()
-		deadline := time.After(15 * time.Second)
-		for {
-			plain := ansiRe.ReplaceAll(buf.Bytes(), nil)
-			if bytes.Contains(plain, []byte(want)) {
-				return plain
-			}
-			select {
-			case chunk, ok := <-chunks:
-				if !ok {
-					t.Fatalf("pty closed before %q; got %q", want, buf.String())
-				}
-				buf.Write(chunk)
-			case <-deadline:
-				t.Fatalf("did not see %q within 15s; got %q", want, buf.String())
-			}
-		}
-	}
+	waitFor := func(want string) []byte { return aiWaitFor(t, chunks, &buf, want) }
 
 	waitFor(" % ")
 	if _, err := f.WriteString("agent \"do the thing\"\r"); err != nil {
@@ -218,3 +190,56 @@ func TestAgentEndToEnd(t *testing.T) {
 		t.Errorf("artifact outcomes missing:\n%s", data)
 	}
 }
+
+// aiWaitFor reads the pty until want appears, and returns the output
+// with escapes stripped.
+//
+// It exists once rather than as a closure per test because it was a
+// closure per test, byte for byte, and ptyharness_test.go records what
+// that costs: "a pattern that will be fixed in one of them". The
+// silence-versus-elapsed rule here is precisely such a fix, so it is
+// kept somewhere it cannot be applied to only half the callers.
+//
+// Both bounds are the harness's own (#189): give up when the terminal
+// goes quiet, not when a loaded runner has simply taken a while, with
+// the total only as a livelock backstop.
+func aiWaitFor(t *testing.T, chunks <-chan []byte, buf *bytes.Buffer, want string) []byte {
+	t.Helper()
+	hard := time.After(e2eBudget)
+	idle := time.NewTimer(e2eIdleBudget)
+	defer idle.Stop()
+	for {
+		plain := ansiRe.ReplaceAll(buf.Bytes(), nil)
+		if bytes.Contains(plain, []byte(want)) {
+			return plain
+		}
+		// The one failure that can never resolve by waiting: the host
+		// gave up on the fixture plugin, so the thing being waited for
+		// is not coming. Say that instead of timing out with it buried
+		// in kilobytes of redraw, which is how this cost an afternoon.
+		if !bytes.Contains([]byte(want), []byte(providerAbsent)) &&
+			bytes.Contains(plain, []byte(providerAbsent)) {
+			t.Fatalf("the fixture plugin never loaded, so %q can never appear — "+
+				"the host reported %q (raise GISH_PLUGIN_DESCRIBE_TIMEOUT if this is a slow machine)",
+				want, providerAbsent)
+		}
+		select {
+		case chunk, ok := <-chunks:
+			if !ok {
+				t.Fatalf("pty closed before %q; got %q", want, buf.String())
+			}
+			buf.Write(chunk)
+			idle.Reset(e2eIdleBudget)
+		case <-idle.C:
+			t.Fatalf("no output for %s while waiting for %q; got %q", e2eIdleBudget, want, buf.String())
+		case <-hard:
+			t.Fatalf("did not see %q within %s; got %q", want, e2eBudget, buf.String())
+		}
+	}
+}
+
+// providerAbsent is what the shell prints when no AIProvider plugin
+// answered in time. Matching on it is deliberate coupling: it is the
+// difference between "this feature is broken" and "the harness lost the
+// plugin", and only one of those is worth anyone's morning.
+const providerAbsent = "no AI provider plugin installed"

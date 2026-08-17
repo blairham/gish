@@ -69,7 +69,7 @@ func TestProbeFindsAnExecutableDirectory(t *testing.T) {
 	h := newHarness(t)
 	p := payload(t, "#!/bin/sh\nexit 0\n")
 
-	got, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	got, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestProbeSkipsNoexecDirectory(t *testing.T) {
 	}
 
 	p := payload(t, "x")
-	got, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	got, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestProbeFailsWhenNoCandidateWorks(t *testing.T) {
 	h.local.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=/nonexistent-gish-test", "GISH_TEST_ALT=/nonexistent-gish-test"}
 
 	p := payload(t, "x")
-	_, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	_, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if !errors.Is(err, errNoExecDir) {
 		t.Fatalf("err = %v, want errNoExecDir", err)
 	}
@@ -129,7 +129,7 @@ func TestPushVerifiesAndInstalls(t *testing.T) {
 	h := newHarness(t)
 	p := payload(t, "#!/bin/sh\necho hello\n")
 
-	probe, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	probe, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestPushVerifiesAndInstalls(t *testing.T) {
 	}
 
 	// Second visit: the probe now sees it and nothing needs pushing.
-	again, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	again, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestPushVerifiesAndInstalls(t *testing.T) {
 func TestPushRejectsCorruptedTransfer(t *testing.T) {
 	h := newHarness(t)
 	p := payload(t, "the real contents")
-	probe, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	probe, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestPushRejectsCorruptedTransfer(t *testing.T) {
 func TestPushWithoutHashToolFallsBackToSize(t *testing.T) {
 	h := newHarness(t)
 	p := payload(t, "some bytes here")
-	probe, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	probe, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func runProbeScript(ctx context.Context, t Transport, script string) ([]byte, er
 func TestUninstallRemovesEverything(t *testing.T) {
 	h := newHarness(t)
 	p := payload(t, "binary")
-	probe, err := RunProbe(context.Background(), h.local, p.Name, p.Sum, p.Size)
+	probe, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,4 +541,20 @@ func TestBringNeverTouchesTheRemote(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(h.home, ".cache", "gish")); err == nil {
 		t.Error("never mode created a directory on the remote")
 	}
+}
+
+// probeCtx is the deadline a *test* gives the probe, as distinct from
+// the one the product gives it (#189).
+//
+// ProbeTimeout is 2s because a human waiting for a remote shell would
+// rather have plain ssh than a slow one. That is a statement about a
+// person at a terminal, not about a CI runner executing every package
+// at once under -race — where the local `sh` transport has been killed
+// at exactly 2.00s for no reason but contention. Tests assert what the
+// probe *finds*; how fast it finds it is not the claim under test.
+func probeCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	t.Cleanup(cancel)
+	return ctx
 }
