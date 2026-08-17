@@ -18,18 +18,16 @@ func TestFCListsHistory(t *testing.T) {
 	s := startPTY(t, ptyOptions{})
 	s.waitForPrompt()
 
-	// Three commands worth listing, each waited for so the history entry
-	// is written before the next line is typed.
+	// Three commands worth listing. Waiting for each command's *output*
+	// is not enough to send the next line: the shell has still to finish
+	// and re-enter raw mode, and a line typed into that window is
+	// discarded. runProbe waits for the output and then for the command
+	// to finish (#195's sibling).
 	for _, name := range []string{"ONE", "TWO", "THREE"} {
-		s.buf.Reset()
-		s.send(`printf "res%s\n" ` + name + "\r")
-		s.waitFor("res" + name)
+		s.runProbe(`printf "res%s\n" `+name, "res"+name)
 	}
 
-	s.buf.Reset()
-	s.send(`fc -l; printf "res%s\n" LISTED` + "\r")
-	s.waitFor("resLISTED")
-	out := s.plain()
+	out := s.runProbe(`fc -l; printf "res%s\n" LISTED`, "resLISTED")
 	for _, want := range []string{"ONE", "TWO", "THREE"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("fc -l did not list the %s command:\n%s", want, out)
@@ -37,16 +35,12 @@ func TestFCListsHistory(t *testing.T) {
 	}
 
 	// -n drops the numbers; the commands stay.
-	s.buf.Reset()
-	s.send(`fc -l -n 1; printf "res%s\n" NONUM` + "\r")
-	s.waitFor("resNONUM")
+	s.runProbe(`fc -l -n 1; printf "res%s\n" NONUM`, "resNONUM")
 
 	// The editing forms say what they do not do, rather than answering
 	// "unsupported builtin" like a name nobody implemented.
-	s.buf.Reset()
-	s.send(`fc -s; printf "res%s\n" EDIT` + "\r")
-	s.waitFor("resEDIT")
-	if !strings.Contains(s.plain(), "only the listing form") {
-		t.Errorf("fc -s did not explain itself:\n%s", s.plain())
+	edit := s.runProbe(`fc -s; printf "res%s\n" EDIT`, "resEDIT")
+	if !strings.Contains(edit, "only the listing form") {
+		t.Errorf("fc -s did not explain itself:\n%s", edit)
 	}
 }

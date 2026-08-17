@@ -100,10 +100,15 @@ func TestUnquotedURLIsNotAGlobError(t *testing.T) {
 	// purpose: unquoted it backgrounds the command in bash too, so it is
 	// not a papercut — the ? and the [] are, because a shell that errors
 	// on an unmatched pattern refuses to run the command at all.
-	s.send("u=https://example.com/watch?v=dQw4w9WgXcQ[a-b]\r")
-	s.waitForPrompt()
-	s.send(`echo "OUT:$u"` + "\r")
-	out := s.waitFor("OUT:https://example.com/watch?v=dQw4w9WgXcQ")
+	// The assignment prints nothing, so its completion is the only thing
+	// to wait for. waitForPrompt was wrong here twice over: the startup
+	// prompt was already in the buffer so it returned immediately, and
+	// the prompt redraws on every echoed keystroke anyway. The echo of
+	// the second line then raced the shell's raw-mode re-entry and the
+	// line was sometimes discarded — 30s of silence, on loaded runners
+	// only (#195's sibling).
+	s.runLine("u=https://example.com/watch?v=dQw4w9WgXcQ[a-b]")
+	out := s.runProbe(`echo "OUT:$u"`, "OUT:https://example.com/watch?v=dQw4w9WgXcQ")
 	for _, bad := range []string{"no matches", "No matches", "no match found"} {
 		if strings.Contains(out, bad) {
 			t.Errorf("glob error on a URL: %q", out)
