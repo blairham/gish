@@ -232,6 +232,45 @@ func (s *ptySession) waitFor(want string) string {
 // waitForPrompt waits for a prompt to finish rendering.
 func (s *ptySession) waitForPrompt() string { s.t.Helper(); return s.waitFor(promptEnd) }
 
+// commandDone is the OSC 133;D mark: written when a command finishes,
+// carrying its status. It is the only reliable "the shell is ready for
+// the next line" signal after typing one.
+//
+// Not the prompt mark: the editor redraws the whole prompt on every
+// echoed keystroke, so a B mark appears while the line is still being
+// typed. Waiting on it after a send therefore returns immediately and
+// the next line goes out into the shell's raw-mode re-entry window,
+// where queued input is discarded — the line is lost, the shell waits
+// for input that never comes, and the test reports 30s of silence from
+// a shell that is behaving perfectly (#195's sibling).
+const commandDone = "\x1b]133;D;"
+
+// runLine sends one command line and waits for it to finish.
+//
+// The buffer is cleared *before* sending and not touched afterwards.
+// That order is the whole rule: clearing first means the D mark we then
+// wait for can only be this command's, and never clearing between two
+// waits means a mark that shared a read with the previous one is still
+// there to be found. Clearing between waits is exactly what made the
+// paste gate hang for 30 seconds at a time (#195).
+func (s *ptySession) runLine(line string) {
+	s.t.Helper()
+	s.buf.Reset()
+	s.send(line + "\r")
+	s.waitFor(commandDone)
+}
+
+// runProbe sends a command, waits for the marker it prints, then waits
+// for the command to finish, and returns everything it printed.
+func (s *ptySession) runProbe(line, marker string) string {
+	s.t.Helper()
+	s.buf.Reset()
+	s.send(line + "\r")
+	s.waitFor(marker)
+	s.waitFor(commandDone)
+	return s.plain()
+}
+
 func (s *ptySession) send(keys string) {
 	s.t.Helper()
 	if _, err := s.f.WriteString(keys); err != nil {
