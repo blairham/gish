@@ -20,7 +20,7 @@ require (
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
-	mvdan.cc/sh/v3 v3.13.1
+	mvdan.cc/sh/v3 v3.13.2-0.20260813221317-a04df9f0d4b8
 )
 
 require (

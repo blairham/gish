@@ -98,6 +98,47 @@ func TestSubstrateGapsAreStillThere(t *testing.T) {
 	}
 }
 
+// A POSIX class inside a bracket expression — the one gap on this list
+// fixed by moving the substrate pin rather than by carrying anything.
+//
+// It belongs here rather than in substrateGaps because the pin is the
+// only thing holding it: `go get -u`, a resolver picking the newest
+// *tagged* release, or a merge that reverts go.mod all put the crash
+// back, and none of them look like a change to pattern handling. So this
+// asserts the fixed behavior directly, and a downgrade fails it.
+//
+// Worth knowing why it was expensive: the translation emitted an
+// uncompilable regexp and handed it to MustCompile, so an ordinary
+// `${x%%[![:space:]]*}` trim did not misbehave, it *panicked* — and it
+// reached gish through a vendor's ~/.profile block, which meant every
+// login shell died before its first prompt.
+func TestPatternCharacterClassesMatchBash(t *testing.T) {
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash: the differential oracle is unavailable")
+	}
+	gishBin := buildGish(t)
+	ctx := context.Background()
+
+	for _, script := range []string{
+		`x="  hi  "; echo "[${x%%[![:space:]]*}]"`, // the crash, verbatim
+		`x="  hi  "; echo "[${x##*[![:space:]]}]"`, // the other trim half
+		`x="  hi  "; echo "[${x#[[:space:]]}]"`,    // class as the whole expression
+		`x=a1b; echo "[${x##[[:alpha:]0-9]}]"`,     // class mixed with a range
+		`x=abc; echo "[${x%[^[:digit:]]}]"`,        // '^' spelling of the negation
+		`case 9 in [![:digit:]]) echo no;; *) echo yes;; esac`,
+		`case x in [![:digit:]]) echo no-digit;; esac`,
+	} {
+		t.Run(script, func(t *testing.T) {
+			gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+			bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
+			if string(gishOut) != string(bashOut) {
+				t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+			}
+		})
+	}
+}
+
 // The one gap with a seam is fixed locally, and this is the case that
 // broke: a precision on a float, which is how every script that formats
 // a duration, a percentage or a size writes it.

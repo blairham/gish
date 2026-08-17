@@ -140,6 +140,42 @@ fall without a regression — that is the point. Substrate gaps go upstream
 to mvdan/sh (#119); shell identity (`BASH_VERSION` and tool init hooks) is
 an open decision (#120), not a bug.
 
+### The substrate pin, and the fork
+
+`mvdan.cc/sh/v3` is pinned to an **unreleased upstream commit**, not to a
+tagged release. That is deliberate. Upstream ships every 4–8 months, and
+a fix that lands the week after a tag can sit unreleased for most of a
+year — which is how an ordinary `${x%%[![:space:]]*}` trim stayed a
+crash long after it was fixed. Waiting for a tag is not a strategy when
+the substrate is the compatibility claim.
+
+So the rule is: **pin to whatever commit has the fix, and upstream every
+fix we write.** `blairham/sh` is our fork of `mvdan/sh` — clone it beside
+this repo, `origin` the fork and `upstream` the real one. Its job is to
+carry patches upstream has not taken *yet*, so a fix is one push and one
+`go get` away rather than a negotiation.
+
+Two things to know before reaching for it:
+
+- **The fork is not in the dependency path today**, because it has
+  nothing upstream lacks. Do not route through it for its own sake — a
+  pin to `mvdan.cc/sh/v3@<commit>` is simpler and is what CI resolves.
+- **Routing through it costs an import rewrite.** Go requires a
+  `replace` target's `go.mod` to declare the path it is replaced by, and
+  every internal import to be prefixed with it — so a real fork carry
+  means `module github.com/blairham/sh/v3` plus a sweep across ~18k
+  lines, which also makes clean upstream PRs harder. Pay that only when
+  we actually need a patch upstream has not merged, and keep the rename
+  as a single tip commit so the PR branch below it stays clean.
+
+What we do *not* do is reimplement the substrate. `syntax`, `interp`,
+`expand` and `pattern` are ~18k lines of implementation against ~18k
+lines of tests, ten years and 4,000+ commits deep. bash compatibility is
+a long tail nobody derives from a spec — it is discovered by being
+bitten, and those tests are the record of the bites. Own the layers
+where gish is actually differentiated (the editor, the prompt, the exec
+path, the plugin contract); borrow the grammar.
+
 ## Builtins
 
 Every builtin gish claims is exercised against real bash
