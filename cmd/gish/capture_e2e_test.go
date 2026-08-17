@@ -4,9 +4,12 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -33,6 +36,26 @@ type shellPTY struct {
 	f   *os.File
 	buf *bytes.Buffer
 	ch  <-chan []byte
+	cmd *exec.Cmd
+	raw *int64 // bytes read from the pty, before any ANSI stripping
+}
+
+// diagnose describes why a wait failed, because "got:" followed by
+// nothing is the least useful failure message available. It answers the
+// two questions that actually separate the causes: did the shell write
+// anything at all, and is it still alive?
+func (s *shellPTY) diagnose() string {
+	raw := atomic.LoadInt64(s.raw)
+	state := "still running"
+	if p := s.cmd.ProcessState; p != nil {
+		state = "exited: " + p.String()
+	} else if s.cmd.Process != nil {
+		// Signal 0 asks the kernel whether the pid is still there.
+		if err := s.cmd.Process.Signal(syscall.Signal(0)); err != nil {
+			state = "process gone: " + err.Error()
+		}
+	}
+	return fmt.Sprintf("[%d raw bytes read, %s]", raw, state)
 }
 
 func startShell(t *testing.T, dir string) *shellPTY {
@@ -62,6 +85,7 @@ func startShell(t *testing.T, dir string) *shellPTY {
 		_, _ = cmd.Process.Wait()
 	})
 
+	var raw int64
 	ch := make(chan []byte, 64)
 	go func() {
 		defer close(ch)
@@ -69,6 +93,7 @@ func startShell(t *testing.T, dir string) *shellPTY {
 			chunk := make([]byte, 8192)
 			n, err := f.Read(chunk)
 			if n > 0 {
+				atomic.AddInt64(&raw, int64(n))
 				ch <- chunk[:n]
 			}
 			if err != nil {
@@ -76,7 +101,7 @@ func startShell(t *testing.T, dir string) *shellPTY {
 			}
 		}
 	}()
-	return &shellPTY{t: t, f: f, buf: &bytes.Buffer{}, ch: ch}
+	return &shellPTY{t: t, f: f, buf: &bytes.Buffer{}, ch: ch, cmd: cmd, raw: &raw}
 }
 
 func (s *shellPTY) waitFor(want string) string {
@@ -90,11 +115,11 @@ func (s *shellPTY) waitFor(want string) string {
 		select {
 		case chunk, ok := <-s.ch:
 			if !ok {
-				s.t.Fatalf("shell exited before %q; got:\n%s", want, plain)
+				s.t.Fatalf("shell exited before %q %s; got:\n%s", want, s.diagnose(), plain)
 			}
 			s.buf.Write(chunk)
 		case <-deadline:
-			s.t.Fatalf("did not see %q within 20s; got:\n%s", want, plain)
+			s.t.Fatalf("did not see %q within 20s %s; got:\n%s", want, s.diagnose(), plain)
 		}
 	}
 }
