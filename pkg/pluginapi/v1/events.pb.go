@@ -362,7 +362,7 @@ const file_gish_plugin_v1_events_proto_rawDesc = "" +
 	"\x16EVENT_KIND_FILE_CHANGE\x10\x03\x12\x1a\n" +
 	"\x16EVENT_KIND_SESSION_END\x10\x042T\n" +
 	"\vShellEvents\x12E\n" +
-	"\tSubscribe\x12\x1a.gish.plugin.v1.ShellEvent\x1a\x18.gish.plugin.v1.Proposal(\x010\x01B2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\tSubscribe\x12\x1a.gish.plugin.v1.ShellEvent\x1a\x18.gish.plugin.v1.Proposal(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_events_proto_rawDescOnce sync.Once

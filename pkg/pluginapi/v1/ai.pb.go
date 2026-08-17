@@ -586,7 +586,7 @@ const file_gish_plugin_v1_ai_proto_rawDesc = "" +
 	"AIProvider\x12M\n" +
 	"\aCompose\x12\x1e.gish.plugin.v1.ComposeRequest\x1a .gish.plugin.v1.ComposeCandidate0\x01\x12J\n" +
 	"\aExplain\x12\x1e.gish.plugin.v1.ExplainRequest\x1a\x1f.gish.plugin.v1.ExplainResponse\x12A\n" +
-	"\x04Plan\x12\x1b.gish.plugin.v1.PlanRequest\x1a\x1c.gish.plugin.v1.PlanResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\x04Plan\x12\x1b.gish.plugin.v1.PlanRequest\x1a\x1c.gish.plugin.v1.PlanResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_ai_proto_rawDescOnce sync.Once

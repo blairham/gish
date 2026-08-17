@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // A real round trip: build the plugin, let the host discover and launch

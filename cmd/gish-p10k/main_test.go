@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/blairham/gish/internal/promptengine"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // isolate points the native config lookup at an empty directory, so the
@@ -17,7 +17,10 @@ func isolate(t *testing.T) {
 }
 
 func TestDescribeClaimsTheThemeCapability(t *testing.T) {
-	got, err := info{}.Describe(context.Background(), &pluginapi.DescribeRequest{})
+	// Through newPlugin, not a bare info{}: the claim under test is what the
+	// shipped binary announces, and Describe now reports the services that
+	// were actually registered rather than a hand-kept list beside them.
+	got, err := newPlugin().Info.Describe(context.Background(), &pluginapi.DescribeRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}

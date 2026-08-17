@@ -7,23 +7,20 @@ package main
 import (
 	"context"
 
-	"github.com/hashicorp/go-plugin"
-
-	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
 )
 
 type info struct {
 	pluginapi.UnimplementedPluginInfoServer
+	caps []pluginapi.Capability
 }
 
-func (info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.DescribeResponse, error) {
+func (i info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.DescribeResponse, error) {
 	return &pluginapi.DescribeResponse{
-		Name:    "gish-git",
-		Version: "0.1.0",
-		Capabilities: []pluginapi.Capability{
-			pluginapi.Capability_CAPABILITY_PROMPT_SEGMENT,
-		},
+		Name:         "gish-git",
+		Version:      "0.1.0",
+		Capabilities: i.caps,
 	}, nil
 }
 
@@ -50,16 +47,13 @@ func (p prompt) Render(ctx context.Context, req *pluginapi.RenderRequest) (*plug
 	}, nil
 }
 
-func main() {
-	cache := newRepoCache()
-	plugin.Serve(&plugin.ServeConfig{
-		HandshakeConfig: pluginhost.Handshake,
-		Plugins: map[string]plugin.Plugin{
-			"info":       &pluginhost.InfoPlugin{Impl: info{}},
-			"prompt":     &pluginhost.PromptPlugin{Impl: prompt{cache: cache}},
-			"completion": &pluginhost.CompletionPlugin{},
-			"history":    &pluginhost.HistoryPlugin{},
-		},
-		GRPCServer: plugin.DefaultGRPCServer,
-	})
+// newPlugin wires the services this binary serves. main and the tests build
+// it through here, so a capability cannot be claimed in Describe without the
+// service behind it actually being registered.
+func newPlugin() pluginsdk.Plugin {
+	p := pluginsdk.Plugin{Prompt: prompt{cache: newRepoCache()}}
+	p.Info = info{caps: pluginsdk.Capabilities(p)}
+	return p
 }
+
+func main() { pluginsdk.Serve(newPlugin()) }

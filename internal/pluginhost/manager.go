@@ -17,7 +17,8 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
 )
 
 // Deadline defaults, from the latency table in docs/plugins.md. Every
@@ -232,7 +233,7 @@ func (ps *pluginState) noteFailureLocked(h *Host) {
 }
 
 func describe(ctx context.Context, proto plugin.ClientProtocol) (*pluginapi.DescribeResponse, error) {
-	raw, err := proto.Dispense("info")
+	raw, err := proto.Dispense(pluginsdk.ServiceInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -293,32 +294,32 @@ func providers[T any](ctx context.Context, h *Host, c pluginapi.Capability, serv
 
 // PromptProviders returns live prompt-segment clients.
 func (h *Host) PromptProviders(ctx context.Context) []Provider[pluginapi.PromptSegmentProviderClient] {
-	return providers[pluginapi.PromptSegmentProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_PROMPT_SEGMENT, "prompt")
+	return providers[pluginapi.PromptSegmentProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_PROMPT_SEGMENT, pluginsdk.ServicePrompt)
 }
 
 // CompletionProviders returns live completion clients.
 func (h *Host) CompletionProviders(ctx context.Context) []Provider[pluginapi.CompletionProviderClient] {
-	return providers[pluginapi.CompletionProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_COMPLETION, "completion")
+	return providers[pluginapi.CompletionProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_COMPLETION, pluginsdk.ServiceCompletion)
 }
 
 // ThemeProviders returns live whole-prompt theme clients (#30).
 func (h *Host) ThemeProviders(ctx context.Context) []Provider[pluginapi.ThemeProviderClient] {
-	return providers[pluginapi.ThemeProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_THEME, "theme")
+	return providers[pluginapi.ThemeProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_THEME, pluginsdk.ServiceTheme)
 }
 
 // EnvProviders returns live env-diff clients (#12).
 func (h *Host) EnvProviders(ctx context.Context) []Provider[pluginapi.EnvProviderClient] {
-	return providers[pluginapi.EnvProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_ENV, "env")
+	return providers[pluginapi.EnvProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_ENV, pluginsdk.ServiceEnv)
 }
 
 // AIProviders returns live model-access clients (#20).
 func (h *Host) AIProviders(ctx context.Context) []Provider[pluginapi.AIProviderClient] {
-	return providers[pluginapi.AIProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_AI, "ai")
+	return providers[pluginapi.AIProviderClient](ctx, h, pluginapi.Capability_CAPABILITY_AI, pluginsdk.ServiceAI)
 }
 
 // HistoryBackends returns live history backend clients.
 func (h *Host) HistoryBackends(ctx context.Context) []Provider[pluginapi.HistoryBackendClient] {
-	return providers[pluginapi.HistoryBackendClient](ctx, h, pluginapi.Capability_CAPABILITY_HISTORY, "history")
+	return providers[pluginapi.HistoryBackendClient](ctx, h, pluginapi.Capability_CAPABILITY_HISTORY, pluginsdk.ServiceHistory)
 }
 
 // Status describes one discovered plugin for the `plugins` builtin.

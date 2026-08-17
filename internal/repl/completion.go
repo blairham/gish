@@ -11,7 +11,7 @@ import (
 	"github.com/blairham/gish/internal/complete"
 	"github.com/blairham/gish/internal/editor"
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // callHandlerCommands are gish's own commands that are routed by a

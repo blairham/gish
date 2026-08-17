@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package gish.plugin.v1;
 
-option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi/v1;pluginapi";
 
 // Capability names the services a plugin implements.
 enum Capability {

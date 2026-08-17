@@ -66,7 +66,7 @@ paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161
 paste-gate-check: ## Fail if a pasted construct, an init script, or an installed tool regressed
 	GISH_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
 
-# Regenerate pkg/pluginapi from proto/gish/plugin/v1. Needs protoc plus
+# Regenerate pkg/pluginapi/v1 from proto/gish/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.
 proto:
 	protoc --proto_path=proto \

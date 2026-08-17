@@ -17,7 +17,7 @@ syntax = "proto3";
 
 package gish.plugin.v1;
 
-option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi/v1;pluginapi";
 
 service CommandProvider {
   // Commands enumerates what this plugin provides. Called after

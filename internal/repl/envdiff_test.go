@@ -15,7 +15,7 @@ import (
 
 	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // fakeEnvClient proposes whatever resp holds, for any cwd under forDir.

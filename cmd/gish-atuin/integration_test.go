@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // The unit tests above cover parsing; this covers the part that only

@@ -357,7 +357,7 @@ const file_gish_plugin_v1_history_proto_rawDesc = "" +
 	"\x05final\x18\x02 \x01(\bR\x05final2\xa1\x01\n" +
 	"\x0eHistoryBackend\x12G\n" +
 	"\x06Append\x12\x1d.gish.plugin.v1.AppendRequest\x1a\x1e.gish.plugin.v1.AppendResponse\x12F\n" +
-	"\x06Search\x12\x1d.gish.plugin.v1.SearchRequest\x1a\x1b.gish.plugin.v1.SearchBatch0\x01B2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\x06Search\x12\x1d.gish.plugin.v1.SearchRequest\x1a\x1b.gish.plugin.v1.SearchBatch0\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_history_proto_rawDescOnce sync.Once

@@ -15,7 +15,7 @@ import (
 
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // EXPERIMENTAL, FROZEN (#111). gish's position is that it hosts other

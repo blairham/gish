@@ -267,7 +267,7 @@ WSL2 is the supported Windows story until then. The reasoning is in
 ```bash
 make check   # fmt + vet + test
 make lint    # golangci-lint
-make proto   # regenerate pkg/pluginapi from proto/
+make proto   # regenerate pkg/pluginapi/v1 from proto/
 ```
 
 See [AGENTS.md](AGENTS.md) for the full development guide.
