@@ -14,11 +14,11 @@ for you to read, edit, and run.
 
 ```
                           startup      what it includes
-gish                       5.9 ms      theme + highlighting + suggestions + lint, all on
-bash (no rc)               5.6 ms      empty rc
-zsh (no rc)                9.0 ms      empty rc
-zsh + powerlevel10k       87.3 ms      the prompt gish's p10k theme is a port of
-zsh (real config)        304.4 ms      a real .zshrc: plugin manager, theme, tool hooks
+gish                       5.6 ms      theme + highlighting + suggestions + lint, all on
+bash (no rc)               5.5 ms      empty rc
+zsh (no rc)                8.4 ms      empty rc
+zsh + powerlevel10k       86.3 ms      the prompt gish's p10k theme is a port of
+zsh (real config)        302.7 ms      a real .zshrc: plugin manager, theme, tool hooks
 ```
 
 Keystroke latency, measured end to end from byte-in to repaint-out:
