@@ -112,7 +112,7 @@ func run() int {
 	var err error
 	switch {
 	case *command != "":
-		// Everything after the command is bash's `$0 $1 $2 …`.
+		// Everything after the command string is $0 then $1…
 		err = repl.RunCommand(ctx, *command, login, flag.Args()...)
 	case flag.NArg() > 0:
 		err = repl.RunFile(ctx, flag.Arg(0), login, flag.Args()[1:]...)

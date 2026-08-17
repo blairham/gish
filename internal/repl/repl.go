@@ -128,6 +128,11 @@ func runEditor(ctx context.Context, login bool) error {
 		interp.ExecHandlers(execChain...),
 	}
 	callBase := passthroughCall
+	// umask needs no shell state, so it is registered regardless of
+	// whether job control is available — tying it to jobs.Supported
+	// would make a mask-setting builtin depend on process groups.
+	builtins.Register("__gish_umask", builtins.Umask)
+	builtins.Register("__gish_times", builtins.Times)
 	if jobs.Supported() {
 		// Reclaiming the terminal from the background must not stop the
 		// shell. Children inherit the ignore; acceptable (see #5 design).
@@ -135,9 +140,11 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_jobs", table.Jobs)
 		builtins.Register("__gish_fg", table.Fg)
 		builtins.Register("__gish_bg", table.Bg)
+		// kill belongs here: %1 resolves through this table.
+		builtins.Register("__gish_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -531,6 +538,17 @@ func reservedCommandName(name string) bool {
 // plugins on demand.
 func pluginsBuiltin(host *pluginhost.Host, cmdIndex *pluginhost.CommandIndex, dir string) builtins.Func {
 	return func(ctx context.Context, hc interp.HandlerContext, _ []string) error {
+		if host == nil {
+			// Registered with no host on the script paths, so the name
+			// resolves there. Without this it fell through to PATH and
+			// reported `"plugins": executable file not found` with status
+			// 127 — a builtin gish documents, answering exactly like a
+			// typo. Every neighboring builtin says what is unavailable
+			// and why (`trust: env plugins are not available in this
+			// session`); this now does too.
+			fmt.Fprintln(hc.Stderr, "plugins: the plugin host runs only in an interactive session")
+			return interp.ExitStatus(1)
+		}
 		_ = host.Discover() //nolint:errcheck // newly installed plugins picked up best-effort
 		statuses := host.Statuses(ctx, true)
 		if len(statuses) == 0 {
@@ -587,7 +605,7 @@ func runPlain(ctx context.Context, login bool) error {
 		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))))),
+		interp.CallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -635,34 +653,38 @@ loop:
 // RunCommand parses and runs src as a complete script (gish -c). This
 // is the path tools take when they spawn $SHELL -c: it stays POSIX-clean
 // — no editor, theme, plugins, history, or extra output (#41).
-func RunCommand(ctx context.Context, src string, login bool, args ...string) error {
-	// bash's `-c` takes positional parameters after the command: the
-	// first becomes $0 and the rest $1, $2, … It is how every wrapper
-	// passes a value into a snippet without interpolating it —
-	// `gish -c 'rm -- "$1"' _ "$file"` is the safe spelling, and
-	// dropping the parameters turns it into `rm --`.
+//
+// operands are what followed the command string. POSIX gives the first
+// one to $0 and the rest to $1…, which is why `bash -c 'echo $1' _ hi`
+// prints hi: the underscore is a throwaway name, not an argument. Tools
+// that spawn $SHELL -c rely on this to pass values without quoting them
+// into the script text.
+func RunCommand(ctx context.Context, src string, login bool, operands ...string) error {
 	name := "gish -c"
 	var params []string
-	if len(args) > 0 {
-		name, params = args[0], args[1:]
+	if len(operands) > 0 {
+		name, params = operands[0], operands[1:]
 	}
 	return runScript(ctx, strings.NewReader(src), name, login, params...)
 }
 
-// RunFile runs the script at path, with args as its positional
-// parameters ($1, $2, …) — a script that cannot be passed arguments is
-// not a script.
-func RunFile(ctx context.Context, path string, login bool, args ...string) error {
+// RunFile runs the script at path. Everything after the path is a
+// positional parameter; $0 is the path itself.
+func RunFile(ctx context.Context, path string, login bool, params ...string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return runScript(ctx, f, path, login, args...)
+	return runScript(ctx, f, path, login, params...)
 }
 
 // runScript is the non-interactive execution path, optionally preceded
 // by login profile sourcing.
+//
+// $0 is the parse name, which is why it is threaded through rather than
+// fixed: for a script it is the path, and for -c it is whatever operand
+// the caller supplied.
 func runScript(ctx context.Context, r io.Reader, name string, login bool, params ...string) error {
 	file, err := syntax.NewParser().Parse(r, name)
 	if err != nil {
@@ -671,17 +693,24 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 	var runnerRef *interp.Runner
 	trustRunner = func() *interp.Runner { return runnerRef }
 	runner, err := interp.New(
-		interp.Params(params...),
+		// The "--" matters: without it a parameter that begins with a
+		// dash would be read as a shell option, so `gish script.sh -v`
+		// would try to set -v instead of passing it along.
+		interp.Params(append([]string{"--"}, params...)...),
 		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))))),
+		interp.CallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
 	}
 	runnerRef = runner
 	declareShellIdentity(ctx, runner)
+	// The names must resolve here too, so an unavailable builtin reports
+	// itself rather than looking like a missing program.
+	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))
+	registerScriptOverrides()
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -700,7 +729,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))))),
+			interp.CallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))),
 		},
 		opts...,
 	)...)
