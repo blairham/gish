@@ -93,7 +93,7 @@ func loadRC(ctx context.Context, runner *interp.Runner) {
 		fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, err)
 		return
 	}
-	if err := runner.Run(ctx, file); err != nil {
+	if err := safely("running "+path, func() error { return runner.Run(ctx, file) }); err != nil {
 		fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, err)
 	}
 }
@@ -128,7 +128,7 @@ func loadProfile(ctx context.Context, runner *interp.Runner) {
 			fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, perr)
 			continue
 		}
-		if rerr := runner.Run(ctx, file); rerr != nil {
+		if rerr := safely("running "+path, func() error { return runner.Run(ctx, file) }); rerr != nil {
 			fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, rerr)
 		}
 	}

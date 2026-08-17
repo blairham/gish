@@ -545,7 +545,7 @@ func runInterruptible(ctx context.Context, runner *interp.Runner, file *syntax.F
 			}
 		}
 	}()
-	err = runner.Run(runCtx, file)
+	err = safely("running the command", func() error { return runner.Run(runCtx, file) })
 	close(done) // the signal watcher is per-line; the context is not
 	if err != nil && runCtx.Err() != nil && ctx.Err() == nil {
 		return cancel, errInterrupted
@@ -674,7 +674,7 @@ loop:
 		}
 		for _, stmt := range stmts {
 			rewriteSubstrateGaps(stmt)
-			if err := runner.Run(ctx, stmt); err != nil {
+			if err := safely("running the command", func() error { return runner.Run(ctx, stmt) }); err != nil {
 				if runner.Exited() {
 					exitErr = err
 					break loop
@@ -701,24 +701,24 @@ loop:
 // prints hi: the underscore is a throwaway name, not an argument. Tools
 // that spawn $SHELL -c rely on this to pass values without quoting them
 // into the script text.
-func RunCommand(ctx context.Context, src string, login bool, operands ...string) error {
+func RunCommand(ctx context.Context, src string, login, interactive bool, operands ...string) error {
 	name := "gish -c"
 	var params []string
 	if len(operands) > 0 {
 		name, params = operands[0], operands[1:]
 	}
-	return runScript(ctx, strings.NewReader(src), name, login, params...)
+	return runScript(ctx, strings.NewReader(src), name, login, interactive, params...)
 }
 
 // RunFile runs the script at path. Everything after the path is a
 // positional parameter; $0 is the path itself.
-func RunFile(ctx context.Context, path string, login bool, params ...string) error {
+func RunFile(ctx context.Context, path string, login, interactive bool, params ...string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return runScript(ctx, f, path, login, params...)
+	return runScript(ctx, f, path, login, interactive, params...)
 }
 
 // runScript is the non-interactive execution path, optionally preceded
@@ -727,7 +727,7 @@ func RunFile(ctx context.Context, path string, login bool, params ...string) err
 // $0 is the parse name, which is why it is threaded through rather than
 // fixed: for a script it is the path, and for -c it is whatever operand
 // the caller supplied.
-func runScript(ctx context.Context, r io.Reader, name string, login bool, params ...string) error {
+func runScript(ctx context.Context, r io.Reader, name string, login, interactive bool, params ...string) error {
 	file, err := syntax.NewParser().Parse(r, name)
 	if err != nil {
 		return err
@@ -756,7 +756,15 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 	if login {
 		loadProfile(ctx, runner)
 	}
-	return runner.Run(ctx, file)
+	// `-i` means what it means in bash: the rc file runs even though this
+	// is a one-command session, because the caller asked for the shell a
+	// human would get. Accepting the flag and ignoring it would be the
+	// worse answer — the aliases and functions it exists to bring in
+	// would silently not be there.
+	if interactive {
+		loadRC(ctx, runner)
+	}
+	return safely("running "+name, func() error { return runner.Run(ctx, file) })
 }
 
 // RunReader parses and runs an entire script from r; name appears in

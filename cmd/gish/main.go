@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,38 +62,40 @@ func run() int {
 		return 0
 	}
 
-	command := flag.String("c", "", "run `command` and exit")
-	loginFlag := flag.Bool("l", false, "act as a login shell (source profile files)")
-	sandboxFlag := flag.String("sandbox", "", "run every external command under sandbox `profile`")
-	showVersion := flag.Bool("version", false, "print version and exit")
-	// The far side of `gish ssh`: gish was copied to this host, not
-	// installed on it. --rc names the pushed settings bundle; passing a
-	// path (never the contents) keeps the settings out of argv, which is
-	// world-readable through /proc.
-	remoteSession := flag.Bool("remote-session", false, "this session was brought here by `gish ssh`")
-	// Session restore (#103). The value is a session id or a unique
-	// prefix; `sessions` lists them.
-	restore := flag.String("restore", "", "start in the directory of recorded session `id`")
-	rcPath := flag.String("rc", "", "read startup settings from `file`")
-	flag.Parse()
+	// --rc is the far side of `gish ssh`: gish was copied to this host,
+	// not installed on it, and --rc names the pushed settings bundle.
+	// Passing a path (never the contents) keeps the settings out of argv,
+	// which is world-readable through /proc. --restore takes a session id
+	// or a unique prefix (#103); `sessions` lists them.
+	opts, err := parseArgs(os.Args[1:])
+	if err != nil {
+		if !errors.Is(err, errHelp) {
+			fmt.Fprintln(os.Stderr, "gish:", err)
+		}
+		fmt.Fprintln(os.Stderr, usage)
+		if errors.Is(err, errHelp) {
+			return 0
+		}
+		return 2
+	}
 
 	// The session reports this as GISH_VERSION (#120).
 	repl.Version = version
 
-	if *rcPath != "" {
-		os.Setenv("GISH_RC", *rcPath) //nolint:errcheck // process-local
+	if opts.rc != "" {
+		os.Setenv("GISH_RC", opts.rc) //nolint:errcheck // process-local
 	}
-	if *remoteSession {
+	if opts.remoteSession {
 		os.Setenv("GISH_REMOTE_SESSION", "1") //nolint:errcheck // process-local
 	}
-	if *restore != "" {
+	if opts.restore != "" {
 		// Read by the interactive loop once its runner exists: landing
 		// somewhere needs the runner, and the environment is proposed
 		// through the trust flow rather than applied here.
-		os.Setenv("GISH_RESTORE_SESSION", *restore) //nolint:errcheck // process-local
+		os.Setenv("GISH_RESTORE_SESSION", opts.restore) //nolint:errcheck // process-local
 	}
 
-	if *showVersion {
+	if opts.version {
 		fmt.Printf("gish %s (commit %s, built %s)\n", version, commit, date)
 		return 0
 	}
@@ -104,11 +105,11 @@ func run() int {
 	// A symlink is the whole install — one binary, and the invocation name
 	// carries the posture, the way argv[0] already carries login (#41).
 	// An explicit --sandbox always wins, including `--sandbox none`.
-	if *sandboxFlag == "" {
-		*sandboxFlag = agentSandboxProfile(os.Args[0])
+	if opts.sandbox == "" {
+		opts.sandbox = agentSandboxProfile(os.Args[0])
 	}
-	if *sandboxFlag != "" && *sandboxFlag != "none" {
-		if err := repl.SetSessionSandbox(*sandboxFlag); err != nil {
+	if opts.sandbox != "" && opts.sandbox != "none" {
+		if err := repl.SetSessionSandbox(opts.sandbox); err != nil {
 			fmt.Fprintln(os.Stderr, "gish:", err)
 			return 2
 		}
@@ -116,16 +117,15 @@ func run() int {
 
 	// Login invocation (#41): the -l flag, or argv[0] beginning with
 	// '-' — how login(1) and sshd invoke a user's shell.
-	login := *loginFlag || strings.HasPrefix(os.Args[0], "-")
+	login := opts.login || strings.HasPrefix(os.Args[0], "-")
 
 	ctx := context.Background()
-	var err error
 	switch {
-	case *command != "":
+	case opts.haveCommand:
 		// Everything after the command string is $0 then $1…
-		err = repl.RunCommand(ctx, *command, login, flag.Args()...)
-	case flag.NArg() > 0:
-		err = repl.RunFile(ctx, flag.Arg(0), login, flag.Args()[1:]...)
+		err = repl.RunCommand(ctx, opts.command, login, opts.interactive, opts.operands...)
+	case len(opts.operands) > 0:
+		err = repl.RunFile(ctx, opts.operands[0], login, opts.interactive, opts.operands[1:]...)
 	default:
 		err = repl.Run(ctx, login)
 	}
