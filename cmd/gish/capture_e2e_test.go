@@ -27,9 +27,19 @@ import (
 // full-screen program through a real pty showed that *which*
 // descriptors get substituted is what decides whether this works.
 
-// promptReady is the naked prompt's tail — gish starts naked, so the
-// prompt ends in "% " rather than a shell-conventional "$ ".
-const promptReady = " % "
+// promptEnd is the OSC 133;B mark: written exactly when the prompt ends
+// and input begins (#99 stage 1).
+//
+// This is matched on the *raw* buffer rather than the stripped text,
+// and it replaces matching on the prompt's own characters. A CI runner
+// turned out to have a 73-character hostname, which pushed the naked
+// prompt past the pty's width — the wrap landed between the "%" and its
+// trailing space, so `" % "` never appeared contiguously and every test
+// here failed on a machine where the shell was working perfectly.
+//
+// A semantic mark cannot wrap: it is zero-width and atomic. startup_test
+// already learned this and matches the same way.
+const promptEnd = "\x1b]133;B"
 
 type shellPTY struct {
 	t   *testing.T
@@ -75,7 +85,9 @@ func startShell(t *testing.T, dir string) *shellPTY {
 		"PATH=" + os.Getenv("PATH"),
 	}
 	cmd.Dir = dir
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 15, Cols: 80})
+	// Few rows so a pager actually pages; wide columns so a long CI
+	// hostname cannot wrap the prompt out of recognition.
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 15, Cols: 200})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +114,27 @@ func startShell(t *testing.T, dir string) *shellPTY {
 		}
 	}()
 	return &shellPTY{t: t, f: f, buf: &bytes.Buffer{}, ch: ch, cmd: cmd, raw: &raw}
+}
+
+// waitForPrompt waits for a prompt to finish rendering, using the
+// semantic mark rather than the prompt's visible text.
+func (s *shellPTY) waitForPrompt() {
+	s.t.Helper()
+	deadline := time.After(20 * time.Second)
+	for {
+		if bytes.Contains(s.buf.Bytes(), []byte(promptEnd)) {
+			return
+		}
+		select {
+		case chunk, ok := <-s.ch:
+			if !ok {
+				s.t.Fatalf("shell exited before a prompt %s", s.diagnose())
+			}
+			s.buf.Write(chunk)
+		case <-deadline:
+			s.t.Fatalf("no prompt within 20s %s; got:\n%q", s.diagnose(), s.buf.String())
+		}
+	}
 }
 
 func (s *shellPTY) waitFor(want string) string {
@@ -154,13 +187,16 @@ func (s *shellPTY) sendUntil(keys, want string) {
 	alive := send()
 	quiet := time.After(retryQuiet)
 	for {
-		if bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
+		// Raw, not stripped: callers may wait on a semantic mark, which
+		// stripping would remove.
+		if bytes.Contains(s.buf.Bytes(), []byte(want)) ||
+			bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
 			return
 		}
 		select {
 		case chunk, ok := <-s.ch:
 			if !ok {
-				s.t.Fatalf("shell exited before %q", want)
+				s.t.Fatalf("shell exited before %q %s", want, s.diagnose())
 			}
 			s.buf.Write(chunk)
 		case <-quiet:
@@ -201,7 +237,7 @@ func TestCapturedPagerStillWorks(t *testing.T) {
 	}
 
 	s := startShell(t, dir)
-	s.waitFor(promptReady)
+	s.waitForPrompt()
 	s.send("config blocks on\r")
 	s.waitFor("blocks")
 
@@ -211,7 +247,7 @@ func TestCapturedPagerStillWorks(t *testing.T) {
 	// `q` is a raw keystroke, not a line: only a program actually in raw
 	// mode acts on it, which is the whole assertion. Repeated because the
 	// pager may not be listening the instant its status line lands.
-	s.sendUntil("q", promptReady)
+	s.sendUntil("q", promptEnd)
 	s.probe("PAGERDONE")
 	s.waitFor("resPAGERDONE")
 }
@@ -252,13 +288,13 @@ func TestCapturedGitStillPages(t *testing.T) {
 	}
 
 	s := startShell(t, dir)
-	s.waitFor(promptReady)
+	s.waitForPrompt()
 	s.send("config blocks on\r")
 	s.waitFor("blocks")
 
 	s.send("git log --oneline\r")
 	s.waitFor("commit-number") // paged output on screen
-	s.sendUntil("q", promptReady)
+	s.sendUntil("q", promptEnd)
 	s.probe("GITDONE")
 	s.waitFor("resGITDONE")
 }
@@ -277,7 +313,7 @@ func TestCaptureLeavesRedirectionAlone(t *testing.T) {
 	}
 	dir := t.TempDir()
 	s := startShell(t, dir)
-	s.waitFor(promptReady)
+	s.waitForPrompt()
 	s.send("config blocks on\r")
 	s.waitFor("blocks")
 
