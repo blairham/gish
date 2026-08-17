@@ -115,9 +115,17 @@ bar this feature has to clear to be worth having. It is also why this
 was worth testing with a real pager rather than shipping on the strength
 of unit tests — the mechanism was correct and the *policy* was wrong.
 
-Three costs remain, all stated:
+Four costs remain, all stated:
 
 - stderr is not captured (above).
+- **Builtins are not captured.** Capture substitutes an *external
+  child's* stdout, and a builtin never becomes a child — `printf` and
+  `echo` are the interpreter writing straight to the terminal, while
+  `/bin/echo` goes through the exec path and is captured. For a blocks
+  feature this is mostly harmless (the output worth keeping comes from
+  real programs) but it is a real hole, and closing it means routing the
+  whole line's stdout through the pty rather than each child's, which is
+  a larger change than stage 2 should carry.
 - A program that writes straight to `/dev/tty` bypasses capture. That is
   correct — writing to `/dev/tty` is precisely how a program says "put
   this on the terminal, not in the output stream."
