@@ -34,6 +34,13 @@ the ecosystem matrix: **starship, direnv, fzf, zoxide, atuin and mise
 run in gish through their own bash init lines**, unmodified and with no
 gish-specific support on either side.
 
+**Your config will not break.** What is frozen — rc syntax, `GISH_*`
+variables, `config` keys, `plugins.toml`, the prompt escape set, the
+theme knobs, and bash's own hook surface — is written down in
+[docs/stability.md](docs/stability.md), along with what is explicitly
+not covered and how a deprecation works. A shell is something people
+build on for years; the contract is what makes that reasonable.
+
 **Try it without commitment.** Run `gish` in one tab — no `chsh`
 required, nothing to undo but two directories. Coming from bash or zsh,
 run `gish migrate` to import your aliases, functions, exports, PATH,
