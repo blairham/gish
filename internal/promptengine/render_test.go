@@ -89,9 +89,16 @@ func TestRenderLean(t *testing.T) {
 	if !strings.HasSuffix(plain(lines[2]), "❯ ") {
 		t.Errorf("editing line = %q, want a trailing space after the prompt character", plain(lines[2]))
 	}
-	// The last line's right side is a real right prompt, not baked in.
-	if !strings.Contains(plain(got.RPrompt), "") && got.RPrompt != "" {
-		t.Errorf("unexpected rprompt on the editing line: %q", plain(got.RPrompt))
+	// lean carries its right-side content on the banner line (asserted
+	// by TestRenderLeanRightSideOnFirstLine) and leaves the editing line
+	// unobstructed — no right prompt competing with what is typed.
+	//
+	// This check used to read `!strings.Contains(plain(got.RPrompt), "")`,
+	// which is always false: every string contains the empty string, so
+	// the body was unreachable and the preset's right-side contract was
+	// never actually tested.
+	if got.RPrompt != "" {
+		t.Errorf("lean should keep the editing line clear, got rprompt %q", plain(got.RPrompt))
 	}
 }
 

@@ -197,15 +197,7 @@ func runEditor(ctx context.Context, login bool) error {
 	if colorOK {
 		edCfg.Highlight = highlightFn(runner)
 		if store != nil {
-			edCfg.Suggest = func(text string) string {
-				if !suggestEnabled(runner) {
-					return ""
-				}
-				if s, ok := store.Match(text, 0); ok {
-					return s
-				}
-				return ""
-			}
+			edCfg.Suggest = suggestFn(runner, store)
 		}
 	}
 	// Footgun diagnostics (#46) are content, not decoration: they stay on
