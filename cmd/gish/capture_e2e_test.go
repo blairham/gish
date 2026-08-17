@@ -126,8 +126,10 @@ func TestCaptureLeavesRedirectionAlone(t *testing.T) {
 	dir := t.TempDir()
 	s := startCaptureShell(t, dir)
 	s.waitForPrompt()
-	s.send("printf 'hello\\n' > out.txt\r")
-	s.probe("WROTE")
+	// One line with its own marker: sending the command and probing as a
+	// second line races, because two writes back-to-back can lose the
+	// second in the raw-mode transition around running the first.
+	s.send(`printf 'hello\n' > out.txt; printf "res%s\n" WROTE` + "\r")
 	s.waitFor("resWROTE")
 
 	got, err := os.ReadFile(filepath.Join(dir, "out.txt"))

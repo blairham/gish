@@ -100,6 +100,11 @@ func TestJobControlForegroundAndInterrupt(t *testing.T) {
 	// Ctrl-C must interrupt the child and leave the shell alive.
 	s.buf.Reset()
 	s.send("\x03")
+	// Ctrl-C is a keystroke, not a line, so it cannot carry its own
+	// marker. Wait for the shell to draw a fresh prompt before typing
+	// again: two writes back-to-back can lose the second in the raw-mode
+	// transition, which is what made the sibling tests flaky on CI.
+	s.waitForPrompt()
 	s.probe("AFTERINT")
 	s.waitFor("resAFTERINT")
 }
@@ -115,8 +120,7 @@ func TestJobsEmptyListing(t *testing.T) {
 	s.waitForPrompt()
 
 	s.buf.Reset()
-	s.send("jobs\r")
-	s.probe("NOJOBS")
+	s.send(`jobs; printf "res%s\n" NOJOBS` + "\r")
 	s.waitFor("resNOJOBS")
 	if s.seen("Stopped") || s.seen("Running") {
 		t.Errorf("jobs listed something in a fresh session:\n%s", s.plain())
@@ -258,8 +262,7 @@ func TestKillRejectsUnknownJobSpec(t *testing.T) {
 	s.waitForPrompt()
 
 	s.buf.Reset()
-	s.send(`kill %99` + "\r")
-	s.probe("NOJOB")
+	s.send(`kill %99; printf "res%s\n" NOJOB` + "\r")
 	s.waitFor("resNOJOB")
 	if !s.seen("no such job") {
 		t.Errorf("kill %%99 did not report a missing job:\n%s", s.plain())
