@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"mvdan.cc/sh/v3/interp"
 
+	"github.com/blairham/gish/internal/blocks"
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/internal/ui"
@@ -43,9 +45,13 @@ func historyPickFn(store *history.Store, host *pluginhost.Host) func(string) (st
 		if len(entries) == 0 {
 			return "", false
 		}
+		previews := outputPreviews(entries)
 		items := make([]ui.PickerItem, 0, len(entries))
-		for _, e := range entries {
+		for i, e := range entries {
 			detail := historyDetail(e)
+			if p := previews[i]; p != "" {
+				detail = strings.TrimSpace(detail + "  " + p)
+			}
 			if _, isLocal := localSet[e.Command]; !isLocal {
 				// Say where it came from. A command this machine never
 				// ran, appearing unlabelled, reads as a bug.
@@ -210,3 +216,95 @@ func currentDir() string {
 	}
 	return dir
 }
+
+// Output previews in ctrl-r (#99, the last of the blocks staged plan).
+//
+// A history line tells you a command ran and how it exited. What people
+// actually search for is what it *printed* — the error, the id, the
+// path — and that is the difference between a history list and a block
+// list.
+
+// previewCount bounds how many entries get their output read. Ctrl-r has
+// to feel instant: the picker builds every row before it paints, so a
+// file read per row across the whole history would be paid on every
+// keystroke that opens it. The newest entries are the ones anyone
+// scrolls to, so the rest simply go without.
+const previewCount = 150
+
+// previewBytes is how much of a block is read to find its first
+// interesting line. A build log can be hundreds of kilobytes and the
+// preview is one line.
+const previewBytes = 4 << 10
+
+// outputPreviews returns a preview per entry, parallel to entries and
+// empty where there is nothing to show.
+//
+// Empty is the *common* case and never means breakage: capture is
+// opt-in, and even with it on neither stderr nor builtin output is
+// captured (docs/blocks.md). A row without a preview is a row whose
+// output nobody kept.
+func outputPreviews(entries []history.Entry) []string {
+	out := make([]string, len(entries))
+	if blockStore == nil {
+		return out
+	}
+	for i, e := range entries {
+		if i >= previewCount {
+			break
+		}
+		if e.Block == "" {
+			continue
+		}
+		data, ok := blockStore.Get(blocks.Ref(e.Block))
+		if !ok {
+			continue
+		}
+		if len(data) > previewBytes {
+			data = data[:previewBytes]
+		}
+		out[i] = firstInterestingLine(string(data))
+	}
+	return out
+}
+
+// firstInterestingLine picks the line worth showing beside a command.
+//
+// Not simply the first: a command that greets before it works ("Cloning
+// into...", a progress bar) would preview its least useful line. A
+// failed command's message is what someone is looking for, so a line
+// that looks like an error wins; otherwise the first non-blank line
+// stands in.
+func firstInterestingLine(out string) string {
+	var first string
+	for line := range strings.Lines(out) {
+		line = strings.TrimRight(line, "\r\n")
+		line = strings.TrimSpace(ansiEscapes.ReplaceAllString(line, ""))
+		if line == "" {
+			continue
+		}
+		if first == "" {
+			first = line
+		}
+		if looksLikeError(line) {
+			return truncateCommand(line)
+		}
+	}
+	return truncateCommand(first)
+}
+
+// looksLikeError is deliberately crude. It only decides which of a
+// command's own lines to show, so a false positive costs a slightly
+// worse preview and nothing else.
+func looksLikeError(line string) bool {
+	lower := strings.ToLower(line)
+	for _, marker := range []string{"error", "fatal", "failed", "failure", "panic", "cannot ", "no such "} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// ansiEscapes strips colour from captured output: the preview is
+// rendered dim by the picker, and a stray colour code would fight it.
+var ansiEscapes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a|\x1b[=><]`)

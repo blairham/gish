@@ -181,7 +181,20 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
    because someone picking `make build` off a list means the one they
    just ran, not one from last week.
 
-   Still to come: output previews in Ctrl-R results.
+   Ctrl-R shows a line of a command's captured output beside it, which
+   is where this stops being a curiosity: a history line tells you a
+   command ran and how it exited, while what people actually search for
+   is what it *printed*.
+
+   The line shown is the first that looks like a failure, else the first
+   non-blank one — a command that greets before it works would otherwise
+   preview "Cloning into…" instead of the error underneath. Colour is
+   stripped, since the picker renders the preview dim.
+
+   Only the newest entries are read (Ctrl-R builds every row before it
+   paints, so a file read per row would be paid on every open), and a
+   row with no preview is entirely normal: capture is opt-in, and even
+   with it on, stderr and builtin output are not captured.
 
 ## Why this order
 
