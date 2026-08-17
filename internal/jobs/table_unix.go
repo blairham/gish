@@ -118,9 +118,12 @@ func (t *Table) BeginLine(cmdline string) {
 	limit, tty := t.captureLimit, t.tty
 	t.mu.Unlock()
 
-	if limit <= 0 || tty == nil {
+	if limit <= 0 {
 		return
 	}
+	// A missing tty is not a reason to skip capture — it only means the
+	// size has to be guessed. Substitution still depends on the child's
+	// stdout actually being a terminal, which is checked at spawn.
 	cols, rows := terminalSize(tty)
 	sess, err := capture.Start(os.Stdout, cols, rows, limit)
 	if err != nil {
@@ -156,8 +159,10 @@ func (t *Table) Resize(cols, rows int) {
 // conventional size rather than zero — a zero-width terminal makes
 // well-behaved programs behave strangely.
 func terminalSize(tty *os.File) (cols, rows int) {
-	if ws, err := pty.GetsizeFull(tty); err == nil && ws.Cols > 0 && ws.Rows > 0 {
-		return int(ws.Cols), int(ws.Rows)
+	if tty != nil {
+		if ws, err := pty.GetsizeFull(tty); err == nil && ws.Cols > 0 && ws.Rows > 0 {
+			return int(ws.Cols), int(ws.Rows)
+		}
 	}
 	return 80, 24
 }
