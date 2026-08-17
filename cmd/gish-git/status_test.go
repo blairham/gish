@@ -87,6 +87,10 @@ func TestRepoCacheRendersBranch(t *testing.T) {
 
 	dir := initRepo(t)
 	cache := newRepoCache()
+	// A background scan must not outlive the temp directory: git
+	// writes into .git, and cleanup then fails with "directory not
+	// empty" — on the slower runner only.
+	defer cache.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	got := cache.render(ctx, dir)
@@ -100,6 +104,10 @@ func TestRepoCacheSeesNewUntrackedFile(t *testing.T) {
 
 	dir := initRepo(t)
 	cache := newRepoCache()
+	// A background scan must not outlive the temp directory: git
+	// writes into .git, and cleanup then fails with "directory not
+	// empty" — on the slower runner only.
+	defer cache.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if got := cache.render(ctx, dir); got != "trunk" {
@@ -127,6 +135,10 @@ func TestRepoCacheNonRepo(t *testing.T) {
 	t.Parallel()
 
 	cache := newRepoCache()
+	// A background scan must not outlive the temp directory: git
+	// writes into .git, and cleanup then fails with "directory not
+	// empty" — on the slower runner only.
+	defer cache.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if got := cache.render(ctx, t.TempDir()); got != "" {

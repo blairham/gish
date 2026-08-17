@@ -23,6 +23,28 @@ type repoCache struct {
 	mu    sync.Mutex
 	repos map[string]*repoState
 	roots map[string]string // dir → repo root ("" = known non-repo)
+	// inflight tracks background refreshes so a caller can wait for them
+	// to finish. The plugin never needs to — it runs until the host stops
+	// it — but a test does: `git status` writes into .git, and a refresh
+	// still running when a temp directory is removed makes the removal
+	// fail with "directory not empty" rather than anything about git.
+	inflight sync.WaitGroup
+}
+
+// close stops watching and waits for in-flight refreshes.
+//
+// Only tests call it, and they must: without it the background scan
+// outlives the test that started it and races the temp-directory
+// cleanup, which fails on the slower runner and never locally.
+func (c *repoCache) close() {
+	c.mu.Lock()
+	for _, rs := range c.repos {
+		if rs.watcher != nil {
+			_ = rs.watcher.Close() //nolint:errcheck // shutting down
+		}
+	}
+	c.mu.Unlock()
+	c.inflight.Wait()
 }
 
 type repoState struct {
@@ -121,7 +143,11 @@ func (c *repoCache) render(ctx context.Context, dir string) string {
 	first := !rs.haveStatus
 	if needsRefresh && !rs.refreshing {
 		rs.refreshing = true
-		go rs.refresh()
+		c.inflight.Add(1)
+		go func() {
+			defer c.inflight.Done()
+			rs.refresh()
+		}()
 	}
 	text := renderStatus(rs.status)
 	rs.mu.Unlock()
