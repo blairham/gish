@@ -1,4 +1,4 @@
-# The p10k theme
+# The prompt engine
 
 gish ships a native port of [powerlevel10k][p10k]: the same prompt
 shape, the same presets, the same configuration vocabulary, written in
@@ -6,9 +6,22 @@ Go and rendered in the shell's own process.
 
 ```sh
 config theme p10k     # turn it on
-p10k configure        # pick a look
-p10k import           # bring your ~/.p10k.zsh across
+prompt configure      # pick a look
+prompt import         # bring your ~/.p10k.zsh across
 ```
+
+`p10k` is the same command as `prompt`, kept because it is what people
+arriving from powerlevel10k type without thinking. The engine is named
+for what it does rather than for one of the dialects that configure it
+([#184](https://github.com/blairham/gish/issues/184)) — it renders
+presets from more than one upstream, and naming the whole thing after
+powerlevel10k would claim looks that project never shipped.
+
+What did **not** change: `GISH_THEME=p10k`, `POWERLEVEL9K_*`,
+`p10k.conf` and `~/.p10k.zsh`. Those name powerlevel10k compatibility,
+which is exactly what they are, and
+[#134](https://github.com/blairham/gish/issues/134) settled that
+pasting a line from an old config has to keep working.
 
 [p10k]: https://github.com/romkatv/powerlevel10k
 
@@ -35,7 +48,7 @@ when the prompt is asked for.
 
 ## Presets
 
-`p10k configure` walks through them with a preview; `p10k preset <name>`
+`prompt configure` walks through them with a preview; `prompt preset <name>`
 skips the wizard.
 
 | preset | what it is |
@@ -76,13 +89,13 @@ DIR_NOT_WRITABLE_FOREGROUND   →   DIR_FOREGROUND   →   FOREGROUND
 Editing the file takes effect on the next prompt — it is re-read when
 its mtime changes, so there is no reload command.
 
-`p10k show` prints what is actually in effect and where it came from.
+`prompt show` prints what is actually in effect and where it came from.
 
 ## Bringing your existing config across
 
 ```sh
-p10k import              # ~/.p10k.zsh
-p10k import path/to/file
+prompt import              # ~/.p10k.zsh
+prompt import path/to/file
 ```
 
 Import reads the declarative settings out of a `.p10k.zsh` once and
@@ -128,7 +141,7 @@ free: it needs invalidating, it goes stale across directory changes, and
 upstream's is well known for the console-output warnings it produces.
 
 The setting is accepted so imported configurations keep working, and
-`p10k show` says what it is doing (nothing) when one asks for it.
+`prompt show` says what it is doing (nothing) when one asks for it.
 
 ## Segments
 
@@ -144,8 +157,8 @@ ranger rbenv rvm scalaenv status terraform time todo toolbox vcs
 vim_shell virtualenv xplr yazi
 ```
 
-`p10k list` prints the current set. An element in your configuration
-that has no implementation renders as nothing, and `p10k show` names it
+`prompt list` prints the current set. An element in your configuration
+that has no implementation renders as nothing, and `prompt show` names it
 under `not yet` so it is not just invisible.
 
 The rule this package holds to is that a segment may read files and

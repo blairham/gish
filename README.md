@@ -99,7 +99,7 @@ gish starts **naked**: the prompt is the stock zsh/bash shape (`user@host dir %`
 # ~/.gishrc
 GISH_THEME=p10k                # a native port of powerlevel10k: its presets, its
                                # ~50 segments, its config vocabulary — in Go, and
-                               # 15x faster to first prompt (see docs/p10k.md)
+                               # 15x faster to first prompt (see docs/prompt.md)
 GISH_THEME=gish                # or gish's own segment-knob theme (GISH_THEME_*)
 GISH_THEME=starship            # or your exact starship prompt, unchanged
 GISH_PROMPT='%~ %p{git} %?$ '  # or take full manual control (always wins)
@@ -110,7 +110,7 @@ GISH_PROMPT_CONT='... '        # zsh spellings work: %n user, %m host, %~ cwd,
 
 Or skip the file editing: `config theme starship` sets it **live and** writes it to your rc file in one step. `config` lists everything tunable (`theme`, `lint`, `prompt`).
 
-Coming from powerlevel10k? `p10k configure` is the wizard and `p10k import` brings your existing `~/.p10k.zsh` across — [docs/p10k.md](docs/p10k.md) covers the presets, what imports cleanly, and what deliberately does not.
+Coming from powerlevel10k? `prompt configure` is the wizard and `prompt import` brings your existing `~/.p10k.zsh` across — [docs/prompt.md](docs/prompt.md) covers the presets, what imports cleanly, and what deliberately does not.
 
 Plugins are executables in `$XDG_DATA_HOME/gish/plugins` — `plugins` lists them. `gish-git` (in this repo) serves the `%p{git}` segment: branch, ahead/behind, staged/dirty/untracked, cached per-repo with fsnotify invalidation.
 

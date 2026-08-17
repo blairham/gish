@@ -30,7 +30,7 @@ original.
 | `export EDITOR=nvim` | the same export |
 | `PATH=$HOME/bin:$PATH` | the same prepend, in order |
 | `eval "$(starship init …)"` | `GISH_THEME=starship` — your starship prompt, rendered by starship |
-| `POWERLEVEL9K_*` / `source ~/.p10k.zsh` | `GISH_THEME=p10k`; `p10k import` takes the whole config, all 300-odd settings |
+| `POWERLEVEL9K_*` / `source ~/.p10k.zsh` | `GISH_THEME=p10k`; `prompt import` takes the whole config, all 300-odd settings |
 | `ZSH_THEME="agnoster"` | the closest built-in, named in the report |
 | zinit / zi | `zi migrate` — gish has that engine natively |
 | `.zsh_history` / `.bash_history` | the JSONL store, with timestamps and durations kept |

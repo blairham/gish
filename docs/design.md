@@ -134,7 +134,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   wants a prompt configured the way the rest of gish is configured, and
   the wrong size for someone arriving with a 1720-line `.p10k.zsh`.
 
-  So: `config theme.*` and `p10k configure` both keep working and are
+  So: `config theme.*` and `prompt configure` both keep working and are
   described as what they are — the small dialect and the compatibility
   one. The renderer behind `gish` is not deleted, because deleting it
   buys one file and costs every rc that sets those knobs a behavior
@@ -143,6 +143,36 @@ The line editor and prompt engine consume both tiers through one internal interf
   format only — was rejected outright: "paste a line from your old
   config and it works" is a real part of why the port is attractive, and
   it is exactly the property an import-only surface destroys.
+
+- **The engine is named for what it does, not for one of its dialects**
+  (2026-08, [#184](https://github.com/blairham/gish/issues/184)): the
+  command is `prompt`, the package is `internal/promptengine`, and
+  `p10k` stays as a working alias.
+
+  #134 above settled that there is one engine with two dialects, but the
+  command surface still spelled the engine `p10k` — the name of one of
+  those dialects, and of somebody else's project. Harmless while every
+  preset was powerlevel10k's own; not harmless once the engine serves a
+  gallery from three upstreams
+  ([#186](https://github.com/blairham/gish/issues/186)), where
+  `p10k preset tokyo-night` would claim powerlevel10k ships a look it
+  does not, and would set an expectation of fidelity to a project that
+  never authored it.
+
+  The alias is not compatibility debt. It is what arrivals type from
+  muscle memory, and usage and error messages are spelled with whichever
+  name was invoked, so nobody is answered in a vocabulary they did not
+  type. `GISH_THEME=p10k`, `POWERLEVEL9K_*`, `p10k.conf`, `~/.p10k.zsh`
+  and `cmd/gish-p10k` are all unchanged: each one names powerlevel10k
+  compatibility, which is exactly what it is.
+
+  The package is `promptengine` rather than the `prompt` the issue
+  proposed, because `internal/repl` already declares a package-level
+  `prompt` const and is full of `promptInfo` / `promptStrings` /
+  `promptContext` / `promptSet`. An import named `prompt` there is a
+  redeclaration in the file holding the const and a silent shadow in
+  every other — a trap for whoever edits it next, bought for six
+  characters.
 
 - **Structured data uses `test`'s operator vocabulary, or not at all**
   (2026-08, [#104](https://github.com/blairham/gish/issues/104),
