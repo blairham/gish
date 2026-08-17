@@ -2,7 +2,7 @@ package promptengine
 
 // Presets from upstreams other than powerlevel10k.
 //
-// These are the point of modelling configuration generically: the layout
+// These are the point of modeling configuration generically: the layout
 // pass in render.go already spans "no backgrounds, space separator"
 // (lean) to "a background per segment, powerline arrows" (rainbow), and
 // every preset in starship's gallery is one of those two shapes. So a
@@ -15,21 +15,28 @@ package promptengine
 //
 //   - pastel-powerline and tokyo-night are transcribed from starship's
 //     own preset TOMLs (ISC, starship contributors,
-//     https://github.com/starship/starship). Every colour here is
+//     https://github.com/starship/starship). Every color here is
 //     upstream's, copied digit for digit.
 //   - agnoster is *not* a transcription. The oh-my-zsh theme is a zsh
 //     program, not a config file (it defines functions and shells out to
 //     git), so there is nothing to transcribe — this rebuilds the look
-//     from its published appearance. It is labelled that way below and
+//     from its published appearance. It is labeled that way below and
 //     in `prompt show`, because "we reproduced the look" and "we took
 //     their config" are different claims and only one of them is true.
 //
 // The honesty rule from `prompt import` applies to every preset here: a
 // look is either faithful or it says what it dropped. Where an upstream
 // preset shows something this engine will not render, the modules are
-// named in Unsupported so `prompt show` reports them, rather than the
-// prompt quietly coming up short a segment and the user wondering
-// whether they configured it wrong.
+// named in Unsupported, and `prompt preset` prints them as it applies
+// the look — rather than the prompt quietly coming up short a segment
+// and the user wondering whether they configured it wrong.
+//
+// Note that this reporting happens at apply time and *not* in
+// `prompt show`. SaveNativeConfig writes a resolved list of settings, so
+// Unsupported does not survive the round trip: read the file back and
+// there is no way to know what the preset chose not to carry. Apply time
+// is the actionable moment anyway — that is when the user still has the
+// screenshot they picked the look from in front of them.
 //
 // The recurring gap is the same one AGENTS.md already records: the
 // `*_version` family. starship runs `node --version`, `go version`,
@@ -52,7 +59,7 @@ func galleryUnsupported(cfg *Config, upstream string, modules ...string) {
 
 // presetPastelPowerline is starship's pastel-powerline, transcribed from
 // its preset TOML. The ribbon runs purple → pink → orange → blue → teal
-// → navy, and those six colours are the whole identity of the look.
+// → navy, and those six colors are the whole identity of the look.
 //
 // Upstream shows no prompt character: its format ends with the closing
 // separator and you type immediately after the ribbon. That is
@@ -141,7 +148,7 @@ func presetTokyoNight() *Config {
 // Two of agnoster's blocks are deliberately absent rather than faked:
 // its virtualenv block and its root/background-jobs status glyphs sit in
 // a different place in the ribbon than this engine's equivalents, and
-// putting gish's versions in agnoster's colours would produce something
+// putting gish's versions in agnoster's colors would produce something
 // that is neither.
 func presetAgnoster() *Config {
 	c := baseConfig()
@@ -164,7 +171,7 @@ func presetAgnoster() *Config {
 	c.Set("SHORTEN_STRATEGY", "truncate_to_last")
 
 	// Clean is green, anything outstanding is yellow — agnoster's one
-	// piece of real signalling, and the reason people recognise it.
+	// piece of real signaling, and the reason people recognize it.
 	c.Set("VCS_CLEAN_BACKGROUND", "2")
 	c.Set("VCS_CLEAN_FOREGROUND", "0")
 	c.Set("VCS_MODIFIED_BACKGROUND", "3")

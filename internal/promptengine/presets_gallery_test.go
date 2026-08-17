@@ -47,7 +47,7 @@ func TestGalleryPresetsRender(t *testing.T) {
 }
 
 // The palette is the whole identity of these looks, so the signature
-// colours are pinned as the truecolor SGR the engine should emit. A
+// colors are pinned as the truecolor SGR the engine should emit. A
 // transcription that drifts is worse than no transcription: it ships
 // under a name that promises someone else's design.
 func TestGalleryPresetsEmitTheirUpstreamPalette(t *testing.T) {
