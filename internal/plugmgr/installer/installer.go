@@ -199,7 +199,16 @@ func moveOrCopy(dir, expr string, move bool) error {
 	if len(matches) == 0 {
 		return fmt.Errorf("no file matches %q", from)
 	}
-	src, dst := matches[0], filepath.Join(dir, to)
+	// The destination comes from the plugin's own install recipe, so it
+	// is the plugin author's text rather than the user's. Keeping it
+	// inside the object directory is what stops `mv"x -> ../../y"` from
+	// making a plugin install into an arbitrary write (#204). The source
+	// is a glob rooted at dir and needs no separate check.
+	dst, err := containedPath(dir, to)
+	if err != nil {
+		return err
+	}
+	src := matches[0]
 	if move {
 		return os.Rename(src, dst)
 	}
@@ -270,4 +279,16 @@ func (in *Installer) Update(dir string) (string, error) {
 	default:
 		return "skipped (not a git repo, release, or snippet)", nil
 	}
+}
+
+// containedPath joins name under dir and refuses anything that climbs
+// out of it — the same rule ghr applies to archive entries, for the same
+// reason: the value is authored by whoever wrote the plugin, not by the
+// person installing it.
+func containedPath(dir, name string) (string, error) {
+	target := filepath.Join(dir, filepath.Clean(name))
+	if !strings.HasPrefix(target, filepath.Clean(dir)+string(os.PathSeparator)) {
+		return "", fmt.Errorf("destination %q escapes the plugin directory", name)
+	}
+	return target, nil
 }
