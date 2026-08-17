@@ -13,6 +13,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
 	"github.com/blairham/gish/pkg/pluginapi"
 )
@@ -242,15 +243,34 @@ func savePlanArtifact(task string, plan *pluginapi.PlanResponse) string {
 	}
 	path := filepath.Join(dir, time.Now().Format("20060102-150405")+".md")
 	var b strings.Builder
-	fmt.Fprintf(&b, "# agent plan — %s\n\ntask: %s\n\n%s\n\n", time.Now().Format(time.RFC3339), task, plan.GetSummary())
+	fmt.Fprintf(&b, "# agent plan — %s\n\ntask: %s\n\n%s\n\n",
+		time.Now().Format(time.RFC3339), redactForArtifact(task), plan.GetSummary())
 	for i, step := range plan.GetSteps() {
-		fmt.Fprintf(&b, "%d. %s\n   `%s`\n", i+1, step.GetTitle(), step.GetCommand())
+		fmt.Fprintf(&b, "%d. %s\n   `%s`\n", i+1, step.GetTitle(), redactForArtifact(step.GetCommand()))
 	}
 	b.WriteString("\n## outcomes\n")
 	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
 		return ""
 	}
 	return path
+}
+
+// redactForArtifact applies the #10 rules to text on its way into a
+// plan artifact.
+//
+// Both halves need it. The task is what the user typed and can contain
+// anything they typed; a step's command comes from a model, which was
+// given scrub-safe context but can still echo back a literal it was
+// shown or invent one. An artifact outlives the session, so this is the
+// same class of exposure as history and sessions.
+//
+// Redaction rather than refusal, unlike a history entry: an artifact
+// with one line masked is still a usable record of what was planned,
+// whereas refusing to write it loses the plan entirely — and the plan is
+// the only durable trace of what the shell was asked to do.
+func redactForArtifact(s string) string {
+	clean, _ := history.RedactOutput([]byte(s))
+	return string(clean)
 }
 
 // appendOutcome records what happened to one step in the artifact.
