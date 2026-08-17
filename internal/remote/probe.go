@@ -106,8 +106,20 @@ echo "present=$present"
 // file name to look for, sum its expected sha256, and size its expected
 // byte count (the fallback check when the remote has no hash tool).
 func RunProbe(ctx context.Context, t Transport, name, sum string, size int64) (Probe, error) {
-	ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
-	defer cancel()
+	// ProbeTimeout is the *default*, not a ceiling: a caller that has
+	// already bounded the work keeps its own deadline.
+	//
+	// It is a product number — how long a human waits for a shell before
+	// plain ssh would have been better — and borrowing it as test
+	// patience made the probe test fail under a loaded `go test -race
+	// ./...` with `signal: killed` at exactly 2.00s (#189). The machine
+	// a test runs on is slower than any box this feature targets, so the
+	// two budgets have no business being the same number.
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ProbeTimeout)
+		defer cancel()
+	}
 
 	out, err := t.Run(ctx, fmt.Sprintf(probeScript, name, sum, size, strings.Join(candidateDirs, " ")), nil)
 	if err != nil {
