@@ -10,29 +10,20 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/go-plugin"
-
-	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
 )
 
 type info struct {
 	pluginapi.UnimplementedPluginInfoServer
+	caps []pluginapi.Capability
 }
 
-func (info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.DescribeResponse, error) {
+func (i info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.DescribeResponse, error) {
 	return &pluginapi.DescribeResponse{
 		Name:    "fixture",
 		Version: "0.0.1-test",
-		Capabilities: []pluginapi.Capability{
-			pluginapi.Capability_CAPABILITY_COMPLETION,
-			pluginapi.Capability_CAPABILITY_PROMPT_SEGMENT,
-			pluginapi.Capability_CAPABILITY_HISTORY,
-			pluginapi.Capability_CAPABILITY_COMMAND,
-			pluginapi.Capability_CAPABILITY_THEME,
-			pluginapi.Capability_CAPABILITY_ENV,
-			pluginapi.Capability_CAPABILITY_AI,
-		},
+		Capabilities: i.caps,
 	}, nil
 }
 
@@ -215,19 +206,21 @@ func (commands) Run(stream pluginapi.CommandProvider_RunServer) error {
 	return stream.Send(&pluginapi.RunOutput{Output: &pluginapi.RunOutput_Exit{Exit: 127}})
 }
 
-func main() {
-	plugin.Serve(&plugin.ServeConfig{
-		HandshakeConfig: pluginhost.Handshake,
-		Plugins: map[string]plugin.Plugin{
-			"info":       &pluginhost.InfoPlugin{Impl: info{}},
-			"command":    &pluginhost.CommandPlugin{Impl: commands{}},
-			"completion": &pluginhost.CompletionPlugin{Impl: completion{}},
-			"prompt":     &pluginhost.PromptPlugin{Impl: prompt{}},
-			"history":    &pluginhost.HistoryPlugin{Impl: &historyBackend{}},
-			"theme":      &pluginhost.ThemePlugin{Impl: theme{}},
-			"env":        &pluginhost.EnvPlugin{Impl: env{}},
-			"ai":         &pluginhost.AIPlugin{Impl: ai{}},
-		},
-		GRPCServer: plugin.DefaultGRPCServer,
-	})
+// newPlugin wires the services this binary serves. main and the tests build
+// it through here, so a capability cannot be claimed in Describe without the
+// service behind it actually being registered.
+func newPlugin() pluginsdk.Plugin {
+	p := pluginsdk.Plugin{
+		Completion: completion{},
+		Prompt:     prompt{},
+		History:    &historyBackend{},
+		Command:    commands{},
+		Theme:      theme{},
+		Env:        env{},
+		AI:         ai{},
+	}
+	p.Info = info{caps: pluginsdk.Capabilities(p)}
+	return p
 }
+
+func main() { pluginsdk.Serve(newPlugin()) }

@@ -8,7 +8,7 @@ import (
 
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // The read half of HistoryBackend (#97). Append already fans out

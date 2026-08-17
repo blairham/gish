@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // The parsing an agent's reply goes through, which is the only part of

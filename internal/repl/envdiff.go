@@ -19,7 +19,7 @@ import (
 
 	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // Env diffs (#12): on directory change an EnvProvider plugin proposes

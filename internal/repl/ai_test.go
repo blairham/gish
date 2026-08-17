@@ -13,7 +13,7 @@ import (
 
 	"github.com/blairham/gish/internal/history"
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // fakeComposeStream feeds queued candidates then EOF.

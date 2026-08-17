@@ -314,7 +314,7 @@ const file_gish_plugin_v1_env_proto_rawDesc = "" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail2\x9f\x01\n" +
 	"\vEnvProvider\x12J\n" +
 	"\aEnvDiff\x12\x1e.gish.plugin.v1.EnvDiffRequest\x1a\x1f.gish.plugin.v1.EnvDiffResponse\x12D\n" +
-	"\x05Allow\x12\x1c.gish.plugin.v1.AllowRequest\x1a\x1d.gish.plugin.v1.AllowResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\x05Allow\x12\x1c.gish.plugin.v1.AllowRequest\x1a\x1d.gish.plugin.v1.AllowResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_env_proto_rawDescOnce sync.Once

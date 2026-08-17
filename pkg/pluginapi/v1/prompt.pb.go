@@ -350,7 +350,7 @@ const file_gish_plugin_v1_prompt_proto_rawDesc = "" +
 	"\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs2\xaf\x01\n" +
 	"\x15PromptSegmentProvider\x12M\n" +
 	"\bSegments\x12\x1f.gish.plugin.v1.SegmentsRequest\x1a .gish.plugin.v1.SegmentsResponse\x12G\n" +
-	"\x06Render\x12\x1d.gish.plugin.v1.RenderRequest\x1a\x1e.gish.plugin.v1.RenderResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\x06Render\x12\x1d.gish.plugin.v1.RenderRequest\x1a\x1e.gish.plugin.v1.RenderResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_prompt_proto_rawDescOnce sync.Once

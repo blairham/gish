@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // These run against the user's real direnv when it is installed, and

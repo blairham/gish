@@ -27,6 +27,18 @@ break a compiled plugin fails CI. Additions pass — that is what
 a removal needs a `v2` package and a `Handshake.ProtocolVersion` bump,
 with v1 plugins still loading.
 
+The promise is only worth making if somebody outside this repository can
+compile a plugin to hold us to it, which until #188 nobody could: the
+handshake and the dispensers lived in `internal/`. They are now published
+as `pkg/pluginsdk/v1`, and `pkg/pluginsdk/v1/abi_test.go` freezes the part
+of the ABI that the protos do not describe — the handshake cookie and the
+eight service names both ends dispense by.
+
+Both published paths carry the contract version the way the proto package
+does (`gish.plugin.v1` → `pkg/pluginapi/v1`, `pkg/pluginsdk/v1`), so a
+future v2 lands beside v1 instead of renaming it out from under installed
+plugins.
+
 This exists because it is the documented reason nushell's plugin
 ecosystem never formed, and the reason is not the wire format:
 
@@ -46,6 +58,83 @@ an add-on that hooks zsh's ZLE runs *inside* the shell's process, where
 there is no boundary to enforce. A test hangs a plugin deliberately and
 measures what it costs, because a guarantee that is not tested is a
 claim.
+
+## Writing a plugin
+
+A plugin is an ordinary executable. Implement the services you want from
+`pkg/pluginapi/v1`, hand them to `pluginsdk.Serve`, and drop the binary in
+`$XDG_DATA_HOME/gish/plugins` — there is no registration step, no manifest
+the host must be told about, and nothing to rebuild when gish updates.
+
+```go
+package main
+
+import (
+	"context"
+
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
+)
+
+type info struct {
+	pluginapi.UnimplementedPluginInfoServer
+	caps []pluginapi.Capability
+}
+
+func (i info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.DescribeResponse, error) {
+	return &pluginapi.DescribeResponse{
+		Name:         "gish-example",
+		Version:      "0.1.0",
+		Capabilities: i.caps,
+	}, nil
+}
+
+type prompt struct {
+	pluginapi.UnimplementedPromptSegmentProviderServer
+}
+
+func (prompt) Segments(context.Context, *pluginapi.SegmentsRequest) (*pluginapi.SegmentsResponse, error) {
+	return &pluginapi.SegmentsResponse{
+		Segments: []*pluginapi.SegmentDescriptor{{Id: "example", BudgetMs: 20}},
+	}, nil
+}
+
+func (prompt) Render(_ context.Context, req *pluginapi.RenderRequest) (*pluginapi.RenderResponse, error) {
+	if req.GetSegmentId() != "example" {
+		return &pluginapi.RenderResponse{}, nil
+	}
+	return &pluginapi.RenderResponse{Text: "hello", TtlMs: 100}, nil
+}
+
+func main() {
+	p := pluginsdk.Plugin{Prompt: prompt{}}
+	p.Info = info{caps: pluginsdk.Capabilities(p)}
+	pluginsdk.Serve(p)
+}
+```
+
+Then `%p{example}` in a prompt renders it.
+
+Three things that shape are doing for you, each of which was a real bug
+before it existed:
+
+- **A nil field is not a registered service.** Declaring a capability you
+  have not implemented leaves a door the host can open onto a nil pointer.
+  The absent struct field is the whole declaration, so that state cannot be
+  spelled.
+- **`Capabilities(p)` is derived, not hand-kept.** The host gates every
+  dispatch on `Describe`, so a service you implement but forget to announce
+  is silently dead — never called, no error, nothing in the logs. Reading
+  the list off the same struct that registers the services is what keeps
+  the two from drifting.
+- **Your `main` is the thing under test.** Every plugin in `cmd/` builds
+  its `pluginsdk.Plugin` in a `newPlugin()` the tests call too, so
+  "claims theme" and "serves theme" are the same assertion.
+
+Non-Go plugins are equally supported and always were: the contract is the
+protos plus the go-plugin handshake, and `pkg/pluginsdk/v1/abi_test.go`
+records the handshake values and service names another language's
+implementation has to reproduce.
 
 ## Latency budgets
 

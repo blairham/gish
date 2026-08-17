@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // segmentRenderer resolves %p{id} prompt escapes against tier-2 prompt

@@ -14,7 +14,8 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
 )
 
 // CommandIndex routes command names to the plugins that provide them
@@ -197,7 +198,7 @@ func (ci *CommandIndex) interrogate(ps *pluginState) []cachedCommand {
 	if err != nil || !hasCap(info, pluginapi.Capability_CAPABILITY_COMMAND) {
 		return nil
 	}
-	raw, err := proto.Dispense("command")
+	raw, err := proto.Dispense(pluginsdk.ServiceCommand)
 	if err != nil {
 		return nil
 	}
@@ -314,7 +315,7 @@ func (ci *CommandIndex) run(ctx context.Context, pluginName string, args []strin
 	if err != nil {
 		return fail(err)
 	}
-	raw, err := proto.Dispense("command")
+	raw, err := proto.Dispense(pluginsdk.ServiceCommand)
 	if err != nil {
 		return fail(err)
 	}

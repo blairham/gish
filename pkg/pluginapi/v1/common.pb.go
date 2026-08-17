@@ -227,7 +227,7 @@ const file_gish_plugin_v1_common_proto_rawDesc = "" +
 	"\x11CAPABILITY_EVENTS\x10\b2[\n" +
 	"\n" +
 	"PluginInfo\x12M\n" +
-	"\bDescribe\x12\x1f.gish.plugin.v1.DescribeRequest\x1a .gish.plugin.v1.DescribeResponseB2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\bDescribe\x12\x1f.gish.plugin.v1.DescribeRequest\x1a .gish.plugin.v1.DescribeResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_common_proto_rawDescOnce sync.Once

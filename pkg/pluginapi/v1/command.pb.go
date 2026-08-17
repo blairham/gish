@@ -468,7 +468,7 @@ const file_gish_plugin_v1_command_proto_rawDesc = "" +
 	"\x06output2\xa0\x01\n" +
 	"\x0fCommandProvider\x12M\n" +
 	"\bCommands\x12\x1f.gish.plugin.v1.CommandsRequest\x1a .gish.plugin.v1.CommandsResponse\x12>\n" +
-	"\x03Run\x12\x18.gish.plugin.v1.RunInput\x1a\x19.gish.plugin.v1.RunOutput(\x010\x01B2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\x03Run\x12\x18.gish.plugin.v1.RunInput\x1a\x19.gish.plugin.v1.RunOutput(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_command_proto_rawDescOnce sync.Once

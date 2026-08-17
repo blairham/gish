@@ -47,7 +47,10 @@ meaning, for the life of the 1.x line.
   people. Where a machine-readable form is wanted, ask for it and it
   will be added as a flag rather than by changing the human one.
 - **Internal Go packages.** `internal/` is internal; the exported
-  surface for plugin authors is `pkg/pluginapi`.
+  surface for plugin authors is `pkg/pluginapi/v1` (the generated
+  contract) and `pkg/pluginsdk/v1` (the handshake and `Serve`). Both
+  paths carry the contract's version the way the proto package does, so
+  a `v2` arrives beside them rather than by renaming them.
 - **Which theme the naked default renders.** It will stay the stock
   bash/zsh *shape*, but the exact characters are not a contract.
 - **Performance numbers.** They are measured and published

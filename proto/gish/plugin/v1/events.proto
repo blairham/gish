@@ -32,7 +32,7 @@ syntax = "proto3";
 
 package gish.plugin.v1;
 
-option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi/v1;pluginapi";
 
 service ShellEvents {
   // Subscribe opens the event stream.

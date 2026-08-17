@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/pkg/pluginapi"
+	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
 )
 
 // Plugin themes (#30): a tier-2 ThemeProvider renders the entire prompt

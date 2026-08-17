@@ -263,7 +263,7 @@ const file_gish_plugin_v1_completion_proto_rawDesc = "" +
 	"candidates\x12\x14\n" +
 	"\x05final\x18\x02 \x01(\bR\x05final2b\n" +
 	"\x12CompletionProvider\x12L\n" +
-	"\bComplete\x12\x1f.gish.plugin.v1.CompleteRequest\x1a\x1d.gish.plugin.v1.CompleteBatch0\x01B2Z0github.com/blairham/gish/pkg/pluginapi;pluginapib\x06proto3"
+	"\bComplete\x12\x1f.gish.plugin.v1.CompleteRequest\x1a\x1d.gish.plugin.v1.CompleteBatch0\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_gish_plugin_v1_completion_proto_rawDescOnce sync.Once

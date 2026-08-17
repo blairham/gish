@@ -9,7 +9,7 @@ syntax = "proto3";
 
 package gish.plugin.v1;
 
-option go_package = "github.com/blairham/gish/pkg/pluginapi;pluginapi";
+option go_package = "github.com/blairham/gish/pkg/pluginapi/v1;pluginapi";
 
 service CompletionProvider {
   // Complete returns candidate batches for the buffer/cursor in the
