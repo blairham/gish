@@ -15,9 +15,9 @@ import (
 	"github.com/blairham/gish/internal/term"
 )
 
-// The p10k command: the configuration surface for the native engine.
+// The prompt command: the configuration surface for the theme engine.
 //
-// `p10k configure` is the wizard, and it follows upstream's shape
+// `prompt configure` is the wizard, and it follows powerlevel10k's shape
 // because upstream got it right: ask one question at a time, show the
 // answer rendered rather than described, and never ask the terminal
 // something the human can see better than we can detect (whether a glyph
@@ -26,39 +26,55 @@ import (
 // Unlike upstream, the wizard writes a *complete* configuration — the
 // chosen preset resolved into explicit settings — so the file is the
 // whole answer and later edits are local and greppable.
+//
+// The command is named for what it configures rather than for one of the
+// dialects that feed it (#184). The engine renders presets from several
+// upstreams, and `p10k preset tokyo-night` would claim powerlevel10k
+// ships a look it does not. `p10k` remains an alias, because it is what
+// arrivals type from muscle memory — the settings namespace it names
+// (POWERLEVEL9K_*) is unchanged, and #134 settled that it stays.
 
-const p10kUsage = `usage: p10k [configure | import [path] | show | preset <name> | list]
+// promptCmdNames are the spellings that reach this command: the name,
+// then the compatibility alias.
+var promptCmdNames = []string{"prompt", "p10k"}
 
-  p10k configure        the wizard: pick a look, preview it, save it
-  p10k import [path]    take the settings from a .p10k.zsh (default ~/.p10k.zsh)
-  p10k show             the resolved configuration and where it came from
-  p10k preset <name>    switch to a preset without the wizard
-  p10k list             available presets and segments`
+// promptUsage is spelled with whichever name was invoked, so help for
+// `p10k` does not answer in a vocabulary the user did not type.
+func promptUsage(name string) string {
+	return fmt.Sprintf(`usage: %[1]s [configure | import [path] | show | preset <name> | list]
 
-// p10kCallHandler intercepts `p10k`, config-style: it edits the config
-// file and takes effect in the same breath.
-func p10kCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
+  %[1]s configure        the wizard: pick a look, preview it, save it
+  %[1]s import [path]    take the settings from a .p10k.zsh (default ~/.p10k.zsh)
+  %[1]s show             the resolved configuration and where it came from
+  %[1]s preset <name>    switch to a preset without the wizard
+  %[1]s list             available presets and segments`, name)
+}
+
+// promptCallHandler intercepts `prompt` and its `p10k` alias,
+// config-style: it edits the config file and takes effect in the same
+// breath.
+func promptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
-		if args[0] != "p10k" {
+		if !slices.Contains(promptCmdNames, args[0]) {
 			return next(ctx, args)
 		}
-		return runP10k(interp.HandlerCtx(ctx), args[1:]), nil
+		return runPrompt(interp.HandlerCtx(ctx), args[0], args[1:]), nil
 	}
 }
 
-func runP10k(hc interp.HandlerContext, args []string) []string {
+func runPrompt(hc interp.HandlerContext, name string, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "p10k:", err)
+		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 		return []string{"false"}
 	}
 
 	switch {
 	case len(args) == 0, args[0] == "show":
-		showP10k(hc)
+		showPrompt(hc)
 		return []string{"true"}
 
 	case args[0] == "help", args[0] == "-h", args[0] == "--help":
-		fmt.Fprintln(hc.Stdout, p10kUsage)
+		fmt.Fprintln(hc.Stdout, promptUsage(name))
 		return []string{"true"}
 
 	case args[0] == "list":
@@ -76,21 +92,21 @@ func runP10k(hc interp.HandlerContext, args []string) []string {
 			return fail(err)
 		}
 		fmt.Fprintf(hc.Stdout, "saved %s to %s\n", args[1], displayPath(path))
-		return p10kActivate(hc)
+		return promptActivate(hc)
 
 	case args[0] == "import":
-		return importP10k(hc, args[1:])
+		return importP10k(hc, name, args[1:])
 
 	case args[0] == "configure":
-		return configureP10k(hc)
+		return configurePrompt(hc, name)
 	}
 
-	fmt.Fprintln(hc.Stderr, p10kUsage)
+	fmt.Fprintln(hc.Stderr, promptUsage(name))
 	return []string{"false"}
 }
 
-// showP10k reports what is in effect and where each layer came from.
-func showP10k(hc interp.HandlerContext) {
+// showPrompt reports what is in effect and where each layer came from.
+func showPrompt(hc interp.HandlerContext) {
 	cfg := p10kConfigFromEnv(hc.Env)
 	fmt.Fprintf(hc.Stdout, "theme      %s\n", hc.Env.Get("GISH_THEME").String())
 	fmt.Fprintf(hc.Stdout, "preset     %s\n", p10kPresetName(hc))
@@ -146,27 +162,29 @@ func p10kPresetName(hc interp.HandlerContext) string {
 	return p10k.DefaultPreset
 }
 
-// importP10k takes the settings out of a .p10k.zsh, once.
-func importP10k(hc interp.HandlerContext, args []string) []string {
+// importP10k takes the settings out of a .p10k.zsh, once. The name is
+// still p10k's: this reads powerlevel10k's own dialect, whatever the
+// command that reached it was spelled.
+func importP10k(hc interp.HandlerContext, name string, args []string) []string {
 	path := ""
 	switch len(args) {
 	case 0:
 		p, err := p10k.DefaultZshConfigPath()
 		if err != nil {
-			fmt.Fprintln(hc.Stderr, "p10k:", err)
+			fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 			return []string{"false"}
 		}
 		path = p
 	case 1:
 		path = args[0]
 	default:
-		fmt.Fprintln(hc.Stderr, p10kUsage)
+		fmt.Fprintln(hc.Stderr, promptUsage(name))
 		return []string{"false"}
 	}
 
 	imported, err := p10k.ImportZshConfig(path)
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, "p10k:", err)
+		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 		return []string{"false"}
 	}
 
@@ -176,7 +194,7 @@ func importP10k(hc interp.HandlerContext, args []string) []string {
 	cfg.Merge(imported)
 	saved, err := p10k.SaveNativeConfig(cfg)
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, "p10k:", err)
+		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 		return []string{"false"}
 	}
 
@@ -193,13 +211,14 @@ func importP10k(hc interp.HandlerContext, args []string) []string {
 		}
 		fmt.Fprintln(hc.Stdout, "\nThe native segments cover these; nothing else is needed unless you had customized them.")
 	}
-	return p10kActivate(hc)
+	return promptActivate(hc)
 }
 
-// p10kActivate turns the theme on for this session and persists it, so
+// promptActivate turns the theme on for this session and persists it, so
 // configuring the prompt is one step rather than "now also set a
-// variable".
-func p10kActivate(hc interp.HandlerContext) []string {
+// variable". GISH_THEME stays spelled "p10k": #184 renamed the command,
+// not the theme value, and #134 keeps the dialect names honest.
+func promptActivate(hc interp.HandlerContext) []string {
 	if hc.Env.Get("GISH_THEME").String() == "p10k" {
 		return []string{"true"}
 	}
@@ -220,14 +239,14 @@ type p10kQuestion struct {
 	options []chooseOption
 }
 
-func configureP10k(hc interp.HandlerContext) []string {
+func configurePrompt(hc interp.HandlerContext, name string) []string {
 	choose := p10kChooser(hc)
 	if choose == nil {
-		fmt.Fprintln(hc.Stderr, "p10k configure needs a terminal; use `p10k preset <name>` instead")
+		fmt.Fprintf(hc.Stderr, "%[1]s configure needs a terminal; use `%[1]s preset <name>` instead\n", name)
 		return []string{"false"}
 	}
 
-	fmt.Fprintln(hc.Stdout, "gish p10k configuration — Ctrl-C aborts, nothing is saved until the end.")
+	fmt.Fprintln(hc.Stdout, "gish prompt configuration — Ctrl-C aborts, nothing is saved until the end.")
 
 	preset, ok := choose("Which look?", presetOptions())
 	if !ok {
@@ -277,11 +296,11 @@ func configureP10k(hc interp.HandlerContext) []string {
 
 	path, err := p10k.SaveNativeConfig(cfg)
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, "p10k:", err)
+		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 		return []string{"false"}
 	}
 	fmt.Fprintf(hc.Stdout, "saved %s\n", displayPath(path))
-	return p10kActivate(hc)
+	return promptActivate(hc)
 }
 
 // p10kQuestions is the walkthrough after the look has been chosen. Each

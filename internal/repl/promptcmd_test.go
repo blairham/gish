@@ -3,6 +3,7 @@ package repl
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -218,6 +219,60 @@ func TestP10kConfigureAsciiStripsGlyphs(t *testing.T) {
 	for _, glyph := range []string{"", "", "", "", "╭", "╰"} {
 		if strings.Contains(string(data), glyph) {
 			t.Errorf("ascii answer still wrote glyph %q", glyph)
+		}
+	}
+}
+
+// The tests above all drive the command as `p10k`, which is now the
+// alias (#184). Leaving them spelled that way is deliberate: the whole
+// existing suite doubles as the regression test that the alias keeps
+// working. The tests below cover the new name and the one behavior that
+// is genuinely per-spelling — which name the command calls itself.
+
+func TestPromptAndP10kAreTheSameCommand(t *testing.T) {
+	viaPrompt, _, _ := runP10kScript(t, "", "prompt list\n")
+	viaP10k, _, _ := runP10kScript(t, "", "p10k list\n")
+	if viaPrompt != viaP10k {
+		t.Errorf("alias diverged from the command:\n prompt: %q\n p10k:   %q", viaPrompt, viaP10k)
+	}
+	if !strings.Contains(viaPrompt, "lean") {
+		t.Errorf("`prompt list` did not run: %q", viaPrompt)
+	}
+}
+
+func TestPromptUsageEchoesInvokedName(t *testing.T) {
+	for _, name := range []string{"prompt", "p10k"} {
+		out, _, _ := runP10kScript(t, "", name+" --help\n")
+		if !strings.Contains(out, "usage: "+name+" [") {
+			t.Errorf("%s --help did not answer in its own vocabulary: %q", name, out)
+		}
+		// The other spelling must not leak into the help text: someone
+		// who typed `p10k` should not be told to run `prompt preset`.
+		other := "prompt"
+		if name == "prompt" {
+			other = "p10k"
+		}
+		if strings.Contains(out, other+" configure") {
+			t.Errorf("%s --help mentions %q: %q", name, other, out)
+		}
+	}
+}
+
+func TestPromptErrorsEchoInvokedName(t *testing.T) {
+	for _, name := range []string{"prompt", "p10k"} {
+		_, errOut, _ := runP10kScript(t, "", name+" preset nonsense\ntrue\n")
+		if !strings.HasPrefix(errOut, name+":") {
+			t.Errorf("%s error not prefixed with the invoked name: %q", name, errOut)
+		}
+	}
+}
+
+func TestPromptIsCompletableAndSuggestable(t *testing.T) {
+	// A command nothing can complete is half-shipped, and the
+	// did-you-mean suggester reads the same list.
+	for _, name := range []string{"prompt", "p10k"} {
+		if !slices.Contains(callHandlerCommands, name) {
+			t.Errorf("%q is not in callHandlerCommands, so Tab cannot complete it", name)
 		}
 	}
 }

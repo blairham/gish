@@ -150,7 +150,7 @@ func checkTheme(env expand.Environ) checkResult {
 			return checkResult{
 				checkWarn, "theme",
 				fmt.Sprintf("GISH_P10K_PRESET=%q is not a preset — rendering %s instead", preset, p10k.DefaultPreset),
-				"p10k configure   (presets: " + strings.Join(p10k.Presets(), " | ") + ")",
+				"prompt configure   (presets: " + strings.Join(p10k.Presets(), " | ") + ")",
 			}
 		}
 	}

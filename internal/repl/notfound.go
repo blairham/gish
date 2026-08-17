@@ -95,7 +95,7 @@ func runNotFoundHandler(ctx context.Context, runner *interp.Runner, name string,
 func suggestCommand(miss string, runner *interp.Runner) string {
 	extra := builtins.ShellBuiltins()
 	extra = append(extra, builtins.Native()...)
-	extra = append(extra, "zi", "config")
+	extra = append(extra, callHandlerCommands...)
 	for name := range runner.Funcs {
 		extra = append(extra, name)
 	}

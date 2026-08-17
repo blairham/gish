@@ -66,7 +66,8 @@ per-segment theme keys (#28):
 
 themes (one engine, two dialects — see docs/design.md#decisions):
   p10k      the powerlevel10k engine: 6 presets, ~50 segments,
-            POWERLEVEL9K_* / p10k.conf, configured by "p10k configure"
+            POWERLEVEL9K_* / p10k.conf, configured by "prompt configure"
+            ("p10k" is the same command, kept for muscle memory)
   gish      the small dialect: 6 segments and the theme.* keys below,
             configured by "config theme"
   starship  your starship binary renders it

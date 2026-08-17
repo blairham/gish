@@ -174,8 +174,8 @@ func SaveNativeConfig(cfg *Config) (string, error) {
 	}
 
 	var b strings.Builder
-	b.WriteString("# gish p10k configuration\n")
-	b.WriteString("# Written by `p10k configure`. Edit freely: one setting per line.\n\n")
+	b.WriteString("# gish prompt configuration\n")
+	b.WriteString("# Written by `prompt configure`. Edit freely: one setting per line.\n\n")
 	for _, key := range cfg.Keys() {
 		if values := cfg.lists[key]; values != nil {
 			fmt.Fprintf(&b, "%s = %s\n", key, strings.Join(values, " "))
