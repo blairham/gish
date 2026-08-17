@@ -83,6 +83,39 @@ eval "$(starship init bash)"`,
 		Asserts: "the prompt renders through starship's own bash init",
 	},
 	{
+		Name:       "oh-my-posh",
+		Binary:     "oh-my-posh",
+		Provenance: "the other cross-shell prompt; ~90 themes, and the default for most arrivals from PowerShell",
+		// Its bash init is a two-stage bootstrap: the eval sets
+		// POSH_SESSION_ID and sources a *cached* script, so what
+		// actually has to run is that second file — PS0, a
+		// PROMPT_COMMAND array, `shopt -u promptvars` around the
+		// render, and PS1 holding a command substitution that the
+		// shell is expected to expand at prompt time.
+		Init: `eval "$(oh-my-posh init bash --config "$TOOLDIR/omp.json")"`,
+		Setup: func(dir string) error {
+			// A single text segment with a fixed marker, so this
+			// asserts oh-my-posh rendering our config rather than
+			// whatever theme the developer happens to have.
+			return os.WriteFile(filepath.Join(dir, "omp.json"), []byte(`{
+  "version": 3,
+  "final_space": true,
+  "blocks": [
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        { "type": "text", "style": "plain", "template": "OMP-RENDERED" }
+      ]
+    }
+  ]
+}
+`), 0o600)
+		},
+		Want:    "OMP-RENDERED",
+		Asserts: "the prompt renders through oh-my-posh's own bash init",
+	},
+	{
 		Name:       "zoxide",
 		Binary:     "zoxide",
 		Provenance: "ships 9 init scripts; its bash init is a PROMPT_COMMAND hook plus a `z` function",
