@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"mvdan.cc/sh/v3/interp"
 )
@@ -33,31 +34,32 @@ func trustCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	}
 }
 
-// trustRunner returns the session runner the env manager mutates; set
-// alongside envMgr at interactive startup.
-var trustRunner func() *interp.Runner
+// sessionRunnerRef holds the runner of whichever session is running —
+// the interactive loop, a piped one, or a script. A process has one
+// session, so a package-level handle is the honest shape; it is atomic
+// because the test binary runs several sessions at once through
+// RunReader, and `go test -race` is right to call that a race.
+var sessionRunnerRef atomic.Pointer[interp.Runner]
 
-// sessionRunner is the runner of whichever session is running — the
-// interactive loop, a piped one, or a script. The builtins that answer
-// questions *about* the session (declare -F, compgen -c) need it on
-// every path, not only the interactive one, since an init script asks
-// the same questions wherever it is sourced.
-func sessionRunner() *interp.Runner {
-	if trustRunner == nil {
-		return nil
-	}
-	return trustRunner()
-}
+// setSessionRunner publishes the runner for the builtins that answer
+// questions *about* the session.
+func setSessionRunner(r *interp.Runner) { sessionRunnerRef.Store(r) }
+
+// sessionRunner returns that runner, or nil before one exists. The
+// builtins that need it (trust, declare -F) run on every path, not only
+// the interactive one, since an init script asks the same questions
+// wherever it is sourced.
+func sessionRunner() *interp.Runner { return sessionRunnerRef.Load() }
 
 func runTrust(ctx context.Context, hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
 		fmt.Fprintln(hc.Stderr, "trust:", err)
 		return []string{"false"}
 	}
-	if envMgr == nil || trustRunner == nil || trustRunner() == nil {
+	if envMgr == nil || sessionRunner() == nil {
 		return fail(fmt.Errorf("env plugins are not available in this session"))
 	}
-	runner := trustRunner()
+	runner := sessionRunner()
 
 	switch {
 	case len(args) == 0:

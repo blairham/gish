@@ -265,8 +265,59 @@ var ignorableShopts = map[string]bool{
 	"login_shell": true, "shift_verbose": true, "progcomp_alias": true,
 }
 
+// shoptPrintable renders `shopt -p` in terms of the query form the
+// interpreter does implement (#119).
+//
+// bash's -p prints each option as the command that would restore it —
+// `shopt -s dotglob` / `shopt -u nullglob` — which is what makes it the
+// way scripts and agent harnesses snapshot a shell. The interpreter
+// answers the bare query with `name<TAB>state` and rejects -p outright,
+// so the rewrite reshapes its own output rather than reimplementing the
+// option table, which would then have to be kept in step with upstream's.
+//
+// The trailing `__rest` catches the "(…not supported)" third column the
+// interpreter adds for options it recognizes but cannot honor; without
+// it that text would land in the state and every such line would print
+// as -u.
+func shoptPrintable(names []string) string {
+	var b strings.Builder
+	b.WriteString("shopt")
+	for _, name := range names {
+		b.WriteString(" " + name)
+	}
+	b.WriteString(` | while read -r __name __state __rest; do ` +
+		`if [ "$__state" = on ]; then printf 'shopt -s %s\n' "$__name"; ` +
+		`else printf 'shopt -u %s\n' "$__name"; fi; done`)
+	return b.String()
+}
+
+// shoptPrintArgs reports the option names of a `shopt -p` call, or
+// ok=false when this is not a plain -p query. `-p -o` asks about the
+// `set -o` options instead and is left to the interpreter to refuse,
+// rather than answered with the wrong table.
+func shoptPrintArgs(args []string) ([]string, bool) {
+	sawP := false
+	var names []string
+	for _, arg := range args[1:] {
+		switch {
+		case arg == "-p":
+			sawP = true
+		case strings.HasPrefix(arg, "-"):
+			return nil, false
+		default:
+			names = append(names, arg)
+		}
+	}
+	return names, sawP
+}
+
 func shoptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
+		if args[0] == "shopt" {
+			if names, ok := shoptPrintArgs(args); ok {
+				return []string{"eval", shoptPrintable(names)}, nil
+			}
+		}
 		if args[0] == "shopt" {
 			if rest, handled := stripIgnorableShopts(args); handled {
 				if rest == nil {
