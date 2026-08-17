@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -60,7 +61,17 @@ func runBlocks(hc interp.HandlerContext, args []string) []string {
 	}
 
 	switch {
-	case len(args) == 0, args[0] == "list":
+	case len(args) == 0:
+		// Bare `blocks` on a terminal is the picker; everywhere else it
+		// is the listing. Same rule as `config theme` and `plugin
+		// browse`, and it keeps the command useful in scripts.
+		if pick := pickBlock(hc, store, bs); pick != nil {
+			return pick
+		}
+		return listBlocks(hc, store)
+	case args[0] == "list":
+		// An explicit `list` always prints, so there is a way to get the
+		// plain output on a terminal.
 		return listBlocks(hc, store)
 	case args[0] == "help", args[0] == "-h", args[0] == "--help":
 		fmt.Fprintln(hc.Stdout, blocksUsage)
@@ -202,4 +213,64 @@ func blockIndex(id string, n int) (int, error) {
 		return 0, fmt.Errorf("%q is not one of the %d listed blocks", id, n)
 	}
 	return i - 1, nil
+}
+
+// pickBlock is the interactive front end (#99 stage 4 over #100): choose
+// a command from those that have captured output, and its output is
+// shown. Returns nil when there is no terminal to host a picker, so the
+// caller falls back to the listing.
+func pickBlock(hc interp.HandlerContext, store *history.Store, bs *blocks.Store) []string {
+	entries := withOutput(store)
+	if len(entries) == 0 {
+		return nil // nothing to pick; the listing explains why
+	}
+	f, isFile := hc.Stdin.(*os.File)
+	if !isFile || !ui.Enabled(hc.Stdout) || !ui.Enabled(f) {
+		return nil
+	}
+
+	now := time.Now()
+	items := make([]ui.PickerItem, 0, len(entries))
+	for _, e := range entries {
+		items = append(items, ui.PickerItem{
+			Value:  e.Command,
+			Detail: blockDetail(e, now),
+			Bad:    e.ExitCode != 0,
+		})
+	}
+	selected, ok, usable := ui.Pick(f, hc.Stdout, items, ui.PickerOptions{
+		Prompt: "blocks",
+		Height: 15,
+	})
+	if !usable {
+		return nil
+	}
+	if !ok || len(selected) == 0 {
+		return []string{"true"} // aborted: not an error
+	}
+
+	// The picker returns the command text, and the same command may have
+	// run many times. The most recent is the right answer: someone
+	// picking `make build` off a list means the one they just ran, not
+	// one from last week. entries is newest-first, so the first match is
+	// it.
+	for i, e := range entries {
+		if e.Command == selected[0] {
+			return showBlock(hc, store, bs, fmt.Sprint(i+1))
+		}
+	}
+	return []string{"true"}
+}
+
+// blockDetail is the dimmed column beside a command: when it ran, how it
+// exited, and how much output there is to show.
+func blockDetail(e history.Entry, now time.Time) string {
+	parts := []string{humanAge(now.Sub(time.UnixMilli(e.StartedUnixMs)))}
+	if e.ExitCode != 0 {
+		parts = append(parts, fmt.Sprintf("exit %d", e.ExitCode))
+	}
+	if e.Cwd != "" {
+		parts = append(parts, displayPath(e.Cwd))
+	}
+	return strings.Join(parts, " · ")
 }

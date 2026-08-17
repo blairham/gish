@@ -3,6 +3,9 @@ package repl
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/blairham/gish/internal/history"
 )
 
 // blockIndex is the parse between what a user reads off the listing and
@@ -43,5 +46,31 @@ func TestFirstMatchingLine(t *testing.T) {
 	// rendered line.
 	if got := firstMatchingLine("a\r\nerror here\r\n", "error"); got != "error here" {
 		t.Errorf("CR not trimmed: %q", got)
+	}
+}
+
+// The detail column beside a command in the picker: when it ran, how it
+// exited, where it ran. Enough to choose between two runs of the same
+// command without opening either.
+func TestBlockDetail(t *testing.T) {
+	now := time.Now()
+	e := history.Entry{
+		Command:       "make build",
+		StartedUnixMs: now.Add(-90 * time.Minute).UnixMilli(),
+		ExitCode:      2,
+		Cwd:           "/tmp/project",
+	}
+	got := blockDetail(e, now)
+	for _, want := range []string{"1h", "exit 2", "project"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("detail %q missing %q", got, want)
+		}
+	}
+
+	// A clean command says nothing about exit status — a column that
+	// always reads "exit 0" is noise.
+	ok := history.Entry{Command: "ls", StartedUnixMs: now.UnixMilli()}
+	if strings.Contains(blockDetail(ok, now), "exit") {
+		t.Errorf("clean command mentions exit: %q", blockDetail(ok, now))
 	}
 }
