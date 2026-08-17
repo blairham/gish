@@ -55,16 +55,32 @@ func TestJobControlStopListResume(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	// The stopped job is filed and listed.
+	//
+	// Each line ends with its own marker and the wait is on that marker,
+	// never on the interesting output. Waiting on "Stopped" would return
+	// while the line was still finishing, so the next send landed during
+	// the prompt redraw and was lost — which is how this passed locally
+	// and failed on the ubuntu runner.
 	s.buf.Reset()
-	s.send("jobs\r")
-	s.waitFor("Stopped")
+	s.send(`jobs; printf "res%s\n" J1` + "\r")
+	s.waitFor("resJ1")
+	if !s.seen("Stopped") {
+		t.Errorf("jobs did not list the stopped job:\n%s", s.plain())
+	}
 
 	// bg resumes it, and says so in bash's shape: [id] command &
 	s.buf.Reset()
-	s.send("bg\r")
-	s.waitFor("[1]")
+	s.send(`bg; printf "res%s\n" B1` + "\r")
+	s.waitFor("resB1")
+	if !s.seen("[1]") {
+		t.Errorf("bg did not report the resumed job:\n%s", s.plain())
+	}
 
 	// The shell is still usable afterwards, which is the part that breaks
 	// when terminal ownership is handed back wrongly.
@@ -91,6 +107,10 @@ func TestJobControlForegroundAndInterrupt(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	s.buf.Reset()
 	s.send("fg\r")
@@ -189,6 +209,10 @@ func TestKillByJobSpec(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	// The assertion is that the process dies, checked by asking the
 	// system rather than the shell. `jobs` is the wrong oracle here: a
@@ -238,6 +262,10 @@ func TestStoppedJobKilledExternallyIsReaped(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	s.buf.Reset()
 	s.send(`pkill -KILL -f "sleep 45"; sleep 1; printf "res%s\n" KILLED` + "\r")
