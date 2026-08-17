@@ -147,15 +147,32 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
    unchanged, by construction (above). `less` and `vim` verified under
    a real pty: both behave as they do uncaptured. `docker build` and
    other long-running progress UIs still want a look under real use.
-3. **Block records**: a history entry (already metadata-rich JSONL)
-   plus an output reference under `$XDG_DATA_HOME/gish/blocks/`, with
-   retention caps. The #10 secret-scrub rules run over captured output
-   before anything persists — output is a *new* place secrets can land,
-   and the existing rules only cover command lines.
-4. **Surfaces**: a `blocks` builtin (list, search, show, re-run) over
-   the #100 picker; then output previews in Ctrl-R results, which is
-   where the feature stops being a curiosity and starts being the
-   reason to keep gish.
+3. **Block records** — *done*. A history entry gains a `block`
+   reference; the output lives under `$XDG_DATA_HOME/gish/blocks/`,
+   content-addressed (so running a command twice costs one file, and a
+   ref can never escape its directory). Retention is age, then count,
+   then total bytes — bytes last, so a size cap never evicts recent
+   output to keep old output.
+
+   The #10 rules run over output **as it is written**, so a leaked
+   blocks directory cannot leak a token and there is no scrubbing step
+   for a later reader to forget. Crucially the *posture* differs from a
+   command line: output is **redacted**, not rejected. Dropping a
+   200KB build log because one line echoed a token would destroy
+   exactly what the user wanted to see, whereas dropping a command line
+   is proportionate because there the secret essentially *is* the
+   command. Both postures now live in one file (`SecretReason` /
+   `RedactOutput`), and which applies is a property of what is being
+   written rather than of who is writing it.
+4. **Surfaces** — *`blocks` builtin done*. `blocks` lists commands that
+   have captured output, `blocks show N` replays one, and `blocks
+   search TERM` finds commands **by what they printed** — the thing
+   history structurally cannot do, and the reason to keep the output at
+   all. A block that shows says so when its output was truncated or
+   redacted, rather than presenting a partial or doctored log as whole.
+
+   Still to come: the #100 picker as the front end, and output previews
+   in Ctrl-R results.
 
 ## Why this order
 

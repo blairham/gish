@@ -25,6 +25,12 @@ type Entry struct {
 	ExitCode      int    `json:"exit_code"`
 	Cwd           string `json:"cwd"`
 	SessionID     string `json:"session_id"`
+	// Block references this command's captured output (#99 stage 3),
+	// empty when capture was off or produced nothing. Purely a
+	// reference: the output lives in the blocks store, so a history file
+	// stays small and readable, and a missing block costs the output
+	// rather than the entry.
+	Block string `json:"block,omitempty"`
 }
 
 // DefaultPath returns the history file location: $XDG_DATA_HOME/gish/
