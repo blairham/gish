@@ -574,8 +574,8 @@ func (p *Plan) Report() string {
 	}
 	b.WriteString("\nnot translated (nothing here was dropped silently):\n")
 	for _, s := range p.Skipped {
-		switch {
-		case s.Line == 0:
+		switch s.Line {
+		case 0:
 			fmt.Fprintf(&b, "  %s: %s\n", s.File, s.Reason)
 		default:
 			fmt.Fprintf(&b, "  %s:%d: %s\n      %s\n", s.File, s.Line, s.Reason, s.Text)

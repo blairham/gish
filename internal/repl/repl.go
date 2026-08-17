@@ -292,8 +292,14 @@ func runEditor(ctx context.Context, login bool) error {
 		p, cp, rp := promptStrings(runner, info)
 		// OSC 133 (#99): mark the prompt so terminals can navigate
 		// blocks. Zero-width, so the renderer is unaffected.
-		marks := semanticMarksOn(runner)
+		feats := semanticFeatures(runner)
+		marks := feats.marks
 		p = markPrompt(p, marks)
+		// OSC 7 goes out when the directory changes — which is what a
+		// new tab or split reads to open where you are (#165).
+		if info.dir != lastPromptDir {
+			markCwd(os.Stdout, feats.cwd, info.dir)
+		}
 		ed.SetPrompt(p, cp)
 		ed.SetRPrompt(rp)
 		// The short prompt the accepted line is left with (#p10k
@@ -418,6 +424,7 @@ func runEditor(ctx context.Context, login bool) error {
 		lastExit = exitCode(rerr)
 		markCommandDone(os.Stdout, marks, lastExit)
 		lastDuration = time.Since(start)
+		markUserVars(os.Stdout, feats.userVars, line, lastDuration)
 		if aiMgr != nil {
 			aiMgr.note(lastExit)
 		}

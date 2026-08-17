@@ -375,6 +375,9 @@ func checkSemanticMarks(hc interp.HandlerContext) checkResult {
 	if !known {
 		return checkResult{checkOK, "blocks", "OSC 133 marks " + detail, ""}
 	}
+	// Which affordances this terminal actually has, not which ones the
+	// protocol defines (#165): they are different lists, and only the
+	// first one is a claim gish can stand behind.
 	return checkResult{checkOK, "blocks", detail, ""}
 }
 
