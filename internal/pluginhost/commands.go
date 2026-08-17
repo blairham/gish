@@ -250,6 +250,21 @@ func (ci *CommandIndex) setCommands(pluginName string, commands []cachedCommand)
 	}
 }
 
+// Names lists every plugin-provided command the index knows. A warm
+// index answers from its cache without launching anything, which is
+// what the name-judging surfaces (completion, highlighting,
+// did-you-mean) need per keystroke.
+func (ci *CommandIndex) Names() []string {
+	ci.mu.Lock()
+	defer ci.mu.Unlock()
+	names := make([]string, 0, len(ci.byName))
+	for name := range ci.byName {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
 // CommandsOf lists a plugin's registered commands, for `plugins`.
 func (ci *CommandIndex) CommandsOf(pluginName string) []string {
 	ci.mu.Lock()

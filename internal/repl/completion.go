@@ -7,7 +7,6 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/builtins"
 	"github.com/blairham/gish/internal/complete"
 	"github.com/blairham/gish/internal/editor"
 	"github.com/blairham/gish/internal/pluginhost"
@@ -16,13 +15,18 @@ import (
 
 // callHandlerCommands are gish's own commands that are routed by a
 // CallHandler rewrite rather than implemented on the exec seam. They are
-// invisible to builtins.Native(), so Tab completion and the did-you-mean
-// suggester have to be told about them by name or they look like typos.
+// invisible to builtins.Native(), so every surface that judges a name —
+// Tab completion, the did-you-mean suggester, the highlighter's verdict,
+// the plugin-command reservation — has to be told about them here or
+// they look like typos (all four read this list via sessionCommandNames
+// or reservedCommandName).
 //
 // This is the whole list on purpose: it was `zi, config` for a long time
 // while a dozen other commands shipped, so every one of them was
-// uncompletable. A new CallHandler command belongs here the same day it
-// is wired into the chain in repl.go.
+// uncompletable — and the highlighter kept its own private `zi, config`
+// pair long after this list existed, which is how gish's own commands
+// spent months rendering red (#193). A new CallHandler command belongs
+// here the same day it is wired into the chain in repl.go.
 var callHandlerCommands = []string{
 	"blocks", "clip", "config", "doctor", "explain", "migrate", "pick",
 	"plugin", "prompt", "p10k", "sandbox", "sessions", "tool", "trust",
@@ -65,13 +69,7 @@ func completionFn(runner *interp.Runner, host *pluginhost.Host) func(string, int
 
 		var core []complete.Candidate
 		if isCmd && !strings.ContainsAny(word, "/~") {
-			extra := builtins.ShellBuiltins()
-			extra = append(extra, builtins.Native()...)
-			extra = append(extra, callHandlerCommands...)
-			for name := range runner.Funcs {
-				extra = append(extra, name)
-			}
-			core = complete.Commands(word, pathVar(runner), extra)
+			core = complete.Commands(word, pathVar(runner), sessionCommandNames(runner))
 		} else {
 			core = complete.Files(word, runner.Dir)
 		}

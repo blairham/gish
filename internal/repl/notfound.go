@@ -8,7 +8,6 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/builtins"
 	"github.com/blairham/gish/internal/complete"
 )
 
@@ -93,14 +92,8 @@ func runNotFoundHandler(ctx context.Context, runner *interp.Runner, name string,
 // suggestCommand returns the closest known command within edit
 // distance 2, preferring closer, then shorter, then lexicographic.
 func suggestCommand(miss string, runner *interp.Runner) string {
-	extra := builtins.ShellBuiltins()
-	extra = append(extra, builtins.Native()...)
-	extra = append(extra, callHandlerCommands...)
-	for name := range runner.Funcs {
-		extra = append(extra, name)
-	}
 	best, bestDist := "", 3
-	for _, c := range complete.Commands("", pathVar(runner), extra) {
+	for _, c := range complete.Commands("", pathVar(runner), sessionCommandNames(runner)) {
 		name := c.Value
 		if abs(len(name)-len(miss)) > 2 {
 			continue

@@ -63,6 +63,7 @@ func runEditor(ctx context.Context, login bool) error {
 	brewShellenv()
 	resetBashHooks()
 	resetCompletions()
+	sessionAliases.reset()
 
 	// Tier-2 plugin host (#7): discovery now, launch on first demand.
 	// Prompt segments are consumed via %p{id} escapes; the `plugins`
@@ -79,6 +80,7 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 		defer host.Close()
 		cmdIndex = host.NewCommandIndex(reservedCommandName)
+		commandIndex = cmdIndex // the name-judging surfaces read it (#193)
 		builtins.Register("plugins", pluginsBuiltin(host, cmdIndex, dir))
 		segs = newSegmentRenderer(host)
 		themePlugins = newThemeRenderer(host)
@@ -145,7 +147,10 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))))))))))
+	// aliasTrackCallHandler is interactive-only and outermost: only this
+	// chain feeds the surfaces that consult the mirror, and observing
+	// before any rewrite means it sees the words as typed.
+	runnerOpts = append(runnerOpts, interp.CallHandler(aliasTrackCallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -564,12 +569,16 @@ func drainSignals(sigs <-chan os.Signal) {
 }
 
 // reservedCommandName reports names a plugin command may not claim:
-// interpreter builtins and gish-native builtins (#11 precedence rules).
+// interpreter builtins, gish-native builtins, and the CallHandler-routed
+// commands (#11 precedence rules). The CallHandler names matter because
+// the rewrite chain runs before exec dispatch — a plugin allowed to
+// register `doctor` would be accepted and then silently never reached.
 func reservedCommandName(name string) bool {
-	if interp.IsBuiltin(name) || name == "zi" || name == "config" || name == "builtins" || name == "plugins" {
+	if interp.IsBuiltin(name) || name == "builtins" || name == "plugins" {
 		return true
 	}
-	return slices.Contains(builtins.Native(), name)
+	return slices.Contains(callHandlerCommands, name) ||
+		slices.Contains(builtins.Native(), name)
 }
 
 // pluginsBuiltin lists discovered tier-2 plugins with their live status,
