@@ -149,21 +149,18 @@ func TestJobsEmptyListing(t *testing.T) {
 	}
 }
 
-// TestBackgroundCommandRuns covers what is true about `cmd &` on every
-// platform, and deliberately does not assert what is not.
+// TestBackgroundCommandIsAJob covers `cmd &` end to end (#57).
 //
-// Whether a backgrounded command is *filed as a job* is currently a race
-// (#57): the interpreter runs it on its own goroutine, and whether that
-// goroutine reaches the exec handler before EndLine closes the line's
-// job slot decides the outcome. Measured, not guessed — 0 of 12 runs
-// filed on macOS, while the ubuntu runner filed it and failed a test
-// that asserted the opposite.
+// This was two bugs wearing one coat. The command was never started at
+// all — the line's context was canceled on the way out and aborted the
+// interpreter's background goroutine before it exec'd — and even once it
+// ran, nothing filed it, because the line's job slot is closed by the
+// time a backgrounded statement reaches the exec seam.
 //
-// So the assertion is the invariant that holds either way and would
-// catch a real regression: the process actually starts, and the shell
-// remains usable afterwards. Asserting the listing in either direction
-// would encode a coin flip and fail on half the platforms.
-func TestBackgroundCommandRuns(t *testing.T) {
+// Which of those you saw depended on timing, and timing resolved
+// differently per platform, so the symptom looked like flaky
+// bookkeeping. It was neither flaky nor bookkeeping.
+func TestBackgroundCommandIsAJob(t *testing.T) {
 	if testing.Short() {
 		t.Skip("pty e2e skipped in -short")
 	}
@@ -173,23 +170,81 @@ func TestBackgroundCommandRuns(t *testing.T) {
 	s.send(`sleep 45 & printf "res%s\n" BACKGROUNDED` + "\r")
 	s.waitFor("resBACKGROUNDED")
 
-	// The child is really running — asked of the operating system from
-	// the test process, not from inside the shell.
-	//
-	// The in-shell version of this check was worthless: gish under the
-	// test pty cannot exec pgrep at all ("fork/exec /usr/bin/pgrep:
-	// operation not permitted"), so the assertion was reading a failed
-	// command rather than an absent process. Asking from out here has no
-	// such problem and is the more direct question anyway.
+	// The process runs — asked of the operating system from the test
+	// process, because gish under the test pty cannot exec pgrep itself.
 	if !processExists(t, "sleep 45") {
-		t.Errorf("`sleep 45 &` left no running process:\n%s", s.plain())
+		t.Fatalf("`sleep 45 &` left no running process:\n%s", s.plain())
 	}
 
-	// And the shell kept the terminal: a background command must never
-	// take it, however the filing race resolves.
+	// And it is a job, which is the half that decides whether jobs, fg
+	// and kill %n can see it at all.
+	s.buf.Reset()
+	s.send(`jobs; printf "res%s\n" LISTED` + "\r")
+	s.waitFor("resLISTED")
+	if !s.seen("sleep 45") {
+		t.Errorf("jobs did not list the backgrounded command:\n%s", s.plain())
+	}
+
+	// Reachable by job spec.
+	s.buf.Reset()
+	s.send(`kill %1; printf "res%s\n" KILLED` + "\r")
+	s.waitFor("resKILLED")
+	if s.seen("no such job") {
+		t.Errorf("kill %%1 could not reach the backgrounded job:\n%s", s.plain())
+	}
+
+	// The shell kept the terminal throughout: a background job must
+	// never be handed it, however the spawn raced the line.
 	s.buf.Reset()
 	s.probe("ALIVE")
 	s.waitFor("resALIVE")
+}
+
+// TestBackgroundJobDoesNotStealTheTerminal is the invariant that makes
+// the whole path safe to add: every difference a background job
+// introduces is a step the foreground handoff takes and it skips.
+//
+// A shell that handed the terminal to a background job would leave the
+// user typing into a process that is not listening, which is
+// indistinguishable from a hang.
+func TestBackgroundJobDoesNotStealTheTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := startPTY(t, ptyOptions{})
+	s.waitForPrompt()
+
+	s.send(`sleep 45 & printf "res%s\n" BG` + "\r")
+	s.waitFor("resBG")
+	processExists(t, "sleep 45")
+
+	// The shell still reads keys and runs commands.
+	for _, name := range []string{"ONE", "TWO"} {
+		s.buf.Reset()
+		s.send(`printf "res%s\n" ` + name + "\r")
+		s.waitFor("res" + name)
+	}
+	s.buf.Reset()
+	s.send(`kill %1; printf "res%s\n" DONE` + "\r")
+	s.waitFor("resDONE")
+}
+
+// Command substitution and pipelines must not become jobs. They run
+// off-line too, so a mechanism keyed on anything but position would
+// sweep them up — and bash does not job-control $( ) either.
+func TestSubstitutionIsNotAJob(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := startPTY(t, ptyOptions{})
+	s.waitForPrompt()
+
+	s.buf.Reset()
+	s.send(`x=$(echo hi); echo a | grep -q a; jobs; printf "res%s\n" NONE` + "\r")
+	s.waitFor("resNONE")
+	if s.seen("Running") || s.seen("Stopped") {
+		t.Errorf("a substitution or pipeline was filed as a job:\n%s", s.plain())
+	}
 }
 
 // TestKillByJobSpec covers the half of kill that needs the shell: %1

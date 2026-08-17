@@ -34,6 +34,11 @@ type Job struct {
 	ID      int
 	Pgid    int
 	Command string
+	// background marks a job written with & rather than one the line ran
+	// in the foreground. It never owns the terminal, and every difference
+	// it introduces is a step the foreground handoff takes and this one
+	// skips — which is what makes the path safe to add.
+	background bool
 
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -82,8 +87,14 @@ type Table struct {
 	// substitution of that stdio.
 	captureLimit int
 	capturing    *capture.Session
-	lastCapture  []byte
-	lastTrunc    bool
+	// bgRanges are the spans of the current line's backgrounded
+	// statements; bgJobs is the job each has spawned, keyed by the
+	// statement's start offset so every stage of a backgrounded pipeline
+	// joins one job.
+	bgRanges    []Range
+	bgJobs      map[uint]*Job
+	lastCapture []byte
+	lastTrunc   bool
 }
 
 // NewTable creates the session job table. tty is the controlling
@@ -107,6 +118,51 @@ func (t *Table) EnableCapture(limit int) {
 		limit = capture.DefaultLimit
 	}
 	t.captureLimit = limit
+}
+
+// SetBackgroundRanges tells the table which parts of the next line were
+// written with &. The shell parses the line anyway, so this costs a walk
+// of an AST it already holds.
+//
+// Deliberately not cleared by EndLine: a background statement's
+// goroutine can reach the exec seam after the line has finished, which
+// is the whole reason position is used instead of timing.
+func (t *Table) SetBackgroundRanges(ranges []Range) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.bgRanges = ranges
+	t.bgJobs = make(map[uint]*Job, len(ranges))
+}
+
+// backgroundJob returns the job for the backgrounded statement covering
+// off, creating and filing it on first use, or nil when off is not
+// inside one.
+func (t *Table) backgroundJob(off uint, cmdline string) *Job {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var start uint
+	found := false
+	for _, r := range t.bgRanges {
+		if off >= r.Start && off < r.End {
+			start, found = r.Start, true
+			break
+		}
+	}
+	if !found {
+		return nil
+	}
+	if job, ok := t.bgJobs[start]; ok {
+		return job
+	}
+	job := newJob(cmdline)
+	job.background = true
+	t.bgJobs[start] = job
+	// Filed inline because t.mu is already held and file() would
+	// deadlock taking it again.
+	job.ID = t.nextID
+	t.nextID++
+	t.jobs[job.ID] = job
+	return job
 }
 
 // BeginLine opens a job slot for the next foreground command line, and
@@ -266,6 +322,19 @@ func (t *Table) ExecMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerFu
 		if !iok || !ook || !eok {
 			return next(ctx, args)
 		}
+		// A backgrounded statement gets its own job, decided by where the
+		// call sits in the source rather than by which goroutine arrived
+		// first. Checked before the line's slot, because when the
+		// interpreter's goroutine wins the race that slot is still set
+		// and the command would be treated as foreground — and handed the
+		// terminal.
+		if hc.Pos.IsValid() {
+			if job := t.backgroundJob(hc.Pos.Offset(), strings.Join(args, " ")); job != nil {
+				err := t.spawn(hc, job, args, stdin, stdout, stderr)
+				t.ensureReaper(job)
+				return err
+			}
+		}
 		t.mu.Lock()
 		job := t.current
 		t.mu.Unlock()
@@ -325,7 +394,7 @@ func (t *Table) spawn(hc interp.HandlerContext, job *Job, args []string, stdin, 
 	attr := &syscall.SysProcAttr{Setpgid: true}
 	leader := job.Pgid == 0
 	switch {
-	case leader && t.tty != nil:
+	case leader && t.tty != nil && !job.background:
 		attr.Foreground = true
 		attr.Ctty = int(t.tty.Fd())
 	case !leader:
@@ -399,8 +468,12 @@ func (t *Table) waitProc(job *Job, pid int) error {
 			job.cond.Broadcast()
 			job.mu.Unlock()
 			// The whole group is stopping; the shell needs the terminal
-			// to show a prompt again.
-			t.takeTerminal()
+			// to show a prompt again — unless this job never held it, in
+			// which case taking it would pull the terminal away from
+			// whatever is actually in the foreground.
+			if !job.background {
+				t.takeTerminal()
+			}
 			return interp.ExitStatus(stopExit(ws))
 		case ws.Signaled():
 			status := 128 + int(ws.Signal())
