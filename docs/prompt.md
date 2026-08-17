@@ -60,6 +60,50 @@ skips the wizard.
 | `lean-8colors` | lean, restricted to the terminal's own eight colors |
 | `robbyrussell` | the oh-my-zsh default, one line, unchanged |
 
+### Looks from other projects
+
+The layout pass spans "no backgrounds and a space separator" to "a
+background per segment and powerline arrows", which is the same range
+every other prompt's gallery lives in. So a look from another project
+costs data and no code:
+
+| preset | from | what it is |
+| --- | --- | --- |
+| `pastel-powerline` | starship | one line, purple → pink → orange → navy ribbon, no prompt character |
+| `tokyo-night` | starship | two lines, cool dark ribbon fading to near-black at the clock |
+| `agnoster` | oh-my-zsh | the powerline prompt people picture when they picture themed zsh |
+
+The two starship presets are transcribed from starship's own preset
+TOMLs, colour for colour. **`agnoster` is not a transcription** — an
+oh-my-zsh `.zsh-theme` is a zsh program, not a config file, so there is
+nothing to import and no converter that could produce one (see
+[#185](https://github.com/blairham/gish/issues/185)). It rebuilds the
+published look.
+
+Every one of these drops something, and `prompt preset <name>` says what
+as it applies:
+
+```console
+$ prompt preset tokyo-night
+saved tokyo-night to ~/.config/gish/p10k.conf
+
+tokyo-night does not reproduce everything its upstream shows:
+  starship $nodejs (needs a subprocess; no segment here forks)
+  starship $bun (needs a subprocess; no segment here forks)
+  …
+```
+
+The recurring gap is always the same one: starship runs `node --version`
+and friends on the prompt path, and no segment in this engine forks —
+that rule is where the speed comes from. gish's `nodenv` / `pyenv` /
+`asdf` segments are *not* substituted in silently, because reading a pin
+file answers a different question than running the tool: what the
+project is pinned to, rather than what is on `PATH` right now.
+
+It is said at apply time rather than in `prompt show` because the saved
+file is a resolved list of settings — read it back and there is no way
+to know what the preset chose not to carry.
+
 ## Configuration
 
 Settings layer, later winning over earlier:
@@ -221,3 +265,13 @@ powerlevel10k is by Roman Perepelitsa and contributors, MIT licensed.
 This is a reimplementation of its observable behaviour in Go, not a
 translation of its source. Where this document says "upstream", that is
 what it means.
+
+The `pastel-powerline` and `tokyo-night` palettes are transcribed from
+[starship](https://github.com/starship/starship)'s preset TOMLs
+(ISC, starship contributors). `agnoster` reproduces the look of the
+[oh-my-zsh](https://github.com/ohmyzsh/ohmyzsh) theme of that name (MIT);
+no code was taken, because there is no configuration in it to take.
+
+Naming a preset after someone else's project is a claim about fidelity,
+which is why every one of them declares what it does not reproduce
+rather than shipping a near-miss under a borrowed name.

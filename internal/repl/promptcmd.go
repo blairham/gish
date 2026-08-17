@@ -92,6 +92,12 @@ func runPrompt(hc interp.HandlerContext, name string, args []string) []string {
 			return fail(err)
 		}
 		fmt.Fprintf(hc.Stdout, "saved %s to %s\n", args[1], displayPath(path))
+		// Say what the look drops, here and now. The saved file is a
+		// resolved list of settings, so this metadata does not survive
+		// the round trip — `prompt show` reads the file back and cannot
+		// know what the preset chose not to carry. Choosing the preset
+		// is the moment the user can act on it anyway.
+		reportPresetGaps(hc, args[1], cfg)
 		return promptActivate(hc)
 
 	case args[0] == "import":
@@ -103,6 +109,25 @@ func runPrompt(hc interp.HandlerContext, name string, args []string) []string {
 
 	fmt.Fprintln(hc.Stderr, promptUsage(name))
 	return []string{"false"}
+}
+
+// reportPresetGaps names what a preset does not reproduce, in the
+// vocabulary of the project the look came from.
+//
+// A preset ported from another prompt is either faithful or it says
+// where it is not, which is the same rule `prompt import` follows when
+// it names the settings whose value was shell code. Silence here would
+// be worse than in the import case: someone who picked a look off a
+// screenshot has the screenshot in front of them, and would otherwise
+// spend the evening deciding they had configured it wrong.
+func reportPresetGaps(hc interp.HandlerContext, name string, cfg *promptengine.Config) {
+	if len(cfg.Unsupported) == 0 {
+		return
+	}
+	fmt.Fprintf(hc.Stdout, "\n%s does not reproduce everything its upstream shows:\n", name)
+	for _, u := range cfg.Unsupported {
+		fmt.Fprintf(hc.Stdout, "  %s\n", u)
+	}
 }
 
 // showPrompt reports what is in effect and where each layer came from.

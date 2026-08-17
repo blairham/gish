@@ -25,6 +25,11 @@ var presets = map[string]presetFunc{
 	"rainbow":      presetRainbow,
 	"pure":         presetPure,
 	"robbyrussell": presetRobbyRussell,
+
+	// Other upstreams — see presets_gallery.go for provenance.
+	"pastel-powerline": presetPastelPowerline,
+	"tokyo-night":      presetTokyoNight,
+	"agnoster":         presetAgnoster,
 }
 
 // Presets lists the available preset names, sorted.
