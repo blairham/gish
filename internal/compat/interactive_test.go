@@ -30,7 +30,22 @@ const interactivePath = "../../docs/interactive-compat.md"
 // those would fail an honest run on a machine with fewer of them.
 var pasteRecordedRe = regexp.MustCompile(`\*\*Paste gate: (\d+) of (\d+) cases pass`)
 
+// gatesEnv opts the pty gates in. `make paste-gate` and
+// `make paste-gate-check` set it; a plain `go test ./...` does not.
+//
+// They are skipped by default because they are the most expensive tests
+// in the repository — eighteen real shells on real ptys, plus every
+// installed tool's init — and running them *concurrently with the rest
+// of the suite* is what made them flaky rather than slow: on a
+// two-core runner under -race, a shell missed its own first prompt
+// inside a minute. The dedicated CI step is the enforcement point, and
+// running them twice per push bought nothing but the flake.
+const gatesEnv = "GISH_GATES"
+
 func TestInteractiveGates(t *testing.T) {
+	if os.Getenv(gatesEnv) == "" {
+		t.Skipf("set %s=1 to run the pty gates (make paste-gate-check)", gatesEnv)
+	}
 	bashBin, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skip("no bash on this machine: the differential oracle is unavailable")

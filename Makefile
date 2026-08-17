@@ -60,11 +60,11 @@ compat-check: ## Fail if the corpus passes fewer cases than published
 
 .PHONY: paste-gate
 paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161) and the ecosystem matrix (#159)
-	go test ./internal/compat/ -run TestInteractiveGates -update -v
+	GISH_GATES=1 go test ./internal/compat/ -run TestInteractiveGates -update -v
 
 .PHONY: paste-gate-check
 paste-gate-check: ## Fail if a pasted construct, an init script, or an installed tool regressed
-	go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
+	GISH_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
 
 # Regenerate pkg/pluginapi from proto/gish/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.
