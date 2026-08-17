@@ -635,23 +635,35 @@ loop:
 // RunCommand parses and runs src as a complete script (gish -c). This
 // is the path tools take when they spawn $SHELL -c: it stays POSIX-clean
 // — no editor, theme, plugins, history, or extra output (#41).
-func RunCommand(ctx context.Context, src string, login bool) error {
-	return runScript(ctx, strings.NewReader(src), "gish -c", login)
+func RunCommand(ctx context.Context, src string, login bool, args ...string) error {
+	// bash's `-c` takes positional parameters after the command: the
+	// first becomes $0 and the rest $1, $2, … It is how every wrapper
+	// passes a value into a snippet without interpolating it —
+	// `gish -c 'rm -- "$1"' _ "$file"` is the safe spelling, and
+	// dropping the parameters turns it into `rm --`.
+	name := "gish -c"
+	var params []string
+	if len(args) > 0 {
+		name, params = args[0], args[1:]
+	}
+	return runScript(ctx, strings.NewReader(src), name, login, params...)
 }
 
-// RunFile runs the script at path.
-func RunFile(ctx context.Context, path string, login bool) error {
+// RunFile runs the script at path, with args as its positional
+// parameters ($1, $2, …) — a script that cannot be passed arguments is
+// not a script.
+func RunFile(ctx context.Context, path string, login bool, args ...string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return runScript(ctx, f, path, login)
+	return runScript(ctx, f, path, login, args...)
 }
 
 // runScript is the non-interactive execution path, optionally preceded
 // by login profile sourcing.
-func runScript(ctx context.Context, r io.Reader, name string, login bool) error {
+func runScript(ctx context.Context, r io.Reader, name string, login bool, params ...string) error {
 	file, err := syntax.NewParser().Parse(r, name)
 	if err != nil {
 		return err
@@ -659,6 +671,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	var runnerRef *interp.Runner
 	trustRunner = func() *interp.Runner { return runnerRef }
 	runner, err := interp.New(
+		interp.Params(params...),
 		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),

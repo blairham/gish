@@ -325,6 +325,11 @@ echo "$# $1 $*"`,
 [[ -n "$s" && "$s" != nope ]] && echo compound`,
 	},
 	{
+		Name: "positional parameters passed to -c", Category: CatToolInit,
+		Provenance: "`sh -c 'cmd \"$1\"' _ \"$value\"` is the safe way to pass a value into a snippet",
+		Script:     `set -- alpha beta; echo "1=$1 2=$2 count=$#"`,
+	},
+	{
 		Name: "printf formatting", Category: CatStrings,
 		Provenance: "portable output formatting",
 		Script:     `printf '%s=%d (%05.2f) %q\n' name 42 3.14159 "needs quoting"`,

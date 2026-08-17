@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -123,4 +124,40 @@ func TestScriptFileExecution(t *testing.T) {
 	if stdout != "from-script\n" || code != 3 {
 		t.Errorf("script: stdout=%q code=%d", stdout, code)
 	}
+}
+
+// bash's `-c` takes positional parameters after the command, and a
+// script file takes them after its path (#119's neighbourhood: found
+// while reducing the substrate gaps).
+//
+// `gish -c 'rm -- "$1"' _ "$file"` is the safe way to pass a value into
+// a snippet without interpolating it — and dropping the parameters
+// turns that into `rm --`, which is the kind of silent difference that
+// makes a shell untrustworthy for scripting.
+func TestPositionalParameters(t *testing.T) {
+	bin := buildGish(t)
+
+	t.Run("-c", func(t *testing.T) {
+		out, err := exec.Command(bin, "-c", `echo "0=$0 1=$1 2=$2 count=$#"`, "myname", "alpha", "beta").CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		if got, want := strings.TrimSpace(string(out)), "0=myname 1=alpha 2=beta count=2"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("script file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "args.sh")
+		if err := os.WriteFile(path, []byte(`echo "1=$1 2=$2 count=$#"`+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command(bin, path, "alpha", "beta").CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		if got, want := strings.TrimSpace(string(out)), "1=alpha 2=beta count=2"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
 }

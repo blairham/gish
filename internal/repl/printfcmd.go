@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"mvdan.cc/sh/v3/interp"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // A local fix for one substrate gap (#119): `printf "%05.2f"`.
@@ -46,6 +47,10 @@ func printfCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 // needsLocalPrintf reports whether the format uses a spec the
 // interpreter refuses: a precision on a float conversion.
+//
+// Only that case. A format the interpreter handles must keep going to
+// the interpreter, or two implementations drift apart in the cases
+// nobody is looking at.
 func needsLocalPrintf(format string) bool {
 	for i := 0; i < len(format); i++ {
 		if format[i] != '%' {
@@ -68,8 +73,14 @@ func needsLocalPrintf(format string) bool {
 			}
 			break
 		}
-		if j < len(format) && sawDot && strings.ContainsRune("feEgG", rune(format[j])) {
-			return true
+		if j < len(format) {
+			// %q as well: the interpreter answers "invalid format char:
+			// q" for it, and %q is how a script quotes a value to pass
+			// it back through a shell — losing it is losing the safe way
+			// to build a command line.
+			if format[j] == 'q' || sawDot && strings.ContainsRune("feEgG", rune(format[j])) {
+				return true
+			}
 		}
 		i = j
 	}
@@ -139,7 +150,10 @@ func printfOnce(w io.Writer, format string, next func() string) error {
 		switch spec[len(spec)-1] {
 		case 'd', 'i':
 			n, _ := strconv.ParseInt(strings.TrimSpace(value), 0, 64)
-			fmt.Fprintf(&b, strings.TrimSuffix(spec, "i")+"d", n)
+			// C's %i is Go's %d; the conversion letter is the last byte
+			// of the spec, so it is replaced rather than appended —
+			// appending turned "%d" into "%dd" and printed "42d".
+			fmt.Fprintf(&b, spec[:len(spec)-1]+"d", n)
 		case 'o', 'u', 'x', 'X':
 			n, _ := strconv.ParseInt(strings.TrimSpace(value), 0, 64)
 			verb := spec
@@ -155,13 +169,60 @@ func printfOnce(w io.Writer, format string, next func() string) error {
 				b.WriteString(value[:1])
 			}
 		case 'q':
-			fmt.Fprintf(&b, "%q", value)
+			b.WriteString(bashQuote(value))
 		default: // s
 			fmt.Fprintf(&b, spec, value)
 		}
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// bashQuote is bash's %q: quote a value so it can be pasted back into
+// a shell.
+//
+// bash's own spelling is backslash escaping rather than wrapping in
+// quotes — `needs\ quoting`, not `'needs quoting'` — and the difference
+// is visible in the output of every script that builds a command line
+// this way, which is exactly the audience for the conversion.
+func bashQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	// A value containing control characters needs the $'…' form, which
+	// is the only one that can carry a newline through unambiguously.
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			quoted, err := syntax.Quote(s, syntax.LangBash)
+			if err != nil {
+				return s
+			}
+			return quoted
+		}
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if bashSafeRune(r) {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('\\')
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// bashSafeRune reports whether a character survives unquoted.
+func bashSafeRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	case strings.ContainsRune("_./:=@%+,-", r):
+		return true
+	case r > 0x7f:
+		return true // non-ASCII needs no escaping in any shell we target
+	}
+	return false
 }
 
 func unescapeChar(c byte) string {
