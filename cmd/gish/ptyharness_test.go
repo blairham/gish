@@ -203,8 +203,19 @@ func (s *ptySession) send(keys string) {
 //
 // A write error means the program already exited — a reason to stop
 // sending and check the marker, not a failure in itself.
+//
+// The buffer is cleared first, so want means "appeared after these keys"
+// rather than "is somewhere in everything seen so far". Waiting on a
+// marker that is already present returns immediately and sends the keys
+// exactly once, which is precisely the retry this function exists to
+// perform: `sendUntil("q", promptEnd)` was satisfied by the prompt that
+// preceded the pager, so a `q` that landed before less reached raw mode
+// was never resent, and the next command went to the pager instead of
+// the shell. That failed only when the runner was slow enough to lose
+// the race — a flake whose cause is invisible from the symptom.
 func (s *ptySession) sendUntil(keys, want string) {
 	s.t.Helper()
+	s.buf.Reset()
 	deadline := time.After(e2eBudget)
 	alive := true
 	send := func() {
@@ -240,8 +251,7 @@ func (s *ptySession) sendUntil(keys, want string) {
 func (s *ptySession) stepUntil(ready, keys, next string) {
 	s.t.Helper()
 	s.waitFor(ready)
-	s.buf.Reset()
-	s.sendUntil(keys, next)
+	s.sendUntil(keys, next) // clears the buffer itself
 }
 
 // probe runs a command whose output cannot be confused with the echo of
@@ -250,4 +260,14 @@ func (s *ptySession) stepUntil(ready, keys, next string) {
 // The terminal echoes what is typed, so a sentinel chosen for the output
 // usually also matches the echoed command. `printf 'res%s\n' NAME`
 // produces "resNAME" only in the output, never in the command text.
-func (s *ptySession) probe(name string) { s.send("printf 'res%s\\n' " + name + "\r") }
+//
+// The leading Ctrl-U discards whatever is already on the line, because a
+// probe usually follows sendUntil, whose retry cannot be idempotent for
+// every key it is given. Quitting a pager is the case that matters: `q`
+// is harmless while less is up and a literal character the moment it is
+// not, so a retry that arrives just after the pager exits leaves a `q`
+// on the line and turns the next command into `qprintf …`. The probe
+// then waits for output that a command-not-found will never produce.
+// Clearing first makes the probe independent of what came before it,
+// which is the only version of this that stays true as callers change.
+func (s *ptySession) probe(name string) { s.send("\x15printf 'res%s\\n' " + name + "\r") }

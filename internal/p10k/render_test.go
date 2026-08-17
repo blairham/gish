@@ -68,6 +68,11 @@ func TestRenderLean(t *testing.T) {
 	if strings.TrimSpace(lines[2]) != "❯" {
 		t.Errorf("second line = %q, want the prompt character", lines[2])
 	}
+	// TrimSpace above hid the absence of the gap: what the user types
+	// must not butt against the prompt character.
+	if !strings.HasSuffix(plain(lines[2]), "❯ ") {
+		t.Errorf("editing line = %q, want a trailing space after the prompt character", plain(lines[2]))
+	}
 	// The last line's right side is a real right prompt, not baked in.
 	if !strings.Contains(plain(got.RPrompt), "") && got.RPrompt != "" {
 		t.Errorf("unexpected rprompt on the editing line: %q", plain(got.RPrompt))

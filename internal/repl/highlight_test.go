@@ -40,6 +40,25 @@ func TestHighlightKnownAndUnknownCommands(t *testing.T) {
 	}
 }
 
+// TestHighlightStatesAreBothColors pins the literals, not just the
+// constants. Every other test compares spans to hlGoodCmd/hlBadCmd, so
+// the whole suite passed while a resolved command carried no color at
+// all — bold reads as emphasis rather than approval, leaving only the
+// negative signal. Naming the escapes here is what makes that visible.
+func TestHighlightStatesAreBothColors(t *testing.T) {
+	t.Parallel()
+
+	if hlGoodCmd != "\x1b[32m" {
+		t.Errorf("known command style = %q, want green", hlGoodCmd)
+	}
+	if hlBadCmd != "\x1b[31m" {
+		t.Errorf("unknown command style = %q, want red", hlBadCmd)
+	}
+	if hlGoodCmd == hlBadCmd {
+		t.Error("the two command states are indistinguishable")
+	}
+}
+
 func TestHighlightPathsAreNeverRed(t *testing.T) {
 	t.Parallel()
 

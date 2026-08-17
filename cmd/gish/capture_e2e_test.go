@@ -138,3 +138,27 @@ func TestCaptureLeavesRedirectionAlone(t *testing.T) {
 		t.Errorf("redirected file = %q, want %q — the pty rewrote it", got, "hello\n")
 	}
 }
+
+// TestProbeSurvivesStrayInput pins the harness invariant that makes the
+// pager tests trustworthy.
+//
+// sendUntil retries on silence, and its retry cannot be idempotent for
+// every key: `q` is harmless while a pager is up and a literal character
+// the instant it is not. A retry landing just after less exits leaves a
+// `q` on the line, and the next command becomes `qprintf …` — so the
+// probe waits sixty seconds for output that a command-not-found will
+// never produce. That is the shape of the CI flake this guards.
+//
+// A stray keystroke is exactly reproducible even though the race is not,
+// so the invariant gets a deterministic test rather than a rerun.
+func TestProbeSurvivesStrayInput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := startPTY(t, ptyOptions{})
+	s.waitForPrompt()
+	s.send("q") // the stray character a sendUntil retry would leave
+	s.waitFor("q")
+	s.probe("STRAY")
+	s.waitFor("resSTRAY")
+}
