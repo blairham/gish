@@ -33,6 +33,13 @@ jobs:
     - name: Bash-compat scoreboard
       run: make compat-check
 
+    # The #1 abandonment cause, gated (#161): text pasted at a real
+    # interactive prompt, and the named init scripts sourced unmodified.
+    # Runs on unix only — it drives gish on a pty.
+    - name: Paste and source gates
+      if: runner.os != 'Windows'
+      run: make paste-gate-check
+
   # Windows is a target, not a port (#47): everything must build, and
   # the portable packages must pass on a real Windows runner. The
   # unix-only surfaces (job control, sandbox enforcement, pty tests)

@@ -25,7 +25,11 @@ Keystroke latency, measured end to end from byte-in to repaint-out:
 **p50 0.2 ms, p99 0.3 ms** — with highlighting, suggestions, and the
 footgun linter all running. Full methodology and numbers in
 [docs/bench.md](docs/bench.md); the bash-compatibility scoreboard, gaps
-included, is in [docs/compat.md](docs/compat.md).
+included, is in [docs/compat.md](docs/compat.md). What happens when you
+*paste* a bash one-liner at the prompt, and when you source nvm, conda
+or an activate script unmodified, is measured separately in
+[docs/interactive-compat.md](docs/interactive-compat.md) — pasting and
+sourcing is the most-cited reason people go back.
 
 **Try it without commitment.** Run `gish` in one tab — no `chsh`
 required, nothing to undo but two directories. Coming from bash or zsh,

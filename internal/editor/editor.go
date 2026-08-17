@@ -85,9 +85,9 @@ const (
 // Editor reads commands interactively. Not safe for concurrent use; the
 // kill ring persists across ReadCommand calls, buffer and undo do not.
 type Editor struct {
-	term   term.Terminal
-	out    io.Writer
-	cfg    Config
+	term       term.Terminal
+	out        io.Writer
+	cfg        Config
 	keymap     map[binding]func(*Editor)
 	repeatable map[binding]bool
 
@@ -147,9 +147,9 @@ type Editor struct {
 // the same terminal).
 func New(t term.Terminal, out io.Writer, cfg Config) *Editor {
 	e := &Editor{
-		term:   t,
-		out:    out,
-		cfg:    cfg,
+		term:       t,
+		out:        out,
+		cfg:        cfg,
 		keymap:     defaultKeymap(),
 		repeatable: repeatableBindings(),
 		rend:       newRenderer(out, 80),
@@ -669,16 +669,16 @@ func defaultKeymap() map[binding]func(*Editor) {
 		{r: 'o', mod: term.ModCtrl}: (*Editor).operateAndGetNext,
 		{r: 'x', mod: term.ModCtrl}: (*Editor).startCtrlX,
 		// Round 2 (#118): the rest of readline's emacs keymap.
-		{r: 'u', mod: term.ModAlt}:  (*Editor).upcaseWord,
-		{r: 'l', mod: term.ModAlt}:  (*Editor).downcaseWord,
-		{r: 'c', mod: term.ModAlt}:  (*Editor).capitalizeWord,
-		{r: 't', mod: term.ModAlt}:  (*Editor).transposeWords,
-		{r: 'v', mod: term.ModCtrl}: (*Editor).startQuotedInsert,
-		{r: 'q', mod: term.ModCtrl}: (*Editor).startQuotedInsert,
-		{r: 'r', mod: term.ModAlt}:  (*Editor).revertLine,
-		{r: '<', mod: term.ModAlt}:  (*Editor).beginningOfHistory,
-		{r: '>', mod: term.ModAlt}:  (*Editor).endOfHistory,
-		{r: ']', mod: term.ModCtrl}: func(e *Editor) { e.startCharSearch(false) },
+		{r: 'u', mod: term.ModAlt}:                (*Editor).upcaseWord,
+		{r: 'l', mod: term.ModAlt}:                (*Editor).downcaseWord,
+		{r: 'c', mod: term.ModAlt}:                (*Editor).capitalizeWord,
+		{r: 't', mod: term.ModAlt}:                (*Editor).transposeWords,
+		{r: 'v', mod: term.ModCtrl}:               (*Editor).startQuotedInsert,
+		{r: 'q', mod: term.ModCtrl}:               (*Editor).startQuotedInsert,
+		{r: 'r', mod: term.ModAlt}:                (*Editor).revertLine,
+		{r: '<', mod: term.ModAlt}:                (*Editor).beginningOfHistory,
+		{r: '>', mod: term.ModAlt}:                (*Editor).endOfHistory,
+		{r: ']', mod: term.ModCtrl}:               func(e *Editor) { e.startCharSearch(false) },
 		{r: ']', mod: term.ModCtrl | term.ModAlt}: func(e *Editor) { e.startCharSearch(true) },
 		// Ctrl-S is free: raw mode clears IXON, so flow control is not
 		// eating it — which is the only reason anyone believes it is lost.

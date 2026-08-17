@@ -219,7 +219,15 @@ func appendPasted(paste *strings.Builder, ev uv.Event) {
 	switch {
 	case k.Text != "":
 		paste.WriteString(k.Text)
-	case k.Code == uv.KeyEnter || k.Code == '\n':
+	case k.Code == uv.KeyEnter || k.Code == '\n' || k.Code == '\r',
+		// A bare LF inside a paste decodes as Ctrl-J, and CR as Ctrl-M:
+		// they are the same bytes. Dropping them — which is what
+		// happened before, since neither carries Text — silently glued a
+		// pasted heredoc into `cat <<'EOF'line oneline two`, and turned
+		// a pasted backslash-continued command into one long argument.
+		// A multi-line paste losing its line structure is the #161
+		// abandonment cause in its purest form.
+		k.Mod.Contains(uv.ModCtrl) && (k.Code == 'j' || k.Code == 'm'):
 		paste.WriteByte('\n')
 	case k.Code == uv.KeyTab:
 		paste.WriteByte('\t')
