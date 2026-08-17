@@ -187,5 +187,8 @@ func p10kContext(runner *interp.Runner, info promptInfo) *p10k.Context {
 	// from whoever is scanning the repository and are merged when they
 	// describe this same working tree.
 	ctx.Git = p10k.HeadStatus(dir)
+	// The counts arrive from a background scan (#52); the prompt never
+	// waits for one.
+	mergeVCSCounts(ctx.Git)
 	return ctx
 }

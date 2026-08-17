@@ -123,7 +123,7 @@ func (c *repoCache) render(ctx context.Context, dir string) string {
 		rs.refreshing = true
 		go rs.refresh()
 	}
-	text := rs.status.text()
+	text := renderStatus(rs.status)
 	rs.mu.Unlock()
 
 	if !first {
@@ -140,7 +140,7 @@ func (c *repoCache) render(ctx context.Context, dir string) string {
 		}
 		rs.mu.Lock()
 		if rs.haveStatus {
-			text := rs.status.text()
+			text := renderStatus(rs.status)
 			rs.mu.Unlock()
 			return text
 		}
