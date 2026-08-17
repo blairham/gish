@@ -4,10 +4,12 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,12 +22,33 @@ import (
 // locally via `make bench-startup` and published in the README.
 const startupBudget = 150 * time.Millisecond
 
+// buildGish returns a gish binary, built once for the whole package.
+//
+// Shared rather than per-test because several tests here launch gish
+// under a pty, and each `go build` was competing with the shells the
+// other tests were trying to time out on. On a saturated macOS runner
+// that showed up as pty tests seeing *no output at all* within their
+// deadline — the shell was fine, the machine was busy building.
+//
+// The binary is identical for every caller, so there is nothing to
+// isolate; only the cost was ever per-test.
+var buildOnce = sync.OnceValues(func() (string, error) {
+	dir, err := os.MkdirTemp("", "gish-testbin")
+	if err != nil {
+		return "", err
+	}
+	bin := filepath.Join(dir, "gish")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		return "", fmt.Errorf("build: %w\n%s", err, out)
+	}
+	return bin, nil
+})
+
 func buildGish(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "gish")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
+	bin, err := buildOnce()
+	if err != nil {
+		t.Fatal(err)
 	}
 	return bin
 }
