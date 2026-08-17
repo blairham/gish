@@ -26,6 +26,16 @@ var scrubRules = []struct {
 	{"credential-assignment", regexp.MustCompile(`(?i)[\w-]*(api[_-]?key|secret|token|passw(or)?d)[\w-]*[=:]['"]?[^$\s'"][^\s'"]{7,}`)},
 }
 
+// SecretReason reports the first scrub rule a command matches, or "" if
+// it is clean.
+//
+// Exported so that anything else persisting a command line applies the
+// same gate the history store does. The #10 guarantee is "a
+// secret-bearing command is never recorded", and that has to mean every
+// place a command is recorded — a second store with its own idea of
+// what is safe is how the guarantee quietly stops being true.
+func SecretReason(command string) string { return scrubReason(command) }
+
 // scrubReason reports the first matching rule name, or "" for a clean
 // command.
 func scrubReason(command string) string {

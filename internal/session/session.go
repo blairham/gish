@@ -34,6 +34,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/blairham/gish/internal/history"
 )
 
 // Record is one session's restorable state.
@@ -189,6 +191,15 @@ func (s *Store) Save(r Record) error {
 		return errors.New("session: record has no id")
 	}
 	r.Env, _ = FilterEnv(r.Env)
+	// The command line gets the same gate the history store applies.
+	// #10's guarantee is that a secret-bearing command is never
+	// recorded, and a second store with its own idea of what is safe is
+	// exactly how that guarantee stops being true — a command like
+	// `export GITHUB_TOKEN=…` is refused by history and would otherwise
+	// be written here verbatim.
+	if r.LastCommand != "" && history.SecretReason(r.LastCommand) != "" {
+		r.LastCommand = ""
+	}
 	if r.UpdatedUnixMs == 0 {
 		r.UpdatedUnixMs = time.Now().UnixMilli()
 	}
