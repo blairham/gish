@@ -13,9 +13,17 @@ import (
 // Highlight styles (#38). Kept minimal and legible: the signature
 // affordance is red-for-unknown-command — fish's "see the typo before
 // Enter".
+//
+// A resolved command is green rather than merely bold, because red and
+// bold are not opposites: bold reads as emphasis, not as approval, so
+// the only real signal was the negative one. Green is also what
+// zsh-syntax-highlighting uses for commands, builtins, functions and
+// aliases, and that is the muscle memory arrivals bring with them.
+// Both states now say something, which is the point of coloring the
+// word at all.
 const (
 	hlBadCmd  = "\x1b[31m" // unknown command: red
-	hlGoodCmd = "\x1b[1m"  // known command: bold
+	hlGoodCmd = "\x1b[32m" // known command: green
 	hlString  = "\x1b[33m" // quoted strings: yellow
 	hlExpand  = "\x1b[36m" // $VAR, ${…}, $(…): cyan
 	hlComment = "\x1b[2m"  // comments: dim
