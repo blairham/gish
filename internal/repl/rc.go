@@ -44,6 +44,35 @@ func rcPath() string {
 	return ""
 }
 
+// enableAliases turns on alias expansion for an interactive session.
+//
+// Without this, `alias` is a trap rather than a missing feature: the
+// builtin exists and records the definition, so defining one looks like
+// it worked, and using it reports "command not found". A switcher's rc
+// is mostly aliases, so the first thing they try fails in the most
+// confusing way available.
+//
+// Interactive only, which is bash's rule and worth keeping: expanding
+// aliases in scripts changes what a script means depending on who runs
+// it, and gish's -c path is pinned POSIX-clean by the compat suite. So
+// runPlain (piped stdin) and RunReader (-c, script files) deliberately
+// do not call this.
+//
+// It runs the shopt rather than reaching for an option constant because
+// alias expansion is a shopt in the interpreter too; this is the same
+// "make it true in the live runner" move `config` uses.
+func enableAliases(ctx context.Context, runner *interp.Runner) {
+	file, err := syntax.NewParser().Parse(strings.NewReader("shopt -s expand_aliases"), "gish")
+	if err != nil {
+		return
+	}
+	if err := runner.Run(ctx, file); err != nil {
+		// Not fatal: a shell that cannot expand aliases is worse than one
+		// that can, but far better than one that refuses to start.
+		fmt.Fprintf(os.Stderr, "gish: enabling aliases: %v\n", err)
+	}
+}
+
 // loadRC runs the rc file in the session runner, so functions, variables,
 // cd, and exports persist into the interactive session. A missing file is
 // normal; a broken one warns and the shell starts anyway — an rc error

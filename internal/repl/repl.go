@@ -195,6 +195,9 @@ func runEditor(ctx context.Context, login bool) error {
 	signal.Notify(sigs, os.Interrupt, syscall.SIGQUIT)
 	defer signal.Stop(sigs)
 
+	// Alias expansion goes on before anything is sourced, so aliases
+	// defined in a profile or rc work in the session they configure.
+	enableAliases(ctx, runner)
 	// Login shells source profile files first (#41), then the rc file
 	// runs in the session runner so functions, vars, and cd persist.
 	if login {
