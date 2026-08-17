@@ -9,7 +9,7 @@ import (
 // Settings that are stored faithfully and not acted on (#133).
 //
 // A setting has three possible states, and only two of them used to be
-// visible: absent, set-and-honoured, and set-and-ignored. The third is
+// visible: absent, set-and-honored, and set-and-ignored. The third is
 // the worst one, because the user has no way to tell it from the second
 // — they configured something, `p10k show` reported it, and the prompt
 // quietly did something else.

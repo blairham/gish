@@ -36,7 +36,7 @@ contents; each carries its provenance in the corpus.
 | pattern substitution | parameter expansion | bash: a+b-c a+b+c A-b-c a-b-C · gish: a+b-c a+b+c a-b-c a-b-c |
 | associative arrays | arrays | bash: value thing 2 · gish: value thing 1 |
 | fd redirection and merging | redirection & heredocs | bash: TO-STDOUT… · gish: TO-STDOUT… |
-| printf formatting | string & arithmetic ops | bash: name=42 (03.14) needs\ quoting · gish: invalid format char: . |
+| printf formatting | string & arithmetic ops | bash: name=42 (03.14) needs\ quoting · gish: name=42d (03.14) "needs quoting" |
 
 Gaps in the substrate belong upstream at [mvdan/sh](https://github.com/mvdan/sh) —
 fixing them there improves every consumer, not just gish. The current

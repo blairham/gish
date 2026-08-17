@@ -68,6 +68,31 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **gish claims bash's interface, not bash's identity** (2026-08,
+  [#120](https://github.com/blairham/gish/issues/120)): `BASH_VERSION`
+  and `BASH_VERSINFO` report a modern bash; `$0` stays `gish`, and
+  `GISH_VERSION` says exactly what is running.
+
+  The issue's own recommendation was the opposite — claim nothing, and
+  shim per tool — with one stated condition for revisiting: evidence
+  that specific popular tools are unusable *and* that their bash hook
+  passes. The #159 matrix produced exactly that. fzf chooses between two
+  Ctrl-T implementations on `((BASH_VERSINFO[0] < 4))`: a readline
+  *macro* built from editing commands including `shell-expand-line`,
+  which gish does not emulate and will not, or `bind -x`, which gish
+  implements. Unset, that arithmetic reads 0 — so refusing to claim a
+  version handed gish the one path it cannot run, in order to avoid
+  claiming a capability it has.
+
+  The distinction that makes this honest rather than impersonation:
+  these variables are used as **feature probes**, and the features they
+  gate are ones gish implements (`PROMPT_COMMAND`, `PS0`, the DEBUG
+  trap, `bind -x`, `complete`/`compgen`). The **identity** question is
+  answered truthfully — `$0` is what a script re-execs and what a user
+  sees, and lying there would be a lie a program could act on. Where the
+  claim does outrun the substrate, docs/compat.md already lists the gaps
+  by name and `doctor` reports them.
+
 - **One theme engine, two config dialects** (2026-08,
   [#134](https://github.com/blairham/gish/issues/134)): `p10k` is the
   engine; the `gish` theme's knobs (`GISH_THEME_SEGMENTS`,
