@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ const blocksUsage = `usage: blocks [list|show ID|search TERM]
   blocks                 recent commands that have captured output
   blocks show 3          replay that command's output
   blocks search "error"  commands whose output matched
+  blocks rerun 3         put that command back on the prompt (never runs it)
 
 Capture is off by default — ` + "`config blocks on`" + ` turns it on, and only
 commands run after that have output to show. Output is redacted for
@@ -80,9 +82,37 @@ func runBlocks(hc interp.HandlerContext, args []string) []string {
 		return showBlock(hc, store, bs, args[1])
 	case args[0] == "search" && len(args) == 2:
 		return searchBlocks(hc, store, bs, args[1])
+	case (args[0] == "rerun" || args[0] == "run") && len(args) == 2:
+		return rerunBlock(hc, store, args[1])
 	}
 	fmt.Fprintf(hc.Stderr, "blocks: unknown usage\n%s\n", blocksUsage)
 	return []string{"false"}
+}
+
+// rerunBlock puts a block's command back on the next prompt.
+//
+// It loads the line rather than running it, which is the same posture as
+// every other place gish hands a command back (#20's preview rule): the
+// user reads it, edits it if they want, and presses Enter. A block is
+// history, and history is exactly where a command that should not run
+// twice unchanged comes from — `git push --force`, `rm -rf ./build`.
+func rerunBlock(hc interp.HandlerContext, store *history.Store, ref string) []string {
+	entries := withOutput(store)
+	n, err := strconv.Atoi(ref)
+	if err != nil || n < 1 || n > len(entries) {
+		fmt.Fprintf(hc.Stderr, "blocks: no block %s (see `blocks list`)\n", ref)
+		return []string{"false"}
+	}
+	command := entries[n-1].Command
+	if ed := currentEditor(); ed != nil {
+		ed.Preload(command)
+		fmt.Fprintf(hc.Stdout, "queued: %s\n", command)
+		return []string{"true"}
+	}
+	// No editor — a script, or a piped session. Printing the command is
+	// the useful answer there: it can be piped into whatever wanted it.
+	fmt.Fprintln(hc.Stdout, command)
+	return []string{"true"}
 }
 
 // withOutput returns the recent entries that actually have output,

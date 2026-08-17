@@ -17,9 +17,6 @@ builds:
   goarch:
   - amd64
   - arm64
-  ignore:
-  - goos: windows
-    goarch: arm64
   ldflags:
   - -s -w
   - -X main.version={{.Version}}
@@ -40,9 +37,6 @@ builds:
   goarch:
   - amd64
   - arm64
-  ignore:
-  - goos: windows
-    goarch: arm64
   ldflags:
   - -s -w
 
@@ -58,9 +52,6 @@ builds:
   goarch:
   - amd64
   - arm64
-  ignore:
-  - goos: windows
-    goarch: arm64
   ldflags:
   - -s -w
 
@@ -148,6 +139,44 @@ brews:
       ln -sf "#{opt_bin}/gish-git" "#{opt_bin}/gish-carapace" "${XDG_DATA_HOME:-$HOME/.local/share}/gish/plugins/"
   test: |
     system "#{bin}/gish", "--version"
+
+# Windows distribution (#89). Both mirror the homebrew-tap pattern: the
+# upload is skipped unless its token exists, so a release from a machine
+# without the secrets still publishes the GitHub release itself.
+scoops:
+- name: gish
+  skip_upload: '{{ if isEnvSet "SCOOP_BUCKET_TOKEN" }}false{{ else }}true{{ end }}'
+  repository:
+    owner: blairham
+    name: scoop-bucket
+    token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+  homepage: https://github.com/blairham/gish
+  description: "Interactive shell: zsh ergonomics, bash compatibility, native plugins"
+  license: MIT
+
+winget:
+- name: gish
+  publisher: blairham
+  short_description: "Interactive shell: zsh ergonomics, bash compatibility, native plugins"
+  license: MIT
+  homepage: https://github.com/blairham/gish
+  # winget's manifests are a PR against microsoft/winget-pkgs, so this
+  # needs a fork to push the branch to and a token that can open it.
+  skip_upload: '{{ if isEnvSet "WINGET_TOKEN" }}false{{ else }}true{{ end }}'
+  publisher_url: https://github.com/blairham
+  package_identifier: blairham.gish
+  repository:
+    owner: blairham
+    name: winget-pkgs
+    branch: "gish-{{ .Version }}"
+    token: "{{ .Env.WINGET_TOKEN }}"
+    pull_request:
+      enabled: true
+      draft: false
+      base:
+        owner: microsoft
+        name: winget-pkgs
+        branch: master
 
 release:
   draft: false

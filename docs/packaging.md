@@ -52,7 +52,7 @@ reconstruct.
 | --- | --- | --- |
 | Homebrew core | planned before launch | #164 |
 | Homebrew tap | shipping | pre-releases and the edge |
-| winget / scoop | via GoReleaser | #89 |
+| winget / scoop | configured (#89) | ships with the next tag; both skip when their token is absent |
 | nixpkgs | after launch | a Go module package; needs a vendorHash |
 | AUR | after launch | `gish-bin` from the release tarball first |
 | Debian/Ubuntu | later | needs a stable release cadence first |
@@ -60,6 +60,15 @@ reconstruct.
 The ordering is deliberate: each of these is a place a *user* looks,
 and there is no point being in five package managers with nothing to
 install. Launch, then breadth.
+
+## A deprecation to handle before it becomes an error
+
+GoReleaser is phasing `brews:` out in favor of `homebrew_casks:`, and
+says so on every run. The migration is not a rename — casks install
+differently — so it wants a release to verify against rather than a
+blind edit, and it is deliberately not bundled with the #89 work. The
+tap is the pre-core path anyway; core carries a hand-written formula
+(`packaging/homebrew/gish.rb`), which this does not affect.
 
 ## What is never in a package
 

@@ -127,7 +127,7 @@ func TestScriptFileExecution(t *testing.T) {
 }
 
 // bash's `-c` takes positional parameters after the command, and a
-// script file takes them after its path (#119's neighbourhood: found
+// script file takes them after its path (#119's neighborhood: found
 // while reducing the substrate gaps).
 //
 // `gish -c 'rm -- "$1"' _ "$file"` is the safe way to pass a value into
