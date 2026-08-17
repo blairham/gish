@@ -154,6 +154,13 @@ func showBlock(hc interp.HandlerContext, store *history.Store, bs *blocks.Store,
 // history cannot do, and the reason to keep the output at all.
 func searchBlocks(hc interp.HandlerContext, store *history.Store, bs *blocks.Store, term string) []string {
 	entries := withOutput(store)
+	if len(entries) == 0 {
+		// "nothing matched" would be true and misleading: it sends the
+		// user looking for a better search term when the real answer is
+		// that capture was never on.
+		fmt.Fprintln(hc.Stdout, "no captured output yet (config blocks on)")
+		return []string{"true"}
+	}
 	style := ui.Styles(ui.Enabled(hc.Stdout))
 	matches := 0
 	for i, e := range entries {
