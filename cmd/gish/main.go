@@ -41,6 +41,16 @@ func run() int {
 	if len(os.Args) >= 2 && os.Args[1] == "ssh" {
 		return runSSH(context.Background(), os.Args[2:])
 	}
+	// `gish acp` hosts an ACP agent, running its commands through gish's
+	// sandbox and deadlines (#167). A subcommand for the same reason
+	// `gish ssh` is one: it owns the terminal for its whole run.
+	if len(os.Args) >= 2 && os.Args[1] == "acp" {
+		if err := repl.RunACP(context.Background(), os.Stdin, os.Stdout, os.Stderr, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "gish acp:", err)
+			return 1
+		}
+		return 0
+	}
 	// `gish migrate` reads an existing bash/zsh setup (#160). A
 	// subcommand rather than only a builtin, because the moment it
 	// matters most is before anyone has started a gish session.

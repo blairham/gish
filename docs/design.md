@@ -68,6 +68,32 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **ACP on the agent edge, in two places** (2026-08,
+  [#166](https://github.com/blairham/gish/issues/166),
+  [#167](https://github.com/blairham/gish/issues/167), docs/acp.md): the
+  inbound role (an ACP agent answers `??` and `explain`) is a plugin;
+  the outbound role (an agent's commands execute inside gish) is core,
+  because a plugin may never hold an exec channel (#34).
+
+  The spike's load-bearing question — does the terminal capability have
+  real adopters — resolved yes, and better than expected: the capability
+  is **client-side and optional**, so an agent that does not see it
+  advertised must not call it. Implementing it is purely additive. Wire
+  v1 is stable under a vendor-neutral org with a public RFD process; v2
+  is a draft whose own announcement says adding it must not mean
+  dropping v1.
+
+  What makes it worth doing is what ACP omits: no permission model, no
+  sandboxing, no timeout. Those are correct omissions for a protocol and
+  a real gap for whoever hosts one — every ACP client today runs an
+  agent's commands the way `bash -c` would. gish has sandbox profiles
+  and a deadline on every call already.
+
+  Recorded caveat, so it is not re-litigated into a slogan: the
+  *user-facing* claim ("people are leaving zsh because agents assume
+  bash") is **not evidenced** — 2 HN accounts, 0 of 827 in a Reddit
+  corpus. Build it for the substrate, not the story (#169).
+
 - **gish claims bash's interface, not bash's identity** (2026-08,
   [#120](https://github.com/blairham/gish/issues/120)): `BASH_VERSION`
   and `BASH_VERSINFO` report a modern bash; `$0` stays `gish`, and
