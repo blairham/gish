@@ -126,6 +126,92 @@ func TestPatternCharacterClassesMatchBash(t *testing.T) {
 	}
 }
 
+// `printf -v` writes into a variable instead of stdout (#219).
+//
+// It is worth a differential of its own because of how it failed: not
+// loudly, but by printing a literal "-v" and leaving the variable
+// empty. bash-preexec uses it to capture the command line, and
+// bash-preexec is what ships inside Kiro's, iTerm2's and Atuin's shell
+// integrations — so on a login shell here it produced "-v-v-v" before
+// the prompt and handed the integration empty strings, which reads as a
+// shell where every command is blank rather than as a broken printf.
+//
+// These are the success shapes, where stdout is the whole story. The
+// statuses and diagnostics are next door, since bash prefixes its
+// stderr with its own name and line number.
+func TestPrintfDashVMatchesBash(t *testing.T) {
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash: the differential oracle is unavailable")
+	}
+	gishBin := buildGish(t)
+	ctx := context.Background()
+
+	for _, script := range []string{
+		`printf -v x "%s" hello; echo "[$x]"`,
+		`printf -vx "%s" hi; echo "[$x]"`,                      // clustered
+		`printf -v x "%s\n" a b c; echo "[$x]"`,                // the format recycles into the variable
+		`printf -v x "%05.2f" 3.14159; echo "[$x]"`,            // the local precision path still applies
+		`printf -v x "%s" "with space"; echo "[$x]"`,           // quoting survives the round trip
+		`printf -v x "%s" "quote'd"; echo "[$x]"`,              // ...including a single quote
+		`printf -v x -- "%s" hi; echo "[$x]"`,                  // -- ends the options
+		`printf -v x "%s" -- ; echo "[$x]"`,                    // ...but is an operand after the format
+		`printf "%s" -v x; echo`,                               // -v is not an option after the format
+		`printf -- "-%s" a; echo`,                              // a format that starts with a dash
+		`i=2; printf -v "arr[$i]" "%s" hi; echo "[${arr[2]}]"`, // a subscript still resolves
+		// The scope is the reason this cannot be done in the handler:
+		// bash writes the local, not a global of the same name.
+		`f(){ local y; printf -v y "%s" in; echo "[$y]"; }; f; echo "[${y-unset}]"`,
+	} {
+		t.Run(script, func(t *testing.T) {
+			gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+			bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
+			if string(gishOut) != string(bashOut) {
+				t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+			}
+		})
+	}
+}
+
+// The statuses, which bash distinguishes more finely than a builtin
+// returning true/false can: a bad identifier is 2, a bad conversion is
+// 1, and a call with no format at all is 2.
+func TestPrintfDashVStatusesMatchBash(t *testing.T) {
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash: the differential oracle is unavailable")
+	}
+	gishBin := buildGish(t)
+	ctx := context.Background()
+
+	for _, script := range []string{
+		`printf -v 1bad "%s" q`, // not a valid identifier
+		`printf -v "" "%s" q`,   // ditto, empty
+		`printf -v x.y "%s" hi`, // ditto
+		`printf -v "x;echo pwned" "%s" hi`,
+		`printf -v "x[1]$(echo p)[2]" "%s" hi`, // the subscript is not the whole tail
+		`printf -v x`,                          // no format
+		`printf`,                               // no format, no -v
+		`printf -v x "%s" ok`,                  // the success case, for contrast
+	} {
+		t.Run(script, func(t *testing.T) {
+			gishCode := runStatus(ctx, t, gishBin, script)
+			bashCode := runStatus(ctx, t, bashBin, script)
+			if gishCode != bashCode {
+				t.Errorf("exit status: gish %d, bash %d", gishCode, bashCode)
+			}
+		})
+	}
+}
+
+// runStatus reports the exit status of running script through sh.
+func runStatus(ctx context.Context, t *testing.T, sh, script string) int {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, sh, "-c", script)
+	_ = cmd.Run()
+	return cmd.ProcessState.ExitCode()
+}
+
 // The one gap with a seam is fixed locally, and this is the case that
 // broke: a precision on a float, which is how every script that formats
 // a duration, a percentage or a size writes it.
