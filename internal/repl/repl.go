@@ -128,9 +128,10 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_jobs", table.Jobs)
 		builtins.Register("__gish_fg", table.Fg)
 		builtins.Register("__gish_bg", table.Bg)
+		builtins.Register("__gish_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(killCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -545,7 +546,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+		interp.CallHandler(killCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -635,14 +636,15 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 		interp.Params(append([]string{"--"}, params...)...),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+		interp.CallHandler(killCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
 	)
 	if err != nil {
 		return err
 	}
-	// The name must resolve here too, so an unavailable builtin reports
+	// The names must resolve here too, so an unavailable builtin reports
 	// itself rather than looking like a missing program.
 	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))
+	registerScriptKill()
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -661,7 +663,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+			interp.CallHandler(killCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
 		},
 		opts...,
 	)...)

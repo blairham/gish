@@ -142,18 +142,84 @@ func TestBackgroundAmpersandIsNotFiled(t *testing.T) {
 	s := startPTY(t, ptyOptions{})
 	s.waitForPrompt()
 
-	s.send("sleep 45 &\r")
-	s.probe("BACKGROUNDED")
+	// Each step is one command line, with its marker produced by that
+	// same line. Sending `jobs` and then probing as a second line raced:
+	// two lines back-to-back can lose the second in the raw-mode
+	// transition around running the first, which failed on a slower
+	// runner while passing everywhere else. Every other test here waits
+	// on a marker between sends; this one had nothing to wait for,
+	// because the whole point is that nothing is announced.
+	s.send(`sleep 45 & printf "res%s\n" BACKGROUNDED` + "\r")
 	s.waitFor("resBACKGROUNDED")
 
 	s.buf.Reset()
-	s.send("jobs\r")
-	s.probe("LISTED")
+	s.send(`jobs; printf "res%s\n" LISTED` + "\r")
 	s.waitFor("resLISTED")
 
 	if s.seen("sleep 45") {
 		t.Error("`cmd &` now files a job — the gap closed. " +
 			"Replace this with the real assertions: the shell should announce [id] pid, " +
 			"`jobs` should list it, and `fg` should reach it.")
+	}
+}
+
+// TestKillByJobSpec covers the half of kill that needs the shell: %1
+// resolves through the same table jobs/fg/bg read, and signals the
+// job's process *group* rather than one pid — a pipeline is several
+// processes, and killing only the first leaves the rest running.
+//
+// Before this, kill was recognized by the interpreter and answered
+// "unsupported builtin", which is worse than absent: a claimed name
+// never reaches the exec seam, so the working /bin/kill was shadowed by
+// something that refused to run. A job you could stop with Ctrl-Z could
+// not be killed.
+func TestKillByJobSpec(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := startPTY(t, ptyOptions{})
+	s.waitForPrompt()
+
+	s.send(runningCmd + "\r")
+	s.waitFor("resRUNNING")
+	s.buf.Reset()
+	s.send("\x1a")
+	s.waitFor("Stopped")
+
+	// The assertion is that the process dies, checked by asking the
+	// system rather than the shell. `jobs` is the wrong oracle here: a
+	// stopped job that dies is never removed from the table (#59), which
+	// is a separate, pre-existing bug — an external pkill leaves the same
+	// stale entry, without gish's kill involved at all. Asserting on the
+	// listing would have blamed kill for something it does not do.
+	//
+	// pgrep exits 0 when it finds a match and 1 when it does not, so the
+	// status is the answer. The marker is split — "res%s" and "PG$?" in
+	// the command, "resPG1" only in the output — because the terminal
+	// echoes what is typed and a whole marker would match on the echo.
+	s.buf.Reset()
+	s.send(`kill %1; sleep 1; pgrep -f "sleep 45" >/dev/null; printf "res%s\n" "PG$?"` + "\r")
+	s.waitFor("resPG")
+	if !s.seen("resPG1") {
+		t.Errorf("`kill %%1` left the job running:\n%s", s.plain())
+	}
+}
+
+// TestKillRejectsUnknownJobSpec: a spec naming nothing must say so,
+// rather than silently succeeding and leaving the caller believing
+// something was signaled.
+func TestKillRejectsUnknownJobSpec(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := startPTY(t, ptyOptions{})
+	s.waitForPrompt()
+
+	s.buf.Reset()
+	s.send(`kill %99` + "\r")
+	s.probe("NOJOB")
+	s.waitFor("resNOJOB")
+	if !s.seen("no such job") {
+		t.Errorf("kill %%99 did not report a missing job:\n%s", s.plain())
 	}
 }

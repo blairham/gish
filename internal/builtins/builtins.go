@@ -87,7 +87,10 @@ var interpImplemented = []string{
 
 // interpUnsupported is recognized by the interpreter's IsBuiltin (so
 // `type` calls them builtins) but fails with "unsupported builtin" when
-// run. jobs/fg/bg arrive with job control (#5).
+// run. jobs/fg/bg arrive with job control (#5) and kill with #55; all
+// four stay listed here because listBuiltins supersedes an entry once a
+// native builtin claims the name, which is what makes the listing tell
+// the truth per session rather than per build.
 var interpUnsupported = []string{
 	"bg", "fc", "fg", "jobs", "kill", "newgrp", "times", "umask",
 }

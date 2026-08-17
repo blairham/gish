@@ -107,6 +107,10 @@ var interpBuiltinCases = []builtinCase{
 	{name: "type", script: `type cd >/dev/null && echo type-ok`},
 	{name: "unset", script: `V=set; unset V; echo "[${V:-gone}]"`},
 	{name: "wait", script: `sleep 0.01 & wait; echo waited`},
+	// kill was "unsupported builtin" until #55. Because the interpreter
+	// claims the name, an unimplemented one shadows the machine's own
+	// /bin/kill rather than falling through to it — worse than absent.
+	{name: "kill", script: `kill -l >/dev/null; echo "list=$?"; kill 999999 2>/dev/null; echo "badpid=$?"; kill -BOGUS 1 2>/dev/null; echo "badsig=$?"`},
 
 	// alias and unalias cannot be differential: gish expands aliases in
 	// interactive sessions only (#53/#163), and bash -c will not expand
