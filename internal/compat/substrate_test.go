@@ -3,6 +3,7 @@ package compat_test
 import (
 	"context"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -124,6 +125,116 @@ func TestPatternCharacterClassesMatchBash(t *testing.T) {
 			}
 		})
 	}
+}
+
+// `printf -v` writes into a variable instead of stdout (#219).
+//
+// It is worth a differential of its own because of how it failed: not
+// loudly, but by printing a literal "-v" and leaving the variable
+// empty. bash-preexec uses it to capture the command line, and
+// bash-preexec is what ships inside Kiro's, iTerm2's and Atuin's shell
+// integrations — so on a login shell here it produced "-v-v-v" before
+// the prompt and handed the integration empty strings, which reads as a
+// shell where every command is blank rather than as a broken printf.
+//
+// These are the success shapes, where stdout is the whole story. The
+// statuses and diagnostics are next door, since bash prefixes its
+// stderr with its own name and line number.
+func TestPrintfDashVMatchesBash(t *testing.T) {
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash: the differential oracle is unavailable")
+	}
+	gishBin := buildGish(t)
+	ctx := context.Background()
+
+	for _, script := range []string{
+		`printf -v x "%s" hello; echo "[$x]"`,
+		`printf -vx "%s" hi; echo "[$x]"`,            // clustered
+		`printf -v x "%s\n" a b c; echo "[$x]"`,      // the format recycles into the variable
+		`printf -v x "%05.2f" 3.14159; echo "[$x]"`,  // the local precision path still applies
+		`printf -v x "%s" "with space"; echo "[$x]"`, // quoting survives the round trip
+		`printf -v x "%s" "quote'd"; echo "[$x]"`,    // ...including a single quote
+		`printf -v x -- "%s" hi; echo "[$x]"`,        // -- ends the options
+		`printf -v x "%s" -- ; echo "[$x]"`,          // ...but is an operand after the format
+		`printf "%s" -v x; echo`,                     // -v is not an option after the format
+		`printf -- "-%s" a; echo`,                    // a format that starts with a dash
+		// The scope is the reason this cannot be done in the handler:
+		// bash writes the local, not a global of the same name.
+		`f(){ local y; printf -v y "%s" in; echo "[$y]"; }; f; echo "[${y-unset}]"`,
+	} {
+		t.Run(script, func(t *testing.T) {
+			gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+			bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
+			if string(gishOut) != string(bashOut) {
+				t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+			}
+		})
+	}
+
+	// Assigning through a subscript is a bash 4 feature, and the oracle
+	// on a stock macOS is /bin/bash 3.2 — the last GPLv2 release, which
+	// Apple has shipped frozen since 2007. It answers `arr[2]': not a
+	// valid identifier, so comparing there would assert that gish
+	// should refuse something modern bash accepts.
+	//
+	// The scoreboard already refuses to compare across bash majors for
+	// the same reason; this is that rule applied to one case rather
+	// than a whole run.
+	t.Run("subscript target", func(t *testing.T) {
+		const script = `i=2; printf -v "arr[$i]" "%s" hi; echo "[${arr[2]}]"`
+		major := bashMajor(t, bashBin)
+		// Compared numerically: "10" sorts before "4" as a string, and
+		// a version check that breaks on the next major is a trap left
+		// for somebody else.
+		if n, err := strconv.Atoi(major); err != nil || n < 4 {
+			t.Skipf("oracle is bash %s: `printf -v arr[i]' arrived in bash 4", major)
+		}
+		gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+		bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
+		if string(gishOut) != string(bashOut) {
+			t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+		}
+	})
+}
+
+// The statuses, which bash distinguishes more finely than a builtin
+// returning true/false can: a bad identifier is 2, a bad conversion is
+// 1, and a call with no format at all is 2.
+func TestPrintfDashVStatusesMatchBash(t *testing.T) {
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash: the differential oracle is unavailable")
+	}
+	gishBin := buildGish(t)
+	ctx := context.Background()
+
+	for _, script := range []string{
+		`printf -v 1bad "%s" q`, // not a valid identifier
+		`printf -v "" "%s" q`,   // ditto, empty
+		`printf -v x.y "%s" hi`, // ditto
+		`printf -v "x;echo pwned" "%s" hi`,
+		`printf -v "x[1]$(echo p)[2]" "%s" hi`, // the subscript is not the whole tail
+		`printf -v x`,                          // no format
+		`printf`,                               // no format, no -v
+		`printf -v x "%s" ok`,                  // the success case, for contrast
+	} {
+		t.Run(script, func(t *testing.T) {
+			gishCode := runStatus(ctx, t, gishBin, script)
+			bashCode := runStatus(ctx, t, bashBin, script)
+			if gishCode != bashCode {
+				t.Errorf("exit status: gish %d, bash %d", gishCode, bashCode)
+			}
+		})
+	}
+}
+
+// runStatus reports the exit status of running script through sh.
+func runStatus(ctx context.Context, t *testing.T, sh, script string) int {
+	t.Helper()
+	cmd := exec.CommandContext(ctx, sh, "-c", script)
+	_ = cmd.Run()
+	return cmd.ProcessState.ExitCode()
 }
 
 // The one gap with a seam is fixed locally, and this is the case that

@@ -37,7 +37,7 @@ import (
 // which is what bash does.
 func Printf(w io.Writer, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("printf: usage: printf format [arguments]")
+		return ErrUsage
 	}
 	format, rest := args[0], args[1:]
 
@@ -184,6 +184,16 @@ var errStopOutput = errors.New("printf: output stopped")
 // pipeline, and, because the failing write happens on the pipeline's own
 // goroutine, a data race against whatever else was writing stderr.
 var ErrWrite = errors.New("printf: write failed")
+
+// ErrUsage marks a call with no format at all. It is its own sentinel
+// because bash answers usage with status 2 rather than the 1 a bad
+// format gets, and the caller is the only side that can set a status.
+//
+// The wording names -v even though this package does not implement it:
+// the assignment belongs to the shell (internal/repl/printfcmd.go), but
+// the usage line the user sees has to describe the printf they actually
+// have.
+var ErrUsage = errors.New("printf: usage: printf [-v var] format [arguments]")
 
 // wrapWrite tags a write failure so callers can stay quiet about it.
 func wrapWrite(err error) error {
