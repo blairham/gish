@@ -35,7 +35,7 @@ func printfCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 			return printfStatus(2), nil
 		}
 		if !opts.assign {
-			if err := builtins.Printf(hc.Stdout, opts.operands); err != nil {
+			if err := builtins.Printf(hc.Stdout, hc.Stderr, opts.operands); err != nil {
 				// bash separates the two: no format at all is a usage
 				// error and exits 2, a bad conversion exits 1.
 				if errors.Is(err, builtins.ErrUsage) {
@@ -46,8 +46,9 @@ func printfCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 				// pipeline that stopped reading. bash is silent there (printf
 				// dies of SIGPIPE), and printing would both add noise and race
 				// with whatever else writes stderr from the pipeline's other
-				// goroutines. Only a bad format is worth a word.
-				if !errors.Is(err, builtins.ErrWrite) {
+				// goroutines. A bad number has already been reported by the
+				// builtin, in bash's order; only a bad format is left to say.
+				if !errors.Is(err, builtins.ErrWrite) && !errors.Is(err, builtins.ErrBadNumber) {
 					fmt.Fprintln(hc.Stderr, err)
 				}
 				return []string{"false"}, nil
@@ -118,7 +119,7 @@ func printfAssign(hc interp.HandlerContext, opts printfOpts) ([]string, error) {
 	}
 
 	var buf bytes.Buffer
-	perr := builtins.Printf(&buf, opts.operands)
+	perr := builtins.Printf(&buf, hc.Stderr, opts.operands)
 
 	// The value is quoted; the target is validated but not quoted,
 	// because a subscript has to keep being evaluated — bash resolves
@@ -141,7 +142,11 @@ func printfAssign(hc interp.HandlerContext, opts printfOpts) ([]string, error) {
 		// A bad conversion still assigns what was rendered before it —
 		// `printf -v x "%d" notanum` leaves x as "0" and exits 1 — so
 		// the assignment runs and carries the failing status with it.
-		fmt.Fprintln(hc.Stderr, perr)
+		// A bad number has already said so on stderr; anything else
+		// still needs reporting.
+		if !errors.Is(perr, builtins.ErrBadNumber) {
+			fmt.Fprintln(hc.Stderr, perr)
+		}
 		return []string{"eval", assign + "; (exit 1)"}, nil
 	}
 	return []string{"eval", assign}, nil
