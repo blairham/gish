@@ -62,6 +62,10 @@ var builtinThemes = map[string]func(*interp.Runner, promptInfo) (string, string,
 		return expandPrompt(shellVar(runner, "GISH_PROMPT", ""), info),
 			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info), ""
 	},
+	// bash: whatever the session set PS1 to (#159). Not a look of its
+	// own — it is how starship, oh-my-posh and a hand-written PS1 get
+	// rendered at all.
+	"bash": ps1Theme,
 	"starship": func(runner *interp.Runner, info promptInfo) (string, string, string) {
 		if p, cp, ok := starship.render(info, info.width); ok {
 			return p, cp, ""
@@ -123,7 +127,19 @@ func themeName(runner *interp.Runner) string {
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return "plain"
 	}
-	return shellVar(runner, "GISH_THEME", "plain")
+	if name := shellVar(runner, "GISH_THEME", ""); name != "" {
+		return name
+	}
+	// Nothing chosen here, but something in the session set PS1 — a
+	// tool's init, or an rc the user carried over. That is a request,
+	// and honoring it is what makes starship and every hand-written
+	// prompt work without a gish-specific setting (#159). An explicit
+	// GISH_THEME above still wins: a choice the user made in gish's own
+	// vocabulary beats one inherited from somewhere else.
+	if sessionPS1(runner) != "" {
+		return "bash"
+	}
+	return "plain"
 }
 
 // nakedPrompt is the default: what a stock zsh (or bash) prompt looks

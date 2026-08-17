@@ -94,7 +94,7 @@ func (vm versionManager) render(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: version,
-		Icon:    decodeEscapes(cfg.Param(vm.segment, "", "VISUAL_IDENTIFIER_EXPANSION", vm.icon)),
+		Icon:    decodeEscapes(cfg.Icon(vm.segment, "", vm.icon)),
 	}, true
 }
 
@@ -114,7 +114,7 @@ func renderAsdf(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: strings.Join(data, " "),
-		Icon:    decodeEscapes(cfg.Param("asdf", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("asdf", "", "")),
 	}, true
 }
 
@@ -155,7 +155,7 @@ func renderVirtualenv(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: name,
-		Icon:    decodeEscapes(cfg.Param("virtualenv", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("virtualenv", "", "")),
 	}, true
 }
 
@@ -172,7 +172,7 @@ func renderAnaconda(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: name,
-		Icon:    decodeEscapes(cfg.Param("anaconda", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("anaconda", "", "")),
 	}, true
 }
 
@@ -183,7 +183,7 @@ func renderNodeenv(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: filepath.Base(env),
-		Icon:    decodeEscapes(cfg.Param("nodeenv", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("nodeenv", "", "")),
 	}, true
 }
 
@@ -201,7 +201,7 @@ func renderNvm(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: version,
-		Icon:    decodeEscapes(cfg.Param("nvm", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("nvm", "", "")),
 	}, true
 }
 
@@ -217,7 +217,7 @@ func renderRvm(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: version,
-		Icon:    decodeEscapes(cfg.Param("rvm", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("rvm", "", "")),
 	}, true
 }
 
@@ -228,6 +228,6 @@ func renderPerlbrew(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: strings.TrimPrefix(version, "perl-"),
-		Icon:    decodeEscapes(cfg.Param("perlbrew", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("perlbrew", "", "")),
 	}, true
 }

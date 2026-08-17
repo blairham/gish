@@ -143,13 +143,13 @@ func DefaultDir() (string, error) {
 	return filepath.Join(base, "gish", "sessions"), nil
 }
 
-// Open returns a store over dir, creating it on demand.
+// Open returns a store over dir. The directory is created by the first
+// Save, not here (#163) — a shell that is opened and closed without
+// running anything has no session worth recording, and should leave no
+// trace of having been started.
 func Open(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, errors.New("session: no directory")
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
 	}
 	return &Store{dir: dir}, nil
 }
@@ -205,6 +205,9 @@ func (s *Store) Save(r Record) error {
 	}
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return err
 	}
 	final := s.path(r.ID)

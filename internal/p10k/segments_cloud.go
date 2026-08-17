@@ -1,8 +1,13 @@
 package p10k
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Cloud and cluster context segments.
@@ -68,7 +73,7 @@ func renderKubecontext(cfg *Config, ctx *Context) (Rendered, bool) {
 	return Rendered{
 		Content: context,
 		State:   state,
-		Icon:    decodeEscapes(cfg.Param("kubecontext", state, "VISUAL_IDENTIFIER_EXPANSION", "☸")),
+		Icon:    decodeEscapes(cfg.Icon("kubecontext", state, "☸")),
 	}, true
 }
 
@@ -110,7 +115,7 @@ func renderAWS(cfg *Config, ctx *Context) (Rendered, bool) {
 	return Rendered{
 		Content: content,
 		State:   state,
-		Icon:    decodeEscapes(cfg.Param("aws", state, "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("aws", state, "")),
 	}, true
 }
 
@@ -126,7 +131,7 @@ func renderAWSEBEnv(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: env,
-		Icon:    decodeEscapes(cfg.Param("aws_eb_env", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("aws_eb_env", "", "")),
 	}, true
 }
 
@@ -150,14 +155,86 @@ func renderAzure(cfg *Config, ctx *Context) (Rendered, bool) {
 	if name := ctx.Env("AZURE_SUBSCRIPTION_NAME"); name != "" {
 		return Rendered{
 			Content: name,
-			Icon:    decodeEscapes(cfg.Param("azure", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+			Icon:    decodeEscapes(cfg.Icon("azure", "", "")),
 		}, true
 	}
-	// azureProfile.json marks one subscription "isDefault": true. Finding
-	// it properly needs a JSON parse, which is not worth a prompt-path
-	// dependency for a segment that the environment usually answers.
+	// azureProfile.json marks one subscription "isDefault": true (#133).
+	// The environment usually answers, which is why this was skipped —
+	// but "usually" leaves the people who use `az account set` with a
+	// segment that shows nothing, and the parse is one mtime-cached read
+	// of a file the user already has.
+	if name := azureDefaultSubscription(ctx); name != "" {
+		return Rendered{
+			Content: name,
+			Icon:    decodeEscapes(cfg.Icon("azure", "", "")),
+		}, true
+	}
 	return Rendered{}, false
 }
+
+// azureProfile is the shape of ~/.azure/azureProfile.json that matters.
+type azureProfile struct {
+	Subscriptions []struct {
+		Name      string `json:"name"`
+		IsDefault bool   `json:"isDefault"`
+	} `json:"subscriptions"`
+}
+
+// azureDefaultSubscription reads the subscription `az account set`
+// marked default. Cached on the file's mtime: a prompt pays one stat,
+// and a switch takes effect on the next prompt.
+func azureDefaultSubscription(ctx *Context) string {
+	home := ctx.Home
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return ""
+		}
+	}
+	path := filepath.Join(home, ".azure", "azureProfile.json")
+	fi, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+
+	azureMu.Lock()
+	defer azureMu.Unlock()
+	if azureCache.path == path && azureCache.mtime.Equal(fi.ModTime()) {
+		return azureCache.name
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	// The file Azure writes starts with a UTF-8 BOM, which is not JSON
+	// and which json.Unmarshal refuses — the kind of detail that makes a
+	// parser look broken when it is the file that is unusual.
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	var profile azureProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return ""
+	}
+	name := ""
+	for _, sub := range profile.Subscriptions {
+		if sub.IsDefault {
+			name = sub.Name
+			break
+		}
+	}
+	azureCache = azureProfileCache{path: path, mtime: fi.ModTime(), name: name}
+	return name
+}
+
+type azureProfileCache struct {
+	path  string
+	mtime time.Time
+	name  string
+}
+
+var (
+	azureMu    sync.Mutex
+	azureCache azureProfileCache
+)
 
 // renderGcloud shows the active gcloud configuration.
 func renderGcloud(cfg *Config, ctx *Context) (Rendered, bool) {
@@ -174,7 +251,7 @@ func renderGcloud(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: config,
-		Icon:    decodeEscapes(cfg.Param("gcloud", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("gcloud", "", "")),
 	}, true
 }
 
@@ -188,7 +265,7 @@ func renderGoogleAppCred(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: strings.TrimSuffix(filepath.Base(path), ".json"),
-		Icon:    decodeEscapes(cfg.Param("google_app_cred", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("google_app_cred", "", "")),
 	}, true
 }
 
@@ -199,7 +276,7 @@ func renderToolbox(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: name,
-		Icon:    decodeEscapes(cfg.Param("toolbox", "", "VISUAL_IDENTIFIER_EXPANSION", "⬢")),
+		Icon:    decodeEscapes(cfg.Icon("toolbox", "", "⬢")),
 	}, true
 }
 

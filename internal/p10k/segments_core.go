@@ -61,6 +61,18 @@ func renderDir(cfg *Config, ctx *Context) (Rendered, bool) {
 	if cfg.Bool("DIR_SHOW_WRITABLE", false) && !writable(ctx.Cwd) {
 		state = "NOT_WRITABLE"
 	}
+	// A directory class is a parameter *state* (#133), which is why it
+	// needs no new mechanism: POWERLEVEL9K_DIR_WORK_FOREGROUND resolves
+	// through the same three-step chain everything else uses. People use
+	// this to make production directories visibly different, which makes
+	// it a safety feature rather than a decoration.
+	classIcon := ""
+	if class, icon := classifyDir(cfg, ctx.Cwd, ctx.Home); class != "" {
+		if state == "" {
+			state = class
+		}
+		classIcon = icon
+	}
 
 	budget := cfg.ParamInt("dir", state, "MAX_LENGTH", 0)
 	if budget <= 0 && ctx.Width > 0 {
@@ -68,7 +80,14 @@ func renderDir(cfg *Config, ctx *Context) (Rendered, bool) {
 		// way upstream's default does, but only once it actually would.
 		budget = ctx.Width / 2
 	}
-	parts := shortenPath(cfg, path, budget)
+	// The command line gets its columns first: a path is context, and
+	// the thing being typed is the work.
+	if reserved := commandColumns(cfg, ctx.Width); reserved > 0 {
+		if room := ctx.Width - reserved; room < budget {
+			budget = max(room, 1)
+		}
+	}
+	parts := shortenPath(cfg, ctx, path, budget)
 
 	// A path is colored in three registers: shortened components
 	// recede, the final component (upstream's "anchor") stands out, and
@@ -97,9 +116,20 @@ func renderDir(cfg *Config, ctx *Context) (Rendered, bool) {
 		}
 	}
 
+	// OSC 8 costs nothing in layout: the renderer discounts escape
+	// sequences from every width calculation, so a hyperlinked path
+	// occupies exactly the columns its text does.
+	if cfg.Bool("DIR_HYPERLINK", false) && len(spans) > 0 {
+		spans[0].Text = hyperlinkOpen(ctx.Cwd) + spans[0].Text
+		spans[len(spans)-1].Text += hyperlinkClose
+	}
+
 	out := Rendered{Spans: spans, State: state}
-	if state == "NOT_WRITABLE" {
-		out.Icon = decodeEscapes(cfg.Param("dir", state, "VISUAL_IDENTIFIER_EXPANSION", ""))
+	switch {
+	case classIcon != "":
+		out.Icon = decodeEscapes(classIcon)
+	case state != "":
+		out.Icon = decodeEscapes(cfg.Icon("dir", state, ""))
 	}
 	return out, true
 }
@@ -134,13 +164,38 @@ func tildify(dir, home string) string {
 // ("shorten to unique prefix") lists every parent's siblings on every
 // prompt, and that is a cost that shows up on network filesystems — the
 // first-character rule below is the same shape without the I/O.
-func shortenPath(cfg *Config, path string, budget int) []component {
+// A nil context means "no filesystem": the marker rules are the only
+// part that needs one, and every other caller — including the tests —
+// passes nil and gets the pure behavior.
+func shortenPath(cfg *Config, ctx *Context, path string, budget int) []component {
 	sep := string(os.PathSeparator)
 	raw := strings.Split(path, sep)
 	parts := make([]component, len(raw))
 	for i, r := range raw {
 		parts[i] = component{text: r}
 	}
+
+	// A marked directory (one holding .git, go.mod, …) is the one people
+	// navigate by, so it survives shortening — and TRUNCATE_BEFORE_MARKER
+	// says to drop everything above the last one entirely.
+	var marked map[int]bool
+	if ctx != nil {
+		if idx := markerIndices(cfg, ctx, ctx.Cwd); len(idx) > 0 {
+			marked = map[int]bool{}
+			offset := len(parts) - len(strings.Split(ctx.Cwd, sep))
+			for _, i := range idx {
+				marked[i+offset] = true
+			}
+			if cfg.Bool("DIR_TRUNCATE_BEFORE_MARKER", false) {
+				last := idx[len(idx)-1] + offset
+				if last > 0 && last < len(parts) {
+					parts = parts[last:]
+					marked = map[int]bool{0: true}
+				}
+			}
+		}
+	}
+
 	if len(parts) <= 1 || budget <= 0 || width(parts) <= budget {
 		return parts
 	}
@@ -171,7 +226,7 @@ func shortenPath(cfg *Config, path string, budget int) []component {
 		if width(parts) <= budget || i >= len(parts)-keep {
 			break
 		}
-		if parts[i].text == "" || parts[i].text == "~" {
+		if parts[i].text == "" || parts[i].text == "~" || marked[i] {
 			continue
 		}
 		parts[i] = component{text: firstRune(parts[i].text), shortened: true}
@@ -301,7 +356,7 @@ func renderStatus(cfg *Config, ctx *Context) (Rendered, bool) {
 		}
 		return Rendered{
 			Content: cfg.Param("status", "OK", "CONTENT_EXPANSION", ""),
-			Icon:    decodeEscapes(cfg.Param("status", "OK", "VISUAL_IDENTIFIER_EXPANSION", "✔")),
+			Icon:    decodeEscapes(cfg.Icon("status", "OK", "✔")),
 			State:   "OK",
 		}, true
 	}
@@ -318,7 +373,7 @@ func renderStatus(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: content,
-		Icon:    decodeEscapes(cfg.Param("status", state, "VISUAL_IDENTIFIER_EXPANSION", "✘")),
+		Icon:    decodeEscapes(cfg.Icon("status", state, "✘")),
 		State:   state,
 	}, true
 }
@@ -348,7 +403,7 @@ func renderExecutionTime(cfg *Config, ctx *Context) (Rendered, bool) {
 	precision := cfg.ParamInt("command_execution_time", "", "PRECISION", 0)
 	return Rendered{
 		Content: formatDuration(ctx.Duration, precision),
-		Icon:    decodeEscapes(cfg.Param("command_execution_time", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("command_execution_time", "", "")),
 	}, true
 }
 
@@ -378,7 +433,7 @@ func renderJobs(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: content,
-		Icon:    decodeEscapes(cfg.Param("background_jobs", "", "VISUAL_IDENTIFIER_EXPANSION", "⚙")),
+		Icon:    decodeEscapes(cfg.Icon("background_jobs", "", "⚙")),
 	}, true
 }
 
@@ -408,7 +463,7 @@ func renderTime(cfg *Config, ctx *Context) (Rendered, bool) {
 	format := cfg.Param("time", "", "FORMAT", "15:04:05")
 	return Rendered{
 		Content: strftime(ctx.clock(), format),
-		Icon:    decodeEscapes(cfg.Param("time", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("time", "", "")),
 	}, true
 }
 

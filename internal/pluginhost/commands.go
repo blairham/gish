@@ -163,6 +163,15 @@ func (ci *CommandIndex) saveCache(f indexFile) {
 	if ci.cachedAt == "" {
 		return
 	}
+	// An empty index with no file to prune is nothing to say (#163).
+	// Writing it anyway means every shell with no plugins installed —
+	// which is every shell on its first day — creates a state directory
+	// to hold a record of having found nothing.
+	if len(f.Plugins) == 0 {
+		if _, err := os.Stat(ci.cachedAt); err != nil {
+			return
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(ci.cachedAt), 0o700); err != nil {
 		return
 	}

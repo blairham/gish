@@ -43,6 +43,9 @@ var configSettings = []configSetting{
 	{"jump", "GISH_JUMP", []string{"on", "off"}, "native z directory tracking (#94)"},
 	{"ssh.bring", "GISH_SSH_BRING", []string{"ask", "always", "never"}, "copy gish to hosts on `gish ssh` (#98)"},
 	{"blocks", "GISH_BLOCKS", []string{"on", "off"}, "capture command output for blocks (#99) — off by default"},
+	{"highlight", "GISH_HIGHLIGHT", []string{"on", "quiet", "off"}, "syntax highlighting — quiet drops the unknown-command color"},
+	{"suggest", "GISH_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
+	{"editmode", "GISH_EDIT_MODE", []string{"emacs", "vi"}, "line editor dialect — `set -o vi` sets it too"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -61,14 +64,26 @@ per-segment theme keys (#28):
   config theme.sep powerline            separator style (needs a nerd font)
   config theme.preset spaceship         whole look from the same knobs (p10k resets)
 
+themes (one engine, two dialects — see docs/design.md#decisions):
+  p10k      the powerlevel10k engine: 6 presets, ~50 segments,
+            POWERLEVEL9K_* / p10k.conf, configured by "p10k configure"
+  gish      the small dialect: 6 segments and the theme.* keys below,
+            configured by "config theme"
+  starship  your starship binary renders it
+  plain     the naked default
+  bash      whatever the session set PS1 to
+
 settings:
-  theme   plain | p10k | starship  (GISH_THEME)
+  theme   plain | p10k | gish | starship  (GISH_THEME)
   lint    on | native | off        (GISH_LINT)
   prompt  escape string            (GISH_PROMPT)
   tools   on | off                 (GISH_TOOLS)
   jump    on | off                 (GISH_JUMP)
   ssh.bring  ask | always | never  (GISH_SSH_BRING)
   blocks     on | off               (GISH_BLOCKS)
+  highlight  on | quiet | off       (GISH_HIGHLIGHT)
+  suggest    on | off               (GISH_SUGGEST)
+  editmode   emacs | vi             (GISH_EDIT_MODE)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
                     exit, plus any plugin segment id  (GISH_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default

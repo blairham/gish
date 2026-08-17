@@ -68,6 +68,82 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **ACP on the agent edge, in two places** (2026-08,
+  [#166](https://github.com/blairham/gish/issues/166),
+  [#167](https://github.com/blairham/gish/issues/167), docs/acp.md): the
+  inbound role (an ACP agent answers `??` and `explain`) is a plugin;
+  the outbound role (an agent's commands execute inside gish) is core,
+  because a plugin may never hold an exec channel (#34).
+
+  The spike's load-bearing question — does the terminal capability have
+  real adopters — resolved yes, and better than expected: the capability
+  is **client-side and optional**, so an agent that does not see it
+  advertised must not call it. Implementing it is purely additive. Wire
+  v1 is stable under a vendor-neutral org with a public RFD process; v2
+  is a draft whose own announcement says adding it must not mean
+  dropping v1.
+
+  What makes it worth doing is what ACP omits: no permission model, no
+  sandboxing, no timeout. Those are correct omissions for a protocol and
+  a real gap for whoever hosts one — every ACP client today runs an
+  agent's commands the way `bash -c` would. gish has sandbox profiles
+  and a deadline on every call already.
+
+  Recorded caveat, so it is not re-litigated into a slogan: the
+  *user-facing* claim ("people are leaving zsh because agents assume
+  bash") is **not evidenced** — 2 HN accounts, 0 of 827 in a Reddit
+  corpus. Build it for the substrate, not the story (#169).
+
+- **gish claims bash's interface, not bash's identity** (2026-08,
+  [#120](https://github.com/blairham/gish/issues/120)): `BASH_VERSION`
+  and `BASH_VERSINFO` report a modern bash; `$0` stays `gish`, and
+  `GISH_VERSION` says exactly what is running.
+
+  The issue's own recommendation was the opposite — claim nothing, and
+  shim per tool — with one stated condition for revisiting: evidence
+  that specific popular tools are unusable *and* that their bash hook
+  passes. The #159 matrix produced exactly that. fzf chooses between two
+  Ctrl-T implementations on `((BASH_VERSINFO[0] < 4))`: a readline
+  *macro* built from editing commands including `shell-expand-line`,
+  which gish does not emulate and will not, or `bind -x`, which gish
+  implements. Unset, that arithmetic reads 0 — so refusing to claim a
+  version handed gish the one path it cannot run, in order to avoid
+  claiming a capability it has.
+
+  The distinction that makes this honest rather than impersonation:
+  these variables are used as **feature probes**, and the features they
+  gate are ones gish implements (`PROMPT_COMMAND`, `PS0`, the DEBUG
+  trap, `bind -x`, `complete`/`compgen`). The **identity** question is
+  answered truthfully — `$0` is what a script re-execs and what a user
+  sees, and lying there would be a lie a program could act on. Where the
+  claim does outrun the substrate, docs/compat.md already lists the gaps
+  by name and `doctor` reports them.
+
+- **One theme engine, two config dialects** (2026-08,
+  [#134](https://github.com/blairham/gish/issues/134)): `p10k` is the
+  engine; the `gish` theme's knobs (`GISH_THEME_SEGMENTS`,
+  `GISH_THEME_COLOR_*`, `_LINES`, `_FRAME`, `_SEP`, `_RPROMPT`) are a
+  second, smaller dialect over the same idea, and they stay — they are a
+  documented surface and [docs/stability.md](stability.md) says
+  documented surfaces do not move.
+
+  What does not stay is the pretence that they are two unrelated themes.
+  The p10k engine is a strict superset in capability: six presets, ~50
+  segments, a parameter namespace with a real fallback chain. `gish` is
+  six segments and five knobs, which is the right size for someone who
+  wants a prompt configured the way the rest of gish is configured, and
+  the wrong size for someone arriving with a 1720-line `.p10k.zsh`.
+
+  So: `config theme.*` and `p10k configure` both keep working and are
+  described as what they are — the small dialect and the compatibility
+  one. The renderer behind `gish` is not deleted, because deleting it
+  buys one file and costs every rc that sets those knobs a behavior
+  change, and "your config will not break" outranks "there is one of
+  these". The third option — treating `POWERLEVEL9K_*` as an import
+  format only — was rejected outright: "paste a line from your old
+  config and it works" is a real part of why the port is attractive, and
+  it is exactly the property an import-only surface destroys.
+
 - **Structured data uses `test`'s operator vocabulary, or not at all**
   (2026-08, [#104](https://github.com/blairham/gish/issues/104),
   docs/structured.md): the exploration turned up that the shape everyone

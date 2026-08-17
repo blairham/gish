@@ -61,6 +61,8 @@ func Run(ctx context.Context, login bool) error {
 func runEditor(ctx context.Context, login bool) error {
 	// Native brew shellenv (#44): pure stat/string work, no subprocess.
 	brewShellenv()
+	resetBashHooks()
+	resetCompletions()
 
 	// Tier-2 plugin host (#7): discovery now, launch on first demand.
 	// Prompt segments are consumed via %p{id} escapes; the `plugins`
@@ -105,6 +107,10 @@ func runEditor(ctx context.Context, login bool) error {
 		if w, h, err := term.NewTTY(os.Stdin, os.Stdout).Size(); err == nil {
 			table.Resize(w, h)
 		}
+		// A WINCH trap is noted here and run at the next prompt: this
+		// callback is another goroutine, and a runner is not safe to
+		// enter from two at once.
+		noteSignal("WINCH")
 	})
 	defer stopWinch()
 	execChain := []func(interp.ExecHandlerFunc) interp.ExecHandlerFunc{builtins.ExecHandler}
@@ -117,6 +123,7 @@ func runEditor(ctx context.Context, login bool) error {
 		sandboxExecMiddleware,
 		table.ExecMiddleware)
 	runnerOpts := []interp.RunnerOption{
+		interp.Env(sessionEnv(true)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(execChain...),
 	}
@@ -138,7 +145,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -177,11 +184,18 @@ func runEditor(ctx context.Context, login bool) error {
 	}
 	// The fish-parity pair (#38/#39): parser-driven highlighting and
 	// history ghost text — skipped where color is unwelcome.
+	//
+	// Both are per-feature knobs rather than NO_COLOR's all-or-nothing
+	// (#163), and both read the setting per call so an rc — which is
+	// sourced further down — still governs them.
 	colorOK := os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"
 	if colorOK {
 		edCfg.Highlight = highlightFn(runner)
 		if store != nil {
 			edCfg.Suggest = func(text string) string {
+				if !suggestEnabled(runner) {
+					return ""
+				}
 				if s, ok := store.Match(text, 0); ok {
 					return s
 				}
@@ -197,7 +211,11 @@ func runEditor(ctx context.Context, login bool) error {
 	// Ctrl-R is the full-screen fuzzy picker when the terminal can host
 	// it (#100); incremental search remains the fallback.
 	edCfg.HistoryPick = historyPickFn(store, host)
+	// `bind -x` commands run with the terminal ceded, so a full-screen
+	// widget (fzf's picker) really owns stdin (#159).
+	edCfg.KeyCommand = keyCommandRunner(runner)
 	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, edCfg)
+	editorRef = func() *editor.Editor { return ed }
 	parser := syntax.NewParser()
 
 	sigs := make(chan os.Signal, 1)
@@ -207,6 +225,9 @@ func runEditor(ctx context.Context, login bool) error {
 	// Alias expansion goes on before anything is sourced, so aliases
 	// defined in a profile or rc work in the session they configure.
 	enableAliases(ctx, runner)
+	// What the shell answers to a feature probe (#120): set before any
+	// init script runs, since that is what those scripts branch on.
+	declareShellIdentity(ctx, runner)
 	// Color-friendly defaults before anything is sourced, so an rc that
 	// disagrees simply arrives later and wins (#54).
 	applyColorDefaults(ctx, runner)
@@ -263,6 +284,14 @@ func runEditor(ctx context.Context, login bool) error {
 		} else {
 			table.DisableCapture()
 		}
+		// Signal traps the loop delivers (#159): a WINCH noted while a
+		// command ran, and an INT from the command that was just
+		// interrupted, both fire here, where the runner is ours.
+		runPendingSignalTraps(ctx, runner)
+		// The bash hook surface (#159): PROMPT_COMMAND runs before the
+		// prompt is built, so a hook that sets PS1, exports variables or
+		// records the directory is reflected in the prompt it precedes.
+		runPromptCommand(ctx, runner)
 		info.dir = runner.Dir
 		info.exitCode = lastExit
 		info.duration = lastDuration
@@ -280,14 +309,24 @@ func runEditor(ctx context.Context, login bool) error {
 		p, cp, rp := promptStrings(runner, info)
 		// OSC 133 (#99): mark the prompt so terminals can navigate
 		// blocks. Zero-width, so the renderer is unaffected.
-		marks := semanticMarksOn(runner)
+		feats := semanticFeatures(runner)
+		marks := feats.marks
 		p = markPrompt(p, marks)
+		// OSC 7 goes out when the directory changes — which is what a
+		// new tab or split reads to open where you are (#165).
+		if info.dir != lastPromptDir {
+			markCwd(os.Stdout, feats.cwd, info.dir)
+		}
 		ed.SetPrompt(p, cp)
 		ed.SetRPrompt(rp)
 		// The short prompt the accepted line is left with (#p10k
 		// TRANSIENT_PROMPT). Resolved before the read so the editor can
 		// swap it in without asking anything at accept time.
 		ed.SetTransientPrompt(transientPrompt(runner, info))
+		// Vi mode is read per prompt, so an rc setting — or a live
+		// `config editmode vi` — takes effect on the next line rather
+		// than the next shell (#163).
+		ed.SetEditMode(editModeOf(runner))
 		lastPromptDir = info.dir
 
 		line, err := ed.ReadCommand(ctx)
@@ -386,6 +425,15 @@ func runEditor(ctx context.Context, login bool) error {
 
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
 		markOutputStart(os.Stdout, marks)
+		// PS0 prints between the line and its output; the DEBUG trap is
+		// the preexec hook, and under extdebug a non-zero return from it
+		// cancels the command (#159).
+		runPS0(ctx, runner, os.Stdout)
+		if !runDebugTrap(ctx, runner, line) {
+			lastExit = 1
+			markCommandDone(os.Stdout, marks, lastExit)
+			continue
+		}
 		start := time.Now()
 		// Which parts of this line were written with & (#57). The parse
 		// already happened, so this is a walk of an AST we hold; without
@@ -403,6 +451,7 @@ func runEditor(ctx context.Context, login bool) error {
 		lastExit = exitCode(rerr)
 		markCommandDone(os.Stdout, marks, lastExit)
 		lastDuration = time.Since(start)
+		markUserVars(os.Stdout, feats.userVars, line, lastDuration)
 		if aiMgr != nil {
 			aiMgr.note(lastExit)
 		}
@@ -436,6 +485,7 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 		switch {
 		case errors.Is(rerr, errInterrupted):
+			noteSignal("INT") // the trap fires at the next prompt
 			// The command was interrupted, not the shell: fresh prompt.
 			// Order matters — Runner.Exited() also reports true after a
 			// cancellation, and the runner stays usable with state intact.
@@ -588,14 +638,19 @@ func acceptWhen(text string) bool {
 
 // runPlain is the non-TTY loop (piped stdin).
 func runPlain(ctx context.Context, login bool) error {
+	var runnerRef *interp.Runner
+	trustRunner = func() *interp.Runner { return runnerRef }
 	runner, err := interp.New(
+		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
+		interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
 	}
+	runnerRef = runner
+	declareShellIdentity(ctx, runner)
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -674,18 +729,23 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 	if err != nil {
 		return err
 	}
+	var runnerRef *interp.Runner
+	trustRunner = func() *interp.Runner { return runnerRef }
 	runner, err := interp.New(
 		// The "--" matters: without it a parameter that begins with a
 		// dash would be read as a shell option, so `gish script.sh -v`
 		// would try to set -v instead of passing it along.
 		interp.Params(append([]string{"--"}, params...)...),
+		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
+		interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
 	}
+	runnerRef = runner
+	declareShellIdentity(ctx, runner)
 	// The names must resolve here too, so an unavailable builtin reports
 	// itself rather than looking like a missing program.
 	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))
@@ -708,7 +768,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
+			interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))))),
 		},
 		opts...,
 	)...)

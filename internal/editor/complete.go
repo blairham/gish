@@ -20,6 +20,10 @@ type Candidate struct {
 type CompleteResult struct {
 	WordStart  int
 	Candidates []Candidate
+	// NoSpace suppresses the space a unique completion normally gets —
+	// bash's `complete -o nospace`, which every completion for a tool
+	// with `key=value` arguments sets.
+	NoSpace bool
 }
 
 // maxCandidateList bounds the rendered candidate list.
@@ -46,7 +50,7 @@ func (e *Editor) completeTab() {
 	if len(res.Candidates) == 1 {
 		value := res.Candidates[0].Value
 		e.replaceWord(res.WordStart, cursor, value)
-		if !strings.HasSuffix(value, "/") {
+		if !strings.HasSuffix(value, "/") && !res.NoSpace {
 			e.buf.Insert(" ")
 		}
 		return

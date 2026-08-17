@@ -16,6 +16,37 @@ overhead. Everything that *can* be slow or wrong (git, network, k8s,
 cloud, disk scans) lives behind a deadline where it degrades instead of
 blocking.
 
+## The compatibility promise to plugin authors (#168)
+
+**A plugin binary built against `plugin/v1` keeps working across gish
+releases without a rebuild.** That is a promise, and it is enforced:
+`internal/pluginhost/abi_test.go` snapshots every field number, wire
+type, name and RPC signature in the v1 package, and a change that would
+break a compiled plugin fails CI. Additions pass — that is what
+"frozen-additive" means. A rename, a type change, a renumbered field or
+a removal needs a `v2` package and a `Handshake.ProtocolVersion` bump,
+with v1 plugins still loading.
+
+This exists because it is the documented reason nushell's plugin
+ecosystem never formed, and the reason is not the wire format:
+
+> "the plugin interface requires strict version matching… which sort of
+> kills the idea that I'm going to distribute these"
+
+Their top plugin has 85 stars, and they have out-of-process plugins in
+any language — the same architecture as this one. Distribution is what
+failed. A plugin author needs to know that publishing a binary is not
+signing up for a rebuild every release.
+
+**And a plugin can never block a keystroke.** Every outbound call
+carries a deadline (below); a plugin that hangs costs its own segment
+and nothing else. nushell's plugin protocol has no timeout enforcement
+at all, and nobody advertises this guarantee because almost nobody can:
+an add-on that hooks zsh's ZLE runs *inside* the shell's process, where
+there is no boundary to enforce. A test hangs a plugin deliberately and
+measures what it costs, because a guarantee that is not tested is a
+claim.
+
 ## Latency budgets
 
 | Interaction | Budget | On miss |

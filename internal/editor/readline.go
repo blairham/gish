@@ -103,13 +103,22 @@ func (e *Editor) startCtrlX() {
 // loop, where raw mode and the input decoder can be safely suspended.
 func (e *Editor) externalEditRequest() {
 	if e.cfg.ExternalEdit != nil {
-		e.handover(e.cfg.ExternalEdit)
+		e.handoverText(e.cfg.ExternalEdit)
 	}
 }
 
 // handover schedules fn to run with the terminal ceded — raw mode off,
 // decoder stopped — so a full-screen program owns stdin for real.
-func (e *Editor) handover(fn func(string) (string, bool)) {
+func (e *Editor) handover(fn func(string, int) (string, int, bool)) {
 	e.pendingHandover = fn
 	e.state = stateHandover
+}
+
+// handoverText adapts the callers that only replace the text (an
+// $EDITOR, a picker): the cursor lands at the end, as it always did.
+func (e *Editor) handoverText(fn func(string) (string, bool)) {
+	e.handover(func(current string, _ int) (string, int, bool) {
+		text, ok := fn(current)
+		return text, len([]rune(text)), ok
+	})
 }

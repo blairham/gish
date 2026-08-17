@@ -14,22 +14,47 @@ for you to read, edit, and run.
 
 ```
                           startup      what it includes
-gish                       5.9 ms      theme + highlighting + suggestions + lint, all on
-bash (no rc)               5.6 ms      empty rc
-zsh (no rc)                9.0 ms      empty rc
-zsh + powerlevel10k       87.3 ms      the prompt gish's p10k theme is a port of
-zsh (real config)        304.4 ms      a real .zshrc: plugin manager, theme, tool hooks
+gish                       5.6 ms      theme + highlighting + suggestions + lint, all on
+bash (no rc)               5.5 ms      empty rc
+zsh (no rc)                8.4 ms      empty rc
+zsh + powerlevel10k       86.3 ms      the prompt gish's p10k theme is a port of
+zsh (real config)        302.7 ms      a real .zshrc: plugin manager, theme, tool hooks
 ```
 
 Keystroke latency, measured end to end from byte-in to repaint-out:
 **p50 0.2 ms, p99 0.3 ms** — with highlighting, suggestions, and the
 footgun linter all running. Full methodology and numbers in
 [docs/bench.md](docs/bench.md); the bash-compatibility scoreboard, gaps
-included, is in [docs/compat.md](docs/compat.md).
+included, is in [docs/compat.md](docs/compat.md). What happens when you
+*paste* a bash one-liner at the prompt, and when you source nvm, conda
+or an activate script unmodified, is measured separately in
+[docs/interactive-compat.md](docs/interactive-compat.md) — pasting and
+sourcing is the most-cited reason people go back. The same page carries
+the ecosystem matrix: **starship, direnv, fzf, zoxide, atuin and mise
+run in gish through their own bash init lines**, unmodified and with no
+gish-specific support on either side.
+
+**A plugin can never block a keystroke, and never needs a rebuild.**
+Every host→plugin call carries a deadline, so a hung plugin costs its
+own segment and nothing else; `plugin/v1` is frozen-additive and CI
+fails on any change that would break a binary compiled against it. Both
+are tested rather than asserted — see
+[docs/plugins.md](docs/plugins.md#the-compatibility-promise-to-plugin-authors-168).
+
+**Your config will not break.** What is frozen — rc syntax, `GISH_*`
+variables, `config` keys, `plugins.toml`, the prompt escape set, the
+theme knobs, and bash's own hook surface — is written down in
+[docs/stability.md](docs/stability.md), along with what is explicitly
+not covered and how a deprecation works. A shell is something people
+build on for years; the contract is what makes that reasonable.
 
 **Try it without commitment.** Run `gish` in one tab — no `chsh`
 required, nothing to undo but two directories. Coming from bash or zsh,
-start with [docs/porting.md](docs/porting.md).
+run `gish migrate` to import your aliases, functions, exports, PATH,
+prompt and history in one command — it parses your rc rather than
+running it, and lists everything that did not translate
+([docs/coming-from-zsh.md](docs/coming-from-zsh.md)). Muscle memory is
+in [docs/porting.md](docs/porting.md).
 
 ## The idea
 
@@ -50,9 +75,10 @@ can't block your migration, but the .zshrc pile is the thing most people
 are trying to leave. See [docs/design.md](docs/design.md) for the
 architecture, roadmap, and the decisions behind both.
 
-*(The name expands to "gRPC interactive shell" — that's the plumbing the
-plugin contract runs on. It's an implementation detail you should never
-have to think about, which is why it isn't the pitch.)*
+*(The name rhymes with fish. It used to carry a backronym; that is
+retired — a plugin architecture is not why anyone switches shells, and
+pretending otherwise was the least interesting thing about this project.
+See [docs/strategy.md](docs/strategy.md).)*
 
 ## Try it
 
@@ -120,7 +146,15 @@ manifest is the supported surface; see [the
 decision](docs/design.md#decisions) for why a modifier language was the
 wrong thing to reproduce.
 
-History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, **Ctrl-R opens a full-screen fuzzy picker** showing where each command ran, how long ago, how long it took, and whether it failed (red), a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions; Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
+History lives at `$XDG_DATA_HOME/gish/history.jsonl` — up/down are prefix-aware, **Ctrl-R opens a full-screen fuzzy picker** showing where each command ran, how long ago, how long it took, and whether it failed (red), a leading space keeps a command out, secrets never reach disk, and **commands from concurrent sessions appear live**. Typos get `did you mean` suggestions — for the whole line, not just the word, and a distro's own `command_not_found_handle` runs first and receives the full command line. Homebrew's environment is set up natively (no `shellenv` boilerplate); and if you already use **starship**, `GISH_THEME=starship` renders your exact prompt unchanged.
+
+`set -o vi` works — a real modal editor with counts, text objects and
+operator composition (`d2w`, `ciw`, `ci"`, `f`/`;`), not a handful of
+hardcoded commands — and the cursor shape tells you which mode you are
+in. See [docs/porting.md](docs/porting.md#vi-mode) for the full set and
+the two deliberate limits.
+
+Every affordance has its own switch, because "turn the whole shell monochrome" is not an answer to one distracting color: `config highlight quiet` keeps syntax color but drops the red-on-unknown-command verdict, `config highlight off` drops highlighting entirely, and `config suggest off` turns off the history ghost text. The built-in colors are the terminal's own 16 — gish does not impose a palette over the scheme you chose. Nor does it clutter your home directory: starting a shell creates nothing, and each file appears when there is something to put in it.
 
 gish also warns **before Enter**: it holds a real parse tree of the line, so the classic footguns — `rm $dir/*` unquoted, `cd /tmp; rm -rf *` unchained, `[ $x = y ]`, useless `cat`, `sort f > f` — draw a dim caution line under the prompt as you type. Multi-line buffers get a `shellcheck` pass on Enter when it's installed (budget-bounded, findings with codes). Warnings never block execution; `GISH_LINT=native` skips shellcheck, `GISH_LINT=off` silences everything.
 

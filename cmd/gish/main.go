@@ -41,6 +41,26 @@ func run() int {
 	if len(os.Args) >= 2 && os.Args[1] == "ssh" {
 		return runSSH(context.Background(), os.Args[2:])
 	}
+	// `gish acp` hosts an ACP agent, running its commands through gish's
+	// sandbox and deadlines (#167). A subcommand for the same reason
+	// `gish ssh` is one: it owns the terminal for its whole run.
+	if len(os.Args) >= 2 && os.Args[1] == "acp" {
+		if err := repl.RunACP(context.Background(), os.Stdin, os.Stdout, os.Stderr, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "gish acp:", err)
+			return 1
+		}
+		return 0
+	}
+	// `gish migrate` reads an existing bash/zsh setup (#160). A
+	// subcommand rather than only a builtin, because the moment it
+	// matters most is before anyone has started a gish session.
+	if len(os.Args) >= 2 && os.Args[1] == "migrate" {
+		if err := repl.RunMigrate(os.Stdout, os.Stderr, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "gish migrate:", err)
+			return 1
+		}
+		return 0
+	}
 
 	command := flag.String("c", "", "run `command` and exit")
 	loginFlag := flag.Bool("l", false, "act as a login shell (source profile files)")
@@ -56,6 +76,9 @@ func run() int {
 	restore := flag.String("restore", "", "start in the directory of recorded session `id`")
 	rcPath := flag.String("rc", "", "read startup settings from `file`")
 	flag.Parse()
+
+	// The session reports this as GISH_VERSION (#120).
+	repl.Version = version
 
 	if *rcPath != "" {
 		os.Setenv("GISH_RC", *rcPath) //nolint:errcheck // process-local

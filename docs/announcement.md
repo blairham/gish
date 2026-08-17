@@ -23,10 +23,10 @@ crash-isolated, deadline-bounded — they can never block a keystroke or
 take down your shell.* Keep `docs/bench.md`'s p50/p99 in the body, ready
 before anyone asks.
 
-*Naming tension, stated openly:* the project's name expands to "gRPC
-interactive shell". That expansion belongs in the docs, not the
-headline. If the name itself becomes the objection, the honest answer
-is that the acronym describes the plumbing, not the pitch.
+*The backronym is retired* (#169). The name rhymes with fish; that is
+the whole story now, and it is more on-message than the expansion ever
+was. There is no naming tension to defend because the plugin
+architecture is no longer the claim — see docs/strategy.md.
 
 **State the trust stance up front, in bold.** Open source. Local-first.
 No account. No telemetry. AI is opt-in (`??` only), bring-your-own

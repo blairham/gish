@@ -73,6 +73,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkTools(hc),
 		checkSandbox(),
 		checkSemanticMarks(hc),
+		checkShellIdentity(hc),
 		checkHistorySync(),
 		checkRemoteSSH(hc),
 		checkClipboard(),
@@ -375,6 +376,9 @@ func checkSemanticMarks(hc interp.HandlerContext) checkResult {
 	if !known {
 		return checkResult{checkOK, "blocks", "OSC 133 marks " + detail, ""}
 	}
+	// Which affordances this terminal actually has, not which ones the
+	// protocol defines (#165): they are different lists, and only the
+	// first one is a claim gish can stand behind.
 	return checkResult{checkOK, "blocks", detail, ""}
 }
 
@@ -463,4 +467,36 @@ func displayPath(path string) string {
 		return path
 	}
 	return tildify(path, home)
+}
+
+// checkShellIdentity reports what gish tells a tool's init script it is
+// (#120), and names the tools installed here whose bash hook gish is
+// known to run — or not.
+//
+// The check exists because the identity claim is the one setting whose
+// effects are entirely indirect: nothing about a prompt looks different,
+// and the consequence is a hook script taking a branch three levels
+// down. Naming it makes the claim inspectable rather than magic.
+func checkShellIdentity(hc interp.HandlerContext) checkResult {
+	detail := fmt.Sprintf("BASH_VERSION=%s, $0=gish (feature probes answered, identity not)", claimedBashVersion)
+
+	// The tools whose init this claim actually steers, when they are
+	// here to steer.
+	var known []string
+	for _, tool := range []struct{ bin, note string }{
+		{"fzf", "bind -x widgets"},
+		{"starship", "PS1 via PROMPT_COMMAND"},
+		{"direnv", "PROMPT_COMMAND hook"},
+		{"zoxide", "PROMPT_COMMAND hook"},
+		{"atuin", "bind -x on Ctrl-R"},
+		{"mise", "PROMPT_COMMAND hook"},
+	} {
+		if _, err := exec.LookPath(tool.bin); err == nil {
+			known = append(known, tool.bin+" ("+tool.note+")")
+		}
+	}
+	if len(known) > 0 {
+		detail += "; running: " + strings.Join(known, ", ")
+	}
+	return checkResult{checkOK, "identity", detail, ""}
 }

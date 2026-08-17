@@ -56,7 +56,15 @@ compat: ## Regenerate docs/compat.md from a live bash-vs-gish run (#101)
 
 .PHONY: compat-check
 compat-check: ## Fail if the corpus passes fewer cases than published
-	go test ./internal/compat/
+	go test ./internal/compat/ -run 'TestCompatScoreboard|TestCorpusIsWellFormed'
+
+.PHONY: paste-gate
+paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161) and the ecosystem matrix (#159)
+	GISH_GATES=1 go test ./internal/compat/ -run TestInteractiveGates -update -v
+
+.PHONY: paste-gate-check
+paste-gate-check: ## Fail if a pasted construct, an init script, or an installed tool regressed
+	GISH_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
 
 # Regenerate pkg/pluginapi from proto/gish/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.

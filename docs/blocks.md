@@ -22,13 +22,38 @@ gish emits the standard semantic prompt sequences on every command:
 | `OSC 133;C` | command output starts |
 | `OSC 133;D;N` | command finished with status N |
 
-That is not a consolation prize. kitty, WezTerm, Ghostty, iTerm2, and
-VS Code already implement scroll-to-previous-prompt,
-select-command-output, and click-to-rerun on top of these marks — so a
-gish user gets block navigation *today*, in the terminal they already
-run, without gish becoming a terminal. `doctor` names the terminal and
-what it supports. `GISH_SEMANTIC_MARKS=off` disables them for terminals
-that render unknown OSC sequences badly.
+That is not a consolation prize: a gish user gets block navigation
+*today*, in the terminal they already run, without gish becoming a
+terminal. But the affordances differ per terminal, and an earlier draft
+of this page listed five terminals as though they all did the same
+things. Checked against each terminal's own documentation:
+
+| terminal | what the marks buy | notes |
+| --- | --- | --- |
+| kitty | scroll-to-prompt, select-output, click-to-move-cursor | its docs suggest shells emit these as a builtin |
+| WezTerm | scroll-to-prompt, select-output, SetUserVar | |
+| Ghostty | scroll-to-prompt, click-to-move-cursor (PR #10536) | **no output-retrieval API** — its author is explicitly wary of escape-sequence-driven control, so "select output" is the terminal's own selection, not a query |
+| iTerm2 | shell integration: marks, SetUserVar, OSC 7 | |
+| VS Code | command decorations and navigation | |
+| Alacritty | nothing — **no OSC 133 support at all** | the marks are inert here, which is harmless |
+| Terminal.app | OSC 7 only | |
+
+`doctor` names the terminal and that row. Beside the marks gish also
+emits **OSC 7** (the working directory, so a new tab or split opens
+where you are) and, opt-in, **OSC 1337 SetUserVar** with the command
+line and its duration — which goes through the same secret rules as
+history, because a terminal may put it in a status bar.
+
+`GISH_SEMANTIC_MARKS` is per-feature: `on` (marks + OSC 7, the
+default), `off`, or a comma-separated subset of `marks,cwd,uservars`.
+SetUserVar is not in the default set precisely because it is the one
+that hands the command line to something else.
+
+The protocol went **bidirectional** in 2026: `click_events=1` in the A
+mark means the terminal sends a click in the prompt back as arrow keys,
+handing prompt interaction to the shell because it knows it cannot do
+it over a PTY. gish declares it, and the editor's existing arrow-key
+handling is the rest of the implementation.
 
 Implementation note worth keeping: the A/B marks wrap the *prompt
 string*, not the render call. The editor's renderer already treats

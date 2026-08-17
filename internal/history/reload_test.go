@@ -78,7 +78,10 @@ func TestReloadToleratesPartialLine(t *testing.T) {
 	defer s.Close()
 	s.SetSession("me")
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	// O_CREATE because opening a store no longer creates the file (#163):
+	// a shell that has run nothing writes nothing. Here it stands in for
+	// the other session, which is who creates it in practice.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}

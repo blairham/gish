@@ -61,9 +61,16 @@ func (prompt) Segments(context.Context, *pluginapi.SegmentsRequest) (*pluginapi.
 	}, nil
 }
 
-func (prompt) Render(_ context.Context, req *pluginapi.RenderRequest) (*pluginapi.RenderResponse, error) {
-	if req.GetSegmentId() == "crash" {
+func (prompt) Render(ctx context.Context, req *pluginapi.RenderRequest) (*pluginapi.RenderResponse, error) {
+	switch req.GetSegmentId() {
+	case "crash":
 		os.Exit(1)
+	case "hang":
+		// A plugin that never answers. The host's guarantee is that this
+		// costs the segment and nothing else (#168), so the tests need
+		// one that really does hang rather than one that is merely slow.
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
 	return &pluginapi.RenderResponse{Text: "fixture-segment", TtlMs: 100}, nil
 }

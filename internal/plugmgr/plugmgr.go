@@ -130,7 +130,11 @@ func (z *Zi) Snippet(rawSpec string) (string, error) {
 // writePayload stores the load script under run/. Upstream printed an
 // eval line for the shim here; gish just sources the file.
 func (z *Zi) writePayload(id, payload string) (string, error) {
-	runFile := filepath.Join(z.cfg.RunDir(), id+".gish")
+	dir, err := config.Ensure(z.cfg.RunDir()) // created on first use, not at startup (#163)
+	if err != nil {
+		return "", err
+	}
+	runFile := filepath.Join(dir, id+".gish")
 	if err := os.WriteFile(runFile, []byte(payload), 0o644); err != nil {
 		return "", err
 	}
@@ -349,7 +353,11 @@ func (z *Zi) linkCompletions(dir string) error {
 		if st, err := os.Stat(f); err != nil || st.IsDir() {
 			continue
 		}
-		link := filepath.Join(z.cfg.CompletionsDir(), filepath.Base(f))
+		compDir, err := config.Ensure(z.cfg.CompletionsDir())
+		if err != nil {
+			return err
+		}
+		link := filepath.Join(compDir, filepath.Base(f))
 		os.Remove(link)
 		if err := os.Symlink(f, link); err != nil {
 			return err

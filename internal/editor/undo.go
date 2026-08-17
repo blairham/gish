@@ -30,4 +30,15 @@ func (u *undoStack) pop() (bufState, bool) {
 	return s, true
 }
 
+// bottom is the oldest snapshot: the line as it was before this round of
+// editing began. revert-line (Alt-r) wants that one, not the previous
+// one — "undo everything I did to this line" is a different request from
+// "undo my last change".
+func (u *undoStack) bottom() (bufState, bool) {
+	if len(u.states) == 0 {
+		return bufState{}, false
+	}
+	return u.states[0], true
+}
+
 func (u *undoStack) reset() { u.states = u.states[:0] }

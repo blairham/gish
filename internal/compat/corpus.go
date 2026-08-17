@@ -48,6 +48,26 @@ echo "$TOOL_HOME"
 tool_fn hello`,
 	},
 	{
+		Name: "single quote escaped inside an assignment", Category: CatToolInit,
+		Provenance: "`'\\''` is the universal way to quote an apostrophe; every generated rc line uses it",
+		Script: `x='a'\''b'
+echo "[$x]"
+echo 'a'\''b'`,
+	},
+	{
+		Name: "escaped declaration bypasses an alias", Category: CatToolInit,
+		Provenance: "conda's `shell.bash hook` writes `\\export` and `\\local` to bypass aliases",
+		Script: `alias export='echo hijacked'
+\export FOO=bar
+echo "[$FOO]"`,
+	},
+	{
+		Name: "declare -F tests for a function", Category: CatToolInit,
+		Provenance: "fzf and bash-completion both gate whole branches on `declare -F name`",
+		Script: `f() { :; }
+declare -F f >/dev/null && echo have-f || echo missing-f`,
+	},
+	{
 		Name: "shell detection via $0 and BASH_VERSION", Category: CatToolInit,
 		Provenance: "init scripts branch on shell identity before emitting hooks",
 		Script: `if [ -n "${BASH_VERSION:-}" ]; then echo bash-ish; else echo other; fi
@@ -310,6 +330,11 @@ echo "$# $1 $*"`,
 [[ "$s" == hello* ]] && echo glob-match
 [[ "$s" =~ ^[a-z]+[0-9]+$ ]] && echo regex-match
 [[ -n "$s" && "$s" != nope ]] && echo compound`,
+	},
+	{
+		Name: "positional parameters passed to -c", Category: CatToolInit,
+		Provenance: "`sh -c 'cmd \"$1\"' _ \"$value\"` is the safe way to pass a value into a snippet",
+		Script:     `set -- alpha beta; echo "1=$1 2=$2 count=$#"`,
 	},
 	{
 		Name: "printf formatting", Category: CatStrings,
