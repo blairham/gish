@@ -25,6 +25,56 @@ func TestDisplayWidthIgnoresANSI(t *testing.T) {
 	}
 }
 
+// TestDisplayWidthIgnoresStringEscapes pins the sequences whose payload
+// is arbitrary text rather than numeric parameters.
+//
+// This is a regression test with a visible symptom: the OSC 133;B mark
+// closes every prompt gish renders (#99), and measuring its payload as
+// five columns put the cursor five cells right of the prompt character
+// on every keystroke. It looked like the theme had a trailing gap.
+func TestDisplayWidthIgnoresStringEscapes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		s    string
+		want int
+	}{
+		{"OSC 133 prompt end, ST-terminated", "\x1b]133;B\x1b\\", 0},
+		{"prompt closed by the mark", "\x1b[38;5;76m❯\x1b[0m \x1b]133;B\x1b\\", 2},
+		{"OSC 133 prompt start leads", "\x1b]133;A\x1b\\~/x", 3},
+		{"OSC 0 title, BEL-terminated", "\x1b]0;a title\ax", 1},
+		{"DCS passthrough", "\x1bPtmux;\x1b\x1b]52;c;QQ==\a\x1b\\y", 1},
+		{"unterminated OSC swallows the rest", "\x1b]133;B", 0},
+		{"lone ST is still two bytes", "\x1b\\z", 1},
+	}
+	for _, tt := range tests {
+		if got := displayWidth(tt.s); got != tt.want {
+			t.Errorf("%s: displayWidth(%q) = %d, want %d", tt.name, tt.s, got, tt.want)
+		}
+	}
+}
+
+// TestWrapLineKeepsStringEscapesAtomic: a mark split across rows would
+// both mis-measure and corrupt the sequence the terminal parses.
+func TestWrapLineKeepsStringEscapesAtomic(t *testing.T) {
+	t.Parallel()
+
+	rows := wrapLine("ab\x1b]133;B\x1b\\cde", 3)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %q, want 2", rows)
+	}
+	if !strings.Contains(rows[0], "\x1b]133;B\x1b\\") {
+		t.Errorf("mark split across rows: %q", rows)
+	}
+	if got, want := displayWidth(rows[0]), 3; got != want {
+		t.Errorf("row 0 width = %d, want %d", got, want)
+	}
+	if got, want := displayWidth(rows[1]), 2; got != want {
+		t.Errorf("row 1 width = %d, want %d", got, want)
+	}
+}
+
 func TestWrapLineKeepsANSIAtomic(t *testing.T) {
 	t.Parallel()
 

@@ -50,6 +50,23 @@ func nextToken(s string, state int) (tok string, width int, rest string, newStat
 			}
 			return s, 0, "", -1 // truncated sequence: swallow
 		}
+		if len(s) >= 2 && strings.IndexByte("]P^_X", s[1]) >= 0 {
+			// A string escape: OSC, DCS, PM, APC, SOS. Its payload is
+			// arbitrary text and runs to a terminator, so stopping at the
+			// introducer would count the payload as printable — which is
+			// exactly what happened with the OSC 133 prompt marks (#99):
+			// "133;B" was measured as five columns and the cursor sat five
+			// past the prompt.
+			for i := 2; i < len(s); i++ {
+				if s[i] == 0x07 { // BEL, the xterm-legacy terminator
+					return s[:i+1], 0, s[i+1:], -1
+				}
+				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' { // ST
+					return s[:i+2], 0, s[i+2:], -1
+				}
+			}
+			return s, 0, "", -1 // unterminated: swallow
+		}
 		if len(s) >= 2 { // two-byte escape (ESC c etc.)
 			return s[:2], 0, s[2:], -1
 		}

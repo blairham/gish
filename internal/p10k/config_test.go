@@ -196,4 +196,10 @@ func TestDisplayWidthIgnoresEscapes(t *testing.T) {
 	if got := displayWidth("日本"); got != 4 {
 		t.Errorf("wide characters = %d, want 4", got)
 	}
+	// An ST-terminated OSC must end at its own ST. Preferring a BEL found
+	// anywhere later in the string swallows the text in between — here,
+	// the four visible characters of "link".
+	if got := displayWidth("\x1b]133;A\x1b\\link\a"); got != 4 {
+		t.Errorf("ST-terminated OSC width = %d, want 4", got)
+	}
 }
