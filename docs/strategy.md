@@ -109,8 +109,8 @@ slowed" was reading a slow release schedule as a slow project.
 
 | project | what it is | why it matters |
 | --- | --- | --- |
-| **brush** (Rust, 2,154★) | our exact top-line pitch: run your scripts and .bashrc unchanged, with highlighting and autosuggestions; ~1,700 compat tests | real, and beatable — no plugin system, TOML config, 416 brew installs/yr, two releases in twelve months |
-| **IRIS** (Go, 1,221★ in four months) | IntelliSense-grade completion delivered *into* zsh/bash/fish; one binary, no account, no telemetry | the strategically dangerous one: it aims at the UX pillar without asking anyone to switch shells |
+| **brush** (Rust, 2,154★) | our exact top-line pitch: run your scripts and .bashrc unchanged, with highlighting and autosuggestions; ~1,700 compat tests | actively developed (81 commits/quarter); the distance is the exec path and ecosystem inheritance, not the compat percentage |
+| **IRIS** (Go, 1,222★ in four months) | IntelliSense-grade completion delivered *into* zsh/bash/fish; one binary, no account, no telemetry | the strategically dangerous one: it aims at the UX pillar without asking anyone to switch shells |
 | **ble.sh** (4,618★) | fish-grade highlighting and autosuggestions in pure bash | absent from Homebrew core, so its true install base is unmeasurable; the star count may reflect distribution friction rather than absent demand |
 
 ## The open question
