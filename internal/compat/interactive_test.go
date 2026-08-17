@@ -42,28 +42,41 @@ func TestInteractiveGates(t *testing.T) {
 	sourceResults := compat.RunSourceAll(ctx, bashBin, gishBin, t.TempDir())
 	ecoResults := compat.RunEcosystemAll(ctx, gishBin)
 
-	pastePassed := 0
+	pastePassed, pasteSkipped := 0, 0
 	for _, r := range pasteResults {
-		if !r.Pass {
+		switch {
+		case r.Skipped:
+			// The oracle on this machine cannot answer — macOS still
+			// ships bash 3.2.57 — so the case is neither passed nor
+			// failed, and the recorded count is adjusted rather than the
+			// gate disabled.
+			pasteSkipped++
+			t.Logf("PASTE SKIP %s: %s", r.Name, r.Reason)
+		case !r.Pass:
 			t.Logf("PASTE FAIL %s: %s\n  bash=%q (%d)\n  gish=%q (%d)",
 				r.Name, r.Reason, r.BashOut, r.BashCode, r.GishOut, r.GishCode)
-			continue
+		default:
+			pastePassed++
 		}
-		pastePassed++
 	}
 	sourceRan, sourcePassed := 0, 0
 	for _, r := range sourceResults {
-		if !r.Present {
+		switch {
+		case !r.Present:
 			t.Logf("SOURCE SKIP %s: not installed on this machine", r.Name)
-			continue
-		}
-		sourceRan++
-		if !r.Pass {
+		case r.Unstable:
+			// The oracle misbehaved (a helper program dying of SIGPIPE
+			// as the script exits). Not gish's failure, and not a pass
+			// either: it is a case that could not be judged.
+			t.Logf("SOURCE UNJUDGED %s: %s\n  bash=%q (%d)", r.Name, r.Reason, r.BashOut, r.BashCode)
+		case !r.Pass:
+			sourceRan++
 			t.Logf("SOURCE FAIL %s: %s\n  bash=%q (%d)\n  gish=%q (%d)",
 				r.Name, r.Reason, r.BashOut, r.BashCode, r.GishOut, r.GishCode)
-			continue
+		default:
+			sourceRan++
+			sourcePassed++
 		}
-		sourcePassed++
 	}
 
 	ecoRan, ecoPassed := 0, 0
@@ -93,6 +106,11 @@ func TestInteractiveGates(t *testing.T) {
 	// The paste gate is hermetic — it depends on nothing but bash and
 	// gish — so it is enforced as an absolute count.
 	recordedPaste, recordedPasteTotal := readInteractiveRecorded(t, pasteRecordedRe)
+	// Skipped cases are subtracted from what the doc recorded, so a
+	// machine with an older oracle still enforces every case it *could*
+	// run. Anything else would either fail an honest run or, worse,
+	// quietly stop gating.
+	recordedPaste -= pasteSkipped
 	if pastePassed < recordedPaste {
 		t.Errorf("paste gate regression: %d/%d passing, the doc records %d/%d — run `make paste-gate` after fixing",
 			pastePassed, len(pasteResults), recordedPaste, recordedPasteTotal)

@@ -63,7 +63,13 @@ var SourceCorpus = []SourceCase{
 		Name:       "conda shell hook",
 		Provenance: "conda init's output is a named breaker",
 		Locate:     locateEval("conda", "conda shell.bash hook"),
-		Probe:      `command -v conda >/dev/null && echo conda-loaded; conda config --show-sources >/dev/null 2>&1 && echo conda-runs`,
+		// Deliberately does not *run* conda. `conda config` is a Python
+		// program, and a script that exits while it is still writing
+		// leaves it dying of SIGPIPE — which CI showed as the *oracle*
+		// exiting -1 with a BrokenPipeError, so the comparison was
+		// against garbage. What this gate asks is whether the hook
+		// loaded, and `command -v` answers that.
+		Probe: `command -v conda >/dev/null && echo conda-loaded`,
 	},
 	{
 		Name:       "rvm",
@@ -145,10 +151,12 @@ func locateVenv(scratch string) (string, bool) {
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // SourceResult is one case's verdict. Present=false means the tool is
-// not installed here; the case was not run and says so.
+// not installed here; the case was not run and says so. Unstable=true
+// means the *oracle* misbehaved, which is a third state — see RunSource.
 type SourceResult struct {
 	SourceCase
 	Present            bool
+	Unstable           bool
 	BashOut, GishOut   string
 	BashCode, GishCode int
 	Pass               bool
@@ -166,6 +174,18 @@ func RunSource(ctx context.Context, bashBin, gishBin, scratch string, c SourceCa
 	script := load + "\n" + c.Probe
 	r.BashOut, r.BashCode = runScript(ctx, bashBin, script)
 	r.GishOut, r.GishCode = runScript(ctx, gishBin, script)
+
+	// A differential test is only as good as its oracle, and an oracle
+	// that died of a signal is not one. Real init scripts spawn helper
+	// programs, and a helper still writing when the script exits dies of
+	// SIGPIPE — bash then exits -1 with the helper's traceback in its
+	// output. Comparing against that would report a gish failure for
+	// something gish did not do.
+	if r.BashCode < 0 {
+		r.Unstable = true
+		r.Reason = "the oracle exited abnormally (" + itoa(r.BashCode) + "); nothing to compare against"
+		return r
+	}
 	switch {
 	case r.BashOut == r.GishOut && r.BashCode == r.GishCode:
 		r.Pass = true

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -51,6 +52,15 @@ type PasteCase struct {
 	// expansion is off in bash's non-interactive mode, so `sudo !!` has
 	// to be posed to bash differently to get an honest answer.
 	OracleScript string
+	// MinBashMajor skips the case when the oracle is older than this.
+	//
+	// macOS still ships bash 3.2.57 from 2007, where `${x^^}` is a "bad
+	// substitution" — so on that runner gish is *ahead* of the oracle and
+	// the differential dutifully reports a difference. docs/compat.md
+	// already handles this for the script corpus by comparing majors;
+	// this is the same rule per case, because one paste case needing
+	// bash 4 should not disable the gate for the other seventeen.
+	MinBashMajor int
 }
 
 // PasteCorpus is the published gate. The constructs are the ones named
@@ -117,9 +127,10 @@ var PasteCorpus = []PasteCase{
 		Text:       "cat <<'EOF'\nline one\nline two\nEOF",
 	},
 	{
-		Name:       "arithmetic and parameter expansion together",
-		Provenance: "the mixed-expansion lines that break naive parsers",
-		Text:       `x=hello; echo "${x^^} has ${#x} chars, twice is $((2*${#x}))"`,
+		Name:         "arithmetic and parameter expansion together",
+		Provenance:   "the mixed-expansion lines that break naive parsers",
+		Text:         `x=hello; echo "${x^^} has ${#x} chars, twice is $((2*${#x}))"`,
+		MinBashMajor: 4, // ${x^^} is a bad substitution in Apple's bash 3.2
 	},
 	{
 		Name:       "pipeline with quoting",
@@ -155,9 +166,12 @@ var PasteCorpus = []PasteCase{
 	},
 }
 
-// PasteResult is one case's verdict.
+// PasteResult is one case's verdict. Skipped=true means the oracle on
+// this machine is too old to answer, which is neither a pass nor a
+// failure — see PasteCase.MinBashMajor.
 type PasteResult struct {
 	PasteCase
+	Skipped            bool
 	BashOut, GishOut   string
 	BashCode, GishCode int
 	Pass               bool
@@ -168,6 +182,11 @@ type PasteResult struct {
 // and the same text pasted into an interactive gish on a pty.
 func RunPaste(ctx context.Context, bashBin, gishBin string, c PasteCase) PasteResult {
 	r := PasteResult{PasteCase: c}
+	if c.MinBashMajor > 0 && bashMajorVersion(bashBin) < c.MinBashMajor {
+		r.Skipped = true
+		r.Reason = "needs bash " + itoa(c.MinBashMajor) + "+; this machine's oracle is older"
+		return r
+	}
 	oracle := c.OracleScript
 	if oracle == "" {
 		oracle = c.Text
@@ -197,6 +216,25 @@ func RunPaste(ctx context.Context, bashBin, gishBin string, c PasteCase) PasteRe
 	return r
 }
 
+// bashMajorVersion asks the oracle what it is. Cached, because the
+// answer cannot change during a run and the corpus asks per case.
+func bashMajorVersion(bashBin string) int {
+	bashMajorOnce.Do(func() {
+		out, err := exec.Command(bashBin, "-c", "echo ${BASH_VERSINFO[0]}").Output() //nolint:gosec // the oracle we were handed
+		if err != nil {
+			bashMajor = 0
+			return
+		}
+		bashMajor, _ = strconv.Atoi(strings.TrimSpace(string(out)))
+	})
+	return bashMajor
+}
+
+var (
+	bashMajorOnce sync.Once
+	bashMajor     int
+)
+
 // RunPasteAll runs the whole paste corpus.
 func RunPasteAll(ctx context.Context, bashBin, gishBin string) []PasteResult {
 	out := make([]PasteResult, 0, len(PasteCorpus))
@@ -205,6 +243,9 @@ func RunPasteAll(ctx context.Context, bashBin, gishBin string) []PasteResult {
 	}
 	return out
 }
+
+// pasteTimeout bounds one pasted case, generously. See pasteIntoGish.
+const pasteTimeout = 60 * time.Second
 
 // Semantic marks (#99) delimit each command's output exactly: C opens
 // it, D closes it and carries the status. Parsing the screen without
@@ -230,7 +271,14 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 	}
 	defer os.RemoveAll(home)
 
-	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	// The pty path gets its own budget rather than the script one. A
+	// case here starts a real shell, waits for a real prompt and types
+	// into it, and a loaded CI runner redraws the prompt for every
+	// echoed keystroke — the same reason cmd/gish's e2e harness settled
+	// on a minute. The gate is not measuring speed, so a tight bound
+	// only buys flakes: a macOS runner missed the *first prompt* inside
+	// 20s and reported a shell that had produced nothing.
+	ctx, cancel := context.WithTimeout(ctx, pasteTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, gishBin)

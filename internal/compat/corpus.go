@@ -55,6 +55,13 @@ echo "[$x]"
 echo 'a'\''b'`,
 	},
 	{
+		Name: "escaped declaration bypasses an alias", Category: CatToolInit,
+		Provenance: "conda's `shell.bash hook` writes `\\export` and `\\local` to bypass aliases",
+		Script: `alias export='echo hijacked'
+\export FOO=bar
+echo "[$FOO]"`,
+	},
+	{
 		Name: "declare -F tests for a function", Category: CatToolInit,
 		Provenance: "fzf and bash-completion both gate whole branches on `declare -F name`",
 		Script: `f() { :; }

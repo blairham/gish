@@ -145,7 +145,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -644,7 +644,7 @@ func runPlain(ctx context.Context, login bool) error {
 		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))))))),
+		interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -739,7 +739,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))))))),
+		interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -768,7 +768,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))))))),
+			interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))))))))))),
 		},
 		opts...,
 	)...)

@@ -75,7 +75,7 @@ not run.
 The point of implementing bash's hook surface is that the tools people
 already have keep working. This is that claim, measured: each tool is
 installed unmodified, **its own documented init line** is sourced, and
-its behaviour is asserted in a live interactive gish on a pty — the
+its behavior is asserted in a live interactive gish on a pty — the
 prompt renders, the widget binds, the environment changes on cd.
 
 | tool | result | what it proves |
