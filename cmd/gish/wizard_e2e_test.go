@@ -113,6 +113,62 @@ func (s *wizardSession) step(ready, keys string) {
 	}
 }
 
+// stepUntil waits for a field to be live, sends keys, and *keeps*
+// sending them until the next expected thing appears.
+//
+// Waiting for a "live" marker narrows the window in which a keystroke
+// can be swallowed by the raw-mode switch; it does not close it. Some
+// fields have no distinctive live marker at all — the free-text segment
+// list renders only its title — and for those the window is wide open.
+//
+// So the honest contract is: send until the effect is observed. Enter is
+// idempotent here (an extra one on a field already submitted lands on
+// the next field, which the following stepUntil is waiting for anyway),
+// and every key this drives is.
+func (s *wizardSession) stepUntil(ready, keys, next string) {
+	s.t.Helper()
+	s.waitFor(ready)
+	s.buf.Reset()
+	deadline := time.After(30 * time.Second)
+
+	send := func() bool {
+		_, err := s.f.WriteString(keys)
+		return err == nil
+	}
+	alive := send()
+	quiet := time.After(retryQuiet)
+	for {
+		if bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(next)) {
+			return
+		}
+		select {
+		case chunk, ok := <-s.ch:
+			if !ok {
+				s.t.Fatalf("shell exited before %q; got:\n%s",
+					next, string(ansiRe.ReplaceAll(s.buf.Bytes(), nil)))
+			}
+			s.buf.Write(chunk)
+		case <-quiet:
+			// Only resend after the terminal has gone *quiet*. Resending
+			// on every chunk fires a key per burst of output, which
+			// walks straight through the form and out the other side —
+			// which is exactly what the first version of this did.
+			if alive {
+				alive = send()
+			}
+			quiet = time.After(retryQuiet)
+		case <-deadline:
+			s.t.Fatalf("did not see %q within 30s; got:\n%s",
+				next, string(ansiRe.ReplaceAll(s.buf.Bytes(), nil)))
+		}
+	}
+}
+
+// retryQuiet is how long the terminal must be silent before a keystroke
+// is assumed lost and resent. Long enough that a form finishing its
+// redraw is never mistaken for a dropped key.
+const retryQuiet = 750 * time.Millisecond
+
 // help-bar fragments that mean "this field is live and reading keys".
 const (
 	selectLive  = "filter" // selects offer / to filter
@@ -166,17 +222,13 @@ func TestThemeWizardFormWalksP10kPath(t *testing.T) {
 	s.step(selectLive, "\x1b[B\r") // down to p10k, enter
 
 	s.waitFor("separator preview")
-	s.step(selectLive, "\r") // keep plain separators
-	s.step(selectLive, "\r") // layout: keep 2
-	s.step(selectLive, "\r") // frame: keep on
-
-	// The segment list is a free-text field, so its help bar differs;
-	// wait for the question itself, which only renders now.
-	s.step("segments, in order", "\r")
-
-	s.waitFor("preview:")
-	s.step(confirmLive, "\r")
-	s.waitFor("saved to")
+	// Each step is driven until the *next* question appears, so a
+	// keystroke lost to a raw-mode switch is simply resent.
+	s.stepUntil(selectLive, "\r", "layout")             // keep plain separators
+	s.stepUntil(selectLive, "\r", "frame")              // layout: keep 2
+	s.stepUntil(selectLive, "\r", "segments, in order") // frame: keep on
+	s.stepUntil("segments, in order", "\r", "preview:") // keep the default list
+	s.stepUntil(confirmLive, "\r", "saved to")
 }
 
 // NO_COLOR on a real terminal takes the line frontend, not a

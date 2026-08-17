@@ -121,22 +121,33 @@ func (s *shellPTY) send(keys string) {
 func (s *shellPTY) sendUntil(keys, want string) {
 	s.t.Helper()
 	deadline := time.After(30 * time.Second)
+
+	send := func() bool {
+		_, err := s.f.WriteString(keys)
+		return err == nil
+	}
+	alive := send()
+	quiet := time.After(retryQuiet)
 	for {
-		s.send(keys)
+		if bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
+			return
+		}
 		select {
 		case chunk, ok := <-s.ch:
 			if !ok {
 				s.t.Fatalf("shell exited before %q", want)
 			}
 			s.buf.Write(chunk)
-		case <-time.After(500 * time.Millisecond):
-			// nothing arrived; send again
+		case <-quiet:
+			// Resend only once the terminal is quiet; resending per
+			// chunk sends a key per burst of output.
+			if alive {
+				alive = send()
+			}
+			quiet = time.After(retryQuiet)
 		case <-deadline:
 			s.t.Fatalf("did not see %q within 30s; got:\n%s",
 				want, string(ansiRe.ReplaceAll(s.buf.Bytes(), nil)))
-		}
-		if bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
-			return
 		}
 	}
 }
