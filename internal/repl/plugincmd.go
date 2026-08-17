@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -132,6 +133,20 @@ func lazyCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 		// source the payload, then run the original command line.
 		return []string{"eval", "source " + quoted[0] + "; " + strings.Join(quoted[1:], " ")}, nil
 	}
+}
+
+// triggers returns the lazy trigger commands still pending. They
+// resolve the moment they run, so the name-judging surfaces (#193)
+// treat them as real rather than as typos-until-first-use.
+func (p *pluginManager) triggers() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	names := make([]string, 0, len(p.pending))
+	for name := range p.pending {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }
 
 // take claims a pending trigger, so a plugin loads exactly once.

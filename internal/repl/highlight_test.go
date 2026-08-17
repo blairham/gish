@@ -53,6 +53,30 @@ func spanFor(t *testing.T, spans []editor.HighlightSpan, start int) editor.Highl
 	return editor.HighlightSpan{}
 }
 
+// The tests below inject a fake known-set to isolate the span logic.
+// This one drives highlightFn's real predicate, because that is where
+// the bug lived (#193): every span test passed for months while the
+// live verdict painted aliases and gish's own commands red.
+func TestHighlightFnUsesTheSessionVocabulary(t *testing.T) {
+	t.Cleanup(sessionAliases.reset)
+	sessionAliases.reset()
+	sessionAliases.observe([]string{"alias", "ll=ls -la"})
+
+	fn := highlightFn(runnerWithVars(t, nil))
+	for word, want := range map[string]string{
+		"ll":       hlGoodCmd, // alias
+		"doctor":   hlGoodCmd, // CallHandler-routed command
+		"builtins": hlGoodCmd, // gish-native builtin
+		"cd":       hlGoodCmd, // interpreter builtin
+		"zzqqxx":   hlBadCmd,  // nothing anywhere
+	} {
+		spans := fn(word + " arg")
+		if got := spanFor(t, spans, 0).Style; got != want {
+			t.Errorf("style for %q = %q, want %q", word, got, want)
+		}
+	}
+}
+
 func TestHighlightKnownAndUnknownCommands(t *testing.T) {
 	t.Parallel()
 

@@ -6,7 +6,6 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/complete"
 	"github.com/blairham/gish/internal/editor"
 )
 
@@ -82,15 +81,12 @@ func highlightFn(runner *interp.Runner) func(string) []editor.HighlightSpan {
 		if mode == highlightOff {
 			return nil
 		}
-		known := func(name string) bool {
-			if interp.IsBuiltin(name) || name == "zi" || name == "config" {
-				return true
-			}
-			if _, ok := runner.Funcs[name]; ok {
-				return true
-			}
-			return complete.IsCommand(name, pathVar(runner))
-		}
+		// The verdict draws on the shared session vocabulary (#193):
+		// aliases, gish's CallHandler-routed commands, native builtins,
+		// functions, plugin commands, and PATH. A private list here is
+		// how every alias and most of gish's own commands spent months
+		// rendering red — valid, and painted as typos.
+		known := func(name string) bool { return knownCommand(runner, name) }
 		if mode == highlightQuiet {
 			known = nil // no verdict on the command word
 		}
