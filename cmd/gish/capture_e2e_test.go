@@ -106,6 +106,41 @@ func (s *shellPTY) send(keys string) {
 	}
 }
 
+// sendUntil repeats a keystroke until want appears.
+//
+// A full-screen program's status line reaching the screen does not mean
+// it is reading keys yet: entering raw mode discards whatever is already
+// queued, so a key sent in that window is simply lost. There is no
+// portable signal for "the pager is now listening", and how wide the
+// window is depends on the machine — this passed on macOS and on one
+// Linux runner before failing on another.
+//
+// Repeating is the honest fix. The keystroke is idempotent for the
+// programs used here (an extra `q` at a shell prompt is a typo the next
+// Enter clears, and the assertion is on the marker, not the screen).
+func (s *shellPTY) sendUntil(keys, want string) {
+	s.t.Helper()
+	deadline := time.After(30 * time.Second)
+	for {
+		s.send(keys)
+		select {
+		case chunk, ok := <-s.ch:
+			if !ok {
+				s.t.Fatalf("shell exited before %q", want)
+			}
+			s.buf.Write(chunk)
+		case <-time.After(500 * time.Millisecond):
+			// nothing arrived; send again
+		case <-deadline:
+			s.t.Fatalf("did not see %q within 30s; got:\n%s",
+				want, string(ansiRe.ReplaceAll(s.buf.Bytes(), nil)))
+		}
+		if bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
+			return
+		}
+	}
+}
+
 // probe runs a command whose output cannot be confused with the echo of
 // the command itself — the "res" prefix only ever appears in output.
 func (s *shellPTY) probe(name string) { s.send("printf 'res%s\\n' " + name + "\r") }
@@ -136,8 +171,11 @@ func TestCapturedPagerStillWorks(t *testing.T) {
 
 	s.send("less big.txt\r")
 	s.waitFor("big.txt") // the pager's status line
-	s.send("q")          // a raw keystroke, not a line: only a pager in
-	// raw mode acts on it, which is the whole assertion
+
+	// `q` is a raw keystroke, not a line: only a program actually in raw
+	// mode acts on it, which is the whole assertion. Repeated because the
+	// pager may not be listening the instant its status line lands.
+	s.sendUntil("q", promptReady)
 	s.probe("PAGERDONE")
 	s.waitFor("resPAGERDONE")
 }
@@ -184,7 +222,7 @@ func TestCapturedGitStillPages(t *testing.T) {
 
 	s.send("git log --oneline\r")
 	s.waitFor("commit-number") // paged output on screen
-	s.send("q")
+	s.sendUntil("q", promptReady)
 	s.probe("GITDONE")
 	s.waitFor("resGITDONE")
 }
