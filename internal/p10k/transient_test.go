@@ -1,6 +1,7 @@
 package p10k
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -64,7 +65,7 @@ func TestTransientSameDir(t *testing.T) {
 	}
 
 	moved := sampleContext()
-	moved.PrevCwd = "/fixture/you/elsewhere"
+	moved.PrevCwd = filepath.Join(fixtureHome, "elsewhere")
 	if _, ok := RenderTransient(cfg, moved); ok {
 		t.Error("same-dir should leave a full prompt as a landmark after a directory change")
 	}

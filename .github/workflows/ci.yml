@@ -59,8 +59,13 @@ jobs:
     - name: Vet everything (test files included)
       run: go vet ./...
 
+    # The list grows as packages become portable, and adding one is how
+    # the port stays a resume rather than a restart (#43, sequenced to
+    # v1.x by #110). A package that builds for Windows but is never run
+    # there is a claim, not a guarantee — the same distinction the
+    # builtin matrices exist to close.
     - name: Run portable tests
-      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./internal/remote/ ./internal/session/ ./internal/capture/ ./internal/blocks/ ./cmd/gish-aws/ ./cmd/gish-atuin/ ./cmd/gish-claude/ ./cmd/gish-direnv/
+      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./internal/remote/ ./internal/session/ ./internal/capture/ ./internal/blocks/ ./internal/p10k/ ./internal/gitstatus/ ./internal/dirjump/ ./internal/manifest/ ./internal/ui/ ./internal/jobs/ ./cmd/gish-aws/ ./cmd/gish-atuin/ ./cmd/gish-claude/ ./cmd/gish-direnv/
 
   lint:
     runs-on: ubuntu-latest
