@@ -6,7 +6,9 @@ Guidance for AI coding agents (Claude Code, Cursor, Copilot, Codex, OpenCode, �
 
 **gish** is a new interactive shell: zsh's interactive experience, bash's ubiquity as scripting substrate, and a native, contract-first plugin system. Cross-platform (macOS, Linux, Windows), written in Go, shipped as a single static binary named `gish`.
 
-The name expands bash-style: **gish = gRPC Interactive SHell** — the tier-2 plugin system is the differentiator, so it's in the name, the way bash's expansion carries its own origin story. Rhymes with fish/wish; chosen after an exhaustive availability sweep (~55 candidates) found every other 3–4 letter `-sh` name claimed, most by existing shells.
+The name rhymes with fish/wish, and was chosen after an exhaustive availability sweep (~55 candidates) found every other 3–4 letter `-sh` name claimed, most by existing shells. It had a bash-style expansion — "gRPC Interactive SHell" — and that **backronym is retired** (#169): the research falsified the premise behind it. nushell already ships out-of-process plugins in any language, and every fish-parity UX feature is replicable as a zsh or bash add-on (ble.sh does fish-grade highlighting and autosuggestion *in pure bash*). A plugin architecture is not why anyone switches shells.
+
+What is defensible is narrower and more durable: **bash compatibility**, which was the historical gate — fish's disqualifier for the Apple default was sh-incompatibility, not licensing — and **the exec path**: sandbox profiles, deadlines, parse-tree footgun detection, secret-free history. That is the one layer an add-on provably cannot own, because an add-on lives inside the shell it extends and does not control execution. See docs/strategy.md, which also records the three numbers we were repeating that turned out to be wrong.
 
 The design bet is a **two-tier plugin system**:
 

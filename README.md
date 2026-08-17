@@ -75,9 +75,10 @@ can't block your migration, but the .zshrc pile is the thing most people
 are trying to leave. See [docs/design.md](docs/design.md) for the
 architecture, roadmap, and the decisions behind both.
 
-*(The name expands to "gRPC interactive shell" — that's the plumbing the
-plugin contract runs on. It's an implementation detail you should never
-have to think about, which is why it isn't the pitch.)*
+*(The name rhymes with fish. It used to carry a backronym; that is
+retired — a plugin architecture is not why anyone switches shells, and
+pretending otherwise was the least interesting thing about this project.
+See [docs/strategy.md](docs/strategy.md).)*
 
 ## Try it
 
