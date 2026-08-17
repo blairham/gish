@@ -55,16 +55,32 @@ func TestJobControlStopListResume(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	// The stopped job is filed and listed.
+	//
+	// Each line ends with its own marker and the wait is on that marker,
+	// never on the interesting output. Waiting on "Stopped" would return
+	// while the line was still finishing, so the next send landed during
+	// the prompt redraw and was lost — which is how this passed locally
+	// and failed on the ubuntu runner.
 	s.buf.Reset()
-	s.send("jobs\r")
-	s.waitFor("Stopped")
+	s.send(`jobs; printf "res%s\n" J1` + "\r")
+	s.waitFor("resJ1")
+	if !s.seen("Stopped") {
+		t.Errorf("jobs did not list the stopped job:\n%s", s.plain())
+	}
 
 	// bg resumes it, and says so in bash's shape: [id] command &
 	s.buf.Reset()
-	s.send("bg\r")
-	s.waitFor("[1]")
+	s.send(`bg; printf "res%s\n" B1` + "\r")
+	s.waitFor("resB1")
+	if !s.seen("[1]") {
+		t.Errorf("bg did not report the resumed job:\n%s", s.plain())
+	}
 
 	// The shell is still usable afterwards, which is the part that breaks
 	// when terminal ownership is handed back wrongly.
@@ -91,6 +107,10 @@ func TestJobControlForegroundAndInterrupt(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	s.buf.Reset()
 	s.send("fg\r")
@@ -127,44 +147,44 @@ func TestJobsEmptyListing(t *testing.T) {
 	}
 }
 
-// TestBackgroundAmpersandIsNotFiled records a real gap, deliberately.
+// TestBackgroundCommandRuns covers what is true about `cmd &` on every
+// platform, and deliberately does not assert what is not.
 //
-// `cmd &` creates no job: nothing is announced, `jobs` cannot list it,
-// and `fg` cannot reach it. Ctrl-Z works — that path files through
-// EndLine, which keeps a job that stopped or still has live processes —
-// but a command backgrounded with & spawns on the interpreter's own
-// goroutine, and by the time it reaches the exec handler the line's job
-// slot is already closed, so it runs untracked.
+// Whether a backgrounded command is *filed as a job* is currently a race
+// (#57): the interpreter runs it on its own goroutine, and whether that
+// goroutine reaches the exec handler before EndLine closes the line's
+// job slot decides the outcome. Measured, not guessed — 0 of 12 runs
+// filed on macOS, while the ubuntu runner filed it and failed a test
+// that asserted the opposite.
 //
-// Asserted as it stands rather than skipped, so the day it is fixed this
-// test fails and gets replaced by the real one. A skip would go quiet
-// forever; deleting the case would lose the finding entirely.
-func TestBackgroundAmpersandIsNotFiled(t *testing.T) {
+// So the assertion is the invariant that holds either way and would
+// catch a real regression: the process actually starts, and the shell
+// remains usable afterwards. Asserting the listing in either direction
+// would encode a coin flip and fail on half the platforms.
+func TestBackgroundCommandRuns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("pty e2e skipped in -short")
 	}
 	s := startPTY(t, ptyOptions{})
 	s.waitForPrompt()
 
-	// Each step is one command line, with its marker produced by that
-	// same line. Sending `jobs` and then probing as a second line raced:
-	// two lines back-to-back can lose the second in the raw-mode
-	// transition around running the first, which failed on a slower
-	// runner while passing everywhere else. Every other test here waits
-	// on a marker between sends; this one had nothing to wait for,
-	// because the whole point is that nothing is announced.
 	s.send(`sleep 45 & printf "res%s\n" BACKGROUNDED` + "\r")
 	s.waitFor("resBACKGROUNDED")
 
+	// The child is really running, asked of the system rather than of
+	// the shell's own bookkeeping — which is the part under dispute.
 	s.buf.Reset()
-	s.send(`jobs; printf "res%s\n" LISTED` + "\r")
-	s.waitFor("resLISTED")
-
-	if s.seen("sleep 45") {
-		t.Error("`cmd &` now files a job — the gap closed. " +
-			"Replace this with the real assertions: the shell should announce [id] pid, " +
-			"`jobs` should list it, and `fg` should reach it.")
+	s.send(`pgrep -f "sleep 45" >/dev/null; printf "res%s\n" "PG$?"` + "\r")
+	s.waitFor("resPG")
+	if !s.seen("resPG0") {
+		t.Errorf("`sleep 45 &` did not leave a running process:\n%s", s.plain())
 	}
+
+	// And the shell kept the terminal: a background command must never
+	// take it, however the filing race resolves.
+	s.buf.Reset()
+	s.probe("ALIVE")
+	s.waitFor("resALIVE")
 }
 
 // TestKillByJobSpec covers the half of kill that needs the shell: %1
@@ -189,6 +209,10 @@ func TestKillByJobSpec(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	// The assertion is that the process dies, checked by asking the
 	// system rather than the shell. `jobs` is the wrong oracle here: a
@@ -238,6 +262,10 @@ func TestStoppedJobKilledExternallyIsReaped(t *testing.T) {
 	s.buf.Reset()
 	s.send("\x1a")
 	s.waitFor("Stopped")
+	// The stop notice is not the end of the line. Wait for the fresh
+	// prompt before typing again, or the next send races the redraw and
+	// is lost — the same failure as waiting on intermediate output.
+	s.waitForPrompt()
 
 	s.buf.Reset()
 	s.send(`pkill -KILL -f "sleep 45"; sleep 1; printf "res%s\n" KILLED` + "\r")
