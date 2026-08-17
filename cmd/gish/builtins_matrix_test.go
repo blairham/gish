@@ -1,3 +1,5 @@
+//go:build unix
+
 package main
 
 import (
@@ -5,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/blairham/gish/internal/compat"
@@ -147,6 +150,20 @@ func TestInterpBuiltinsActuallyRun(t *testing.T) {
 			r := compat.Run(context.Background(), bash, gish, compat.Case{
 				Name: tc.name, Script: script,
 			})
+			// The oracle has a version. macOS still ships bash 3.2 as
+			// /bin/bash, which predates mapfile and readarray by a whole
+			// major release, so on that runner bash answers "command not
+			// found" for a builtin gish implements correctly. Comparing
+			// against that would report gish as broken for being newer.
+			//
+			// Detected from the oracle's own output rather than by
+			// version-gating a list, because the list would be another
+			// claim needing its own maintenance — the same mistake this
+			// file exists to correct.
+			if strings.Contains(r.BashOut, tc.name+": command not found") {
+				t.Skipf("bash on this machine has no %s (%s) — no oracle for this case",
+					tc.name, bashVersion(t, bash))
+			}
 			if tc.knownGap != "" {
 				if r.Pass {
 					t.Errorf("%s now matches bash — the gap closed, so delete this knownGap entry: %s",
@@ -173,8 +190,26 @@ func TestInterpBuiltinsActuallyRun(t *testing.T) {
 // requireBash skips rather than fails when bash is absent: the oracle is
 // the machine's bash, and a machine without one cannot run a
 // differential test. Skipping is honest; asserting from memory is not.
+// bashVersion reports the oracle's version, for skip messages that say
+// which bash could not answer.
+func bashVersion(t *testing.T, bash string) string {
+	t.Helper()
+	out, err := exec.Command(bash, "-c", "echo $BASH_VERSION").Output()
+	if err != nil {
+		return "unknown version"
+	}
+	return "bash " + strings.TrimSpace(string(out))
+}
+
 func requireBash(t *testing.T) string {
 	t.Helper()
+	// GISH_TEST_BASH points the oracle at a specific bash. macOS ships
+	// 3.2 as /bin/bash while most developers have 5.x first on PATH, so
+	// without this the CI-only failures (a builtin the old oracle lacks)
+	// cannot be reproduced locally — which is how one shipped.
+	if b := os.Getenv("GISH_TEST_BASH"); b != "" {
+		return b
+	}
 	bash, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skip("bash not installed: nothing to be differential against")
