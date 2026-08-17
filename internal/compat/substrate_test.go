@@ -3,6 +3,7 @@ package compat_test
 import (
 	"context"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -149,16 +150,15 @@ func TestPrintfDashVMatchesBash(t *testing.T) {
 
 	for _, script := range []string{
 		`printf -v x "%s" hello; echo "[$x]"`,
-		`printf -vx "%s" hi; echo "[$x]"`,                      // clustered
-		`printf -v x "%s\n" a b c; echo "[$x]"`,                // the format recycles into the variable
-		`printf -v x "%05.2f" 3.14159; echo "[$x]"`,            // the local precision path still applies
-		`printf -v x "%s" "with space"; echo "[$x]"`,           // quoting survives the round trip
-		`printf -v x "%s" "quote'd"; echo "[$x]"`,              // ...including a single quote
-		`printf -v x -- "%s" hi; echo "[$x]"`,                  // -- ends the options
-		`printf -v x "%s" -- ; echo "[$x]"`,                    // ...but is an operand after the format
-		`printf "%s" -v x; echo`,                               // -v is not an option after the format
-		`printf -- "-%s" a; echo`,                              // a format that starts with a dash
-		`i=2; printf -v "arr[$i]" "%s" hi; echo "[${arr[2]}]"`, // a subscript still resolves
+		`printf -vx "%s" hi; echo "[$x]"`,            // clustered
+		`printf -v x "%s\n" a b c; echo "[$x]"`,      // the format recycles into the variable
+		`printf -v x "%05.2f" 3.14159; echo "[$x]"`,  // the local precision path still applies
+		`printf -v x "%s" "with space"; echo "[$x]"`, // quoting survives the round trip
+		`printf -v x "%s" "quote'd"; echo "[$x]"`,    // ...including a single quote
+		`printf -v x -- "%s" hi; echo "[$x]"`,        // -- ends the options
+		`printf -v x "%s" -- ; echo "[$x]"`,          // ...but is an operand after the format
+		`printf "%s" -v x; echo`,                     // -v is not an option after the format
+		`printf -- "-%s" a; echo`,                    // a format that starts with a dash
 		// The scope is the reason this cannot be done in the handler:
 		// bash writes the local, not a global of the same name.
 		`f(){ local y; printf -v y "%s" in; echo "[$y]"; }; f; echo "[${y-unset}]"`,
@@ -171,6 +171,31 @@ func TestPrintfDashVMatchesBash(t *testing.T) {
 			}
 		})
 	}
+
+	// Assigning through a subscript is a bash 4 feature, and the oracle
+	// on a stock macOS is /bin/bash 3.2 — the last GPLv2 release, which
+	// Apple has shipped frozen since 2007. It answers `arr[2]': not a
+	// valid identifier, so comparing there would assert that gish
+	// should refuse something modern bash accepts.
+	//
+	// The scoreboard already refuses to compare across bash majors for
+	// the same reason; this is that rule applied to one case rather
+	// than a whole run.
+	t.Run("subscript target", func(t *testing.T) {
+		const script = `i=2; printf -v "arr[$i]" "%s" hi; echo "[${arr[2]}]"`
+		major := bashMajor(t, bashBin)
+		// Compared numerically: "10" sorts before "4" as a string, and
+		// a version check that breaks on the next major is a trap left
+		// for somebody else.
+		if n, err := strconv.Atoi(major); err != nil || n < 4 {
+			t.Skipf("oracle is bash %s: `printf -v arr[i]' arrived in bash 4", major)
+		}
+		gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+		bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
+		if string(gishOut) != string(bashOut) {
+			t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+		}
+	})
 }
 
 // The statuses, which bash distinguishes more finely than a builtin
