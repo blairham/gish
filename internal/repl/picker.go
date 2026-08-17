@@ -307,4 +307,12 @@ func looksLikeError(line string) bool {
 
 // ansiEscapes strips color from captured output: the preview is
 // rendered dim by the picker, and a stray color code would fight it.
-var ansiEscapes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a]*\a|\x1b[=><]`)
+//
+// The OSC branch accepts both terminators. BEL alone is not enough:
+// hyperlinks are the OSC most likely to appear in a build log, and the
+// tools that emit them (cargo, gcc, ls) close with ST. Bounding the
+// payload with [^\a\x1b] matters as much as accepting ST — an OSC that
+// scanned to a BEL arriving thousands of bytes later would consume the
+// interesting part of the log along with it, which is the same
+// over-consumption fixed in internal/p10k's skipEscape.
+var ansiEscapes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a\x1b]*(?:\a|\x1b\\)|\x1b[=><]`)

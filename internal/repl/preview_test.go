@@ -39,6 +39,30 @@ func TestPreviewStripsColour(t *testing.T) {
 	}
 }
 
+// TestPreviewStripsHyperlinks: OSC 8 is the OSC most likely to be in a
+// captured build log, and the tools that emit it close with ST rather
+// than BEL. Accepting only BEL left "8;;<url>" in the preview and, worse,
+// let the match run on to a BEL arriving later in the log — eating the
+// error the preview exists to show.
+func TestPreviewStripsHyperlinks(t *testing.T) {
+	out := "\x1b]8;;https://example.com/E0432\x1b\\error[E0432]\x1b]8;;\x1b\\: unresolved import\n"
+	got := firstInterestingLine(out)
+	if strings.Contains(got, "\x1b") || strings.Contains(got, "8;;") {
+		t.Errorf("hyperlink escape survived: %q", got)
+	}
+	if got != "error[E0432]: unresolved import" {
+		t.Errorf("preview = %q", got)
+	}
+}
+
+// An unterminated OSC must not swallow the rest of the log.
+func TestPreviewSurvivesUnterminatedOSC(t *testing.T) {
+	got := firstInterestingLine("\x1b]8;;broken\nfatal: real problem here\n")
+	if !strings.Contains(got, "fatal") {
+		t.Errorf("unterminated OSC consumed the useful line: %q", got)
+	}
+}
+
 func TestPreviewOfEmptyOutput(t *testing.T) {
 	if got := firstInterestingLine(""); got != "" {
 		t.Errorf("empty output previewed %q", got)
