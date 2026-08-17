@@ -121,6 +121,11 @@ func runEditor(ctx context.Context, login bool) error {
 		interp.ExecHandlers(execChain...),
 	}
 	callBase := passthroughCall
+	// umask needs no shell state, so it is registered regardless of
+	// whether job control is available — tying it to jobs.Supported
+	// would make a mask-setting builtin depend on process groups.
+	builtins.Register("__gish_umask", builtins.Umask)
+	builtins.Register("__gish_times", builtins.Times)
 	if jobs.Supported() {
 		// Reclaiming the terminal from the background must not stop the
 		// shell. Children inherit the ignore; acceptable (see #5 design).
@@ -128,9 +133,11 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_jobs", table.Jobs)
 		builtins.Register("__gish_fg", table.Fg)
 		builtins.Register("__gish_bg", table.Bg)
+		// kill belongs here: %1 resolves through this table.
+		builtins.Register("__gish_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -481,6 +488,17 @@ func reservedCommandName(name string) bool {
 // plugins on demand.
 func pluginsBuiltin(host *pluginhost.Host, cmdIndex *pluginhost.CommandIndex, dir string) builtins.Func {
 	return func(ctx context.Context, hc interp.HandlerContext, _ []string) error {
+		if host == nil {
+			// Registered with no host on the script paths, so the name
+			// resolves there. Without this it fell through to PATH and
+			// reported `"plugins": executable file not found` with status
+			// 127 — a builtin gish documents, answering exactly like a
+			// typo. Every neighboring builtin says what is unavailable
+			// and why (`trust: env plugins are not available in this
+			// session`); this now does too.
+			fmt.Fprintln(hc.Stderr, "plugins: the plugin host runs only in an interactive session")
+			return interp.ExitStatus(1)
+		}
 		_ = host.Discover() //nolint:errcheck // newly installed plugins picked up best-effort
 		statuses := host.Statuses(ctx, true)
 		if len(statuses) == 0 {
@@ -534,7 +552,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+		interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -624,11 +642,15 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 		interp.Params(append([]string{"--"}, params...)...),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+		interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
 	)
 	if err != nil {
 		return err
 	}
+	// The names must resolve here too, so an unavailable builtin reports
+	// itself rather than looking like a missing program.
+	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))
+	registerScriptOverrides()
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -647,7 +669,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+			interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
 		},
 		opts...,
 	)...)
