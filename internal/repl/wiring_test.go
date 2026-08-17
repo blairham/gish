@@ -65,24 +65,46 @@ func TestSuggestFnUsesKnobAndStore(t *testing.T) {
 	}
 }
 
-// transientPrompt is gated on the active theme, and that gate was the
-// untested part: every non-p10k theme silently gets no transient
-// prompt, which is a decision worth pinning rather than rediscovering.
+// transientPrompt is gated twice — on the active theme and on the p10k
+// engine's own TRANSIENT_PROMPT setting — and both gates were untested.
+//
+// XDG_CONFIG_HOME is redirected because p10kConfigFor layers the user's
+// real p10k.conf over the preset. Without that, this test reads whatever
+// the developer happens to have configured: the first version passed
+// locally purely because the author's own config sets TRANSIENT_PROMPT,
+// and failed on every CI runner, where it defaults to off. A test that
+// reaches into real user state is exactly what AGENTS.md forbids, and
+// this is what it looks like when it slips through.
 func TestTransientPromptFollowsTheTheme(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	info := promptInfo{}
 
-	if got := transientPrompt(runnerWithVars(t, map[string]string{"GISH_THEME": "p10k"}), info); got == "" {
-		t.Error("p10k theme produced no transient prompt")
+	// The setting is off by default, for every theme.
+	if got := transientPrompt(runnerWithVars(t, map[string]string{"GISH_THEME": "p10k"}), info); got != "" {
+		t.Errorf("transient prompt is off by default, got %q", got)
 	}
+
+	// Turned on in the session, p10k renders one.
+	on := map[string]string{"GISH_THEME": "p10k", "POWERLEVEL9K_TRANSIENT_PROMPT": "always"}
+	if got := transientPrompt(runnerWithVars(t, on), info); got == "" {
+		t.Error("p10k with TRANSIENT_PROMPT=always produced nothing")
+	}
+
+	// Every other theme gets nothing even with the setting on: only the
+	// p10k engine implements a transient prompt today.
 	for _, theme := range []string{"plain", "gish", "starship", ""} {
-		runner := runnerWithVars(t, map[string]string{"GISH_THEME": theme})
-		if got := transientPrompt(runner, info); got != "" {
+		vars := map[string]string{"GISH_THEME": theme, "POWERLEVEL9K_TRANSIENT_PROMPT": "always"}
+		if got := transientPrompt(runnerWithVars(t, vars), info); got != "" {
 			t.Errorf("GISH_THEME=%q produced a transient prompt %q; only p10k implements one", theme, got)
 		}
 	}
+
 	// A manual prompt outranks every theme, transient included.
-	manual := runnerWithVars(t, map[string]string{"GISH_THEME": "p10k", "GISH_PROMPT": "> "})
-	if got := transientPrompt(manual, info); got != "" {
+	manual := map[string]string{
+		"GISH_THEME": "p10k", "GISH_PROMPT": "> ",
+		"POWERLEVEL9K_TRANSIENT_PROMPT": "always",
+	}
+	if got := transientPrompt(runnerWithVars(t, manual), info); got != "" {
 		t.Errorf("manual GISH_PROMPT still got a transient prompt %q", got)
 	}
 }
