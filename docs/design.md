@@ -68,6 +68,31 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **One theme engine, two config dialects** (2026-08,
+  [#134](https://github.com/blairham/gish/issues/134)): `p10k` is the
+  engine; the `gish` theme's knobs (`GISH_THEME_SEGMENTS`,
+  `GISH_THEME_COLOR_*`, `_LINES`, `_FRAME`, `_SEP`, `_RPROMPT`) are a
+  second, smaller dialect over the same idea, and they stay — they are a
+  documented surface and [docs/stability.md](stability.md) says
+  documented surfaces do not move.
+
+  What does not stay is the pretence that they are two unrelated themes.
+  The p10k engine is a strict superset in capability: six presets, ~50
+  segments, a parameter namespace with a real fallback chain. `gish` is
+  six segments and five knobs, which is the right size for someone who
+  wants a prompt configured the way the rest of gish is configured, and
+  the wrong size for someone arriving with a 1720-line `.p10k.zsh`.
+
+  So: `config theme.*` and `p10k configure` both keep working and are
+  described as what they are — the small dialect and the compatibility
+  one. The renderer behind `gish` is not deleted, because deleting it
+  buys one file and costs every rc that sets those knobs a behavior
+  change, and "your config will not break" outranks "there is one of
+  these". The third option — treating `POWERLEVEL9K_*` as an import
+  format only — was rejected outright: "paste a line from your old
+  config and it works" is a real part of why the port is attractive, and
+  it is exactly the property an import-only surface destroys.
+
 - **Structured data uses `test`'s operator vocabulary, or not at all**
   (2026-08, [#104](https://github.com/blairham/gish/issues/104),
   docs/structured.md): the exploration turned up that the shape everyone

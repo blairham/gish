@@ -56,6 +56,9 @@ type Context struct {
 
 	// upCache memoizes FindUp for the life of this render.
 	upCache map[string]string
+	// statCache memoizes exists() the same way, for the settings that
+	// have to touch the filesystem (SHORTEN_FOLDER_MARKER, #133).
+	statCache map[string]bool
 }
 
 // Env reads an environment variable through the context's lookup.
@@ -97,6 +100,24 @@ func (c *Context) FindUp(name string) (string, bool) {
 	}
 	c.upCache[name] = found
 	return found, found != ""
+}
+
+// exists reports whether a path is there, memoized for this render.
+//
+// Same reasoning as FindUp: SHORTEN_FOLDER_MARKER asks the question once
+// per component per marker, and a deep path with two markers is a dozen
+// stats that a repeated prompt in the same directory should not repeat.
+func (c *Context) exists(path string) bool {
+	if c.statCache == nil {
+		c.statCache = map[string]bool{}
+	}
+	if hit, ok := c.statCache[path]; ok {
+		return hit
+	}
+	_, err := os.Stat(path)
+	found := err == nil
+	c.statCache[path] = found
+	return found
 }
 
 // maxWalkUp bounds the ancestor search. Deep enough for any real project

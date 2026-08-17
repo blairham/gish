@@ -1,8 +1,13 @@
 package p10k
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Cloud and cluster context segments.
@@ -153,11 +158,83 @@ func renderAzure(cfg *Config, ctx *Context) (Rendered, bool) {
 			Icon:    decodeEscapes(cfg.Icon("azure", "", "")),
 		}, true
 	}
-	// azureProfile.json marks one subscription "isDefault": true. Finding
-	// it properly needs a JSON parse, which is not worth a prompt-path
-	// dependency for a segment that the environment usually answers.
+	// azureProfile.json marks one subscription "isDefault": true (#133).
+	// The environment usually answers, which is why this was skipped —
+	// but "usually" leaves the people who use `az account set` with a
+	// segment that shows nothing, and the parse is one mtime-cached read
+	// of a file the user already has.
+	if name := azureDefaultSubscription(ctx); name != "" {
+		return Rendered{
+			Content: name,
+			Icon:    decodeEscapes(cfg.Icon("azure", "", "")),
+		}, true
+	}
 	return Rendered{}, false
 }
+
+// azureProfile is the shape of ~/.azure/azureProfile.json that matters.
+type azureProfile struct {
+	Subscriptions []struct {
+		Name      string `json:"name"`
+		IsDefault bool   `json:"isDefault"`
+	} `json:"subscriptions"`
+}
+
+// azureDefaultSubscription reads the subscription `az account set`
+// marked default. Cached on the file's mtime: a prompt pays one stat,
+// and a switch takes effect on the next prompt.
+func azureDefaultSubscription(ctx *Context) string {
+	home := ctx.Home
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return ""
+		}
+	}
+	path := filepath.Join(home, ".azure", "azureProfile.json")
+	fi, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+
+	azureMu.Lock()
+	defer azureMu.Unlock()
+	if azureCache.path == path && azureCache.mtime.Equal(fi.ModTime()) {
+		return azureCache.name
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	// The file Azure writes starts with a UTF-8 BOM, which is not JSON
+	// and which json.Unmarshal refuses — the kind of detail that makes a
+	// parser look broken when it is the file that is unusual.
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	var profile azureProfile
+	if err := json.Unmarshal(data, &profile); err != nil {
+		return ""
+	}
+	name := ""
+	for _, sub := range profile.Subscriptions {
+		if sub.IsDefault {
+			name = sub.Name
+			break
+		}
+	}
+	azureCache = azureProfileCache{path: path, mtime: fi.ModTime(), name: name}
+	return name
+}
+
+type azureProfileCache struct {
+	path  string
+	mtime time.Time
+	name  string
+}
+
+var (
+	azureMu    sync.Mutex
+	azureCache azureProfileCache
+)
 
 // renderGcloud shows the active gcloud configuration.
 func renderGcloud(cfg *Config, ctx *Context) (Rendered, bool) {

@@ -16,7 +16,7 @@ import (
 // The vcs counters' producer (#130).
 //
 // The segment could already render ahead/behind, staged, modified,
-// untracked, stashed and conflicted — coloured correctly, wired through
+// untracked, stashed and conflicted — colored correctly, wired through
 // MergeCounts, and never populated, because nothing produced them. That
 // split was deliberate (#129): the two halves of git status have wildly
 // different costs. The branch is one file read cached on .git/HEAD's

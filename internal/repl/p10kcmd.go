@@ -128,6 +128,12 @@ func showP10k(hc interp.HandlerContext) {
 	for _, u := range cfg.Unsupported {
 		fmt.Fprintf(hc.Stdout, "skipped    %s\n", u)
 	}
+	// Set and stored, but not acted on (#133). Without this line the
+	// state is invisible: the setting survives a round trip and the
+	// prompt quietly does something else.
+	for _, u := range cfg.UnhonouredSettings() {
+		fmt.Fprintf(hc.Stdout, "ignored    %s\n", u)
+	}
 	if v := cfg.Str("INSTANT_PROMPT", "off"); v != "off" && v != "" {
 		fmt.Fprintf(hc.Stdout, "note       %s\n", instantPromptNote)
 	}

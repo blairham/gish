@@ -53,9 +53,12 @@ func TestP10kShowNamesUnimplementedElements(t *testing.T) {
 	// An element with no implementation renders as nothing, which is
 	// indistinguishable from "this tool isn't active here" unless we say
 	// so. Ask for one and check it is named.
+	// public_ip rather than battery: battery is implemented now (#132),
+	// and the network segments are the ones that stay out until there is
+	// a way to compute them off the prompt path.
 	out, _, _ := runP10kScript(t, "",
-		"POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS='time battery'\np10k show\n")
-	if !strings.Contains(out, "not yet") || !strings.Contains(out, "battery") {
+		"POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS='time public_ip'\np10k show\n")
+	if !strings.Contains(out, "not yet") || !strings.Contains(out, "public_ip") {
 		t.Errorf("unimplemented element not reported: %q", out)
 	}
 }

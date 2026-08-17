@@ -116,7 +116,7 @@ stranger. Themes are opt-in:
 ```sh
 config theme p10k        # native two-line theme: git, runtime pins, jobs, duration, exit
 config theme starship    # your exact starship prompt, unchanged
-config theme             # interactive walkthrough
+config theme             # interactive walkthrough (the small dialect)
 ```
 
 `config` writes to your rc file *and* applies immediately, so there is

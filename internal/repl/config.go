@@ -64,8 +64,17 @@ per-segment theme keys (#28):
   config theme.sep powerline            separator style (needs a nerd font)
   config theme.preset spaceship         whole look from the same knobs (p10k resets)
 
+themes (one engine, two dialects — see docs/design.md#decisions):
+  p10k      the powerlevel10k engine: 6 presets, ~50 segments,
+            POWERLEVEL9K_* / p10k.conf, configured by "p10k configure"
+  gish      the small dialect: 6 segments and the theme.* keys below,
+            configured by "config theme"
+  starship  your starship binary renders it
+  plain     the naked default
+  bash      whatever the session set PS1 to
+
 settings:
-  theme   plain | p10k | starship  (GISH_THEME)
+  theme   plain | p10k | gish | starship  (GISH_THEME)
   lint    on | native | off        (GISH_LINT)
   prompt  escape string            (GISH_PROMPT)
   tools   on | off                 (GISH_TOOLS)
