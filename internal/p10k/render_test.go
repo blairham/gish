@@ -1,9 +1,23 @@
 package p10k
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+)
+
+// The fixture paths are built with filepath.Join rather than written as
+// "/fixture/you/dev/gish" (#136). tildify compares against
+// os.PathSeparator, so a slash-separated literal never matches home on
+// Windows: the path renders unabbreviated and every assertion about
+// `~/dev/gish` fails — for a reason that is entirely the test's.
+var (
+	fixtureHome = filepath.Join(string(filepath.Separator), "fixture", "you")
+	fixtureRepo = filepath.Join(fixtureHome, "dev", "gish")
+	fixtureAway = filepath.Join(fixtureHome, "elsewhere")
+	// The tilde form as this platform renders it.
+	fixtureTilde = "~" + string(filepath.Separator) + filepath.Join("dev", "gish")
 )
 
 // sampleContext is a realistic prompt state: a git repo with a little of
@@ -15,8 +29,8 @@ import (
 // the tree look 1000x slower than they are.
 func sampleContext() *Context {
 	return &Context{
-		Cwd:      "/fixture/you/dev/gish",
-		Home:     "/fixture/you",
+		Cwd:      fixtureRepo,
+		Home:     fixtureHome,
 		Username: "you",
 		Hostname: "host",
 		ExitCode: 0,
@@ -24,7 +38,7 @@ func sampleContext() *Context {
 		Width:    100,
 		Now:      time.Date(2026, 8, 16, 14, 5, 6, 0, time.UTC),
 		Git: &GitStatus{
-			Dir: "/fixture/you/dev/gish", Branch: "main",
+			Dir: fixtureRepo, Branch: "main",
 			Ahead: 2, Modified: 3, Untracked: 1,
 		},
 		Getenv: func(string) string { return "" },
@@ -57,7 +71,7 @@ func TestRenderLean(t *testing.T) {
 	if lines[0] != "" {
 		t.Errorf("PROMPT_ADD_NEWLINE should put a blank line first, got %q", lines[0])
 	}
-	if want := "~/dev/gish main"; !strings.HasPrefix(lines[1], want) {
+	if want := fixtureTilde + " main"; !strings.HasPrefix(lines[1], want) {
 		t.Errorf("first line = %q, want prefix %q", lines[1], want)
 	}
 	for _, want := range []string{"⇡2", "!3", "?1"} {

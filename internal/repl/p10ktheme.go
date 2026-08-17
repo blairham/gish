@@ -50,6 +50,11 @@ var presetCache sync.Map // preset name -> *p10k.Config
 // below the cd rather than just above it.
 var lastPromptDir string
 
+// gitCounts is the session's background git-status scanner (#130). One
+// per process: its whole value is the cache, and the cache is keyed by
+// repository, so every prompt in every directory shares it.
+var gitCounts = &p10k.CountScanner{}
+
 // p10kTheme is the builtinThemes entry for "p10k".
 func p10kTheme(runner *interp.Runner, info promptInfo) (string, string, string) {
 	out := p10k.Render(p10kConfigFor(runner), p10kContext(runner, info))
@@ -187,5 +192,14 @@ func p10kContext(runner *interp.Runner, info promptInfo) *p10k.Context {
 	// from whoever is scanning the repository and are merged when they
 	// describe this same working tree.
 	ctx.Git = p10k.HeadStatus(dir)
+	// The counts are the expensive half (#130): scanned in the
+	// background, merged when they describe this same working tree, and
+	// marked stale rather than presented as current when the tree has
+	// moved since. The prompt reads what is known now and never waits.
+	if ctx.Git != nil {
+		if counts, ok := gitCounts.Counts(dir); ok {
+			ctx.Git.MergeCounts(counts)
+		}
+	}
 	return ctx
 }

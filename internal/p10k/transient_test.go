@@ -64,7 +64,7 @@ func TestTransientSameDir(t *testing.T) {
 	}
 
 	moved := sampleContext()
-	moved.PrevCwd = "/fixture/you/elsewhere"
+	moved.PrevCwd = fixtureAway
 	if _, ok := RenderTransient(cfg, moved); ok {
 		t.Error("same-dir should leave a full prompt as a landmark after a directory change")
 	}

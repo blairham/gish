@@ -99,7 +99,7 @@ func renderDir(cfg *Config, ctx *Context) (Rendered, bool) {
 
 	out := Rendered{Spans: spans, State: state}
 	if state == "NOT_WRITABLE" {
-		out.Icon = decodeEscapes(cfg.Param("dir", state, "VISUAL_IDENTIFIER_EXPANSION", ""))
+		out.Icon = decodeEscapes(cfg.Icon("dir", state, ""))
 	}
 	return out, true
 }
@@ -301,7 +301,7 @@ func renderStatus(cfg *Config, ctx *Context) (Rendered, bool) {
 		}
 		return Rendered{
 			Content: cfg.Param("status", "OK", "CONTENT_EXPANSION", ""),
-			Icon:    decodeEscapes(cfg.Param("status", "OK", "VISUAL_IDENTIFIER_EXPANSION", "✔")),
+			Icon:    decodeEscapes(cfg.Icon("status", "OK", "✔")),
 			State:   "OK",
 		}, true
 	}
@@ -318,7 +318,7 @@ func renderStatus(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: content,
-		Icon:    decodeEscapes(cfg.Param("status", state, "VISUAL_IDENTIFIER_EXPANSION", "✘")),
+		Icon:    decodeEscapes(cfg.Icon("status", state, "✘")),
 		State:   state,
 	}, true
 }
@@ -348,7 +348,7 @@ func renderExecutionTime(cfg *Config, ctx *Context) (Rendered, bool) {
 	precision := cfg.ParamInt("command_execution_time", "", "PRECISION", 0)
 	return Rendered{
 		Content: formatDuration(ctx.Duration, precision),
-		Icon:    decodeEscapes(cfg.Param("command_execution_time", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("command_execution_time", "", "")),
 	}, true
 }
 
@@ -378,7 +378,7 @@ func renderJobs(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: content,
-		Icon:    decodeEscapes(cfg.Param("background_jobs", "", "VISUAL_IDENTIFIER_EXPANSION", "⚙")),
+		Icon:    decodeEscapes(cfg.Icon("background_jobs", "", "⚙")),
 	}, true
 }
 
@@ -408,7 +408,7 @@ func renderTime(cfg *Config, ctx *Context) (Rendered, bool) {
 	format := cfg.Param("time", "", "FORMAT", "15:04:05")
 	return Rendered{
 		Content: strftime(ctx.clock(), format),
-		Icon:    decodeEscapes(cfg.Param("time", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("time", "", "")),
 	}, true
 }
 

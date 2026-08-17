@@ -101,6 +101,15 @@ func showP10k(hc interp.HandlerContext) {
 		}
 		fmt.Fprintf(hc.Stdout, "config     %s (%s)\n", displayPath(path), state)
 	}
+	// Which icon set is actually serving (#131). A MODE gish does not
+	// carry is served by nerdfont-v3 and says so here: silently
+	// substituting a glyph set is how a prompt ends up full of boxes
+	// with no explanation.
+	if mode := cfg.ResolveIconMode(); mode.Fallback() {
+		fmt.Fprintf(hc.Stdout, "icons      %s (asked for %s, which gish does not carry)\n", mode.Serving, mode.Requested)
+	} else {
+		fmt.Fprintf(hc.Stdout, "icons      %s\n", mode.Serving)
+	}
 	fmt.Fprintf(hc.Stdout, "left       %s\n", strings.Join(cfg.List("LEFT_PROMPT_ELEMENTS"), " "))
 	fmt.Fprintf(hc.Stdout, "right      %s\n", strings.Join(cfg.List("RIGHT_PROMPT_ELEMENTS"), " "))
 
@@ -315,6 +324,12 @@ const instantPromptNote = "INSTANT_PROMPT is accepted but not needed: " +
 
 // asciiOnly strips everything that needs a patched font, so the prompt
 // is plain text end to end.
+//
+// Since the icon table landed (#131) the MODE below does the icons on
+// its own, so what is left here is the *separators* and prompt
+// characters — which are layout, not icons, and are not in the table.
+// The per-segment icon overrides this used to write are gone: they were
+// the workaround for MODE selecting nothing.
 func asciiOnly(cfg *p10k.Config) {
 	cfg.Set("MODE", "ascii")
 	for _, side := range []string{"LEFT", "RIGHT"} {
@@ -331,9 +346,6 @@ func asciiOnly(cfg *p10k.Config) {
 	cfg.Set("MULTILINE_LAST_PROMPT_SUFFIX", "")
 	cfg.Set("PROMPT_CHAR_OK_CONTENT_EXPANSION", ">")
 	cfg.Set("PROMPT_CHAR_ERROR_CONTENT_EXPANSION", ">")
-	cfg.Set("STATUS_ERROR_VISUAL_IDENTIFIER_EXPANSION", "x")
-	cfg.Set("STATUS_OK_VISUAL_IDENTIFIER_EXPANSION", "+")
-	cfg.Set("BACKGROUND_JOBS_VISUAL_IDENTIFIER_EXPANSION", "%")
 }
 
 func presetOptions() []chooseOption {

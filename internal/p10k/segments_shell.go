@@ -59,7 +59,7 @@ func (es envSegment) render(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: content,
-		Icon:    decodeEscapes(cfg.Param(es.segment, "", "VISUAL_IDENTIFIER_EXPANSION", es.icon)),
+		Icon:    decodeEscapes(cfg.Icon(es.segment, "", es.icon)),
 	}, true
 }
 
@@ -74,14 +74,14 @@ func renderOSIcon(cfg *Config, ctx *Context) (Rendered, bool) {
 		icon = runtime.GOOS
 	}
 	return Rendered{
-		Icon: decodeEscapes(cfg.Param("os_icon", "", "VISUAL_IDENTIFIER_EXPANSION", icon)),
+		Icon: decodeEscapes(cfg.Icon("os_icon", "", icon)),
 	}, true
 }
 
 func renderCPUArch(cfg *Config, ctx *Context) (Rendered, bool) {
 	return Rendered{
 		Content: runtime.GOARCH,
-		Icon:    decodeEscapes(cfg.Param("cpu_arch", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("cpu_arch", "", "")),
 	}, true
 }
 
@@ -104,7 +104,7 @@ func renderTodo(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: strconv.Itoa(count),
-		Icon:    decodeEscapes(cfg.Param("todo", "", "VISUAL_IDENTIFIER_EXPANSION", "☑")),
+		Icon:    decodeEscapes(cfg.Icon("todo", "", "☑")),
 	}, true
 }
 
@@ -115,7 +115,7 @@ func renderProxy(cfg *Config, ctx *Context) (Rendered, bool) {
 		if ctx.Env(name) != "" {
 			return Rendered{
 				Content: "proxy",
-				Icon:    decodeEscapes(cfg.Param("proxy", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+				Icon:    decodeEscapes(cfg.Icon("proxy", "", "")),
 			}, true
 		}
 	}
@@ -138,6 +138,6 @@ func renderDetectVirt(cfg *Config, ctx *Context) (Rendered, bool) {
 func virtRendered(cfg *Config, label string) Rendered {
 	return Rendered{
 		Content: label,
-		Icon:    decodeEscapes(cfg.Param("detect_virt", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("detect_virt", "", "")),
 	}
 }

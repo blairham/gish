@@ -68,7 +68,7 @@ func renderKubecontext(cfg *Config, ctx *Context) (Rendered, bool) {
 	return Rendered{
 		Content: context,
 		State:   state,
-		Icon:    decodeEscapes(cfg.Param("kubecontext", state, "VISUAL_IDENTIFIER_EXPANSION", "☸")),
+		Icon:    decodeEscapes(cfg.Icon("kubecontext", state, "☸")),
 	}, true
 }
 
@@ -110,7 +110,7 @@ func renderAWS(cfg *Config, ctx *Context) (Rendered, bool) {
 	return Rendered{
 		Content: content,
 		State:   state,
-		Icon:    decodeEscapes(cfg.Param("aws", state, "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("aws", state, "")),
 	}, true
 }
 
@@ -126,7 +126,7 @@ func renderAWSEBEnv(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: env,
-		Icon:    decodeEscapes(cfg.Param("aws_eb_env", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("aws_eb_env", "", "")),
 	}, true
 }
 
@@ -150,7 +150,7 @@ func renderAzure(cfg *Config, ctx *Context) (Rendered, bool) {
 	if name := ctx.Env("AZURE_SUBSCRIPTION_NAME"); name != "" {
 		return Rendered{
 			Content: name,
-			Icon:    decodeEscapes(cfg.Param("azure", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+			Icon:    decodeEscapes(cfg.Icon("azure", "", "")),
 		}, true
 	}
 	// azureProfile.json marks one subscription "isDefault": true. Finding
@@ -174,7 +174,7 @@ func renderGcloud(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: config,
-		Icon:    decodeEscapes(cfg.Param("gcloud", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("gcloud", "", "")),
 	}, true
 }
 
@@ -188,7 +188,7 @@ func renderGoogleAppCred(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: strings.TrimSuffix(filepath.Base(path), ".json"),
-		Icon:    decodeEscapes(cfg.Param("google_app_cred", "", "VISUAL_IDENTIFIER_EXPANSION", "")),
+		Icon:    decodeEscapes(cfg.Icon("google_app_cred", "", "")),
 	}, true
 }
 
@@ -199,7 +199,7 @@ func renderToolbox(cfg *Config, ctx *Context) (Rendered, bool) {
 	}
 	return Rendered{
 		Content: name,
-		Icon:    decodeEscapes(cfg.Param("toolbox", "", "VISUAL_IDENTIFIER_EXPANSION", "⬢")),
+		Icon:    decodeEscapes(cfg.Icon("toolbox", "", "⬢")),
 	}, true
 }
 
