@@ -126,6 +126,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// would make a mask-setting builtin depend on process groups.
 	builtins.Register("__gish_umask", builtins.Umask)
 	builtins.Register("__gish_times", builtins.Times)
+	builtins.Register("__gish_newgrp", builtins.Newgrp)
 	if jobs.Supported() {
 		// Reclaiming the terminal from the background must not stop the
 		// shell. Children inherit the ignore; acceptable (see #5 design).
@@ -137,7 +138,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -148,6 +149,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// History failure degrades, never blocks the shell.
 	var hist editor.History
 	store := openHistory()
+	historyStore = store // fc reads it (#60)
 	if store != nil {
 		defer store.Close() //nolint:errcheck // exit path; entries are already flushed per-append
 		hist = store
@@ -216,6 +218,11 @@ func runEditor(ctx context.Context, login bool) error {
 	// never silently skipped — the user would just see nothing load.
 	loadPluginManifest(ctx, runner)
 	starshipHint(shellVar(runner, "GISH_THEME", "") != "", shellVar(runner, "GISH_PROMPT", "") != "")
+	// The previous line's context, released once the next line starts so
+	// its background statements have a window to exec (see
+	// runInterruptible).
+	releasePrevLine := func() {}
+	defer func() { releasePrevLine() }()
 	info := newPromptInfo()
 	lastExit := 0
 
@@ -327,7 +334,10 @@ func runEditor(ctx context.Context, login bool) error {
 				}
 				drainSignals(sigs)
 				table.BeginLine(stepLine)
-				rerr := runInterruptible(agentCtx, runner, file, sigs)
+				// The agent runs steps to completion one at a time, so
+				// there is no next line to hand the release to.
+				release, rerr := runInterruptible(agentCtx, runner, file, sigs)
+				defer release()
 				if n, ok := table.EndLine(); ok && n.Stopped {
 					fmt.Printf("[%d]  Stopped  %s\n", n.ID, n.Command)
 				}
@@ -376,7 +386,9 @@ func runEditor(ctx context.Context, login bool) error {
 		start := time.Now()
 		table.BeginLine(line)
 		lastCommandText = line
-		rerr := runInterruptible(ctx, runner, file, sigs)
+		releasePrevLine() // the previous line's background work has had its window
+		releaseLine, rerr := runInterruptible(ctx, runner, file, sigs)
+		releasePrevLine = releaseLine
 		if n, ok := table.EndLine(); ok && n.Stopped {
 			fmt.Printf("[%d]  Stopped  %s\n", n.ID, n.Command)
 		}
@@ -441,11 +453,29 @@ var errInterrupted = errors.New("command interrupted")
 // their signal directly from the terminal (same process group — that
 // changes with job control, #5). SIGQUIT is swallowed for the shell and
 // left to the kernel for the child.
-func runInterruptible(ctx context.Context, runner *interp.Runner, file *syntax.File, sigs <-chan os.Signal) error {
+// runInterruptible runs one line under a context Ctrl-C can cancel, and
+// returns a cleanup to call once the *next* line is about to run.
+//
+// The cancel deliberately does not fire when the line returns. A
+// backgrounded statement is started on the interpreter's own goroutine
+// and execs after Run has already returned, so canceling on the way out
+// aborted it before it ever spawned: `sleep 30 &` left no process, no
+// job, and nothing for jobs/fg/kill to find. Whether it happened to win
+// the race varied by platform, which is what made #57 look like flaky
+// bookkeeping rather than a killed child.
+//
+// Deferring the cancel to the next line gives background work the whole
+// inter-line gap — human-scale, against a goroutine that execs in
+// microseconds — while still bounding the context to one line's
+// lifetime rather than the session's.
+//
+// Canceling at all is only about builtin loops: a foreground child owns
+// the terminal and gets SIGINT from the kernel through its process
+// group, so interrupting `while true; do :; done` is the case this
+// serves, and that loop has already finished by the time Run returns.
+func runInterruptible(ctx context.Context, runner *interp.Runner, file *syntax.File, sigs <-chan os.Signal) (release func(), err error) {
 	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	done := make(chan struct{})
-	defer close(done)
 	go func() {
 		for {
 			select {
@@ -458,11 +488,12 @@ func runInterruptible(ctx context.Context, runner *interp.Runner, file *syntax.F
 			}
 		}
 	}()
-	err := runner.Run(runCtx, file)
+	err = runner.Run(runCtx, file)
+	close(done) // the signal watcher is per-line; the context is not
 	if err != nil && runCtx.Err() != nil && ctx.Err() == nil {
-		return errInterrupted
+		return cancel, errInterrupted
 	}
-	return err
+	return cancel, err
 }
 
 // drainSignals discards any signal that arrived while no command was
@@ -552,7 +583,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
+		interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -642,7 +673,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 		interp.Params(append([]string{"--"}, params...)...),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
+		interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -669,7 +700,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))),
+			interp.CallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
 		},
 		opts...,
 	)...)

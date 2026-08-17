@@ -129,6 +129,37 @@ fall without a regression — that is the point. Substrate gaps go upstream
 to mvdan/sh (#119); shell identity (`BASH_VERSION` and tool init hooks) is
 an open decision (#120), not a bug.
 
+## Builtins
+
+Every builtin gish claims is exercised against real bash
+(`cmd/gish/builtins_matrix_test.go`) or, where bash has no equivalent,
+against its own observable behavior (`nativebuiltins_test.go`). The two
+matrices check each other: a name that is intercepted without a case, or
+a case for something nothing intercepts, fails.
+
+The rule that produced most of the fixes: **a name `interp.IsBuiltin`
+recognizes never reaches the exec seam**, so leaving one unimplemented
+does not fall through to the program on the machine — it shadows it, and
+answers "unsupported builtin". That is worse than absent. `printf` (no
+precision, no `%f %e %g %X %q`), `kill`, `umask` and `times` were all in
+that state and are now native, reached by renaming the call at the
+CallHandler so it arrives at the ExecHandler where a builtin can return
+a real exit status. Returning a status from the CallHandler is not an
+option: the interpreter treats a CallHandler error as *fatal*, so
+`kill somepid || echo nope` would take the shell down.
+
+Two names are deliberately partial, and say so rather than failing
+blankly:
+
+- **`fc`** implements the listing half (`fc -l`). The editing forms
+  re-execute a command, which belongs to the REPL's run loop rather than
+  to a builtin.
+- **`newgrp`** is not provided. It changes the real group id and re-execs
+  the shell — closer to `su` than to a builtin, and the one name here
+  where a half-implementation would be a security problem rather than an
+  inconvenience. `/usr/bin/newgrp` is one path away, and the builtin says
+  so.
+
 ## Launch artifacts
 
 `docs/announcement.md` is the launch playbook (#106): the one-idea

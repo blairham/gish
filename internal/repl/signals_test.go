@@ -41,7 +41,9 @@ func TestRunInterruptibleStopsBuiltinLoop(t *testing.T) {
 	go func() {
 		// A pure-builtin infinite loop: no external process exists for
 		// the kernel to signal — only context cancellation can stop it.
-		done <- runInterruptible(context.Background(), runner, parseLine(t, "while true; do true; done"), sigs)
+		release, err := runInterruptible(context.Background(), runner, parseLine(t, "while true; do true; done"), sigs)
+		release()
+		done <- err
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -69,7 +71,9 @@ func TestRunInterruptibleIgnoresSigquit(t *testing.T) {
 	sigs := make(chan os.Signal, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- runInterruptible(context.Background(), runner, parseLine(t, "while true; do true; done"), sigs)
+		release, err := runInterruptible(context.Background(), runner, parseLine(t, "while true; do true; done"), sigs)
+		release()
+		done <- err
 	}()
 
 	// SIGQUIT must not cancel the command from the shell's side.
@@ -97,7 +101,9 @@ func TestRunInterruptibleCompletesNormally(t *testing.T) {
 		t.Fatal(err)
 	}
 	sigs := make(chan os.Signal, 1)
-	if err := runInterruptible(context.Background(), runner, parseLine(t, "echo done"), sigs); err != nil {
+	release, err := runInterruptible(context.Background(), runner, parseLine(t, "echo done"), sigs)
+	release()
+	if err != nil {
 		t.Fatalf("runInterruptible: %v", err)
 	}
 	if out.String() != "done\n" {
@@ -128,7 +134,8 @@ func TestInterruptedCommandReturnsSentinel(t *testing.T) {
 	runner := newTestRunner(t)
 	sigs := make(chan os.Signal, 1)
 	sigs <- os.Interrupt // canceled immediately
-	err := runInterruptible(context.Background(), runner, parseLine(t, "while true; do true; done"), sigs)
+	release, err := runInterruptible(context.Background(), runner, parseLine(t, "while true; do true; done"), sigs)
+	defer release()
 	if !errors.Is(err, errInterrupted) {
 		t.Fatalf("err = %v, want errInterrupted", err)
 	}
