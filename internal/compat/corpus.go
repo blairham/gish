@@ -199,6 +199,15 @@ echo via-fd3 >&3
 exec 3>&-`,
 	},
 	{
+		Name: "clobbering redirect", Category: CatRedirection,
+		Provenance: "`>|` is how a script says \"truncate this regardless\"; Claude Code's shell snapshot opens with it",
+		Script: `tmp=$(mktemp)
+echo first >| "$tmp"
+echo second >| "$tmp"
+cat "$tmp"
+rm -f "$tmp"`,
+	},
+	{
 		Name: "noclobber and append", Category: CatRedirection,
 		Provenance: "log-appending scripts",
 		Script: `tmp=$(mktemp)
@@ -285,6 +294,21 @@ until [ "$i" -ge 3 ]; do i=$((i+1)); [ "$i" = 2 ] && continue; echo "i=$i"; done
 	},
 
 	// --- functions and scoping ---
+	{
+		Name: "enumerate defined functions", Category: CatFunctions,
+		Provenance: "`declare -F` is how a snapshotting harness carries a shell's functions across (Claude Code, VS Code shell integration)",
+		Script: `only_one() { echo x; }
+declare -F
+declare -F only_one
+declare -F missing || echo "rc=$?"`,
+	},
+	{
+		Name: "print shell options as commands", Category: CatFunctions,
+		Provenance: "`shopt -p` prints options as the commands that restore them; that is what makes it a snapshot",
+		Script: `shopt -p dotglob
+shopt -s dotglob
+shopt -p dotglob`,
+	},
 	{
 		Name: "local variables and return codes", Category: CatFunctions,
 		Provenance: "the shape of every rc-file helper",

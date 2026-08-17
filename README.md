@@ -198,6 +198,8 @@ place they run:
 ```sh
 gish --sandbox workspace            # every command the agent runs, in or out of
                                     # its own tooling, is confined to this tree
+
+ln -s "$(which gish)" ~/.local/bin/gish-agent-bash   # same thing, as a name
 ```
 
 Least-privilege exec on the shell's own exec path (macOS Seatbelt, Linux
@@ -205,6 +207,15 @@ Landlock), a permission-gated environment where nothing applies to a
 directory until you allow it, and history that never records a secret.
 Point Claude Code, aider, or your own script at a sandboxed gish session
 and the confinement is the shell's, not the agent's promise.
+
+**The symlink is the whole install.** A harness is handed a *path* to a
+shell and has nowhere to put a flag, so the invocation name carries the
+posture instead — the way argv[0] already carries login. Anything named
+`gish-agent` (or `gish-agent-<suffix>`) starts with `--sandbox workspace`
+already on; an explicit `--sandbox`, including `--sandbox none`, still
+wins. The `-bash` suffix is not decoration: harnesses pick a shell by
+grepping their own `$SHELL` for `bash` or `zsh`, and a binary called
+`gish` is invisible to them.
 
 ## Making it your daily driver
 

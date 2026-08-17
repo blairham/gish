@@ -156,7 +156,8 @@ func runEditor(ctx context.Context, login bool) error {
 		return err
 	}
 	runnerRef = runner
-	trustRunner = func() *interp.Runner { return runnerRef }
+	setSessionRunner(runner)
+	registerSubstrateBuiltins()
 
 	// History failure degrades, never blocks the shell.
 	var hist editor.History
@@ -411,6 +412,7 @@ func runEditor(ctx context.Context, login bool) error {
 			fmt.Fprintln(os.Stderr, "gish:", perr)
 			continue
 		}
+		rewriteSubstrateGaps(file)
 		// Multi-line buffers get a shellcheck pass on Enter when it's
 		// installed (#46) — off the keystroke path, budget-bounded, and
 		// purely advisory: the command runs regardless.
@@ -639,8 +641,7 @@ func acceptWhen(text string) bool {
 
 // runPlain is the non-TTY loop (piped stdin).
 func runPlain(ctx context.Context, login bool) error {
-	var runnerRef *interp.Runner
-	trustRunner = func() *interp.Runner { return runnerRef }
+	registerSubstrateBuiltins()
 	runner, err := interp.New(
 		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
@@ -650,7 +651,7 @@ func runPlain(ctx context.Context, login bool) error {
 	if err != nil {
 		return err
 	}
-	runnerRef = runner
+	setSessionRunner(runner)
 	declareShellIdentity(ctx, runner)
 	if login {
 		loadProfile(ctx, runner)
@@ -672,6 +673,7 @@ loop:
 			continue
 		}
 		for _, stmt := range stmts {
+			rewriteSubstrateGaps(stmt)
 			if err := runner.Run(ctx, stmt); err != nil {
 				if runner.Exited() {
 					exitErr = err
@@ -730,8 +732,8 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 	if err != nil {
 		return err
 	}
-	var runnerRef *interp.Runner
-	trustRunner = func() *interp.Runner { return runnerRef }
+	rewriteSubstrateGaps(file)
+	registerSubstrateBuiltins()
 	runner, err := interp.New(
 		// The "--" matters: without it a parameter that begins with a
 		// dash would be read as a shell option, so `gish script.sh -v`
@@ -745,7 +747,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 	if err != nil {
 		return err
 	}
-	runnerRef = runner
+	setSessionRunner(runner)
 	declareShellIdentity(ctx, runner)
 	// The names must resolve here too, so an unavailable builtin reports
 	// itself rather than looking like a missing program.
@@ -765,6 +767,10 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 	if err != nil {
 		return err
 	}
+	rewriteSubstrateGaps(file)
+	// The session-querying builtins (declare -F) need a runner on this
+	// path too: a script asks the same questions an interactive line does.
+	registerSubstrateBuiltins()
 	runner, err := interp.New(append(
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
@@ -776,6 +782,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 	if err != nil {
 		return err
 	}
+	setSessionRunner(runner)
 	return runner.Run(ctx, file)
 }
 

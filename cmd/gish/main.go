@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"mvdan.cc/sh/v3/interp"
@@ -97,7 +98,16 @@ func run() int {
 		fmt.Printf("gish %s (commit %s, built %s)\n", version, commit, date)
 		return 0
 	}
-	if *sandboxFlag != "" {
+	// The agent entry point: a session launched through a name beginning
+	// `gish-agent` is sandboxed by default, because the caller is a
+	// program rather than a person and nobody is there to read a warning.
+	// A symlink is the whole install — one binary, and the invocation name
+	// carries the posture, the way argv[0] already carries login (#41).
+	// An explicit --sandbox always wins, including `--sandbox none`.
+	if *sandboxFlag == "" {
+		*sandboxFlag = agentSandboxProfile(os.Args[0])
+	}
+	if *sandboxFlag != "" && *sandboxFlag != "none" {
 		if err := repl.SetSessionSandbox(*sandboxFlag); err != nil {
 			fmt.Fprintln(os.Stderr, "gish:", err)
 			return 2
@@ -128,6 +138,29 @@ func run() int {
 	}
 	fmt.Fprintln(os.Stderr, "gish:", err)
 	return 1
+}
+
+// agentSandboxDefault is the profile an agent-named invocation gets.
+// workspace is the one that matches how an agent already works — it
+// writes in the tree it was pointed at — while leaving network and
+// environment alone, so the shell is confined without the tools inside
+// it appearing broken.
+const agentSandboxDefault = "workspace"
+
+// agentSandboxProfile returns the profile implied by the invocation
+// name, or "" when the name implies nothing.
+//
+// The name is matched after stripping the directory and the login dash,
+// so /usr/local/bin/gish-agent and -gish-agent both count. A suffix is
+// allowed because harnesses that pick a shell by grepping their $SHELL
+// for "bash" or "zsh" need it in the name — `gish-agent-bash` is that
+// spelling, and refusing it would push people back to a wrapper script.
+func agentSandboxProfile(argv0 string) string {
+	name := strings.TrimPrefix(filepath.Base(argv0), "-")
+	if name == "gish-agent" || strings.HasPrefix(name, "gish-agent-") {
+		return agentSandboxDefault
+	}
+	return ""
 }
 
 // runSandboxExec enforces the policy and becomes the command; it only
