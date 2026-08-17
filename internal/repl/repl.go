@@ -125,6 +125,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// whether job control is available — tying it to jobs.Supported
 	// would make a mask-setting builtin depend on process groups.
 	builtins.Register("__gish_umask", builtins.Umask)
+	builtins.Register("__gish_times", builtins.Times)
 	if jobs.Supported() {
 		// Reclaiming the terminal from the background must not stop the
 		// shell. Children inherit the ignore; acceptable (see #5 design).

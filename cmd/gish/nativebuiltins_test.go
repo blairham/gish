@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -86,6 +87,10 @@ var nativeCases = map[string]nativeCase{
 	// broken rename shows up here as "unsupported builtin".
 	"kill":  {script: "kill", wantOut: "usage: kill", wantExit: exitCode(2)},
 	"umask": {script: "umask", wantOut: "0", wantExit: exitCode(0)},
+	// times cannot be differential — the numbers are real elapsed time
+	// and differ every run — so the assertion is the shape bash prints:
+	// two lines of "0m0.000s 0m0.000s", shell then children.
+	"times": {script: "times", wantOut: "m0", wantExit: exitCode(0)},
 
 	// clip is a pipeline sink; with no terminal it is a silent no-op by
 	// design, so the assertion is that it neither hangs nor complains.
@@ -137,7 +142,7 @@ func TestEveryNativeCaseIsCovered(t *testing.T) {
 	intercepted := []string{
 		"blocks", "builtins", "clip", "config", "doctor", "explain",
 		"kill", "p10k", "parallel", "pick", "plugin", "plugins",
-		"sandbox", "sessions", "tool", "trust", "umask", "z", "zi",
+		"sandbox", "sessions", "times", "tool", "trust", "umask", "z", "zi",
 	}
 	for _, name := range intercepted {
 		if _, ok := nativeCases[name]; !ok {
@@ -200,5 +205,23 @@ func runHermetic(t *testing.T, gish, script string) (string, int) {
 		t.Fatalf("%q did not finish within %s — a builtin that blocks hangs every script that calls it; got:\n%s",
 			script, nativeBudget, out.String())
 		return "", 0
+	}
+}
+
+// TestTimesShape pins the format rather than the values: two lines,
+// each two fields of the form 0m0.000s — shell times then children's.
+// A builtin that printed one line, or seconds without the minutes, would
+// still satisfy the substring check above.
+func TestTimesShape(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped in -short")
+	}
+	out, code := runHermetic(t, buildGish(t), "times")
+	if code != 0 {
+		t.Fatalf("times exit = %d: %s", code, out)
+	}
+	shape := regexp.MustCompile(`^\d+m\d+\.\d{3}s \d+m\d+\.\d{3}s\n\d+m\d+\.\d{3}s \d+m\d+\.\d{3}s\n$`)
+	if !shape.MatchString(out) {
+		t.Errorf("times output %q does not match bash's two-line shape", out)
 	}
 }

@@ -26,6 +26,7 @@ import (
 var nativeOverrides = map[string]string{
 	"kill":  "__gish_kill",
 	"umask": "__gish_umask",
+	"times": "__gish_times",
 }
 
 // overrideCallHandler renames the overridden builtins. One map rather
@@ -49,4 +50,5 @@ func overrideCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 func registerScriptOverrides() {
 	builtins.Register("__gish_kill", (&jobs.Table{}).Kill)
 	builtins.Register("__gish_umask", builtins.Umask)
+	builtins.Register("__gish_times", builtins.Times)
 }
