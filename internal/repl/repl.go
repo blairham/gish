@@ -95,6 +95,16 @@ func runEditor(ctx context.Context, login bool) error {
 	// process group and own the terminal while foreground; jobs/fg/bg
 	// are gish builtins reached via the CallHandler rewrite.
 	table := jobs.NewTable(os.Stdin)
+	// Keep a live capture pty the same size as the real terminal. The
+	// editor's own resize handling only runs while it is reading, and a
+	// command that resizes its window mid-run still needs its stdout to
+	// report the truth.
+	stopWinch := watchResize(func() {
+		if w, h, err := term.NewTTY(os.Stdin, os.Stdout).Size(); err == nil {
+			table.Resize(w, h)
+		}
+	})
+	defer stopWinch()
 	execChain := []func(interp.ExecHandlerFunc) interp.ExecHandlerFunc{builtins.ExecHandler}
 	if cmdIndex != nil {
 		execChain = append(execChain, cmdIndex.ExecMiddleware)
@@ -224,6 +234,13 @@ func runEditor(ctx context.Context, login bool) error {
 			jumpMgr.note(runner)
 		}
 		sessionMgr.atPrompt(runner, lastCommandText)
+		// Output capture (#99 stage 2) is opt-in and re-read each
+		// prompt, so `config blocks on` takes effect without a restart.
+		if shellVar(runner, "GISH_BLOCKS", "off") == "on" {
+			table.EnableCapture(0)
+		} else {
+			table.DisableCapture()
+		}
 		info.dir = runner.Dir
 		info.exitCode = lastExit
 		info.duration = lastDuration

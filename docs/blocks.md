@@ -54,27 +54,99 @@ switches to its dumb output mode. A capture feature that silently
 changes program behavior is worse than no capture feature.
 
 **A PTY.** The child still sees a terminal, so behavior is unchanged —
-this is what Warp does, because Warp *is* the terminal. The cost is
-that gish must then own what the terminal owned: forwarding window-size
-changes, relaying signals, and interleaving its copy loop with the
-existing job-control handoff, which is race-sensitive by design (the
-foreground group is set pre-exec, deliberately, to avoid a race).
+this is what Warp does, because Warp *is* the terminal.
 
-The decision, stated in advance so the next session does not re-litigate
-it: **PTY, opt-in, foreground commands only.** A pipe is disqualified by
-the behavior change; capture defaults off until the PTY path has proven
-itself against job control; and background jobs keep the current path,
-because a background job that loses its terminal semantics to satisfy a
-history feature is a bad trade.
+The decision, stated in advance so it is not re-litigated: **PTY,
+opt-in, foreground commands only.** A pipe is disqualified by the
+behavior change; capture defaults off; and background jobs keep the
+current path, because a background job that loses its terminal
+semantics to satisfy a history feature is a bad trade.
+
+### What the cost turned out to be — corrected
+
+This document originally predicted that a PTY meant gish "must then own
+what the terminal owned: forwarding window-size changes, relaying
+signals, and interleaving its copy loop with the existing job-control
+handoff." **That is true of one shape and not the one that shipped**, and
+the difference is worth recording because it is the reason stage 2 was
+tractable at all.
+
+That cost is real when the PTY becomes the child's **controlling
+terminal** — what `script(1)` does, and what a terminal emulator does.
+Then signals really do stop arriving from the real terminal and gish
+has to relay them.
+
+The shipped shape gives the child the PTY for **stdout only**. Its
+stdin, its stderr, and its controlling terminal stay exactly as before.
+Probed against a real child before building on it:
+
+    isatty_stdout=yes     # color and paging preserved
+    cols=100              # size queries answer correctly
+    ctty=ttys006          # controlling terminal: still the real one
+
+Because the controlling terminal never changes, Ctrl-C, Ctrl-Z, SIGWINCH
+and the pre-exec foreground-group handoff keep working **because nothing
+about them changed** — the kernel still delivers them from the real
+terminal to the child's process group. Job control is preserved by
+construction rather than reimplemented. The race-sensitive handoff is
+untouched.
+
+What gish does own is small: keep the PTY's window size in step with the
+real terminal (so a program asking its width on stdout gets the truth),
+and copy master → screen while teeing into a size-capped ring.
+
+### stderr is not captured, and that was measured
+
+The first implementation captured stdout *and* stderr. Under it, `less`
+painted a screenful, never entered raw mode, and every keystroke meant
+for the pager was echoed onto the shell's line instead — the shell
+appeared to hang. Without capture the same `less` worked. Leaving stderr
+alone fixed it, and `vim` then opened, edited and `:wq`-ed normally too.
+
+The reason is that full-screen programs do their terminal control —
+`tcgetattr`/`tcsetattr`, raw mode — on **fd 2**, which is standard
+practice precisely because stdout is so often redirected. Hand such a
+program a pty as stderr and it configures the pty while the real
+terminal stays cooked.
+
+So the honest trade is: **a command's errors are not captured.** That is
+the price of "programs behave exactly as they do today", which is the
+bar this feature has to clear to be worth having. It is also why this
+was worth testing with a real pager rather than shipping on the strength
+of unit tests — the mechanism was correct and the *policy* was wrong.
+
+Four costs remain, all stated:
+
+- stderr is not captured (above).
+- **Builtins are not captured.** Capture substitutes an *external
+  child's* stdout, and a builtin never becomes a child — `printf` and
+  `echo` are the interpreter writing straight to the terminal, while
+  `/bin/echo` goes through the exec path and is captured. For a blocks
+  feature this is mostly harmless (the output worth keeping comes from
+  real programs) but it is a real hole, and closing it means routing the
+  whole line's stdout through the pty rather than each child's, which is
+  a larger change than stage 2 should carry.
+- A program that writes straight to `/dev/tty` bypasses capture. That is
+  correct — writing to `/dev/tty` is precisely how a program says "put
+  this on the terminal, not in the output stream."
+- Output crosses one extra copy on its way to the screen.
+
+Redirected output is never captured: `cmd > file` and pipeline stages
+already have somewhere to go, and routing them through a PTY would both
+capture what the user asked to be sent elsewhere and mangle it, since
+the line discipline translates `\n` to `\r\n`. Verified by byte count.
 
 ## Staged plan
 
 1. **OSC 133 marks** — *done*. Terminal-native block navigation now.
-2. **PTY capture path**, behind `config blocks on`: foreground commands
+2. **PTY capture path** — *done*, behind `config blocks on`
+   (`internal/capture`, wired in `internal/jobs`). Foreground commands
    run through a PTY that gish copies to the real terminal while teeing
-   into a size-capped ring buffer. Window size forwarded on SIGWINCH;
-   job control unchanged. The success bar is that `vim`, `less`, `git
-   log`, and `docker build` behave exactly as they do today.
+   into a size-capped ring that keeps the *tail* — a failed build's error
+   is at the end. Window size forwarded on SIGWINCH; job control
+   unchanged, by construction (above). `less` and `vim` verified under
+   a real pty: both behave as they do uncaptured. `docker build` and
+   other long-running progress UIs still want a look under real use.
 3. **Block records**: a history entry (already metadata-rich JSONL)
    plus an output reference under `$XDG_DATA_HOME/gish/blocks/`, with
    retention caps. The #10 secret-scrub rules run over captured output
