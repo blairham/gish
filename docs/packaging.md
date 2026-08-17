@@ -5,25 +5,49 @@ that gets copied into blog posts, dotfiles READMEs and YouTube
 descriptions for years. `brew install gish` and `brew tap … && brew
 install …` are not the same artifact.
 
-## Homebrew core, before launch (#164)
+## Homebrew core (#164)
 
-**Goal:** gish is in `homebrew/homebrew-core` when the announcement
-goes out, so the install line in the post is one command.
+**The goal was "in core before the announcement, so the install line in
+the post is one command". That is not achievable, and the reason is
+worth writing down rather than rediscovering.** Homebrew's Package
+Acceptance Policy sets a notability bar with numbers in it, and gish
+fails all of them by a wide margin today:
 
-Two findings shape how:
+| requirement | policy | gish, 2026-08-17 |
+| --- | --- | --- |
+| repository age | *"A code repository less than 30 days old is normally not eligible."* | **3 days** (created 2026-08-14) |
+| notability, third-party submission | at least **30 forks, 30 watchers or 75 stars** | 0 forks, 0 watchers, 1 star |
+| notability, **self**-submission by the repo owner | at least **90 forks, 90 watchers or 225 stars** | as above |
+| stable release | *"Upstream must identify the packaged version as stable and provide an immutable tag or release."* | no tags yet |
 
-1. **A third party should submit it.** Homebrew core's notability bar
-   is applied more leniently to a formula submitted by someone other
-   than the author. Plan for that: the submission is not ours to make.
-2. **Before the launch post, not after.** The post's install line is
-   the thing being optimized; a formula that lands a week later has
-   already missed every copy of it.
+The bar is circular with respect to launch: notability is what a
+launch *produces*. There is no ordering in which core precedes the
+announcement, so the announcement ships the tap line, and core follows
+when the numbers arrive.
 
-Homebrew analytics are the other reason. Per-formula install counts
-turned out to be the only per-tool install census that exists for this
-category — it is how the mise-vs-asdf ratio in the research was
-measured at all. Being listed makes gish's own adoption measurable, and
-the alternative is arguing from stars, which measure something else.
+Three things follow, and the third is the actionable one:
+
+1. **The launch install line is the tap.** `brew tap blairham/tap &&
+   brew install gish`. Every blog post and dotfiles README that copies
+   it keeps that extra command for as long as it lives — that cost is
+   real and it is now unavoidable, so do not plan around avoiding it.
+2. **A third party must submit it, and it is worth 3×.** The policy is
+   explicit that self-submission by the repository owner is held to
+   triple the thresholds: 225 stars instead of 75. Finding someone else
+   to open the PR is not etiquette, it is the difference between a
+   reachable bar and one three times further away. Line that person up
+   before the numbers land, not after.
+3. **75 stars is the trigger to watch.** It is the cheapest of the
+   three third-party thresholds and the one a launch actually moves.
+   The formula and this page exist so that submission is a same-day
+   action when it trips, not a week of reconstruction.
+
+Homebrew analytics are the other reason to care. Per-formula install
+counts turned out to be the only per-tool install census that exists
+for this category — it is how the fzf-vs-fish-vs-nushell numbers in
+docs/adoption.md were measured at all. Being listed makes gish's own
+adoption measurable, and the alternative is arguing from stars, which
+measure something else and which we would then be optimizing directly.
 
 **Current state.** GoReleaser publishes to `blairham/homebrew-tap`
 (`brews:` in `.goreleaser.yaml`), which stays as the pre-core path and
@@ -50,8 +74,8 @@ reconstruct.
 
 | channel | state | notes |
 | --- | --- | --- |
-| Homebrew core | planned before launch | #164 |
-| Homebrew tap | shipping | pre-releases and the edge |
+| Homebrew tap | shipping | **the launch install line**, and the edge afterwards |
+| Homebrew core | blocked on notability | #164 — submit at 75 stars, via a third party |
 | winget / scoop | configured (#89) | ships with the next tag; both skip when their token is absent |
 | nixpkgs | after launch | a Go module package; needs a vendorHash |
 | AUR | after launch | `gish-bin` from the release tarball first |
