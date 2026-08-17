@@ -25,9 +25,17 @@ configuration, no plugin.
 | `Ctrl-_` / `Ctrl-/` | undo |
 | `Tab` on `$VAR` or `~` | expands it in place (the zsh behavior fish users miss) |
 | a leading space | keeps the command out of history |
+| `Alt-u` / `Alt-l` / `Alt-c` | upcase / downcase / capitalize the word |
+| `Alt-t` | transpose words (`Ctrl-T` does characters) |
+| `Ctrl-V` / `Ctrl-Q` | quoted insert — a literal Tab or control character |
+| `Alt-r` | revert a recalled history line to how it arrived |
+| `Alt-<` / `Alt->` | oldest history entry / back to the line you were typing |
+| `Ctrl-]` / `Alt-Ctrl-]` | character search, forward and backward |
+| `Ctrl-S` | forward search — raw mode clears `IXON`, so nothing eats it |
+| `Alt-4 Ctrl-D`, `Alt-3 Alt-d`, `Alt-8 -` | numeric arguments prefix any command |
 
-Not yet: numeric arguments (`Alt-4 Ctrl-D`) — tracked in
-[#116](https://github.com/blairham/gish/issues/116).
+The keymap is complete against bash's emacs bindings apart from keyboard
+macros (`Ctrl-X (` / `)`) and `Alt-*` insert-completions.
 
 ### Vi mode
 

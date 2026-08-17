@@ -88,7 +88,8 @@ type Editor struct {
 	term   term.Terminal
 	out    io.Writer
 	cfg    Config
-	keymap map[binding]func(*Editor)
+	keymap     map[binding]func(*Editor)
+	repeatable map[binding]bool
 
 	buf   Buffer
 	kills killRing
@@ -110,6 +111,15 @@ type Editor struct {
 
 	// pendingCtrlX arms the Ctrl-X chord for exactly one key.
 	pendingCtrlX bool
+	// pendingQuoted (Ctrl-V) inserts the next key literally;
+	// pendingCharSearch (Ctrl-]) jumps to the next occurrence of it.
+	pendingQuoted     bool
+	pendingCharSearch bool
+	charSearchBack    bool
+	// arg is the pending numeric argument (#116); argCount is what the
+	// command currently running was given.
+	arg      *numArg
+	argCount int
 	// pendingHandover is the function to run while the terminal is
 	// ceded; it maps the current buffer to its replacement.
 	pendingHandover func(current string) (string, bool)
@@ -140,8 +150,9 @@ func New(t term.Terminal, out io.Writer, cfg Config) *Editor {
 		term:   t,
 		out:    out,
 		cfg:    cfg,
-		keymap: defaultKeymap(),
-		rend:   newRenderer(out, 80),
+		keymap:     defaultKeymap(),
+		repeatable: repeatableBindings(),
+		rend:       newRenderer(out, 80),
 	}
 	if cfg.EditMode == ModeVi {
 		e.vi = &viState{}
@@ -297,6 +308,8 @@ func (e *Editor) reset() {
 	e.lastWasKill, e.lastWasInsert, e.lastWasYank = false, false, false
 	e.histPos = -1
 	e.search = searchState{}
+	e.arg, e.argCount = nil, 1
+	e.pendingQuoted, e.pendingCharSearch = false, false
 	// Each line starts in insert mode, as in bash and zsh — and says so,
 	// since the cursor shape is how a vi user reads the mode.
 	e.viReset()
@@ -392,6 +405,22 @@ func (e *Editor) dispatchKey(ev term.KeyEvent) {
 		}
 		return
 	}
+	// Ctrl-V and Ctrl-] each claim exactly the next key, before any
+	// keymap sees it — that is the whole point of both.
+	if e.pendingQuoted {
+		e.quotedInsert(ev)
+		return
+	}
+	if e.pendingCharSearch {
+		e.charSearch(ev)
+		return
+	}
+	// A numeric argument (#116) accumulates until a command consumes it.
+	// Not in vi mode, where Alt is Escape and counts are typed as digits
+	// in normal mode.
+	if !e.viEnabled() && e.startArg(ev) {
+		return
+	}
 	// In vi mode, Alt-<key> is Escape followed by that key.
 	//
 	// This is not a preference, it is how the bytes arrive: Escape is
@@ -419,13 +448,34 @@ func (e *Editor) dispatchKey(ev term.KeyEvent) {
 		e.viEnterNormal()
 		return
 	}
-	if cmd, ok := e.keymap[binding{key: ev.Key, r: ev.Rune, mod: ev.Mod}]; ok {
+	b := binding{key: ev.Key, r: ev.Rune, mod: ev.Mod}
+	if cmd, ok := e.keymap[b]; ok {
+		n := e.consumeArg()
+		if n != 1 && e.repeatable[b] {
+			// Repeating is how a count reaches most commands; the ones
+			// that need the number itself read argCount instead.
+			for i := 0; i < abs(n); i++ {
+				cmd(e)
+			}
+			return
+		}
 		cmd(e)
 		return
 	}
 	if ev.Key == term.KeyRune && ev.Mod == 0 {
-		e.selfInsert(ev.Rune)
+		// A count repeats a typed character, as in readline: Alt-8 - is
+		// how anyone draws a rule under a heading.
+		for i, n := 0, abs(e.consumeArg()); i < n; i++ {
+			e.selfInsert(ev.Rune)
+		}
 	}
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // normalizeNewlines converts pasted CRLF/CR line endings to the
@@ -618,5 +668,20 @@ func defaultKeymap() map[binding]func(*Editor) {
 		{r: 't', mod: term.ModCtrl}: (*Editor).transposeChars,
 		{r: 'o', mod: term.ModCtrl}: (*Editor).operateAndGetNext,
 		{r: 'x', mod: term.ModCtrl}: (*Editor).startCtrlX,
+		// Round 2 (#118): the rest of readline's emacs keymap.
+		{r: 'u', mod: term.ModAlt}:  (*Editor).upcaseWord,
+		{r: 'l', mod: term.ModAlt}:  (*Editor).downcaseWord,
+		{r: 'c', mod: term.ModAlt}:  (*Editor).capitalizeWord,
+		{r: 't', mod: term.ModAlt}:  (*Editor).transposeWords,
+		{r: 'v', mod: term.ModCtrl}: (*Editor).startQuotedInsert,
+		{r: 'q', mod: term.ModCtrl}: (*Editor).startQuotedInsert,
+		{r: 'r', mod: term.ModAlt}:  (*Editor).revertLine,
+		{r: '<', mod: term.ModAlt}:  (*Editor).beginningOfHistory,
+		{r: '>', mod: term.ModAlt}:  (*Editor).endOfHistory,
+		{r: ']', mod: term.ModCtrl}: func(e *Editor) { e.startCharSearch(false) },
+		{r: ']', mod: term.ModCtrl | term.ModAlt}: func(e *Editor) { e.startCharSearch(true) },
+		// Ctrl-S is free: raw mode clears IXON, so flow control is not
+		// eating it — which is the only reason anyone believes it is lost.
+		{r: 's', mod: term.ModCtrl}: (*Editor).startForwardSearch,
 	}
 }

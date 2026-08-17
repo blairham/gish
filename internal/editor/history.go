@@ -66,7 +66,11 @@ func (e *Editor) hist() History { return e.cfg.History }
 // searchState is the reverse-i-search minor mode. While active, input is
 // routed to searchDispatch instead of the keymap.
 type searchState struct {
-	active   bool
+	active bool
+	// forward is Ctrl-S: the same incremental search walking toward
+	// newer entries. It shares every other piece of the state, because
+	// it is the same search — only the step direction differs.
+	forward  bool
 	query    []rune
 	n        int    // which match of query is shown
 	saved    string // buffer before the search began
@@ -103,7 +107,11 @@ func (e *Editor) searchPrompt() string {
 	if e.search.failing {
 		state = "failing "
 	}
-	return fmt.Sprintf("(%sreverse-i-search)`%s': ", state, string(e.search.query))
+	direction := "reverse"
+	if e.search.forward {
+		direction = "i"
+	}
+	return fmt.Sprintf("(%s%s-search)`%s': ", state, direction, string(e.search.query))
 }
 
 // searchStep shows the nth match of the current query, or marks the
@@ -147,7 +155,13 @@ func (e *Editor) searchDispatch(ev term.Event) {
 			e.searchStep(0)
 		}
 	case key.Key == term.KeyRune && key.Rune == 'r' && key.Mod == term.ModCtrl:
+		e.search.forward = false
 		e.searchStep(e.search.n + 1)
+	case key.Key == term.KeyRune && key.Rune == 's' && key.Mod == term.ModCtrl:
+		// Ctrl-S inside a search walks back toward newer matches, and
+		// switching direction mid-search is the point of having both.
+		e.search.forward = true
+		e.searchStep(max(e.search.n-1, 0))
 	case key.Key == term.KeyRune && key.Rune == 'g' && key.Mod == term.ModCtrl,
 		key.Key == term.KeyRune && key.Rune == 'c' && key.Mod == term.ModCtrl,
 		key.Key == term.KeyEscape && key.Mod == 0:
