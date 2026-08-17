@@ -580,28 +580,48 @@ loop:
 // RunCommand parses and runs src as a complete script (gish -c). This
 // is the path tools take when they spawn $SHELL -c: it stays POSIX-clean
 // — no editor, theme, plugins, history, or extra output (#41).
-func RunCommand(ctx context.Context, src string, login bool) error {
-	return runScript(ctx, strings.NewReader(src), "gish -c", login)
+//
+// operands are what followed the command string. POSIX gives the first
+// one to $0 and the rest to $1…, which is why `bash -c 'echo $1' _ hi`
+// prints hi: the underscore is a throwaway name, not an argument. Tools
+// that spawn $SHELL -c rely on this to pass values without quoting them
+// into the script text.
+func RunCommand(ctx context.Context, src string, login bool, operands ...string) error {
+	name := "gish -c"
+	var params []string
+	if len(operands) > 0 {
+		name, params = operands[0], operands[1:]
+	}
+	return runScript(ctx, strings.NewReader(src), name, login, params...)
 }
 
-// RunFile runs the script at path.
-func RunFile(ctx context.Context, path string, login bool) error {
+// RunFile runs the script at path. Everything after the path is a
+// positional parameter; $0 is the path itself.
+func RunFile(ctx context.Context, path string, login bool, params ...string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return runScript(ctx, f, path, login)
+	return runScript(ctx, f, path, login, params...)
 }
 
 // runScript is the non-interactive execution path, optionally preceded
 // by login profile sourcing.
-func runScript(ctx context.Context, r io.Reader, name string, login bool) error {
+//
+// $0 is the parse name, which is why it is threaded through rather than
+// fixed: for a script it is the path, and for -c it is whatever operand
+// the caller supplied.
+func runScript(ctx context.Context, r io.Reader, name string, login bool, params ...string) error {
 	file, err := syntax.NewParser().Parse(r, name)
 	if err != nil {
 		return err
 	}
 	runner, err := interp.New(
+		// The "--" matters: without it a parameter that begins with a
+		// dash would be read as a shell option, so `gish script.sh -v`
+		// would try to set -v instead of passing it along.
+		interp.Params(append([]string{"--"}, params...)...),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 		interp.CallHandler(printfCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
