@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/creack/pty"
 )
@@ -226,5 +227,35 @@ func TestSlaveIsAFile(t *testing.T) {
 	// contract rather than an implementation detail.
 	if s.Slave() == nil {
 		t.Fatal("slave is not a file")
+	}
+}
+
+// A descriptor left open by something other than the command — a
+// background job that inherited it, a daemon the command spawned —
+// must not hang the shell. Close bounds its wait and gives up.
+func TestCloseDoesNotHangOnALingeringHolder(t *testing.T) {
+	var screen bytes.Buffer
+	s, err := Start(&screen, 80, 24, DefaultLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A child that outlives the line and keeps the slave open.
+	lingering := exec.Command("/bin/sh", "-c", "sleep 30")
+	lingering.Stdout = s.Slave()
+	if err := lingering.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = lingering.Process.Kill()
+		_, _ = lingering.Process.Wait()
+	})
+
+	done := make(chan []byte, 1)
+	go func() { done <- s.Close() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close hung on a lingering slave holder; the shell would be wedged")
 	}
 }

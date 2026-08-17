@@ -46,6 +46,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/creack/pty"
 )
@@ -148,11 +149,30 @@ func (s *Session) pump() {
 func (s *Session) Close() []byte {
 	s.closeOnce.Do(func() {
 		s.closeErr = s.slave.Close()
-		<-s.done
+		select {
+		case <-s.done:
+			// Everything holding the slave let go; the pump saw EOF.
+		case <-time.After(drainGrace):
+			// Something still holds a slave descriptor — a background
+			// job that inherited it, or a daemon the command left
+			// behind — so the master will never report end-of-file and
+			// waiting is waiting forever. Closing the master unblocks
+			// the pump's read.
+			//
+			// A capture that hangs the shell is infinitely worse than a
+			// capture that loses a few bytes, and this bound is what
+			// makes "capture never delays the prompt" true even when a
+			// child misbehaves.
+		}
 		_ = s.master.Close() //nolint:errcheck // teardown
 	})
 	return s.buf.Bytes()
 }
+
+// drainGrace bounds how long Close waits for the pump after the slave
+// is closed. Long enough that a normal command's tail always lands,
+// short enough that nobody notices when it does not.
+const drainGrace = 250 * time.Millisecond
 
 // Bytes returns what has been captured so far without ending the
 // session.
