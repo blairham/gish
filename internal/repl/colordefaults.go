@@ -78,6 +78,14 @@ func applyColorDefaults(ctx context.Context, runner *interp.Runner) {
 	if runtime.GOOS == "linux" {
 		assign = append(assign, `alias ls='ls --color=auto'`)
 	}
+	// groff ≥1.23 writes SGR color itself, which bypasses less's termcap
+	// hooks — on modern Linux the palette above would silently do
+	// nothing. MANROFFOPT is man-db's knob for formatter flags, and -c
+	// selects the classic overstrike output that LESS_TERMCAP colors.
+	// macOS man is mandoc-backed and needs nothing.
+	if runtime.GOOS == "linux" && shellVar(runner, "MANROFFOPT", "") == "" {
+		assign = append(assign, "export MANROFFOPT='-c'")
+	}
 	if len(assign) == 0 {
 		return
 	}

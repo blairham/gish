@@ -68,6 +68,9 @@ var nativeCases = map[string]nativeCase{
 	"tool":     {script: "tool", wantOut: "no .tool-versions in scope", wantExit: exitCode(0)},
 	"zi":       {script: "zi", wantOut: "Zi", wantExit: exitCode(0)},
 	"builtins": {script: "builtins", wantOut: "gish builtins", wantExit: exitCode(0)},
+	// help (#196) at its two entry points a switcher types first: the
+	// bare overview, and one shell builtin explained.
+	"help": {script: "help && help cd", wantOut: "change the working directory", wantExit: exitCode(0)},
 
 	// Say what is unavailable and why, rather than failing blankly.
 	"explain": {script: "explain", wantOut: "no AI provider", wantExit: exitCode(1)},
@@ -148,8 +151,8 @@ func TestEveryNativeCaseIsCovered(t *testing.T) {
 	// of this list rather than going unnoticed.
 	intercepted := []string{
 		"blocks", "builtins", "clip", "config", "doctor", "explain",
-		"fc", "kill", "newgrp", "p10k", "parallel", "pick", "plugin",
-		"plugins",
+		"fc", "help", "kill", "newgrp", "p10k", "parallel", "pick",
+		"plugin", "plugins",
 		"sandbox", "sessions", "times", "tool", "trust", "umask", "z",
 		"zi",
 	}
