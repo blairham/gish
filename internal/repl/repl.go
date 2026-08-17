@@ -168,11 +168,18 @@ func runEditor(ctx context.Context, login bool) error {
 	}
 	// The fish-parity pair (#38/#39): parser-driven highlighting and
 	// history ghost text — skipped where color is unwelcome.
+	//
+	// Both are per-feature knobs rather than NO_COLOR's all-or-nothing
+	// (#163), and both read the setting per call so an rc — which is
+	// sourced further down — still governs them.
 	colorOK := os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"
 	if colorOK {
 		edCfg.Highlight = highlightFn(runner)
 		if store != nil {
 			edCfg.Suggest = func(text string) string {
+				if !suggestEnabled(runner) {
+					return ""
+				}
 				if s, ok := store.Match(text, 0); ok {
 					return s
 				}

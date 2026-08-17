@@ -88,14 +88,17 @@ func DefaultDir() (string, error) {
 	return filepath.Join(base, "gish", "blocks"), nil
 }
 
-// Open returns a store over dir, creating it on demand with owner-only
-// permissions — command output is at least as private as history.
+// Open returns a store over dir. The directory itself is created by the
+// first Put, with owner-only permissions — command output is at least as
+// private as history.
+//
+// Nothing is created here (#163): capture is off by default, so opening
+// a store is what every session does and storing a block is what almost
+// none of them do. A shell must not create a directory to hold output it
+// was never asked to keep.
 func Open(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, errors.New("blocks: no directory")
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
 	}
 	return &Store{dir: dir, retention: DefaultRetention()}, nil
 }
@@ -141,6 +144,9 @@ func (s *Store) Put(out []byte, truncated bool) (Ref, int, error) {
 	final := s.path(ref)
 	if _, err := os.Stat(final); err == nil {
 		return ref, redacted, nil // identical output already stored
+	}
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return "", redacted, err
 	}
 	// Write-then-rename: a shell killed mid-write must not leave a
 	// truncated file that a later read would present as the output.

@@ -7,6 +7,7 @@ package history
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,22 +72,23 @@ func (s *Store) SetSession(id string) {
 	s.session = id
 }
 
-// Open loads the trailing entries of the file at path (creating it and
-// its directory as needed) and opens it for appending. Corrupt lines are
-// skipped, never fatal — history must not brick the shell.
+// Open loads the trailing entries of the file at path. Nothing is
+// created until the first Append; a missing file is an empty history,
+// not an error. Corrupt lines are skipped, never fatal — history must
+// not brick the shell.
 func Open(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	s := &Store{f: f, path: path}
+	s := &Store{path: path}
 
+	// Nothing is created here (#163). A session that is started and
+	// closed without running a command has asked for nothing and must
+	// leave nothing: no data directory, no empty history file. The file
+	// appears on the first command worth remembering, which is also the
+	// first moment the user would expect a shell to have written
+	// anything.
 	data, err := os.ReadFile(path)
-	if err != nil {
-		f.Close()
+	if errors.Is(err, os.ErrNotExist) {
+		data = nil // first run: an empty history is not an error
+	} else if err != nil {
 		return nil, err
 	}
 	entries, consumed := consumeLines(data, "")
@@ -193,6 +195,9 @@ func (s *Store) Append(e Entry) (Skip, error) {
 	if err != nil {
 		return SkipNone, err
 	}
+	if err := s.openForAppend(); err != nil {
+		return SkipNone, err
+	}
 	pre, _ := s.f.Seek(0, 2) //nolint:errcheck // best-effort accounting
 	if _, err := s.f.Write(append(line, '\n')); err != nil {
 		return SkipNone, err
@@ -206,10 +211,31 @@ func (s *Store) Append(e Entry) (Skip, error) {
 	return SkipNone, nil
 }
 
-// Close releases the file handle.
+// openForAppend creates the directory and file on first write. Callers
+// hold the lock.
+func (s *Store) openForAppend() error {
+	if s.f != nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	s.f = f
+	return nil
+}
+
+// Close releases the file handle. A store that never wrote never opened
+// one, and closing it is not an error.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.f == nil {
+		return nil
+	}
 	return s.f.Close()
 }
 

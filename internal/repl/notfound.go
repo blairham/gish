@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"mvdan.cc/sh/v3/interp"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/blairham/gish/internal/builtins"
 	"github.com/blairham/gish/internal/complete"
@@ -28,16 +29,65 @@ func notFoundMiddleware(getRunner func() *interp.Runner) func(interp.ExecHandler
 			if _, err := interp.LookPathDir(hc.Dir, hc.Env, args[0]); err == nil {
 				return next(ctx, args)
 			}
+			runner := getRunner()
+			// The distro hook comes first and gets the whole command line
+			// (#163): `command_not_found_handle` is how Debian/Ubuntu and
+			// Fedora turn a miss into "the package you want is X", and
+			// every one of those handlers reads "$@", not just "$1".
+			if runner != nil {
+				if name := commandNotFoundHandler(runner); name != "" {
+					return runNotFoundHandler(ctx, runner, name, args)
+				}
+			}
 			fmt.Fprintf(hc.Stderr, "gish: command not found: %s", args[0])
-			if runner := getRunner(); runner != nil {
+			if runner != nil {
 				if s := suggestCommand(args[0], runner); s != "" {
-					fmt.Fprintf(hc.Stderr, " — did you mean %q?", s)
+					// Suggest the line, not the word: the user typed
+					// `gti status`, and what they want back is something
+					// they can act on without retyping the rest.
+					fmt.Fprintf(hc.Stderr, " — did you mean %q?", strings.Join(append([]string{s}, args[1:]...), " "))
 				}
 			}
 			fmt.Fprintln(hc.Stderr)
 			return interp.ExitStatus(127)
 		}
 	}
+}
+
+// commandNotFoundHandler returns the name of the session's
+// command-not-found hook, or "" when there is none.
+//
+// Both spellings are honored because both are in the wild: bash calls
+// it command_not_found_handle and zsh command_not_found_handler, and a
+// switcher's rc carries whichever their distro installed. Inheriting
+// the ecosystem means running the file people already have, not asking
+// them to rename a function.
+func commandNotFoundHandler(runner *interp.Runner) string {
+	for _, name := range []string{"command_not_found_handle", "command_not_found_handler"} {
+		if _, ok := runner.Funcs[name]; ok {
+			return name
+		}
+	}
+	return ""
+}
+
+// runNotFoundHandler calls the hook with the full argument list.
+//
+// It runs in a subshell copy because the exec handler is called from
+// inside the parent's own Run, and a runner is not reentrant. That is
+// also the conservative reading of the hook's job: report, suggest,
+// maybe install — not silently rewrite the calling shell's state.
+//
+// The arguments are passed as AST nodes rather than a formatted command
+// string, so nothing in them is re-parsed, re-expanded, or re-globbed:
+// the hook sees exactly the words the user typed.
+func runNotFoundHandler(ctx context.Context, runner *interp.Runner, name string, args []string) error {
+	words := make([]*syntax.Word, 0, len(args)+1)
+	for _, a := range append([]string{name}, args...) {
+		words = append(words, &syntax.Word{Parts: []syntax.WordPart{&syntax.SglQuoted{Value: a}}})
+	}
+	stmt := &syntax.Stmt{Cmd: &syntax.CallExpr{Args: words}}
+	return runner.Subshell().Run(ctx, stmt)
 }
 
 // suggestCommand returns the closest known command within edit

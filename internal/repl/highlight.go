@@ -29,13 +29,59 @@ const (
 	hlComment = "\x1b[2m"  // comments: dim
 )
 
+// Highlight modes (#163). NO_COLOR is all-or-nothing, and the
+// documented churn case is narrower than that: someone left a shell
+// over the red-on-unknown-command flash while typing, not over syntax
+// color as such. So the knob is per-feature —
+//
+//	on     everything (default)
+//	quiet  syntax color, but no verdict on the command word
+//	off    no highlighting at all
+//
+// `quiet` exists because the unknown-command color is the one span that
+// is *wrong* half the time it appears: a command is unknown until its
+// last letter is typed, so the signal fires on every correct command on
+// the way to being correct.
+const (
+	highlightOn    = "on"
+	highlightQuiet = "quiet"
+	highlightOff   = "off"
+)
+
+// highlightMode reads the live setting, so an rc that sets it — or a
+// mid-session `config highlight quiet` — takes effect without rebuilding
+// the editor. Unknown values mean the default: a typo in an rc must
+// never be why the shell looks broken.
+func highlightMode(runner *interp.Runner) string {
+	switch strings.ToLower(shellVar(runner, "GISH_HIGHLIGHT", highlightOn)) {
+	case highlightOff:
+		return highlightOff
+	case highlightQuiet:
+		return highlightQuiet
+	default:
+		return highlightOn
+	}
+}
+
+// suggestEnabled reports whether history ghost text is wanted. Same
+// reasoning as the highlight knob: the autosuggestion is fish's most
+// divisive affordance, and "turn the whole shell monochrome" is not an
+// acceptable way to switch one feature off.
+func suggestEnabled(runner *interp.Runner) bool {
+	return !strings.EqualFold(shellVar(runner, "GISH_SUGGEST", "on"), "off")
+}
+
 // highlightFn builds the editor's highlighter: spans derived from a real
 // parse of the buffer (we hold the actual bash parser — no regexes).
 // This runs per keystroke, so everything here is local and cheap: the
 // command-existence check hits the completion machinery's cached PATH
-// set.
+// set, and the mode lookup is a map read.
 func highlightFn(runner *interp.Runner) func(string) []editor.HighlightSpan {
 	return func(text string) []editor.HighlightSpan {
+		mode := highlightMode(runner)
+		if mode == highlightOff {
+			return nil
+		}
 		known := func(name string) bool {
 			if interp.IsBuiltin(name) || name == "zi" || name == "config" {
 				return true
@@ -45,6 +91,9 @@ func highlightFn(runner *interp.Runner) func(string) []editor.HighlightSpan {
 			}
 			return complete.IsCommand(name, pathVar(runner))
 		}
+		if mode == highlightQuiet {
+			known = nil // no verdict on the command word
+		}
 		return highlightSpans(text, known)
 	}
 }
@@ -52,6 +101,9 @@ func highlightFn(runner *interp.Runner) func(string) []editor.HighlightSpan {
 // highlightSpans parses text and colors it from the syntax tree. When
 // the parse fails (the line is mid-edit most of the time), it falls back
 // to first-word command coloring so the signature affordance survives.
+//
+// A nil known is quiet mode: the command word gets no verdict, and
+// everything else is styled as usual.
 func highlightSpans(text string, known func(string) bool) []editor.HighlightSpan {
 	parser := syntax.NewParser(syntax.KeepComments(true))
 	file, err := parser.Parse(strings.NewReader(text), "")
@@ -71,7 +123,7 @@ func highlightSpans(text string, known func(string) bool) []editor.HighlightSpan
 	syntax.Walk(file, func(node syntax.Node) bool {
 		switch n := node.(type) {
 		case *syntax.CallExpr:
-			if len(n.Args) > 0 {
+			if len(n.Args) > 0 && known != nil {
 				if lit := flatLiteral(n.Args[0]); lit != "" {
 					style := hlGoodCmd
 					if !known(lit) && !strings.Contains(lit, "/") {
@@ -114,6 +166,9 @@ func flatLiteral(w *syntax.Word) string {
 // yet (unclosed quote, trailing pipe): the typo check keeps working
 // mid-edit.
 func fallbackSpans(text string, known func(string) bool) []editor.HighlightSpan {
+	if known == nil {
+		return nil // quiet mode: the fallback is only ever the verdict
+	}
 	runes := []rune(text)
 	start := 0
 	for start < len(runes) && (runes[start] == ' ' || runes[start] == '\t') {

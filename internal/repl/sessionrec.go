@@ -88,6 +88,14 @@ func (s *sessionRecorder) atPrompt(runner *interp.Runner, lastCommand string) {
 	if s == nil || s.off {
 		return
 	}
+	// Nothing is written before the first command (#163). A session with
+	// no command in it has no place to restore *to* that the next shell
+	// would not reach anyway, so recording it buys nothing and costs a
+	// file — and a state directory — in the home of someone who did no
+	// more than open a shell.
+	if lastCommand == "" && s.last.ID == "" {
+		return
+	}
 	rec := session.Record{
 		ID:            s.id,
 		Cwd:           runner.Dir,

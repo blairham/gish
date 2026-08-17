@@ -29,13 +29,23 @@ func Load() (*Config, error) {
 		}
 		home = filepath.Join(userHome, ".zi-go")
 	}
-	c := &Config{Home: home}
-	for _, dir := range []string{c.PluginsDir(), c.SnippetsDir(), c.CompletionsDir(), c.RunDir()} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
-		}
+	return &Config{Home: home}, nil
+}
+
+// Ensure creates one of the layout directories, on the way to writing
+// something into it.
+//
+// Load deliberately creates nothing (#163). Resolving the layout happens
+// at startup for every session, and a shell that has installed no
+// plugins should not leave a four-directory tree in someone's home
+// directory for the privilege of having been started once. Config
+// hygiene is a documented churn cause on its own, and "it will be needed
+// eventually" is not a reason to write to $HOME today.
+func Ensure(dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
 	}
-	return c, nil
+	return dir, nil
 }
 
 func (c *Config) PluginsDir() string     { return filepath.Join(c.Home, "plugins") }

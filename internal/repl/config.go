@@ -43,6 +43,8 @@ var configSettings = []configSetting{
 	{"jump", "GISH_JUMP", []string{"on", "off"}, "native z directory tracking (#94)"},
 	{"ssh.bring", "GISH_SSH_BRING", []string{"ask", "always", "never"}, "copy gish to hosts on `gish ssh` (#98)"},
 	{"blocks", "GISH_BLOCKS", []string{"on", "off"}, "capture command output for blocks (#99) — off by default"},
+	{"highlight", "GISH_HIGHLIGHT", []string{"on", "quiet", "off"}, "syntax highlighting — quiet drops the unknown-command color"},
+	{"suggest", "GISH_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -69,6 +71,8 @@ settings:
   jump    on | off                 (GISH_JUMP)
   ssh.bring  ask | always | never  (GISH_SSH_BRING)
   blocks     on | off               (GISH_BLOCKS)
+  highlight  on | quiet | off       (GISH_HIGHLIGHT)
+  suggest    on | off               (GISH_SUGGEST)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
                     exit, plus any plugin segment id  (GISH_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default
