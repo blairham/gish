@@ -48,6 +48,13 @@ echo "$TOOL_HOME"
 tool_fn hello`,
 	},
 	{
+		Name: "single quote escaped inside an assignment", Category: CatToolInit,
+		Provenance: "`'\\''` is the universal way to quote an apostrophe; every generated rc line uses it",
+		Script: `x='a'\''b'
+echo "[$x]"
+echo 'a'\''b'`,
+	},
+	{
 		Name: "shell detection via $0 and BASH_VERSION", Category: CatToolInit,
 		Provenance: "init scripts branch on shell identity before emitting hooks",
 		Script: `if [ -n "${BASH_VERSION:-}" ]; then echo bash-ish; else echo other; fi

@@ -61,6 +61,7 @@ func Run(ctx context.Context, login bool) error {
 func runEditor(ctx context.Context, login bool) error {
 	// Native brew shellenv (#44): pure stat/string work, no subprocess.
 	brewShellenv()
+	resetBashHooks()
 
 	// Tier-2 plugin host (#7): discovery now, launch on first demand.
 	// Prompt segments are consumed via %p{id} escapes; the `plugins`
@@ -130,7 +131,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -253,6 +254,10 @@ func runEditor(ctx context.Context, login bool) error {
 		} else {
 			table.DisableCapture()
 		}
+		// The bash hook surface (#159): PROMPT_COMMAND runs before the
+		// prompt is built, so a hook that sets PS1, exports variables or
+		// records the directory is reflected in the prompt it precedes.
+		runPromptCommand(ctx, runner)
 		info.dir = runner.Dir
 		info.exitCode = lastExit
 		info.duration = lastDuration
@@ -377,6 +382,15 @@ func runEditor(ctx context.Context, login bool) error {
 
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
 		markOutputStart(os.Stdout, marks)
+		// PS0 prints between the line and its output; the DEBUG trap is
+		// the preexec hook, and under extdebug a non-zero return from it
+		// cancels the command (#159).
+		runPS0(ctx, runner, os.Stdout)
+		if !runDebugTrap(ctx, runner, line) {
+			lastExit = 1
+			markCommandDone(os.Stdout, marks, lastExit)
+			continue
+		}
 		start := time.Now()
 		table.BeginLine(line)
 		lastCommandText = line
@@ -545,7 +559,7 @@ func runPlain(ctx context.Context, login bool) error {
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+		interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -615,7 +629,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	runner, err := interp.New(
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+		interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
 	)
 	if err != nil {
 		return err
@@ -638,7 +652,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))),
+			interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
 		},
 		opts...,
 	)...)

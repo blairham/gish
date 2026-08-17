@@ -182,7 +182,7 @@ func (s *ptySession) waitFor(want string) string {
 }
 
 // waitForPrompt waits for a prompt to finish rendering.
-func (s *ptySession) waitForPrompt() { s.t.Helper(); s.waitFor(promptEnd) }
+func (s *ptySession) waitForPrompt() string { s.t.Helper(); return s.waitFor(promptEnd) }
 
 func (s *ptySession) send(keys string) {
 	s.t.Helper()
