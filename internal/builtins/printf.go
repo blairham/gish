@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -32,29 +33,52 @@ import (
 // Go-quotes, and a missing argument is an empty string or a zero rather
 // than an error.
 
-// Printf writes the POSIX printf(1) rendering of format/args to w.
-// A non-nil error is a usage error; output written before it stands,
-// which is what bash does.
-func Printf(w io.Writer, args []string) error {
+// Printf writes the POSIX printf(1) rendering of format/args to w, and
+// any complaint about a numeric argument to errw.
+//
+// Two writers rather than one because bash writes each complaint *as it
+// reads the argument*, before the formatted line is flushed — so
+// `printf "%s|%d" ok bad` puts the diagnostic above the output, not
+// below it. Returning the complaints for the caller to print would
+// invert that, which shows up immediately in a terminal and in any
+// differential that compares combined output.
+//
+// A non-nil error is a usage error, a bad format, or ErrBadNumber
+// meaning "already reported, exit 1". Output written before any of them
+// stands, which is what bash does.
+func Printf(w, errw io.Writer, args []string) error {
 	if len(args) == 0 {
 		return ErrUsage
 	}
 	format, rest := args[0], args[1:]
 
+	// Bad numeric arguments are reported as they are met and counted
+	// here: bash keeps formatting after one and exits 1 at the end.
+	anyBad := false
+	reported := func() error {
+		if anyBad {
+			return ErrBadNumber
+		}
+		return nil
+	}
+
 	// POSIX: the format is reused until the arguments are consumed. One
 	// pass always happens, even with no arguments at all.
 	for first := true; first || len(rest) > 0; first = false {
-		consumed, stop, err := printfOnce(w, format, rest)
+		consumed, stop, badHere, err := printfOnce(w, errw, format, rest)
+		anyBad = anyBad || badHere
 		if err != nil {
+			// Fatal: a bad format, or a reader that went away. The
+			// numeric complaints are moot next to either.
 			return err
 		}
 		if stop {
-			return nil // \c in a %b argument ends all output
+			return reported() // \c in a %b argument ends all output
 		}
 		if consumed == 0 {
 			// A format with no conversions would otherwise repeat for
 			// ever against a non-empty argument list.
-			return nil
+			return reported()
 		}
 		// consumed can exceed what is left: a format with more
 		// conversions than arguments fills the rest with empties and
@@ -62,25 +86,36 @@ func Printf(w io.Writer, args []string) error {
 		// terminate. Clamping here rather than there keeps that counting
 		// honest.
 		if consumed >= len(rest) {
-			return nil
+			return reported()
 		}
 		rest = rest[consumed:]
 	}
-	return nil
+	return reported()
 }
 
 // printfOnce renders the format once, reporting how many arguments it
-// used and whether a \c asked for output to stop entirely.
-func printfOnce(w io.Writer, format string, args []string) (consumed int, stop bool, err error) {
+// used, whether a \c asked for output to stop entirely, and any numeric
+// arguments bash would have complained about.
+func printfOnce(w, errw io.Writer, format string, args []string) (consumed int, stop bool, bad bool, err error) {
 	var sb strings.Builder
-	next := func() string {
+	// present distinguishes an argument that is the empty string from
+	// one that was never supplied. bash complains about `printf %d ""`
+	// and says nothing about the second conversion in `printf "%d %d" 5`
+	// — a format with more conversions than arguments is ordinary.
+	next := func() (v string, present bool) {
 		if consumed < len(args) {
-			v := args[consumed]
+			v = args[consumed]
 			consumed++
-			return v
+			return v, true
 		}
 		consumed++ // still counts, so the reuse loop terminates
-		return ""
+		return "", false
+	}
+	report := func(e error) {
+		if e != nil {
+			bad = true
+			fmt.Fprintln(errw, e)
+		}
 	}
 
 	for i := 0; i < len(format); i++ {
@@ -90,7 +125,7 @@ func printfOnce(w io.Writer, format string, args []string) (consumed int, stop b
 			if done {
 				sb.WriteString(text)
 				_, werr := io.WriteString(w, sb.String())
-				return consumed, true, wrapWrite(werr)
+				return consumed, true, bad, wrapWrite(werr)
 			}
 			sb.WriteString(text)
 			i += width - 1
@@ -102,7 +137,7 @@ func printfOnce(w io.Writer, format string, args []string) (consumed int, stop b
 		}
 		spec, verb, width := parseSpec(format[i:])
 		if width == 0 {
-			return consumed, false, fmt.Errorf("printf: `%s': invalid format", format[i:])
+			return consumed, false, bad, fmt.Errorf("printf: `%s': invalid format", format[i:])
 		}
 		i += width - 1
 		if verb == '%' {
@@ -111,68 +146,150 @@ func printfOnce(w io.Writer, format string, args []string) (consumed int, stop b
 		}
 		// A `*` takes its value from the arguments, in order.
 		for strings.Contains(spec, "*") {
-			n, _ := strconv.Atoi(strings.TrimSpace(next()))
+			arg, _ := next()
+			n, _ := strconv.Atoi(strings.TrimSpace(arg))
 			spec = strings.Replace(spec, "*", strconv.Itoa(n), 1)
 		}
-		if err := writeVerb(&sb, spec, verb, next); err != nil {
+		if err := writeVerb(&sb, spec, verb, next, report); err != nil {
 			if errors.Is(err, errStopOutput) {
 				// \c: what has been built still prints, nothing more does.
 				_, werr := io.WriteString(w, sb.String())
-				return consumed, true, wrapWrite(werr)
+				return consumed, true, bad, wrapWrite(werr)
 			}
-			return consumed, false, err
+			return consumed, false, bad, err
 		}
 	}
 	_, werr := io.WriteString(w, sb.String())
-	return consumed, false, wrapWrite(werr)
+	return consumed, false, bad, wrapWrite(werr)
 }
 
-// writeVerb renders one conversion.
-func writeVerb(sb *strings.Builder, spec string, verb byte, next func() string) error {
+// writeVerb renders one conversion. A numeric argument that does not
+// parse is handed to report and still rendered, because that is what
+// bash does: the complaint goes to stderr and the format runs on.
+func writeVerb(
+	sb *strings.Builder,
+	spec string,
+	verb byte,
+	next func() (string, bool),
+	report func(error),
+) error {
+	// A conversion with no argument left is a zero and no complaint;
+	// only an argument that was actually supplied can be bad.
+	intArg := func() int64 {
+		s, present := next()
+		if !present {
+			return 0
+		}
+		v, err := parseInt(s)
+		report(err)
+		return v
+	}
+	floatArg := func() float64 {
+		s, present := next()
+		if !present {
+			return 0
+		}
+		v, err := parseFloat(s)
+		report(err)
+		return v
+	}
+	text := func() string { s, _ := next(); return s }
+
 	switch verb {
 	case 'c':
 		// One character, not a string: width still applies.
-		arg := next()
 		r := ""
-		for _, ch := range arg {
+		for _, ch := range text() {
 			r = string(ch)
 			break
 		}
 		fmt.Fprintf(sb, spec+"s", r)
 	case 's':
-		fmt.Fprintf(sb, spec+"s", next())
+		fmt.Fprintf(sb, spec+"s", text())
 	case 'b':
 		// The argument's own escapes are expanded, and its \c stops
 		// everything. Precision applies to the expanded text.
-		text, stopped := expandEscapes(next())
-		fmt.Fprintf(sb, spec+"s", text)
+		expanded, stopped := expandEscapes(text())
+		fmt.Fprintf(sb, spec+"s", expanded)
 		if stopped {
 			return errStopOutput
 		}
 	case 'q':
 		// Shell quoting, not Go quoting: the point of %q is that the
 		// result can be pasted back into a shell.
-		fmt.Fprintf(sb, spec+"s", shellQuote(next()))
+		fmt.Fprintf(sb, spec+"s", shellQuote(text()))
 	case 'd', 'i':
-		fmt.Fprintf(sb, spec+"d", parseInt(next()))
+		fmt.Fprintf(sb, spec+"d", intArg())
 	case 'u':
-		fmt.Fprintf(sb, spec+"d", uint64(parseInt(next())))
+		fmt.Fprintf(sb, spec+"d", uint64(intArg())) //nolint:gosec // %u is the two's-complement view, as in bash
 	case 'o', 'x', 'X':
-		fmt.Fprintf(sb, spec+string(verb), uint64(parseInt(next())))
+		fmt.Fprintf(sb, spec+string(verb), uint64(intArg())) //nolint:gosec // same
 	case 'e', 'E', 'f', 'F', 'g', 'G':
-		fmt.Fprintf(sb, spec+string(verb), parseFloat(next()))
+		writeFloat(sb, spec, verb, string(verb), floatArg())
 	case 'a', 'A':
 		// Go spells hex floats x/X; the C name is a/A.
 		v := map[byte]string{'a': "x", 'A': "X"}[verb]
-		fmt.Fprintf(sb, spec+v, parseFloat(next()))
+		writeFloat(sb, spec, verb, v, floatArg())
 	default:
 		return fmt.Errorf("printf: `%%%c': invalid format character", verb)
 	}
 	return nil
 }
 
+// writeFloat renders a float conversion, spelling infinities and NaN
+// the way C does rather than the way Go does.
+//
+// Go prints `+Inf`; C — and therefore bash — prints `inf`, `-inf` and
+// `nan`, uppercased for an uppercase verb. It matters here because the
+// out-of-range path *produces* an infinity: `printf "%f" 1e400` is a
+// "Result too large" complaint and the word `inf`, so getting the word
+// wrong would show up in the one case this change adds a diagnostic to.
+//
+// Width still applies and precision does not, which is why this renders
+// through %s with the precision stripped rather than through the
+// original spec.
+func writeFloat(sb *strings.Builder, spec string, verb byte, goVerb string, v float64) {
+	if !math.IsInf(v, 0) && !math.IsNaN(v) {
+		fmt.Fprintf(sb, spec+goVerb, v)
+		return
+	}
+	word := "inf"
+	switch {
+	case math.IsNaN(v):
+		word = "nan"
+	case math.IsInf(v, -1):
+		word = "-inf"
+	}
+	if verb >= 'A' && verb <= 'Z' {
+		word = strings.ToUpper(word)
+	}
+	fmt.Fprintf(sb, widthOnly(spec)+"s", word)
+}
+
+// widthOnly drops a precision and a zero-pad flag from a conversion
+// spec, keeping the width and the left-justify flag. C ignores both for
+// a non-finite value: `%010.2f` of an infinity is still a space-padded
+// `inf`.
+func widthOnly(spec string) string {
+	if i := strings.IndexByte(spec, '.'); i >= 0 {
+		spec = spec[:i]
+	}
+	// Flags sit between the % and the width; only the zero-pad one is
+	// wrong for a word, and it can only appear before a digit 1-9.
+	if i := strings.IndexByte(spec, '0'); i > 0 && strings.LastIndexAny(spec[:i], "123456789") < 0 {
+		spec = spec[:i] + spec[i+1:]
+	}
+	return spec
+}
+
 // errStopOutput is \c inside a %b argument: stop, without an error.
 var errStopOutput = errors.New("printf: output stopped")
+
+// ErrBadNumber means at least one numeric argument was rejected and
+// already reported to the caller's stderr. It carries the exit status
+// and nothing else — printing it would duplicate a message the user has
+// already seen, in the wrong place.
+var ErrBadNumber = errors.New("printf: a numeric argument was invalid")
 
 // ErrWrite marks a failure to write the output, as opposed to a problem
 // with the format. The two need opposite handling: a bad format is the
@@ -228,32 +345,147 @@ func parseSpec(s string) (spec string, verb byte, width int) {
 	return "%" + strings.ReplaceAll(s[1:i], "'", ""), s[i], i + 1
 }
 
-// parseInt reads a shell numeric argument. bash accepts 0x/0 prefixes
-// and treats junk as zero rather than failing the whole format.
-func parseInt(s string) int64 {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	if v, err := strconv.ParseInt(s, 0, 64); err == nil {
-		return v
-	}
-	if v, err := strconv.ParseUint(s, 0, 64); err == nil {
-		return int64(v)
-	}
-	return 0
+// NumberError is a numeric argument bash would complain about. It is
+// deliberately not fatal: bash prints one of these per bad argument,
+// substitutes what it managed to read, finishes the whole format, and
+// *then* exits 1. Stopping instead would lose output bash produces.
+type NumberError struct {
+	Arg    string
+	Reason string // "invalid number", or "Result too large" for a range
 }
 
-func parseFloat(s string) float64 {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
+func (e *NumberError) Error() string {
+	return fmt.Sprintf("printf: %s: %s", e.Arg, e.Reason)
+}
+
+const (
+	reasonInvalid = "invalid number"
+	reasonRange   = "Result too large"
+)
+
+// cSpace is what C's isspace accepts, which is what strtol skips. Go's
+// TrimSpace would also eat Unicode spaces that bash does not.
+const cSpace = " \t\n\v\f\r"
+
+// quotedChar handles POSIX's character-value form: a leading quote
+// means "the code point of the next character". Anything after that
+// character is ignored without complaint — bash reads `'ab` as 97 — and
+// a lone quote is 0.
+func quotedChar(s string) (int64, bool) {
+	if s == "" || (s[0] != '\'' && s[0] != '"') {
+		return 0, false
 	}
-	v, err := strconv.ParseFloat(s, 64)
+	for _, r := range s[1:] {
+		return int64(r), true
+	}
+	return 0, true
+}
+
+// parseInt reads a shell numeric argument the way C's strtol does,
+// which is the function bash hands the argument to.
+//
+// It is written out rather than delegated to strconv.ParseInt with base
+// 0 because Go's base-0 grammar is Go's, not C's: it accepts `0b101`
+// and digit separators like `1_000`, both of which bash rejects. Using
+// it would make gish quietly compute a different number than bash for
+// the same script, which is worse than the missing diagnostic this
+// function exists to add.
+//
+// A value comes back even with an error, because bash substitutes what
+// it read: `12abc` is a complaint *and* 12.
+func parseInt(s string) (int64, error) {
+	if v, ok := quotedChar(s); ok {
+		return v, nil
+	}
+	body := strings.TrimLeft(s, cSpace)
+
+	i := 0
+	sign := ""
+	if i < len(body) && (body[i] == '+' || body[i] == '-') {
+		sign, i = string(body[i]), i+1
+	}
+	base := 10
+	switch {
+	case strings.HasPrefix(strings.ToLower(body[i:]), "0x"):
+		base, i = 16, i+2
+	case i < len(body) && body[i] == '0':
+		// Leading zero is octal, and the zero itself is a digit — so
+		// "0" alone parses rather than running out of digits.
+		base = 8
+	}
+
+	start := i
+	for i < len(body) && digitVal(body[i]) < base {
+		i++
+	}
+	digits := body[start:i]
+	if digits == "" {
+		return 0, &NumberError{Arg: s, Reason: reasonInvalid}
+	}
+
+	v, err := strconv.ParseInt(sign+digits, base, 64)
 	if err != nil {
-		return 0
+		// Out of range: bash clamps to the limit it hit and says so.
+		v = math.MaxInt64
+		if sign == "-" {
+			v = math.MinInt64
+		}
+		return v, &NumberError{Arg: s, Reason: reasonRange}
 	}
-	return v
+	if i != len(body) {
+		// Trailing junk, which includes trailing space: bash accepts
+		// leading whitespace and complains about anything after the
+		// digits, space included.
+		return v, &NumberError{Arg: s, Reason: reasonInvalid}
+	}
+	return v, nil
+}
+
+// digitVal is the value of a digit in any base up to 16, or a number
+// too large to be a digit in any of them.
+func digitVal(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return 16
+}
+
+// parseFloat is parseInt's counterpart over strtod: leading whitespace
+// is skipped, the longest parsable prefix wins, and whatever follows it
+// is a complaint that does not discard the value.
+func parseFloat(s string) (float64, error) {
+	if v, ok := quotedChar(s); ok {
+		return float64(v), nil
+	}
+	body := strings.TrimLeft(s, cSpace)
+
+	best, bestVal := 0, 0.0
+	rangeErr := false
+	for n := len(body); n > 0; n-- {
+		v, err := strconv.ParseFloat(body[:n], 64)
+		// A range error still yields the right ±Inf, and bash reports
+		// that case separately rather than treating it as unparsable.
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			continue
+		}
+		best, bestVal, rangeErr = n, v, err != nil
+		break
+	}
+	if best == 0 {
+		return 0, &NumberError{Arg: s, Reason: reasonInvalid}
+	}
+	if rangeErr {
+		return bestVal, &NumberError{Arg: s, Reason: reasonRange}
+	}
+	if best != len(body) {
+		return bestVal, &NumberError{Arg: s, Reason: reasonInvalid}
+	}
+	return bestVal, nil
 }
 
 // expandEscapes processes backslash escapes in a %b argument, reporting
