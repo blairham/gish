@@ -67,12 +67,14 @@ meaning, for the life of the 1.x line.
 2. **Two minor releases minimum** between the first warning and any
    removal, and never inside a patch release.
 3. **Removal only at a major.** Inside 1.x, a documented knob does not
-   stop working.
+   stop working — and since these rules bind during 0.x too (see
+   below), "a major" means 1.0 at the earliest. Nothing on the covered
+   list is removed between here and there.
 4. **A rc that uses a removed knob still starts.** An unknown
    assignment is a variable, and an unknown `config` key is an error on
    one line — never a shell that refuses to open.
 
-## Before 1.0
+## The version line, and the road to 1.0
 
 gish is pre-1.0 today, and this page is deliberately written as though
 it were not, because the research finding is specific: **a published
@@ -82,9 +84,65 @@ above were designed with freezing in mind — the prompt escape set
 we would be willing to keep forever — and this page writes that habit
 down as a promise rather than leaving it as an internal one.
 
-What pre-1.0 actually means here: the list of *covered* surfaces may
-still grow, and things not yet on it (a new builtin's flags in its first
-release) may move once before they settle. Nothing on the list moves.
+The version path is decided (#213):
+
+> **`v0.0.0` is the first tag. A short 0.x line runs through the public
+> announcement. 1.0 follows it, gated by the closed list below.**
+
+`v0.0.0` exists to prove the release pipeline — GoReleaser, the tap,
+the checksums — before anyone is watching. The 0.x line exists because
+a frozen set that no outsider has ever configured is a guess: the
+surfaces above were designed to be frozen, but they have only met the
+person who designed them. Freezing them at the moment of first contact
+would mean discovering the mistake afterwards, when the only remaining
+options are to break the contract or to carry the mistake to 2.0.
+
+What 0.x here is **not** is nushell's seven years. The lifecycle
+research (docs/adoption.md) is unambiguous that the perpetual pre-1.0
+treadmill is the largest single adoption killer measured — but the
+thing doing the damage is not the digit, it is an *unbounded* 0.x with
+no stated endpoint. So two commitments bound this one:
+
+**1. The contract above is already in force.** 0.x is not a licence to
+break the covered table. Everything in *How a change happens* applies
+today — deprecate rather than remove, two minor releases of warning,
+and an rc using a retired knob still opens a shell. If something on the
+covered list breaks during 0.x, that is the same bug it would be at
+1.4.
+
+**2. The gate is closed.** The list below is complete, and nothing may
+be added to it. If work during 0.x turns up another thing that would be
+nice to have first, it ships in 1.1 — the one thing that must never
+happen is the gate growing faster than it is met, which is exactly the
+shape of nushell's *"Should we plan on 1.0 at all?"*.
+
+### The 1.0 gate
+
+1. **Every user-configurable surface is classified** — on the covered
+   table above, or explicitly in *Not covered*. Unclassified today and
+   in scope for this item: the `config` keys added since the table was
+   written (`blocks`, `jump`, `tools`, `highlight`, `editmode`,
+   `ssh.bring`), the vi-mode keymap (#163), and `gish ssh`'s per-host
+   policy state.
+2. **The bash-suite scoreboard is published** (#211). Freezing a
+   compatibility claim without knowing the incumbent's own denominator
+   is a promise made blind.
+3. **The deprecation machinery has survived one real upgrade.** `zi` →
+   `plugin` is the worked example, and it needs to be observed working
+   across an actual released version bump rather than merely existing
+   in the code.
+4. **The config-dialect decisions are settled** — #185 (convert other
+   prompt dialects, or bridge) and #134, both of which can still move a
+   covered surface.
+5. **Windows is named as out of scope for the freeze.** Per #110 the
+   native interactive port is sequenced to 1.x; the contract covers
+   macOS and Linux, and the Windows interactive surfaces are listed as
+   not-yet-covered rather than silently included.
+
+Progress against this list is stated in each 0.x release's notes, with
+the count of remaining items. That number only goes down. A 0.x line
+that reaches double-digit minors with items still open is itself the
+failure signal the research describes, and should be treated as one.
 
 ## Reporting a break
 
