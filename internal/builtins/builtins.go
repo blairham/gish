@@ -33,8 +33,9 @@ func init() {
 	// back into the registry via Native, which a literal would make an
 	// initialization cycle.
 	//
-	// No "help" alias: bash has a help builtin, so the interpreter
-	// swallows the name before this seam ever sees it.
+	// No "help" alias: the interpreter recognizes that name, so it needs
+	// the CallHandler route — and it lives there (#196, repl/helpcmd.go)
+	// because `help config` dispatches back into the handler chain.
 	registry["builtins"] = listBuiltins
 }
 

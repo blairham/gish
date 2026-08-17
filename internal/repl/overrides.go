@@ -35,6 +35,13 @@ var nativeOverrides = map[string]string{
 // another mechanism.
 func overrideCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
+		// help (#196) is the one name here that cannot be a map entry: it
+		// answers from the CallHandler like config does, and its rewrite
+		// case (`help config` → `config help`) needs next to dispatch back
+		// into the chain, where every command handler sits below this one.
+		if args[0] == "help" {
+			return runHelp(ctx, next, args[1:])
+		}
 		if to, ok := nativeOverrides[args[0]]; ok {
 			args[0] = to
 		}

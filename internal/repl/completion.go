@@ -28,9 +28,9 @@ import (
 // spent months rendering red (#193). A new CallHandler command belongs
 // here the same day it is wired into the chain in repl.go.
 var callHandlerCommands = []string{
-	"blocks", "clip", "config", "doctor", "explain", "migrate", "pick",
-	"plugin", "prompt", "p10k", "sandbox", "sessions", "tool", "trust",
-	"z", "zi",
+	"blocks", "clip", "config", "doctor", "explain", "help", "migrate",
+	"pick", "plugin", "prompt", "p10k", "sandbox", "sessions", "tool",
+	"trust", "z", "zi",
 }
 
 // completionFn builds the editor's Tab hook: core command/file

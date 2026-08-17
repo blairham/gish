@@ -120,3 +120,25 @@ func TestColorDefaultsColorLsPerPlatform(t *testing.T) {
 		t.Errorf("CLICOLOR = %q, want 1 so BSD ls colors a terminal", clicolor)
 	}
 }
+
+// The palette only works when the formatter still emits termcap-shaped
+// output: groff ≥1.23 writes SGR itself and bypasses less's hooks, so on
+// Linux MANROFFOPT=-c asks man-db for the classic overstrike output the
+// palette colors. macOS man is mandoc-backed and needs nothing.
+func TestColorDefaultsKeepManTermcapShapedPerPlatform(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("NO_COLOR", "")
+
+	r, _ := colorRunner(t)
+	applyColorDefaults(context.Background(), r)
+	got := runLine(t, r, `printf '%s' "$MANROFFOPT"`)
+	if runtime.GOOS == "linux" {
+		if got != "-c" {
+			t.Errorf("MANROFFOPT = %q on linux, want -c so groff's SGR output does not bypass the palette", got)
+		}
+		return
+	}
+	if got != "" {
+		t.Errorf("MANROFFOPT = %q on %s, where mandoc needs nothing", got, runtime.GOOS)
+	}
+}
