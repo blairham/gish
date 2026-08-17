@@ -253,3 +253,53 @@ func TestAgeAndShortID(t *testing.T) {
 		t.Errorf("short ids pass through unchanged, got %q", got)
 	}
 }
+
+// A secret-bearing command must not be written here either. #10's
+// guarantee is that such a command is never recorded, and history
+// refusing it while session restore writes it verbatim would make the
+// guarantee false in the only way that matters — the credential is on
+// disk regardless of which file it landed in.
+//
+// Found by running a real secret through a real shell: the token was
+// absent from history and from the blocks store, and present in the
+// session record.
+func TestSecretBearingCommandIsNotRecorded(t *testing.T) {
+	s := testStore(t)
+	if err := s.Save(Record{
+		ID:          "sess-1",
+		Cwd:         "/tmp",
+		LastCommand: "export GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz012345",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(s.dir, "sess-1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "ghp_abcdefghijklmnopqrstuvwxyz012345") {
+		t.Errorf("session record carries a credential:\n%s", data)
+	}
+
+	// The rest of the record still survives: dropping the command is
+	// proportionate, dropping the session is not.
+	got := s.List()
+	if len(got) != 1 || got[0].Cwd != "/tmp" {
+		t.Errorf("the whole record was discarded: %+v", got)
+	}
+	if got[0].LastCommand != "" {
+		t.Errorf("LastCommand = %q, want it dropped", got[0].LastCommand)
+	}
+}
+
+// An ordinary command is still recorded — the gate must not swallow
+// everything that merely mentions a variable name.
+func TestOrdinaryCommandIsStillRecorded(t *testing.T) {
+	s := testStore(t)
+	if err := s.Save(Record{ID: "sess-2", LastCommand: "go test ./..."}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.List(); len(got) != 1 || got[0].LastCommand != "go test ./..." {
+		t.Errorf("ordinary command was dropped: %+v", got)
+	}
+}

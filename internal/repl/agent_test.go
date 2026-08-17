@@ -195,3 +195,41 @@ func TestAgentDecideLineFallback(t *testing.T) {
 		t.Errorf("invalid answer not re-asked: %q", out.String())
 	}
 }
+
+// A plan artifact outlives the session, so it is the same class of
+// exposure as history and sessions. Both halves need the gate: the task
+// is whatever the user typed, and a step's command comes from a model
+// that can echo back a literal it was shown.
+func TestPlanArtifactRedactsSecrets(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+
+	plan := &pluginapi.PlanResponse{
+		Summary: "do the thing",
+		Steps: []*pluginapi.PlanStep{
+			{Title: "publish", Command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456' https://x"},
+		},
+	}
+	path := savePlanArtifact("deploy with GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz012345", plan)
+	if path == "" {
+		t.Fatal("no artifact written")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"ghp_abcdefghijklmnopqrstuvwxyz012345", "abcdefghijklmnopqrstuvwxyz123456"} {
+		if strings.Contains(string(data), leak) {
+			t.Errorf("plan artifact carries a credential:\n%s", data)
+		}
+	}
+	// The plan is still a usable record — redaction, not refusal.
+	for _, keep := range []string{"do the thing", "publish"} {
+		if !strings.Contains(string(data), keep) {
+			t.Errorf("artifact lost %q, so redaction destroyed the record:\n%s", keep, data)
+		}
+	}
+}

@@ -26,6 +26,16 @@ var scrubRules = []struct {
 	{"credential-assignment", regexp.MustCompile(`(?i)[\w-]*(api[_-]?key|secret|token|passw(or)?d)[\w-]*[=:]['"]?[^$\s'"][^\s'"]{7,}`)},
 }
 
+// SecretReason reports the first scrub rule a command matches, or "" if
+// it is clean.
+//
+// Exported so that anything else persisting a command line applies the
+// same gate the history store does. The #10 guarantee is "a
+// secret-bearing command is never recorded", and that has to mean every
+// place a command is recorded — a second store with its own idea of
+// what is safe is how the guarantee quietly stops being true.
+func SecretReason(command string) string { return scrubReason(command) }
+
 // scrubReason reports the first matching rule name, or "" for a clean
 // command.
 func scrubReason(command string) string {
@@ -35,4 +45,35 @@ func scrubReason(command string) string {
 		}
 	}
 	return ""
+}
+
+// RedactOutput removes credential-shaped spans from captured command
+// output (#99 stage 3), returning the cleaned bytes and how many spans
+// it replaced.
+//
+// The posture is deliberately *different* from the one above, and the
+// difference is the whole point of having a second function rather than
+// reusing the first.
+//
+// A command line that matches is never written at all. That is
+// proportionate: the line is short, and if it carries a token then the
+// token is essentially the whole command — there is nothing of value
+// left once it is removed.
+//
+// Output is the opposite shape. It can be hundreds of kilobytes of
+// build log, and the case blocks exists for is "show me what that build
+// printed". Discarding all of it because one line echoed a token would
+// destroy exactly the thing the user wanted, so matching spans are
+// replaced and everything around them is kept.
+//
+// The count is returned so a caller can say the output was redacted
+// rather than presenting a doctored log as if it were pristine.
+func RedactOutput(out []byte) (redacted []byte, spans int) {
+	for _, rule := range scrubRules {
+		out = rule.re.ReplaceAllFunc(out, func(match []byte) []byte {
+			spans++
+			return []byte("[redacted:" + rule.name + "]")
+		})
+	}
+	return out, spans
 }
