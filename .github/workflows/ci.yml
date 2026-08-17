@@ -82,7 +82,7 @@ jobs:
     # there is a claim, not a guarantee — the same distinction the
     # builtin matrices exist to close.
     - name: Run portable tests
-      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./internal/remote/ ./internal/session/ ./internal/capture/ ./internal/blocks/ ./internal/p10k/ ./internal/gitstatus/ ./internal/dirjump/ ./internal/manifest/ ./internal/ui/ ./internal/jobs/ ./cmd/gish-aws/ ./cmd/gish-atuin/ ./cmd/gish-claude/ ./cmd/gish-direnv/ ./internal/migrate/
+      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./internal/remote/ ./internal/session/ ./internal/capture/ ./internal/blocks/ ./internal/promptengine/ ./internal/gitstatus/ ./internal/dirjump/ ./internal/manifest/ ./internal/ui/ ./internal/jobs/ ./cmd/gish-aws/ ./cmd/gish-atuin/ ./cmd/gish-claude/ ./cmd/gish-direnv/ ./internal/migrate/
 
   lint:
     runs-on: ubuntu-latest
