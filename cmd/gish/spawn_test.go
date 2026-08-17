@@ -75,18 +75,25 @@ func TestInteractiveFlagSourcesRC(t *testing.T) {
 
 // A panic in the interpreter must cost the line, not the session (#217).
 //
-// The trigger is a real substrate gap — a negated POSIX class in a
-// pattern-removal expansion compiles to an invalid regexp, which the
-// substrate builds with MustCompile — and it reached gish through a
+// This was written against a real substrate gap — a negated POSIX class
+// in a pattern-removal expansion compiled to an invalid regexp, which
+// the substrate built with MustCompile — that reached gish through a
 // vendor block in ~/.profile, which every login invocation sources. A
 // terminal emulator profile launches its shell exactly that way, so the
 // crash meant no shell at all.
+//
+// #218 fixed that gap, which took the trigger away and left these
+// assertions passing over a panic nothing could raise. The trigger is
+// now ours (internal/repl/panicprobe.go, behind the build tag the test
+// binary is compiled with), because what is being tested is the
+// boundary, not any particular bug that crosses it — and the next
+// upstream fix should not quietly disarm it.
 func TestInterpreterPanicDoesNotKillTheShell(t *testing.T) {
 	t.Parallel()
 	bin := buildGish(t)
 	env := hermeticEnv(t)
 
-	const panics = `x="  hi  "; echo "${x%%[![:space:]]*}"`
+	const panics = `__gish_panic_probe`
 
 	t.Run("in a command", func(t *testing.T) {
 		t.Parallel()
