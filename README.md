@@ -34,6 +34,13 @@ the ecosystem matrix: **starship, direnv, fzf, zoxide, atuin and mise
 run in gish through their own bash init lines**, unmodified and with no
 gish-specific support on either side.
 
+**A plugin can never block a keystroke, and never needs a rebuild.**
+Every host→plugin call carries a deadline, so a hung plugin costs its
+own segment and nothing else; `plugin/v1` is frozen-additive and CI
+fails on any change that would break a binary compiled against it. Both
+are tested rather than asserted — see
+[docs/plugins.md](docs/plugins.md#the-compatibility-promise-to-plugin-authors-168).
+
 **Your config will not break.** What is frozen — rc syntax, `GISH_*`
 variables, `config` keys, `plugins.toml`, the prompt escape set, the
 theme knobs, and bash's own hook surface — is written down in
