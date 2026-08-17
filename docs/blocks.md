@@ -171,8 +171,17 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
    all. A block that shows says so when its output was truncated or
    redacted, rather than presenting a partial or doctored log as whole.
 
-   Still to come: the #100 picker as the front end, and output previews
-   in Ctrl-R results.
+   Bare `blocks` on a terminal opens the #100 picker over those same
+   commands; `blocks list` and every headless path keep the plain
+   listing, so the command stays usable in scripts and the picker is a
+   presentation layer rather than the only way in.
+
+   The picker returns the command *text*, and the same command may have
+   run many times — selection resolves to the **most recent** match,
+   because someone picking `make build` off a list means the one they
+   just ran, not one from last week.
+
+   Still to come: output previews in Ctrl-R results.
 
 ## Why this order
 

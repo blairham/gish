@@ -27,6 +27,12 @@ import (
 // full-screen program through a real pty showed that *which*
 // descriptors get substituted is what decides whether this works.
 
+// e2eBudget is generous on purpose: these drive a real shell through a
+// real pty, and a busy CI runner redraws the prompt for every echoed
+// keystroke. The tests are not measuring speed, so a tight bound only
+// buys flakes.
+const e2eBudget = 60 * time.Second
+
 // promptEnd is the OSC 133;B mark: written exactly when the prompt ends
 // and input begins (#99 stage 1).
 //
@@ -83,6 +89,12 @@ func startShell(t *testing.T, dir string) *shellPTY {
 		"XDG_STATE_HOME=" + filepath.Join(base, "state"),
 		"TERM=xterm-256color",
 		"PATH=" + os.Getenv("PATH"),
+		// Capture on from the start rather than typed in. Every
+		// keystroke costs a full prompt redraw, and on a loaded runner
+		// that is ~0.3s each — typing `config blocks on` was a third of
+		// each test's budget spent proving something config_test already
+		// proves.
+		"GISH_BLOCKS=on",
 	}
 	cmd.Dir = dir
 	// Few rows so a pager actually pages; wide columns so a long CI
@@ -120,7 +132,7 @@ func startShell(t *testing.T, dir string) *shellPTY {
 // semantic mark rather than the prompt's visible text.
 func (s *shellPTY) waitForPrompt() {
 	s.t.Helper()
-	deadline := time.After(20 * time.Second)
+	deadline := time.After(e2eBudget)
 	for {
 		if bytes.Contains(s.buf.Bytes(), []byte(promptEnd)) {
 			return
@@ -132,14 +144,14 @@ func (s *shellPTY) waitForPrompt() {
 			}
 			s.buf.Write(chunk)
 		case <-deadline:
-			s.t.Fatalf("no prompt within 20s %s; got:\n%q", s.diagnose(), s.buf.String())
+			s.t.Fatalf("no prompt within %s %s; got:\n%q", e2eBudget, s.diagnose(), s.buf.String())
 		}
 	}
 }
 
 func (s *shellPTY) waitFor(want string) string {
 	s.t.Helper()
-	deadline := time.After(20 * time.Second)
+	deadline := time.After(e2eBudget)
 	for {
 		plain := string(ansiRe.ReplaceAll(s.buf.Bytes(), nil))
 		if bytes.Contains([]byte(plain), []byte(want)) {
@@ -152,7 +164,7 @@ func (s *shellPTY) waitFor(want string) string {
 			}
 			s.buf.Write(chunk)
 		case <-deadline:
-			s.t.Fatalf("did not see %q within 20s %s; got:\n%s", want, s.diagnose(), plain)
+			s.t.Fatalf("did not see %q within %s %s; got:\n%s", want, e2eBudget, s.diagnose(), plain)
 		}
 	}
 }
@@ -238,9 +250,6 @@ func TestCapturedPagerStillWorks(t *testing.T) {
 
 	s := startShell(t, dir)
 	s.waitForPrompt()
-	s.send("config blocks on\r")
-	s.waitFor("blocks")
-
 	s.send("less big.txt\r")
 	s.waitFor("big.txt") // the pager's status line
 
@@ -289,9 +298,6 @@ func TestCapturedGitStillPages(t *testing.T) {
 
 	s := startShell(t, dir)
 	s.waitForPrompt()
-	s.send("config blocks on\r")
-	s.waitFor("blocks")
-
 	s.send("git log --oneline\r")
 	s.waitFor("commit-number") // paged output on screen
 	s.sendUntil("q", promptEnd)
@@ -314,9 +320,6 @@ func TestCaptureLeavesRedirectionAlone(t *testing.T) {
 	dir := t.TempDir()
 	s := startShell(t, dir)
 	s.waitForPrompt()
-	s.send("config blocks on\r")
-	s.waitFor("blocks")
-
 	s.send("printf 'hello\\n' > out.txt\r")
 	s.probe("WROTE")
 	s.waitFor("resWROTE")
