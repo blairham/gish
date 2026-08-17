@@ -53,6 +53,22 @@ type placed struct {
 	style Style
 }
 
+// promptGap is the single space between the end of the left prompt and
+// whatever the user types.
+//
+// Upstream emits it unconditionally, and it is deliberately not any of
+// the knobs it looks like. Measured against a real zsh+powerlevel10k
+// under a pty: the space survives with every *_WHITESPACE parameter set
+// to empty, and overriding both LEFT_PROMPT_LAST_SEGMENT_END_SYMBOL and
+// its PROMPT_CHAR-scoped form leaves it untouched. So it is modeled here
+// as what it measurably is — a fixed suffix on the line being typed on —
+// rather than routed through a parameter that does not control it.
+//
+// It belongs to the last line only. Banner lines above it end where
+// their content ends, and a trailing space there would fight the gap
+// fill that places the right prompt.
+const promptGap = " "
+
 // Render produces the full prompt for one read.
 func Render(cfg *Config, ctx *Context) Prompt {
 	left := splitLines(cfg.List("LEFT_PROMPT_ELEMENTS"))
@@ -77,7 +93,7 @@ func Render(cfg *Config, ctx *Context) Prompt {
 			// becomes a true right prompt so the editor can hide it when
 			// the typed line grows into it, rather than baking it into
 			// text that would then wrap.
-			rendered[i] = prefix + leftText
+			rendered[i] = prefix + leftText + promptGap
 			rprompt = rightText + suffix
 			continue
 		}
@@ -127,7 +143,11 @@ func RenderTransient(cfg *Config, ctx *Context) (string, bool) {
 		// with no marker at all. Keep the full prompt instead.
 		return "", false
 	}
-	return line, true
+	// After the emptiness check, not before: the check reads the segments
+	// alone, and a gap added first would make every empty last line look
+	// occupied. The accepted line keeps the gap so scrollback reads the
+	// same as the live prompt did.
+	return line + promptGap, true
 }
 
 // plainText drops escapes, for emptiness checks.

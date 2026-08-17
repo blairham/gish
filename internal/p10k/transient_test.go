@@ -25,6 +25,11 @@ func TestTransientAlways(t *testing.T) {
 	if text != "❯" {
 		t.Errorf("transient prompt = %q, want just the prompt character", text)
 	}
+	// The accepted line keeps the gap, so scrollback reads the same as
+	// the live prompt did rather than "❯command".
+	if !strings.HasSuffix(plain(got), "❯ ") {
+		t.Errorf("transient prompt = %q, want a trailing space", plain(got))
+	}
 	for _, gone := range []string{"gish", "main", "14:05"} {
 		if strings.Contains(plain(got), gone) {
 			t.Errorf("transient prompt still carries %q: %q", gone, plain(got))
