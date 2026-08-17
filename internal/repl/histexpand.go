@@ -57,7 +57,14 @@ func expandHistory(line string, last func(prefix string, n int) (string, bool)) 
 		}
 		b.WriteRune(r)
 	}
-	return b.String(), changed, nil
+	if !changed {
+		// Return the line itself, not the rune-rebuilt copy: rebuilding
+		// converts invalid UTF-8 bytes to U+FFFD, so a pasted line in a
+		// legacy encoding with a stray `!` would be silently mangled by
+		// a pass that expanded nothing. Found by FuzzExpandHistory.
+		return line, false, nil
+	}
+	return b.String(), true, nil
 }
 
 // expandEvent handles one `!` designator starting at runes[0]. A zero
@@ -187,6 +194,14 @@ func atoiRunes(rs []rune) int {
 	n := 0
 	for _, r := range rs {
 		n = n*10 + int(r-'0')
+		if n > 1<<30 {
+			// A word index this large is only ever a typo, but letting
+			// the arithmetic overflow turned it into a negative slice
+			// index: `!:` plus twenty digits panicked the shell. Clamp
+			// so the range check answers "event not found" instead.
+			// Found by FuzzExpandHistory.
+			return 1 << 30
+		}
 	}
 	return n
 }
