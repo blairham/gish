@@ -4,230 +4,36 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync/atomic"
-	"syscall"
 	"testing"
-	"time"
-
-	"github.com/creack/pty"
 )
 
 // The success bar for output capture (#99 stage 2), as docs/blocks.md
 // states it: with capture on, programs must behave exactly as they do
 // today.
 //
-// This exists because unit tests could not catch the bug it is guarding
+// This exists because unit tests could not catch the bug it guards
 // against. The capture session's own tests all passed while the feature
 // was unusable — a pager under capture painted a screen, never entered
 // raw mode, and swallowed the keystrokes meant for it. Only a real
-// full-screen program through a real pty showed that *which*
-// descriptors get substituted is what decides whether this works.
-
-// e2eBudget is generous on purpose: these drive a real shell through a
-// real pty, and a busy CI runner redraws the prompt for every echoed
-// keystroke. The tests are not measuring speed, so a tight bound only
-// buys flakes.
-const e2eBudget = 60 * time.Second
-
-// promptEnd is the OSC 133;B mark: written exactly when the prompt ends
-// and input begins (#99 stage 1).
+// full-screen program through a real pty showed that *which* descriptors
+// get substituted is what decides whether this works.
 //
-// This is matched on the *raw* buffer rather than the stripped text,
-// and it replaces matching on the prompt's own characters. A CI runner
-// turned out to have a 73-character hostname, which pushed the naked
-// prompt past the pty's width — the wrap landed between the "%" and its
-// trailing space, so `" % "` never appeared contiguously and every test
-// here failed on a machine where the shell was working perfectly.
-//
-// A semantic mark cannot wrap: it is zero-width and atomic. startup_test
-// already learned this and matches the same way.
-const promptEnd = "\x1b]133;B"
+// The pty plumbing lives in ptyharness_test.go; everything here is the
+// behavior being asserted.
 
-type shellPTY struct {
-	t   *testing.T
-	f   *os.File
-	buf *bytes.Buffer
-	ch  <-chan []byte
-	cmd *exec.Cmd
-	raw *int64 // bytes read from the pty, before any ANSI stripping
-}
-
-// diagnose describes why a wait failed, because "got:" followed by
-// nothing is the least useful failure message available. It answers the
-// two questions that actually separate the causes: did the shell write
-// anything at all, and is it still alive?
-func (s *shellPTY) diagnose() string {
-	raw := atomic.LoadInt64(s.raw)
-	state := "still running"
-	if p := s.cmd.ProcessState; p != nil {
-		state = "exited: " + p.String()
-	} else if s.cmd.Process != nil {
-		// Signal 0 asks the kernel whether the pid is still there.
-		if err := s.cmd.Process.Signal(syscall.Signal(0)); err != nil {
-			state = "process gone: " + err.Error()
-		}
-	}
-	return fmt.Sprintf("[%d raw bytes read, %s]", raw, state)
-}
-
-func startShell(t *testing.T, dir string) *shellPTY {
+// startCaptureShell is a session with capture already on. Setting it in
+// the environment rather than typing `config blocks on` saves seventeen
+// keystrokes — each one a full prompt redraw, ~0.3s on a loaded runner —
+// and config_test already proves the command works.
+func startCaptureShell(t *testing.T, dir string) *ptySession {
 	t.Helper()
-	bin := buildGish(t)
-	base := t.TempDir()
-	if dir == "" {
-		dir = base
-	}
-	cmd := exec.Command(bin)
-	cmd.Env = []string{
-		"HOME=" + base,
-		"XDG_CONFIG_HOME=" + filepath.Join(base, "config"),
-		"XDG_DATA_HOME=" + filepath.Join(base, "data"),
-		"XDG_STATE_HOME=" + filepath.Join(base, "state"),
-		"TERM=xterm-256color",
-		"PATH=" + os.Getenv("PATH"),
-		// Capture on from the start rather than typed in. Every
-		// keystroke costs a full prompt redraw, and on a loaded runner
-		// that is ~0.3s each — typing `config blocks on` was a third of
-		// each test's budget spent proving something config_test already
-		// proves.
-		"GISH_BLOCKS=on",
-	}
-	cmd.Dir = dir
-	// Few rows so a pager actually pages; wide columns so a long CI
-	// hostname cannot wrap the prompt out of recognition.
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 15, Cols: 200})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		f.Close()
-		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
-	})
-
-	var raw int64
-	ch := make(chan []byte, 64)
-	go func() {
-		defer close(ch)
-		for {
-			chunk := make([]byte, 8192)
-			n, err := f.Read(chunk)
-			if n > 0 {
-				atomic.AddInt64(&raw, int64(n))
-				ch <- chunk[:n]
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	return &shellPTY{t: t, f: f, buf: &bytes.Buffer{}, ch: ch, cmd: cmd, raw: &raw}
+	// Few rows so a pager actually pages; the harness default width
+	// keeps a long CI hostname from wrapping the prompt.
+	return startPTY(t, ptyOptions{Dir: dir, Rows: 15, Env: []string{"GISH_BLOCKS=on"}})
 }
-
-// waitForPrompt waits for a prompt to finish rendering, using the
-// semantic mark rather than the prompt's visible text.
-func (s *shellPTY) waitForPrompt() {
-	s.t.Helper()
-	deadline := time.After(e2eBudget)
-	for {
-		if bytes.Contains(s.buf.Bytes(), []byte(promptEnd)) {
-			return
-		}
-		select {
-		case chunk, ok := <-s.ch:
-			if !ok {
-				s.t.Fatalf("shell exited before a prompt %s", s.diagnose())
-			}
-			s.buf.Write(chunk)
-		case <-deadline:
-			s.t.Fatalf("no prompt within %s %s; got:\n%q", e2eBudget, s.diagnose(), s.buf.String())
-		}
-	}
-}
-
-func (s *shellPTY) waitFor(want string) string {
-	s.t.Helper()
-	deadline := time.After(e2eBudget)
-	for {
-		plain := string(ansiRe.ReplaceAll(s.buf.Bytes(), nil))
-		if bytes.Contains([]byte(plain), []byte(want)) {
-			return plain
-		}
-		select {
-		case chunk, ok := <-s.ch:
-			if !ok {
-				s.t.Fatalf("shell exited before %q %s; got:\n%s", want, s.diagnose(), plain)
-			}
-			s.buf.Write(chunk)
-		case <-deadline:
-			s.t.Fatalf("did not see %q within %s %s; got:\n%s", want, e2eBudget, s.diagnose(), plain)
-		}
-	}
-}
-
-func (s *shellPTY) send(keys string) {
-	s.t.Helper()
-	if _, err := s.f.WriteString(keys); err != nil {
-		s.t.Fatal(err)
-	}
-}
-
-// sendUntil repeats a keystroke until want appears.
-//
-// A full-screen program's status line reaching the screen does not mean
-// it is reading keys yet: entering raw mode discards whatever is already
-// queued, so a key sent in that window is simply lost. There is no
-// portable signal for "the pager is now listening", and how wide the
-// window is depends on the machine — this passed on macOS and on one
-// Linux runner before failing on another.
-//
-// Repeating is the honest fix. The keystroke is idempotent for the
-// programs used here (an extra `q` at a shell prompt is a typo the next
-// Enter clears, and the assertion is on the marker, not the screen).
-func (s *shellPTY) sendUntil(keys, want string) {
-	s.t.Helper()
-	deadline := time.After(30 * time.Second)
-
-	send := func() bool {
-		_, err := s.f.WriteString(keys)
-		return err == nil
-	}
-	alive := send()
-	quiet := time.After(retryQuiet)
-	for {
-		// Raw, not stripped: callers may wait on a semantic mark, which
-		// stripping would remove.
-		if bytes.Contains(s.buf.Bytes(), []byte(want)) ||
-			bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
-			return
-		}
-		select {
-		case chunk, ok := <-s.ch:
-			if !ok {
-				s.t.Fatalf("shell exited before %q %s", want, s.diagnose())
-			}
-			s.buf.Write(chunk)
-		case <-quiet:
-			// Resend only once the terminal is quiet; resending per
-			// chunk sends a key per burst of output.
-			if alive {
-				alive = send()
-			}
-			quiet = time.After(retryQuiet)
-		case <-deadline:
-			s.t.Fatalf("did not see %q within 30s; got:\n%s",
-				want, string(ansiRe.ReplaceAll(s.buf.Bytes(), nil)))
-		}
-	}
-}
-
-// probe runs a command whose output cannot be confused with the echo of
-// the command itself — the "res" prefix only ever appears in output.
-func (s *shellPTY) probe(name string) { s.send("printf 'res%s\\n' " + name + "\r") }
 
 // A pager must still be a pager: it takes over the screen, responds to
 // its own keys, and hands the shell back on quit. This is the exact
@@ -248,7 +54,7 @@ func TestCapturedPagerStillWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := startShell(t, dir)
+	s := startCaptureShell(t, dir)
 	s.waitForPrompt()
 	s.send("less big.txt\r")
 	s.waitFor("big.txt") // the pager's status line
@@ -296,7 +102,7 @@ func TestCapturedGitStillPages(t *testing.T) {
 		}
 	}
 
-	s := startShell(t, dir)
+	s := startCaptureShell(t, dir)
 	s.waitForPrompt()
 	s.send("git log --oneline\r")
 	s.waitFor("commit-number") // paged output on screen
@@ -318,7 +124,7 @@ func TestCaptureLeavesRedirectionAlone(t *testing.T) {
 		t.Skip("pty e2e skipped in -short")
 	}
 	dir := t.TempDir()
-	s := startShell(t, dir)
+	s := startCaptureShell(t, dir)
 	s.waitForPrompt()
 	s.send("printf 'hello\\n' > out.txt\r")
 	s.probe("WROTE")
