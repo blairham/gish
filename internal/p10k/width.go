@@ -50,12 +50,17 @@ func skipEscape(s string) (string, bool) {
 			}
 		}
 		return "", true // unterminated: nothing measurable remains
-	case ']': // OSC: terminated by BEL or ST
-		if i := strings.IndexByte(s, '\a'); i >= 0 {
-			return s[i+1:], true
-		}
-		if i := strings.Index(s, "\x1b\\"); i >= 0 {
-			return s[i+2:], true
+	case ']': // OSC: terminated by BEL or ST, whichever comes first
+		// Scanning for each terminator separately and preferring BEL
+		// would let a BEL anywhere later in the string win over this
+		// sequence's own ST, swallowing the text between them.
+		for i := 2; i < len(s); i++ {
+			if s[i] == '\a' {
+				return s[i+1:], true
+			}
+			if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+				return s[i+2:], true
+			}
 		}
 		return "", true
 	default: // two-byte escape
