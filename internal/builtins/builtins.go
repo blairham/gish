@@ -95,6 +95,11 @@ var interpUnsupported = []string{
 	"bg", "fc", "fg", "jobs", "kill", "newgrp", "times", "umask",
 }
 
+// Note: fc, kill, times and umask stay listed above even though gish
+// implements them. listBuiltins supersedes an entry once a native
+// builtin claims the name, so the listing describes the session rather
+// than the build — the same rule jobs/fg/bg follow.
+
 func listBuiltins(_ context.Context, hc interp.HandlerContext, _ []string) error {
 	native := Native()
 	// A registered gish builtin (e.g. jobs/fg/bg under job control)
