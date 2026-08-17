@@ -135,10 +135,25 @@ eval "$(starship init bash)"`,
 		Name:       "fzf",
 		Binary:     "fzf",
 		Provenance: "its key bindings are `bind -x`; the most-installed of the set",
-		Init:       `eval "$(fzf --bash 2>/dev/null || fzf --bash)"`,
-		Type:       "bind -X",
-		Want:       `\C-t`,
-		Asserts:    "fzf's Ctrl-T widget is bound",
+		// Two ways in, because distributions are two years behind
+		// upstream and both are what real rc files contain. `fzf --bash`
+		// arrived in 0.48; Ubuntu 24.04 ships 0.44.1, whose integration
+		// is the packaged key-bindings file — and CI found that by
+		// answering "unknown option: --bash". A matrix that only tests
+		// the newest release is not testing what users run.
+		Init: `if fzf --bash >/dev/null 2>&1; then
+  eval "$(fzf --bash)"
+else
+  for f in /usr/share/doc/fzf/examples/key-bindings.bash \
+           /usr/share/fzf/key-bindings.bash \
+           /opt/homebrew/opt/fzf/shell/key-bindings.bash \
+           /usr/local/opt/fzf/shell/key-bindings.bash; do
+    [ -f "$f" ] && . "$f" && break
+  done
+fi`,
+		Type:    "bind -X",
+		Want:    `\C-t`,
+		Asserts: "fzf's Ctrl-T widget is bound, from --bash or the packaged key-bindings file",
 	},
 }
 

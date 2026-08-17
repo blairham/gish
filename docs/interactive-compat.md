@@ -85,7 +85,7 @@ prompt renders, the widget binds, the environment changes on cd.
 | atuin | — not installed here | atuin's Ctrl-R binding is installed |
 | direnv | ✅ | the .envrc applies on cd, through direnv's own hook |
 | mise | — not installed here | mise activates and stays usable |
-| fzf | ✅ | fzf's Ctrl-T widget is bound |
+| fzf | ✅ | fzf's Ctrl-T widget is bound, from --bash or the packaged key-bindings file |
 
 ## Honesty notes
 
