@@ -1,6 +1,7 @@
 package p10k
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,10 +14,25 @@ import (
 // autofs mount, so stat'ing a non-existent file under it wakes the
 // automounter and costs ~24ms — which made the segments that search up
 // the tree look 1000x slower than they are.
+// fixtureHome and fixtureCwd are built with filepath so the fixture uses
+// the separator the code under test actually looks for.
+//
+// Hard-coded "/fixture/you" paths made the dir segment look broken on
+// Windows the first time internal/p10k ran there: tildify matches on
+// os.PathSeparator, correctly, so a backslash-separated home never
+// prefixes a slash-separated cwd and the prompt showed an absolute path.
+// The product was right and the fixture was unix-only.
+var (
+	fixtureHome = filepath.Join(string(filepath.Separator), "fixture", "you")
+	fixtureCwd  = filepath.Join(fixtureHome, "dev", "gish")
+	// The abbreviated form the prompt should show, in the same spelling.
+	fixtureTilde = "~" + string(filepath.Separator) + filepath.Join("dev", "gish")
+)
+
 func sampleContext() *Context {
 	return &Context{
-		Cwd:      "/fixture/you/dev/gish",
-		Home:     "/fixture/you",
+		Cwd:      fixtureCwd,
+		Home:     fixtureHome,
 		Username: "you",
 		Hostname: "host",
 		ExitCode: 0,
@@ -24,7 +40,7 @@ func sampleContext() *Context {
 		Width:    100,
 		Now:      time.Date(2026, 8, 16, 14, 5, 6, 0, time.UTC),
 		Git: &GitStatus{
-			Dir: "/fixture/you/dev/gish", Branch: "main",
+			Dir: fixtureCwd, Branch: "main",
 			Ahead: 2, Modified: 3, Untracked: 1,
 		},
 		Getenv: func(string) string { return "" },
@@ -57,7 +73,7 @@ func TestRenderLean(t *testing.T) {
 	if lines[0] != "" {
 		t.Errorf("PROMPT_ADD_NEWLINE should put a blank line first, got %q", lines[0])
 	}
-	if want := "~/dev/gish main"; !strings.HasPrefix(lines[1], want) {
+	if want := fixtureTilde + " main"; !strings.HasPrefix(lines[1], want) {
 		t.Errorf("first line = %q, want prefix %q", lines[1], want)
 	}
 	for _, want := range []string{"⇡2", "!3", "?1"} {
