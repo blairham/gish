@@ -314,5 +314,5 @@ func looksLikeError(line string) bool {
 // payload with [^\a\x1b] matters as much as accepting ST — an OSC that
 // scanned to a BEL arriving thousands of bytes later would consume the
 // interesting part of the log along with it, which is the same
-// over-consumption fixed in internal/p10k's skipEscape.
+// over-consumption fixed in internal/promptengine's skipEscape.
 var ansiEscapes = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\a\x1b]*(?:\a|\x1b\\)|\x1b[=><]`)

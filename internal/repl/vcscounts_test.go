@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/p10k"
+	"github.com/blairham/gish/internal/promptengine"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) {
@@ -43,7 +43,7 @@ func TestMergeVCSCountsFillsTheSegment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	g := &p10k.GitStatus{Dir: dir, Branch: "main"}
+	g := &promptengine.GitStatus{Dir: dir, Branch: "main"}
 
 	// The first call starts the scan and returns immediately: the prompt
 	// never waits on git. That is the behavior, not a limitation, so it
@@ -56,7 +56,7 @@ func TestMergeVCSCountsFillsTheSegment(t *testing.T) {
 	// The counts land once the background scan finishes.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		g = &p10k.GitStatus{Dir: dir, Branch: "main"}
+		g = &promptengine.GitStatus{Dir: dir, Branch: "main"}
 		mergeVCSCounts(g)
 		if g.Modified > 0 {
 			return
@@ -71,7 +71,7 @@ func TestMergeVCSCountsFillsTheSegment(t *testing.T) {
 func TestMergeVCSCountsIgnoresNonRepos(t *testing.T) {
 	t.Parallel()
 
-	g := &p10k.GitStatus{}
+	g := &promptengine.GitStatus{}
 	mergeVCSCounts(g) // no Dir: nothing to do, and no panic
 	if g.Modified != 0 || g.Stashed != 0 {
 		t.Errorf("counts invented for an empty status: %+v", g)

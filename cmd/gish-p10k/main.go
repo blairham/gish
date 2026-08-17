@@ -10,7 +10,7 @@
 // independently of the gish release it runs against, and a working
 // example for anyone writing a ThemeProvider of their own.
 //
-// The engine is shared with the in-process path (internal/p10k), so the
+// The engine is shared with the in-process path (internal/promptengine), so the
 // two cannot drift: one implementation, two front doors.
 package main
 
@@ -21,8 +21,8 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
-	"github.com/blairham/gish/internal/p10k"
 	"github.com/blairham/gish/internal/pluginhost"
+	"github.com/blairham/gish/internal/promptengine"
 	"github.com/blairham/gish/pkg/pluginapi"
 )
 
@@ -59,8 +59,8 @@ type theme struct {
 // in-process engine. Serving "p10k-rainbow" and friends is the honest
 // spelling anyway — it says which implementation you are getting.
 func (theme) Themes(context.Context, *pluginapi.ThemesRequest) (*pluginapi.ThemesResponse, error) {
-	descriptors := make([]*pluginapi.ThemeDescriptor, 0, len(p10k.Presets()))
-	for _, name := range p10k.Presets() {
+	descriptors := make([]*pluginapi.ThemeDescriptor, 0, len(promptengine.Presets()))
+	for _, name := range promptengine.Presets() {
 		descriptors = append(descriptors, &pluginapi.ThemeDescriptor{
 			Name:        "p10k-" + name,
 			Description: "powerlevel10k " + name + " preset, rendered natively",
@@ -74,7 +74,7 @@ func (theme) RenderPrompt(
 	_ context.Context, req *pluginapi.RenderPromptRequest,
 ) (*pluginapi.RenderPromptResponse, error) {
 	cfg := configFor(req.GetTheme())
-	out := p10k.Render(cfg, promptContext(req.GetContext()))
+	out := promptengine.Render(cfg, promptContext(req.GetContext()))
 	return &pluginapi.RenderPromptResponse{
 		Prompt:     out.Prompt,
 		ContPrompt: out.Cont,
@@ -85,12 +85,12 @@ func (theme) RenderPrompt(
 // configFor resolves a theme name to its configuration. The user's own
 // native config layers on top, so a prompt served over the socket is the
 // same prompt the in-process path would draw.
-func configFor(name string) *p10k.Config {
-	preset := p10k.Preset(trimThemePrefix(name))
+func configFor(name string) *promptengine.Config {
+	preset := promptengine.Preset(trimThemePrefix(name))
 	if preset == nil {
-		preset = p10k.Preset(p10k.DefaultPreset)
+		preset = promptengine.Preset(promptengine.DefaultPreset)
 	}
-	if file := p10k.LoadNativeConfig(); file != nil {
+	if file := promptengine.LoadNativeConfig(); file != nil {
 		preset = preset.Clone()
 		preset.Merge(file)
 	}
@@ -114,11 +114,11 @@ func trimThemePrefix(name string) string {
 // launching shell's at plugin start. Anything set after that is not
 // visible here. That is a real difference from the in-process path, and
 // the reason the in-process path is the default.
-func promptContext(c *pluginapi.PromptContext) *p10k.Context {
+func promptContext(c *pluginapi.PromptContext) *promptengine.Context {
 	if c == nil {
-		return &p10k.Context{Getenv: os.Getenv}
+		return &promptengine.Context{Getenv: os.Getenv}
 	}
-	ctx := &p10k.Context{
+	ctx := &promptengine.Context{
 		Cwd:      c.GetCwd(),
 		Home:     c.GetHome(),
 		Username: c.GetUsername(),
@@ -131,7 +131,7 @@ func promptContext(c *pluginapi.PromptContext) *p10k.Context {
 		Root:     os.Geteuid() == 0,
 		Getenv:   os.Getenv,
 	}
-	ctx.Git = p10k.HeadStatus(ctx.Cwd)
+	ctx.Git = promptengine.HeadStatus(ctx.Cwd)
 	return ctx
 }
 

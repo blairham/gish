@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/blairham/gish/internal/gitstatus"
-	"github.com/blairham/gish/internal/p10k"
+	"github.com/blairham/gish/internal/promptengine"
 )
 
 // The working-tree counts behind the p10k vcs segment (#52).
 //
-// internal/p10k splits git status in two on purpose: HeadStatus reads
+// internal/promptengine splits git status in two on purpose: HeadStatus reads
 // the branch from one small file and must never be late, while the
 // counts need a walk of the index against the working tree and arrive
 // from "whoever owns the scan". Nobody did — MergeCounts had no caller —
@@ -48,7 +48,7 @@ type countsEntry struct {
 // first prompt in a repository shows a branch and no counters rather
 // than zeros — zeros would claim the tree is clean, and a wrong "clean"
 // is worse than an absent counter.
-func mergeVCSCounts(g *p10k.GitStatus) {
+func mergeVCSCounts(g *promptengine.GitStatus) {
 	if g == nil || g.Dir == "" {
 		return
 	}
@@ -67,7 +67,7 @@ func mergeVCSCounts(g *p10k.GitStatus) {
 	if !have {
 		return
 	}
-	g.MergeCounts(p10k.GitStatus{
+	g.MergeCounts(promptengine.GitStatus{
 		Dir:        g.Dir,
 		Ahead:      counts.Ahead,
 		Behind:     counts.Behind,

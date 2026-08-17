@@ -11,7 +11,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/p10k"
+	"github.com/blairham/gish/internal/promptengine"
 	"github.com/blairham/gish/internal/term"
 )
 
@@ -78,16 +78,16 @@ func runPrompt(hc interp.HandlerContext, name string, args []string) []string {
 		return []string{"true"}
 
 	case args[0] == "list":
-		fmt.Fprintf(hc.Stdout, "presets:  %s\n", strings.Join(p10k.Presets(), " "))
-		fmt.Fprintf(hc.Stdout, "segments: %s\n", strings.Join(p10k.Segments(), " "))
+		fmt.Fprintf(hc.Stdout, "presets:  %s\n", strings.Join(promptengine.Presets(), " "))
+		fmt.Fprintf(hc.Stdout, "segments: %s\n", strings.Join(promptengine.Segments(), " "))
 		return []string{"true"}
 
 	case args[0] == "preset" && len(args) == 2:
-		cfg := p10k.Preset(args[1])
+		cfg := promptengine.Preset(args[1])
 		if cfg == nil {
-			return fail(fmt.Errorf("no preset %q — try one of: %s", args[1], strings.Join(p10k.Presets(), " ")))
+			return fail(fmt.Errorf("no preset %q — try one of: %s", args[1], strings.Join(promptengine.Presets(), " ")))
 		}
-		path, err := p10k.SaveNativeConfig(cfg)
+		path, err := promptengine.SaveNativeConfig(cfg)
 		if err != nil {
 			return fail(err)
 		}
@@ -110,7 +110,7 @@ func showPrompt(hc interp.HandlerContext) {
 	cfg := p10kConfigFromEnv(hc.Env)
 	fmt.Fprintf(hc.Stdout, "theme      %s\n", hc.Env.Get("GISH_THEME").String())
 	fmt.Fprintf(hc.Stdout, "preset     %s\n", p10kPresetName(hc))
-	if path, err := p10k.ConfigPath(); err == nil {
+	if path, err := promptengine.ConfigPath(); err == nil {
 		state := "not written yet"
 		if _, statErr := os.Stat(path); statErr == nil {
 			state = "in use"
@@ -133,7 +133,7 @@ func showPrompt(hc interp.HandlerContext) {
 	var missing []string
 	for _, side := range []string{"LEFT_PROMPT_ELEMENTS", "RIGHT_PROMPT_ELEMENTS"} {
 		for _, e := range cfg.List(side) {
-			if !p10k.Known(e) && !slices.Contains(missing, e) {
+			if !promptengine.Known(e) && !slices.Contains(missing, e) {
 				missing = append(missing, e)
 			}
 		}
@@ -159,7 +159,7 @@ func p10kPresetName(hc interp.HandlerContext) string {
 	if v := hc.Env.Get("GISH_P10K_PRESET").String(); v != "" {
 		return v
 	}
-	return p10k.DefaultPreset
+	return promptengine.DefaultPreset
 }
 
 // importP10k takes the settings out of a .p10k.zsh, once. The name is
@@ -169,7 +169,7 @@ func importP10k(hc interp.HandlerContext, name string, args []string) []string {
 	path := ""
 	switch len(args) {
 	case 0:
-		p, err := p10k.DefaultZshConfigPath()
+		p, err := promptengine.DefaultZshConfigPath()
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 			return []string{"false"}
@@ -182,7 +182,7 @@ func importP10k(hc interp.HandlerContext, name string, args []string) []string {
 		return []string{"false"}
 	}
 
-	imported, err := p10k.ImportZshConfig(path)
+	imported, err := promptengine.ImportZshConfig(path)
 	if err != nil {
 		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 		return []string{"false"}
@@ -190,9 +190,9 @@ func importP10k(hc interp.HandlerContext, name string, args []string) []string {
 
 	// The preset underneath supplies anything the file did not mention,
 	// so an import never leaves a half-configured prompt.
-	cfg := p10k.Preset(p10k.DefaultPreset)
+	cfg := promptengine.Preset(promptengine.DefaultPreset)
 	cfg.Merge(imported)
-	saved, err := p10k.SaveNativeConfig(cfg)
+	saved, err := promptengine.SaveNativeConfig(cfg)
 	if err != nil {
 		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 		return []string{"false"}
@@ -252,9 +252,9 @@ func configurePrompt(hc interp.HandlerContext, name string) []string {
 	if !ok {
 		return p10kAbort(hc)
 	}
-	cfg := p10k.Preset(preset)
+	cfg := promptengine.Preset(preset)
 	if cfg == nil {
-		cfg = p10k.Preset(p10k.DefaultPreset)
+		cfg = promptengine.Preset(promptengine.DefaultPreset)
 	}
 
 	// Glyph support is a font question. Show the glyphs and let the
@@ -283,7 +283,7 @@ func configurePrompt(hc interp.HandlerContext, name string) []string {
 
 	// Show the result rather than describing it.
 	fmt.Fprintln(hc.Stdout, "\npreview:")
-	fmt.Fprintln(hc.Stdout, p10k.Render(cfg, p10kPreviewContext()).Prompt)
+	fmt.Fprintln(hc.Stdout, promptengine.Render(cfg, p10kPreviewContext()).Prompt)
 	fmt.Fprintln(hc.Stdout)
 
 	confirm, ok := choose("Save this?", []chooseOption{
@@ -294,7 +294,7 @@ func configurePrompt(hc interp.HandlerContext, name string) []string {
 		return p10kAbort(hc)
 	}
 
-	path, err := p10k.SaveNativeConfig(cfg)
+	path, err := promptengine.SaveNativeConfig(cfg)
 	if err != nil {
 		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
 		return []string{"false"}
@@ -329,7 +329,7 @@ func p10kQuestions() []p10kQuestion {
 }
 
 // instantPromptNote explains the one upstream feature this port does not
-// implement, for `p10k show` to print when a config asks for it.
+// implement, for `prompt show` to print when a config asks for it.
 //
 // Upstream's instant prompt paints a cached prompt at startup because
 // the real one is not ready for tens of milliseconds — zsh has to load
@@ -355,7 +355,7 @@ const instantPromptNote = "INSTANT_PROMPT is accepted but not needed: " +
 // characters — which are layout, not icons, and are not in the table.
 // The per-segment icon overrides this used to write are gone: they were
 // the workaround for MODE selecting nothing.
-func asciiOnly(cfg *p10k.Config) {
+func asciiOnly(cfg *promptengine.Config) {
 	cfg.Set("MODE", "ascii")
 	for _, side := range []string{"LEFT", "RIGHT"} {
 		cfg.Set(side+"_SEGMENT_SEPARATOR", "")
@@ -383,7 +383,7 @@ func presetOptions() []chooseOption {
 		"robbyrussell": "the oh-my-zsh default, one line, unchanged",
 	}
 	opts := make([]chooseOption, 0, len(described))
-	for _, name := range p10k.Presets() {
+	for _, name := range promptengine.Presets() {
 		opts = append(opts, chooseOption{name, name + " — " + described[name]})
 	}
 	return opts
@@ -391,9 +391,9 @@ func presetOptions() []chooseOption {
 
 // p10kPreviewContext is the canned state the preview renders: realistic
 // enough to judge a layout, and touching nothing real.
-func p10kPreviewContext() *p10k.Context {
+func p10kPreviewContext() *promptengine.Context {
 	home, _ := os.UserHomeDir()
-	return &p10k.Context{
+	return &promptengine.Context{
 		Cwd:      home + "/dev/gish",
 		Home:     home,
 		Username: "you",
@@ -403,7 +403,7 @@ func p10kPreviewContext() *p10k.Context {
 		Jobs:     1,
 		Width:    previewWidth(),
 		Now:      time.Now(),
-		Git: &p10k.GitStatus{
+		Git: &promptengine.GitStatus{
 			Dir: home + "/dev/gish", Branch: "main",
 			Ahead: 2, Modified: 3, Untracked: 1,
 		},
