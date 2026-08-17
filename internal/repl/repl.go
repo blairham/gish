@@ -207,6 +207,9 @@ func runEditor(ctx context.Context, login bool) error {
 	// Alias expansion goes on before anything is sourced, so aliases
 	// defined in a profile or rc work in the session they configure.
 	enableAliases(ctx, runner)
+	// Color-friendly defaults before anything is sourced, so an rc that
+	// disagrees simply arrives later and wins (#54).
+	applyColorDefaults(ctx, runner)
 	// Login shells source profile files first (#41), then the rc file
 	// runs in the session runner so functions, vars, and cd persist.
 	if login {

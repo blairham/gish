@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blairham/gish/internal/gitstatus"
 )
 
 func TestParseStatus(t *testing.T) {
@@ -24,8 +26,10 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.go
 ? new.txt
 ? other.txt
 `)
-	s := parseStatus(out)
-	want := gitStatus{branch: "main", ahead: 2, behind: 1, staged: 2, dirty: 3, untracked: 2}
+	s := gitstatus.Parse(out)
+	// Conflicted counts as dirty too, so the unmerged entry lands in
+	// both columns.
+	want := gitStatus{Branch: "main", Ahead: 2, Behind: 1, Staged: 2, Dirty: 3, Untracked: 2, Conflicted: 1}
 	if s != want {
 		t.Errorf("parseStatus = %+v, want %+v", s, want)
 	}
@@ -38,13 +42,16 @@ func TestStatusText(t *testing.T) {
 		s    gitStatus
 		want string
 	}{
-		{gitStatus{branch: "main"}, "main"},
-		{gitStatus{branch: "main", ahead: 1, dirty: 2}, "main ↑1 !2"},
-		{gitStatus{branch: "dev", behind: 3, staged: 1, untracked: 4}, "dev ↓3 +1 ?4"},
+		{gitStatus{Branch: "main"}, "main"},
+		{gitStatus{Branch: "main", Ahead: 1, Dirty: 2}, "main ↑1 !2"},
+		{gitStatus{Branch: "dev", Behind: 3, Staged: 1, Untracked: 4}, "dev ↓3 +1 ?4"},
+		// Stashes were invisible before the scan was shared (#52):
+		// porcelain v2 has no stash field at all.
+		{gitStatus{Branch: "main", Stashed: 2}, "main *2"},
 	}
 	for _, tt := range tests {
-		if got := tt.s.text(); got != tt.want {
-			t.Errorf("text(%+v) = %q, want %q", tt.s, got, tt.want)
+		if got := renderStatus(tt.s); got != tt.want {
+			t.Errorf("renderStatus(%+v) = %q, want %q", tt.s, got, tt.want)
 		}
 	}
 }
@@ -80,6 +87,10 @@ func TestRepoCacheRendersBranch(t *testing.T) {
 
 	dir := initRepo(t)
 	cache := newRepoCache()
+	// A background scan must not outlive the temp directory: git
+	// writes into .git, and cleanup then fails with "directory not
+	// empty" — on the slower runner only.
+	defer cache.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	got := cache.render(ctx, dir)
@@ -93,6 +104,10 @@ func TestRepoCacheSeesNewUntrackedFile(t *testing.T) {
 
 	dir := initRepo(t)
 	cache := newRepoCache()
+	// A background scan must not outlive the temp directory: git
+	// writes into .git, and cleanup then fails with "directory not
+	// empty" — on the slower runner only.
+	defer cache.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if got := cache.render(ctx, dir); got != "trunk" {
@@ -120,6 +135,10 @@ func TestRepoCacheNonRepo(t *testing.T) {
 	t.Parallel()
 
 	cache := newRepoCache()
+	// A background scan must not outlive the temp directory: git
+	// writes into .git, and cleanup then fails with "directory not
+	// empty" — on the slower runner only.
+	defer cache.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if got := cache.render(ctx, t.TempDir()); got != "" {
