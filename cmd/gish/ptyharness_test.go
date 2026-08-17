@@ -40,6 +40,21 @@ const e2eBudget = 60 * time.Second
 // and out the other side.
 const retryQuiet = 750 * time.Millisecond
 
+// Waiting rule, learned three times over: a step must wait for
+// something printed *last* by the line it sent, and the next keystroke
+// must not go out before that arrives.
+//
+// Waiting on interesting-but-intermediate output returns while the line
+// is still finishing, so the following send lands during the prompt
+// redraw and is lost. That produced three separate CI-only failures —
+// `jobs` waited on "Stopped" and then sent `bg`; a command was sent and
+// then probed as a second line; a Ctrl-Z notice was treated as the end
+// of a line. All three passed locally and failed on a slower runner.
+//
+// In practice: end each command line with `printf "res%s\n" NAME` and
+// wait for that, or — where a keystroke cannot carry a marker, as with
+// Ctrl-Z and Ctrl-C — wait for the fresh prompt with waitForPrompt.
+//
 // promptEnd is the OSC 133;B mark, written exactly when the prompt ends
 // and input begins (#99 stage 1).
 //

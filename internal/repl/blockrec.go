@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/blairham/gish/internal/blocks"
+	"github.com/blairham/gish/internal/history"
 )
 
 // Recording a command's output alongside its history entry (#99 stage
@@ -17,6 +18,12 @@ import (
 // blockStore is the session's output store, nil when capture is off or
 // the directory is unusable.
 var blockStore *blocks.Store
+
+// historyStore is the session's history, shared with the builtins that
+// read it (fc, #60). Set once at startup like blockStore; nil where
+// there is no history, which is a degradation those builtins report
+// rather than crash on.
+var historyStore *history.Store
 
 // openBlockStore prepares output storage. A store that cannot be opened
 // disables block recording silently — capture still mirrors to the

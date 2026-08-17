@@ -7,19 +7,6 @@ import (
 	"time"
 )
 
-// The fixture paths are built with filepath.Join rather than written as
-// "/fixture/you/dev/gish" (#136). tildify compares against
-// os.PathSeparator, so a slash-separated literal never matches home on
-// Windows: the path renders unabbreviated and every assertion about
-// `~/dev/gish` fails — for a reason that is entirely the test's.
-var (
-	fixtureHome = filepath.Join(string(filepath.Separator), "fixture", "you")
-	fixtureRepo = filepath.Join(fixtureHome, "dev", "gish")
-	fixtureAway = filepath.Join(fixtureHome, "elsewhere")
-	// The tilde form as this platform renders it.
-	fixtureTilde = "~" + string(filepath.Separator) + filepath.Join("dev", "gish")
-)
-
 // sampleContext is a realistic prompt state: a git repo with a little of
 // everything outstanding, a slow last command, and a known clock.
 //
@@ -27,9 +14,24 @@ var (
 // autofs mount, so stat'ing a non-existent file under it wakes the
 // automounter and costs ~24ms — which made the segments that search up
 // the tree look 1000x slower than they are.
+// fixtureHome and fixtureCwd are built with filepath so the fixture uses
+// the separator the code under test actually looks for.
+//
+// Hard-coded "/fixture/you" paths made the dir segment look broken on
+// Windows the first time internal/p10k ran there: tildify matches on
+// os.PathSeparator, correctly, so a backslash-separated home never
+// prefixes a slash-separated cwd and the prompt showed an absolute path.
+// The product was right and the fixture was unix-only.
+var (
+	fixtureHome = filepath.Join(string(filepath.Separator), "fixture", "you")
+	fixtureCwd  = filepath.Join(fixtureHome, "dev", "gish")
+	// The abbreviated form the prompt should show, in the same spelling.
+	fixtureTilde = "~" + string(filepath.Separator) + filepath.Join("dev", "gish")
+)
+
 func sampleContext() *Context {
 	return &Context{
-		Cwd:      fixtureRepo,
+		Cwd:      fixtureCwd,
 		Home:     fixtureHome,
 		Username: "you",
 		Hostname: "host",
@@ -38,7 +40,7 @@ func sampleContext() *Context {
 		Width:    100,
 		Now:      time.Date(2026, 8, 16, 14, 5, 6, 0, time.UTC),
 		Git: &GitStatus{
-			Dir: fixtureRepo, Branch: "main",
+			Dir: fixtureCwd, Branch: "main",
 			Ahead: 2, Modified: 3, Untracked: 1,
 		},
 		Getenv: func(string) string { return "" },

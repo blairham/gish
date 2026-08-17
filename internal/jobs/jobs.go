@@ -27,6 +27,17 @@ func RewriteCall(_ context.Context, args []string) ([]string, error) {
 	return args, nil
 }
 
+// Range is the source span of one backgrounded statement, in byte
+// offsets into the command line about to run.
+//
+// Whether a command was written with & cannot be learned at the exec
+// seam by timing: the interpreter runs a background statement on its own
+// goroutine, and whether that goroutine arrives before or after the line
+// finishes is a race that resolves differently per platform. Position is
+// not a race — the shell has already parsed the line, and
+// interp.HandlerContext carries the position of every call it makes.
+type Range struct{ Start, End uint }
+
 // State is a job's lifecycle position.
 type State int
 

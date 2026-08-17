@@ -24,9 +24,10 @@ import (
 // script, so `kill somepid || echo nope` would take the shell down
 // rather than run the fallback.
 var nativeOverrides = map[string]string{
-	"kill":  "__gish_kill",
-	"umask": "__gish_umask",
-	"times": "__gish_times",
+	"kill":   "__gish_kill",
+	"umask":  "__gish_umask",
+	"times":  "__gish_times",
+	"newgrp": "__gish_newgrp",
 }
 
 // overrideCallHandler renames the overridden builtins. One map rather
@@ -51,4 +52,5 @@ func registerScriptOverrides() {
 	builtins.Register("__gish_kill", (&jobs.Table{}).Kill)
 	builtins.Register("__gish_umask", builtins.Umask)
 	builtins.Register("__gish_times", builtins.Times)
+	builtins.Register("__gish_newgrp", builtins.Newgrp)
 }

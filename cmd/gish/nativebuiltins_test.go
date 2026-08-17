@@ -91,6 +91,13 @@ var nativeCases = map[string]nativeCase{
 	// and differ every run — so the assertion is the shape bash prints:
 	// two lines of "0m0.000s 0m0.000s", shell then children.
 	"times": {script: "times", wantOut: "m0", wantExit: exitCode(0)},
+	// fc lists interactive history, and the script path records none, so
+	// the honest answer here is that there is nothing to list.
+	"fc": {script: "fc -l", wantOut: "no history", wantExit: exitCode(1)},
+	// newgrp is deliberately not provided (#61). It is still claimed, so
+	// the name explains itself and points at the system's own rather
+	// than shadowing it with "unsupported builtin".
+	"newgrp": {script: "newgrp", wantOut: "/usr/bin/newgrp", wantExit: exitCode(1)},
 
 	// clip is a pipeline sink; with no terminal it is a silent no-op by
 	// design, so the assertion is that it neither hangs nor complains.
@@ -141,8 +148,10 @@ func TestEveryNativeCaseIsCovered(t *testing.T) {
 	// of this list rather than going unnoticed.
 	intercepted := []string{
 		"blocks", "builtins", "clip", "config", "doctor", "explain",
-		"kill", "p10k", "parallel", "pick", "plugin", "plugins",
-		"sandbox", "sessions", "times", "tool", "trust", "umask", "z", "zi",
+		"fc", "kill", "newgrp", "p10k", "parallel", "pick", "plugin",
+		"plugins",
+		"sandbox", "sessions", "times", "tool", "trust", "umask", "z",
+		"zi",
 	}
 	for _, name := range intercepted {
 		if _, ok := nativeCases[name]; !ok {

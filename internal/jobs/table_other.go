@@ -20,8 +20,9 @@ type Table struct{}
 
 func NewTable(_ *os.File) *Table { return &Table{} }
 
-func (t *Table) BeginLine(string)        {}
-func (t *Table) EndLine() (Notice, bool) { return Notice{}, false }
+func (t *Table) BeginLine(string)            {}
+func (t *Table) SetBackgroundRanges([]Range) {}
+func (t *Table) EndLine() (Notice, bool)     { return Notice{}, false }
 
 func (t *Table) ExecMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return next
