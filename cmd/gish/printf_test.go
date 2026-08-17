@@ -122,7 +122,6 @@ var printfNumberCases = []string{
 	`printf '%d\n' notanum`,
 	`printf '%f\n' notanum`,
 	`printf '%x\n' zz`,
-	`printf '%d\n' ""`,
 	`printf '%d\n' " "`,
 
 	// A value still comes back: bash substitutes what it managed to
@@ -134,10 +133,8 @@ var printfNumberCases = []string{
 	// Leading whitespace is fine; only what follows the digits is not.
 	`printf '%d\n' " 42"`,
 
-	// C's integer grammar, not Go's: base-0 ParseInt would read these
-	// as 5 and 1000, which would silently compute different numbers
-	// than bash for the same script.
-	`printf '%d\n' 0b101`,
+	// C's integer grammar, not Go's: base-0 ParseInt would read 1_000
+	// as 1000, silently computing a different number than bash.
 	`printf '%d\n' 1_000`,
 	`printf '%d\n' 0x10`,
 	`printf '%d\n' 010`,
@@ -149,19 +146,7 @@ var printfNumberCases = []string{
 	`printf '%d\n' "'ab"`,
 	`printf '%f\n' "'a"`,
 
-	// Out of range is its own message, and clamps.
-	`printf '%d\n' 99999999999999999999999`,
-	`printf '%d\n' -99999999999999999999`,
-
-	// Non-finite values are spelled the C way, not the Go way: `inf`
-	// rather than `+Inf`, uppercased for an uppercase verb, width
-	// applied and precision ignored.
-	`printf '%f\n' 1e400`,
-	`printf '%f\n' -1e400`,
-	`printf '%F\n' 1e400`,
-	`printf '%e\n' 1e400`,
-	`printf '%10f|\n' 1e400`,
-	`printf '%.2f\n' 1e400`,
+	// inf and nan are ordinary parsable input, not complaints.
 	`printf '%f\n' nan`,
 	`printf '%f\n' inf`,
 
@@ -180,6 +165,36 @@ var printfNumberCases = []string{
 	// stored and the status is still 1.
 	`printf -v x '%d' notanum; echo "rc=$? x=[$x]"`,
 }
+
+// Deliberately absent from the list above, because bash does not agree
+// with itself about them across platforms. Each was measured on macOS
+// bash 5.3 (BSD libc), Ubuntu bash 5.2.21 (glibc) and Alpine bash 5.2/5.3
+// (musl) before being excluded; the cases that *are* listed came back
+// byte-identical on all of them.
+//
+//   printf '%d' ""        bash 5.2 is silent and exits 0; 5.3 complains
+//                         and exits 1. A version change, not a libc one
+//                         (musl 5.2 and 5.3 differ from each other).
+//                         gish follows 5.3.
+//
+//   printf '%d' 0b101     glibc's strtol takes binary literals, so bash
+//                         on Ubuntu answers 5 with no complaint, while
+//                         musl and BSD answer 0 and complain. POSIX has
+//                         no binary form; gish follows POSIX.
+//
+//   overflow, 1e400       the message is strerror(ERANGE) verbatim, and
+//                         all three libcs word it differently ("Result
+//                         too large" / "Numerical result out of range" /
+//                         "Result not representable"); the status is 0
+//                         on 5.2 and 1 on 5.3. And %f of 1e400 is `inf`
+//                         only where long double is 64-bit — everywhere
+//                         else bash prints 400 digits, which Go's
+//                         float64 cannot represent at all.
+//
+// gish has one behavior on every platform, so exact parity here is not
+// available at any price. What it does instead is pinned by unit tests
+// in internal/builtins (TestParseIntFollowsC and friends), which need no
+// oracle and therefore run everywhere.
 
 func TestPrintfInvalidNumbersMatchBash(t *testing.T) {
 	if testing.Short() {
