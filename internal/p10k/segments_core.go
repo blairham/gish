@@ -87,7 +87,7 @@ func renderDir(cfg *Config, ctx *Context) (Rendered, bool) {
 			budget = max(room, 1)
 		}
 	}
-	parts := shortenPathIn(cfg, ctx, path, budget)
+	parts := shortenPath(cfg, ctx, path, budget)
 
 	// A path is colored in three registers: shortened components
 	// recede, the final component (upstream's "anchor") stands out, and
@@ -164,15 +164,10 @@ func tildify(dir, home string) string {
 // ("shorten to unique prefix") lists every parent's siblings on every
 // prompt, and that is a cost that shows up on network filesystems — the
 // first-character rule below is the same shape without the I/O.
-func shortenPath(cfg *Config, path string, budget int) []component {
-	return shortenPathIn(cfg, nil, path, budget)
-}
-
-// shortenPathIn is shortenPath with the context that the marker rules
-// need. A nil context means "no filesystem", which is what keeps the
-// pure function above testable and what every caller without a render
-// in hand gets.
-func shortenPathIn(cfg *Config, ctx *Context, path string, budget int) []component {
+// A nil context means "no filesystem": the marker rules are the only
+// part that needs one, and every other caller — including the tests —
+// passes nil and gets the pure behavior.
+func shortenPath(cfg *Config, ctx *Context, path string, budget int) []component {
 	sep := string(os.PathSeparator)
 	raw := strings.Split(path, sep)
 	parts := make([]component, len(raw))
