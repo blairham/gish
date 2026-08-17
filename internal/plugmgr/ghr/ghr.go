@@ -176,9 +176,17 @@ func Download(a *Asset, destDir string) error {
 			return err
 		}
 		defer gz.Close()
-		return writeFile(filepath.Join(destDir, strings.TrimSuffix(a.Name, ".gz")), gz, 0o755)
+		target, err := securePath(destDir, strings.TrimSuffix(a.Name, ".gz"))
+		if err != nil {
+			return err
+		}
+		return writeFile(target, gz, 0o755)
 	default:
-		return writeFile(filepath.Join(destDir, a.Name), resp.Body, 0o755)
+		target, err := securePath(destDir, a.Name)
+		if err != nil {
+			return err
+		}
+		return writeFile(target, resp.Body, 0o755)
 	}
 }
 
@@ -256,10 +264,18 @@ func unzip(archive, destDir string) error {
 }
 
 // securePath guards against zip-slip: an archive entry must stay inside destDir.
+// securePath joins name under destDir and refuses anything that climbs
+// out of it.
+//
+// It guards every path Download builds, not only archive entries: an
+// asset's *name* is remote data too — it comes from the release JSON,
+// not from anything the user typed — and the plain and .gz branches
+// used to join it unchecked, so an asset called `../../evil` was
+// written outside the plugin's directory with no error at all (#204).
 func securePath(destDir, name string) (string, error) {
 	target := filepath.Join(destDir, filepath.Clean(name))
 	if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
-		return "", fmt.Errorf("archive entry %q escapes destination", name)
+		return "", fmt.Errorf("entry %q escapes destination", name)
 	}
 	return target, nil
 }
