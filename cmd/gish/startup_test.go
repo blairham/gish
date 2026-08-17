@@ -38,7 +38,11 @@ var buildOnce = sync.OnceValues(func() (string, error) {
 		return "", err
 	}
 	bin := filepath.Join(dir, "gish")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+	// The gishpanicprobe tag compiles in the deliberate panic that
+	// TestInterpreterPanicDoesNotKillTheShell needs (internal/repl/
+	// panicprobe.go). It adds one unreachable command name and nothing
+	// else, so every other test sees the ordinary binary.
+	if out, err := exec.Command("go", "build", "-tags", "gishpanicprobe", "-o", bin, ".").CombinedOutput(); err != nil {
 		return "", fmt.Errorf("build: %w\n%s", err, out)
 	}
 	return bin, nil

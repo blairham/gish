@@ -50,19 +50,6 @@ var substrateGaps = []substrateGap{
 		upstream: "same as the prefix form",
 	},
 	{
-		name:   "negated POSIX class in pattern removal",
-		script: `x="  hi  "; echo "[${x%%[![:space:]]*}]"`,
-		gishWant: "gish: internal error running gish -c: regexp: " +
-			"Compile(`((?s)[^[:space:]\\].*)$`): error parsing regexp: missing closing ]: " +
-			"`[^[:space:]\\].*)$` (this is a gish bug: https://github.com/blairham/gish/issues)\n" +
-			"run with GISH_DEBUG=1 to include the stack",
-		upstream: "the pattern→regexp translation emits an invalid class and MustCompiles it, " +
-			"so this *panicked* until #217 put a recover boundary around the interpreter — the " +
-			"recorded output is that boundary reporting the failure instead of the process dying. " +
-			"Trimming with ${x%%[![:space:]]*} is ordinary, and this reached gish through a " +
-			"vendor's ~/.profile block, so every login invocation crashed",
-	},
-	{
 		name:     "exec file-descriptor persistence",
 		script:   `exec 3>&1; echo via-fd3 >&3; exec 3>&-`,
 		gishWant: "",
