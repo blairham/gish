@@ -36,7 +36,11 @@ gish-specific support on either side.
 
 **Try it without commitment.** Run `gish` in one tab — no `chsh`
 required, nothing to undo but two directories. Coming from bash or zsh,
-start with [docs/porting.md](docs/porting.md).
+run `gish migrate` to import your aliases, functions, exports, PATH,
+prompt and history in one command — it parses your rc rather than
+running it, and lists everything that did not translate
+([docs/coming-from-zsh.md](docs/coming-from-zsh.md)). Muscle memory is
+in [docs/porting.md](docs/porting.md).
 
 ## The idea
 

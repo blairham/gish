@@ -40,7 +40,6 @@ import (
 // exactly like the runner accessor.
 var editorRef func() *editor.Editor
 
-
 func bindCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
 		if args[0] != "bind" {

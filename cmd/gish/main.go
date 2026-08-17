@@ -41,6 +41,16 @@ func run() int {
 	if len(os.Args) >= 2 && os.Args[1] == "ssh" {
 		return runSSH(context.Background(), os.Args[2:])
 	}
+	// `gish migrate` reads an existing bash/zsh setup (#160). A
+	// subcommand rather than only a builtin, because the moment it
+	// matters most is before anyone has started a gish session.
+	if len(os.Args) >= 2 && os.Args[1] == "migrate" {
+		if err := repl.RunMigrate(os.Stdout, os.Stderr, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "gish migrate:", err)
+			return 1
+		}
+		return 0
+	}
 
 	command := flag.String("c", "", "run `command` and exit")
 	loginFlag := flag.Bool("l", false, "act as a login shell (source profile files)")
