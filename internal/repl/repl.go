@@ -706,7 +706,11 @@ loop:
 // that spawn $SHELL -c rely on this to pass values without quoting them
 // into the script text.
 func RunCommand(ctx context.Context, src string, login, interactive bool, operands ...string) error {
-	name := "gish -c"
+	// $0 is the parse name, so this is also what `echo $0` answers. It is
+	// "gish" rather than "gish -c" because $0 is a shell-identity surface
+	// (#120) that harnesses read: bash -c answers "bash", and answering
+	// "gish -c" made gish the only shell whose $0 carries a flag.
+	name := "gish"
 	var params []string
 	if len(operands) > 0 {
 		name, params = operands[0], operands[1:]
@@ -765,7 +769,17 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	// human would get. Accepting the flag and ignoring it would be the
 	// worse answer — the aliases and functions it exists to bring in
 	// would silently not be there.
+	//
+	// Alias *expansion* is part of that, and was missing: the rc's
+	// aliases were recorded and never expanded, so `gish -ic ll` answered
+	// 127 while `bash -ic ll` ran it. That is the #163 alias trap on the
+	// path a coding agent actually uses (#208) — the definitions are all
+	// there, `alias ll` even prints one, and the command still is not
+	// found. Expansion stays off for non-interactive runs, which is
+	// bash's rule and what keeps a script's meaning independent of who
+	// runs it.
 	if interactive {
+		enableAliases(ctx, runner)
 		loadRC(ctx, runner)
 	}
 	return safely("running "+name, func() error { return runner.Run(ctx, file) })

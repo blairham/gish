@@ -108,6 +108,18 @@ The three demos, when someone records them:
 - **fish users** — "everything you love about fish, and bash still
   pastes". They already believe in good defaults; the compat is the
   news.
+- **people whose coding agent fights their shell** — the 2026 version of
+  the paste problem, and the one audience with a claim no other modern
+  shell can match: *the only shell that works as an AI agent's `SHELL`,
+  and the one place that can sandbox what the agent runs*. Their pain is
+  documented in someone else's tracker (`anthropics/claude-code#11475`,
+  `#7490`, `#13144`, `#19983`) and their current workaround is the
+  dual-shell split — fish for humans, zsh for agents — which is the
+  partition gish collapses. Point at `docs/agents.md`: the recipe is one
+  symlink, the contract is CI-gated, and it found two real bugs on its
+  first run. Do not overstate it — several agents ignore `$SHELL`
+  entirely, the recipe works around that rather than fixing it, and
+  saying so is what makes the rest credible.
 - **terminal geeks** — the plugin contract demo and the sandbox. They
   will ask about the keystroke path within one comment.
 
