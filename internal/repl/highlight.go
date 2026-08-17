@@ -7,6 +7,7 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/blairham/gish/internal/editor"
+	"github.com/blairham/gish/internal/history"
 )
 
 // Highlight styles (#38). Kept minimal and legible: the signature
@@ -68,6 +69,26 @@ func highlightMode(runner *interp.Runner) string {
 // acceptable way to switch one feature off.
 func suggestEnabled(runner *interp.Runner) bool {
 	return !strings.EqualFold(shellVar(runner, "GISH_SUGGEST", "on"), "off")
+}
+
+// suggestFn builds the editor's ghost-text hook: the newest history
+// entry extending what is typed, or nothing when the knob is off.
+//
+// It is a named function rather than a closure at the wiring site so a
+// test can drive the *real* pair — the live knob and the real store —
+// the way highlightFn is driven. An anonymous closure there is
+// unreachable from any test, which is exactly how the highlighter's own
+// wiring stayed broken for months (#193).
+func suggestFn(runner *interp.Runner, store *history.Store) func(string) string {
+	return func(text string) string {
+		if !suggestEnabled(runner) {
+			return ""
+		}
+		if s, ok := store.Match(text, 0); ok {
+			return s
+		}
+		return ""
+	}
 }
 
 // highlightFn builds the editor's highlighter: spans derived from a real
