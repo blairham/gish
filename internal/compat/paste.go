@@ -347,6 +347,8 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 	// back (#189). ctx still caps the case outright — see pasteIdle.
 	idle := time.NewTimer(pasteIdle)
 	defer idle.Stop()
+	// waitFor blocks until want appears, leaving the buffer intact: the
+	// final wait's buffer *is* the payload the case is judged on.
 	waitFor := func(want string) error {
 		for !bytes.Contains(seen.Bytes(), []byte(want)) {
 			select {
@@ -364,6 +366,17 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 		}
 		return nil
 	}
+	// waitPast is waitFor for the synchronization waits, dropping what it
+	// matched so the *next* wait cannot re-match it — the non-destructive
+	// half of what `seen.Reset()` used to do, without discarding the
+	// bytes that shared the read (#195).
+	waitPast := func(want string) error {
+		if err := waitFor(want); err != nil {
+			return err
+		}
+		consumeThrough(&seen, bytes.Index(seen.Bytes(), []byte(want))+len(want))
+		return nil
+	}
 
 	if err := waitFor(markPromptEnd); err != nil {
 		return "", 0, err
@@ -379,10 +392,18 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 		// the real paste while the setup command still owned the
 		// terminal: the escape sequences were echoed as text and the
 		// case looked like a shell bug rather than a harness bug.
-		if err := waitFor("\x1b]133;D;"); err != nil {
+		//
+		// waitPast, not waitFor plus Reset. The shell writes the D mark
+		// and then renders the next prompt, and on a loaded machine the
+		// reader is not scheduled in between, so both land in one read.
+		// Clearing the buffer here threw the prompt mark away with the
+		// rest, and the second wait then sat for a mark that had already
+		// come and gone while the shell idled — reported as "no output
+		// for 30s ... saw \"\"" (#195). It failed only under load, which
+		// is why every rerun passed.
+		if err := waitPast("\x1b]133;D;"); err != nil {
 			return "", 0, err
 		}
-		seen.Reset()
 		if err := waitFor(markPromptEnd); err != nil {
 			return "", 0, err
 		}
@@ -404,6 +425,17 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 	}
 	code, _ := strconv.Atoi(m[2])
 	return normalizeOutput(m[1]), code, nil
+}
+
+// consumeThrough drops the first n bytes of buf, keeping the remainder.
+//
+// This is what makes a wait non-destructive: everything the shell wrote
+// after the awaited marker — commonly the next prompt, coalesced into
+// the same read — stays available to the next wait (#195).
+func consumeThrough(buf *bytes.Buffer, n int) {
+	rest := append([]byte(nil), buf.Bytes()[n:]...)
+	buf.Reset()
+	buf.Write(rest)
 }
 
 func drain(chunks <-chan []byte, seen *bytes.Buffer, d time.Duration) {
