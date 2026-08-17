@@ -122,6 +122,11 @@ func ptySize(f *os.File) (cols, rows int, err error) {
 
 // Output has to reach the screen as well as the buffer — capture is a
 // history feature, never a reason output goes missing.
+//
+// Both streams are pointed at the session here because that exercises
+// the session itself. The *shell* only ever routes stdout through it
+// (see internal/jobs); stderr stays on the real terminal so full-screen
+// programs keep working.
 func TestOutputIsMirroredAndRetained(t *testing.T) {
 	mirrored, retained := run(t, `echo hello; echo world >&2`, 80, 24)
 	for _, want := range []string{"hello", "world"} {

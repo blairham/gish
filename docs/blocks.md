@@ -76,8 +76,8 @@ terminal** — what `script(1)` does, and what a terminal emulator does.
 Then signals really do stop arriving from the real terminal and gish
 has to relay them.
 
-The shipped shape gives the child the PTY for **stdout and stderr
-only**. Its stdin and its controlling terminal stay exactly as before.
+The shipped shape gives the child the PTY for **stdout only**. Its
+stdin, its stderr, and its controlling terminal stay exactly as before.
 Probed against a real child before building on it:
 
     isatty_stdout=yes     # color and paging preserved
@@ -95,8 +95,29 @@ What gish does own is small: keep the PTY's window size in step with the
 real terminal (so a program asking its width on stdout gets the truth),
 and copy master → screen while teeing into a size-capped ring.
 
-Two costs remain, and they are the honest ones:
+### stderr is not captured, and that was measured
 
+The first implementation captured stdout *and* stderr. Under it, `less`
+painted a screenful, never entered raw mode, and every keystroke meant
+for the pager was echoed onto the shell's line instead — the shell
+appeared to hang. Without capture the same `less` worked. Leaving stderr
+alone fixed it, and `vim` then opened, edited and `:wq`-ed normally too.
+
+The reason is that full-screen programs do their terminal control —
+`tcgetattr`/`tcsetattr`, raw mode — on **fd 2**, which is standard
+practice precisely because stdout is so often redirected. Hand such a
+program a pty as stderr and it configures the pty while the real
+terminal stays cooked.
+
+So the honest trade is: **a command's errors are not captured.** That is
+the price of "programs behave exactly as they do today", which is the
+bar this feature has to clear to be worth having. It is also why this
+was worth testing with a real pager rather than shipping on the strength
+of unit tests — the mechanism was correct and the *policy* was wrong.
+
+Three costs remain, all stated:
+
+- stderr is not captured (above).
 - A program that writes straight to `/dev/tty` bypasses capture. That is
   correct — writing to `/dev/tty` is precisely how a program says "put
   this on the terminal, not in the output stream."
@@ -115,8 +136,9 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
    run through a PTY that gish copies to the real terminal while teeing
    into a size-capped ring that keeps the *tail* — a failed build's error
    is at the end. Window size forwarded on SIGWINCH; job control
-   unchanged, by construction (above). Still to prove against the full
-   success bar: `vim`, `less`, and `docker build` under real use.
+   unchanged, by construction (above). `less` and `vim` verified under
+   a real pty: both behave as they do uncaptured. `docker build` and
+   other long-running progress UIs still want a look under real use.
 3. **Block records**: a history entry (already metadata-rich JSONL)
    plus an output reference under `$XDG_DATA_HOME/gish/blocks/`, with
    retention caps. The #10 secret-scrub rules run over captured output

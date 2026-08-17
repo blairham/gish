@@ -267,29 +267,38 @@ func (t *Table) spawn(hc interp.HandlerContext, job *Job, args []string, stdin, 
 	// serialize: the first Start creates the group (and takes the
 	// terminal in the child, pre-exec, via Foreground — race-free),
 	// later stages join it.
-	// Output capture (#99): swap the child's stdout and stderr for the
-	// capture pty, and *only* those.
+	// Output capture (#99): swap the child's stdout for the capture pty.
 	//
 	// Its controlling terminal is untouched, which is the whole reason
 	// this is safe: Ctrl-C, Ctrl-Z and SIGWINCH still come from the real
 	// terminal to the child's process group exactly as before, so job
 	// control keeps working without being reimplemented.
 	//
-	// Substitution is skipped when the destination is not a terminal —
-	// `cmd > file` or a pipeline stage already has somewhere to go, and
-	// redirecting it through a pty would both mangle it (the line
-	// discipline translates newlines) and capture what the user asked
-	// to be sent elsewhere.
+	// **stderr is deliberately left alone**, and this is not an
+	// oversight — it was measured. Full-screen programs do their
+	// terminal control (tcgetattr/tcsetattr, raw mode) on **fd 2**,
+	// which is standard practice precisely because stdout is so often
+	// redirected. Hand a program a pty as stderr and it configures the
+	// pty instead of the real terminal: `less` paints a screen, never
+	// enters raw mode, and every keystroke meant for it is echoed onto
+	// the shell's line instead. Verified both ways — with stderr
+	// captured `less` wedges, with it left alone it behaves exactly as
+	// it does uncaptured.
+	//
+	// The cost is real and worth stating: a command's *errors* are not
+	// captured. That is the price of "programs behave exactly as they do
+	// today", which is the bar this feature has to clear to be worth
+	// having at all.
+	//
+	// Substitution is skipped when stdout is not a terminal — `cmd >
+	// file` or a pipeline stage already has somewhere to go, and routing
+	// it through a pty would both capture what the user sent elsewhere
+	// and mangle it (the line discipline translates newlines).
 	t.mu.Lock()
 	sess := t.capturing
 	t.mu.Unlock()
-	if sess != nil {
-		if isTerminal(stdout) {
-			stdout = sess.Slave()
-		}
-		if isTerminal(stderr) {
-			stderr = sess.Slave()
-		}
+	if sess != nil && isTerminal(stdout) {
+		stdout = sess.Slave()
 	}
 
 	job.mu.Lock()

@@ -20,10 +20,14 @@
 // emulator does).
 //
 // It is not the shape used here. The child gets the PTY for **stdout
-// and stderr only**; its stdin and its *controlling terminal* remain the
-// real one, exactly as before. Verified: a child in this arrangement
-// reports `isatty(stdout)=yes`, reads the PTY's window size correctly,
-// and still names the real tty as its controlling terminal.
+// only**; its stdin, its stderr, and its *controlling terminal* remain
+// the real ones, exactly as before. Verified: a child in this
+// arrangement reports `isatty(stdout)=yes`, reads the PTY's window size
+// correctly, and still names the real tty as its controlling terminal.
+//
+// stderr staying real is load-bearing, not incidental — see the note in
+// internal/jobs where the substitution happens. Full-screen programs do
+// their terminal control on fd 2.
 //
 // That single difference is load-bearing. Ctrl-C, Ctrl-Z, SIGWINCH and
 // the foreground-group handoff all keep working *because nothing about
@@ -88,11 +92,12 @@ func Start(out io.Writer, cols, rows int, limit int) (*Session, error) {
 	return s, nil
 }
 
-// Slave is the file the child should use for stdout and stderr.
+// Slave is the file the child should use for stdout.
 //
-// Deliberately not stdin: leaving stdin on the real terminal is what
-// keeps the child's controlling terminal, and therefore its job
-// control, untouched.
+// Deliberately not stdin and not stderr. Leaving stdin alone keeps the
+// child's controlling terminal — and therefore its job control —
+// untouched; leaving stderr alone keeps full-screen programs working,
+// because that is the descriptor they configure the terminal through.
 func (s *Session) Slave() *os.File { return s.slave }
 
 // Resize matches the PTY to the real terminal. The child learns about
