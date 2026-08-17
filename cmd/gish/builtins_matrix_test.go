@@ -110,6 +110,10 @@ var interpBuiltinCases = []builtinCase{
 	// kill was "unsupported builtin" until #55. Because the interpreter
 	// claims the name, an unimplemented one shadows the machine's own
 	// /bin/kill rather than falling through to it — worse than absent.
+	// umask was "unsupported builtin" until #55, and it is the one where
+	// silence costs something concrete: `umask 077` before writing a key
+	// is how a script keeps the file from being world-readable.
+	{name: "umask", script: `umask 077; umask; umask -S; umask -p; umask 022; umask`},
 	{name: "kill", script: `kill -l >/dev/null; echo "list=$?"; kill 999999 2>/dev/null; echo "badpid=$?"; kill -BOGUS 1 2>/dev/null; echo "badsig=$?"`},
 
 	// alias and unalias cannot be differential: gish expands aliases in

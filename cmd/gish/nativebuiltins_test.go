@@ -81,6 +81,12 @@ var nativeCases = map[string]nativeCase{
 	"pick": {script: "pick </dev/null", wantExit: exitCode(1)},
 	"z":    {script: "z", wantOut: "no match", wantExit: exitCode(1)},
 
+	// Interpreter-claimed names gish implements natively (#55): they
+	// reach the exec seam only because the override renames them, so a
+	// broken rename shows up here as "unsupported builtin".
+	"kill":  {script: "kill", wantOut: "usage: kill", wantExit: exitCode(2)},
+	"umask": {script: "umask", wantOut: "0", wantExit: exitCode(0)},
+
 	// clip is a pipeline sink; with no terminal it is a silent no-op by
 	// design, so the assertion is that it neither hangs nor complains.
 	"clip": {script: "echo hi | clip", wantExit: exitCode(0)},
@@ -130,8 +136,8 @@ func TestEveryNativeCaseIsCovered(t *testing.T) {
 	// of this list rather than going unnoticed.
 	intercepted := []string{
 		"blocks", "builtins", "clip", "config", "doctor", "explain",
-		"p10k", "parallel", "pick", "plugin", "plugins", "sandbox",
-		"sessions", "tool", "trust", "z", "zi",
+		"kill", "p10k", "parallel", "pick", "plugin", "plugins",
+		"sandbox", "sessions", "tool", "trust", "umask", "z", "zi",
 	}
 	for _, name := range intercepted {
 		if _, ok := nativeCases[name]; !ok {
