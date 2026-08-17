@@ -156,3 +156,35 @@ func TestStartupWritesNothingToHome(t *testing.T) {
 		}
 	}
 }
+
+// vi mode, end to end from the line people actually write.
+//
+// `set -o vi` in an rc is how a vi user arrives, and until now the
+// interpreter answered `set: invalid option: "vi"` — the alias trap
+// again, where the shell reports a broken rc while the setting quietly
+// does not exist. This drives the real editor: Escape, a text object,
+// and an insert, which is the composition that "the vim emulator sucks"
+// is usually about.
+func TestViModeFromRC(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	dir := t.TempDir()
+	rc := filepath.Join(dir, "gishrc")
+	if err := os.WriteFile(rc, []byte("set -o vi\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := startPTY(t, ptyOptions{Dir: dir, Env: []string{"GISH_RC=" + rc}})
+	s.waitForPrompt()
+
+	// Type it wrong, then fix the middle word with ciw — the keystrokes
+	// are meaningless in emacs mode, so passing proves the mode switch.
+	s.send("echo WRONG tail")
+	s.send("\x1b")              // Escape to normal mode
+	s.send("bbciwvimode-works") // back two words, change inner word
+	s.send("\r")
+	out := s.waitFor("vimode-works tail")
+	if strings.Contains(out, "invalid option") {
+		t.Errorf("set -o vi was refused: %q", out)
+	}
+}

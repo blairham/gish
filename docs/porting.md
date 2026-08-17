@@ -29,6 +29,42 @@ configuration, no plugin.
 Not yet: numeric arguments (`Alt-4 Ctrl-D`) — tracked in
 [#116](https://github.com/blairham/gish/issues/116).
 
+### Vi mode
+
+`set -o vi` in your rc works, and so do `config editmode vi` and
+`GISH_EDIT_MODE=vi`. Every line starts in insert mode, as in bash and
+zsh; Escape enters normal mode, and the cursor changes shape so you can
+see which one you are in.
+
+It is built as operators × motions × text objects rather than a list of
+individual commands, so composition works:
+
+| you type | you get |
+| --- | --- |
+| `d2w`, `3x`, `2dd` | counts, including a count on each side of an operator |
+| `ciw`, `daw`, `ci"`, `di(`, `ca{` | text objects, inner and around |
+| `cw` | changes to the end of the word, leaving the space — vi's own quirk |
+| `f`/`t`/`F`/`T`, then `;` / `,` | find within the line, and repeat it |
+| `w W b B e E 0 ^ $ G gg` | the motion set |
+| `x X D C Y s S r ~ p P u` | the single-key edits, undo included |
+| `i I a A o O` | the ways into insert mode |
+| `k` / `j` | previous/next history — or up/down a line when the buffer has several |
+| `v` | open the line in `$EDITOR` (bash's binding) |
+| `/` | reverse history search |
+
+Insert mode keeps the emacs keys: `Ctrl-A` to the start of a line you
+are still typing is not worth a mode switch, and control chords work in
+normal mode too, so `Ctrl-C`, `Ctrl-R` and `Ctrl-L` behave the same in
+both.
+
+Two deliberate limits. **Alt is Escape** in vi mode: they are the same
+byte on the wire, terminals hand `<Esc>w` over as one chunk, and
+resolving toward Escape is what makes the mode usable at typing speed —
+the cost is the emacs alt bindings inside vi insert mode. And there is
+no visual mode, no named registers, and no marks; what is missing is
+missing uniformly rather than scattered through the pairs, which is the
+difference between a vi mode with gaps and one that cannot be trusted.
+
 ## Things that changed on purpose
 
 **The prompt starts naked.** Out of the box you get `user@host dir %` —

@@ -45,6 +45,7 @@ var configSettings = []configSetting{
 	{"blocks", "GISH_BLOCKS", []string{"on", "off"}, "capture command output for blocks (#99) — off by default"},
 	{"highlight", "GISH_HIGHLIGHT", []string{"on", "quiet", "off"}, "syntax highlighting — quiet drops the unknown-command color"},
 	{"suggest", "GISH_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
+	{"editmode", "GISH_EDIT_MODE", []string{"emacs", "vi"}, "line editor dialect — `set -o vi` sets it too"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -73,6 +74,7 @@ settings:
   blocks     on | off               (GISH_BLOCKS)
   highlight  on | quiet | off       (GISH_HIGHLIGHT)
   suggest    on | off               (GISH_SUGGEST)
+  editmode   emacs | vi             (GISH_EDIT_MODE)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
                     exit, plus any plugin segment id  (GISH_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default

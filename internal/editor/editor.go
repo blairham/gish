@@ -58,6 +58,9 @@ type Config struct {
 	// terminal is ceded around it exactly like ExternalEdit. nil falls
 	// back to the incremental search.
 	HistoryPick func(query string) (string, bool)
+	// EditMode selects the keymap dialect: emacs (the default) or vi.
+	// In vi mode every line starts in insert mode, as in bash and zsh.
+	EditMode EditMode
 	// Transient replaces Prompt for the final render — the one that
 	// stays in the scrollback once a line is accepted. A themed prompt
 	// is worth several lines while you are typing at it and worth almost
@@ -125,17 +128,36 @@ type Editor struct {
 
 	// preload seeds the next ReadCommand's buffer (see Preload).
 	preload string
+
+	// vi is the modal layer (#163); nil in emacs mode.
+	vi *viState
 }
 
 // New creates an editor reading from t and drawing to out (both sides of
 // the same terminal).
 func New(t term.Terminal, out io.Writer, cfg Config) *Editor {
-	return &Editor{
+	e := &Editor{
 		term:   t,
 		out:    out,
 		cfg:    cfg,
 		keymap: defaultKeymap(),
 		rend:   newRenderer(out, 80),
+	}
+	if cfg.EditMode == ModeVi {
+		e.vi = &viState{}
+	}
+	return e
+}
+
+// SetEditMode switches keymap dialect mid-session, which is what a live
+// `config editmode vi` has to do — nobody expects to restart their shell
+// to change how the line editor behaves.
+func (e *Editor) SetEditMode(mode EditMode) {
+	switch {
+	case mode == ModeVi && e.vi == nil:
+		e.vi = &viState{}
+	case mode == ModeEmacs:
+		e.vi = nil
 	}
 }
 
@@ -168,6 +190,10 @@ func (e *Editor) ReadCommand(ctx context.Context) (_ string, err error) {
 		return "", err
 	}
 	defer func() {
+		// Hand the terminal back the way it was found: a command that
+		// runs after a line accepted in normal mode must not inherit a
+		// block cursor for its own input.
+		e.viRestoreCursor()
 		if rerr := restore(); rerr != nil && err == nil {
 			err = rerr
 		}
@@ -271,6 +297,9 @@ func (e *Editor) reset() {
 	e.lastWasKill, e.lastWasInsert, e.lastWasYank = false, false, false
 	e.histPos = -1
 	e.search = searchState{}
+	// Each line starts in insert mode, as in bash and zsh — and says so,
+	// since the cursor shape is how a vi user reads the mode.
+	e.viReset()
 }
 
 func (e *Editor) render() {
@@ -361,6 +390,33 @@ func (e *Editor) dispatchKey(ev term.KeyEvent) {
 		if ev.Key == term.KeyRune && ev.Rune == 'e' && ev.Mod == term.ModCtrl {
 			e.externalEditRequest()
 		}
+		return
+	}
+	// In vi mode, Alt-<key> is Escape followed by that key.
+	//
+	// This is not a preference, it is how the bytes arrive: Escape is
+	// the same byte that introduces every alt chord, so a decoder cannot
+	// tell "Escape, then b" from "Alt-b" except by waiting — and a
+	// terminal delivers a vi user's `<Esc>b` as one chunk more often
+	// than not. Resolving it toward Escape is what makes vi mode work at
+	// speed; the cost is the emacs alt bindings inside vi insert mode,
+	// which is the correct trade for someone who asked for vi.
+	if e.viEnabled() && ev.Key == term.KeyRune && ev.Mod == term.ModAlt {
+		if e.vi.mode == viInsert {
+			e.viEnterNormal()
+		}
+		e.viDispatchKey(term.KeyEvent{Key: term.KeyRune, Rune: ev.Rune})
+		return
+	}
+	// Vi normal mode gets first refusal; anything it declines (control
+	// chords, the named keys) falls through to the one keymap below, so
+	// Ctrl-C, Ctrl-R and the arrows are bound once rather than per mode.
+	if e.viEnabled() && e.vi.mode == viNormal {
+		if e.viDispatchKey(ev) {
+			return
+		}
+	} else if e.viEnabled() && ev.Key == term.KeyEscape {
+		e.viEnterNormal()
 		return
 	}
 	if cmd, ok := e.keymap[binding{key: ev.Key, r: ev.Rune, mod: ev.Mod}]; ok {
