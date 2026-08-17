@@ -4,9 +4,12 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -24,15 +27,51 @@ import (
 // full-screen program through a real pty showed that *which*
 // descriptors get substituted is what decides whether this works.
 
-// promptReady is the naked prompt's tail — gish starts naked, so the
-// prompt ends in "% " rather than a shell-conventional "$ ".
-const promptReady = " % "
+// e2eBudget is generous on purpose: these drive a real shell through a
+// real pty, and a busy CI runner redraws the prompt for every echoed
+// keystroke. The tests are not measuring speed, so a tight bound only
+// buys flakes.
+const e2eBudget = 60 * time.Second
+
+// promptEnd is the OSC 133;B mark: written exactly when the prompt ends
+// and input begins (#99 stage 1).
+//
+// This is matched on the *raw* buffer rather than the stripped text,
+// and it replaces matching on the prompt's own characters. A CI runner
+// turned out to have a 73-character hostname, which pushed the naked
+// prompt past the pty's width — the wrap landed between the "%" and its
+// trailing space, so `" % "` never appeared contiguously and every test
+// here failed on a machine where the shell was working perfectly.
+//
+// A semantic mark cannot wrap: it is zero-width and atomic. startup_test
+// already learned this and matches the same way.
+const promptEnd = "\x1b]133;B"
 
 type shellPTY struct {
 	t   *testing.T
 	f   *os.File
 	buf *bytes.Buffer
 	ch  <-chan []byte
+	cmd *exec.Cmd
+	raw *int64 // bytes read from the pty, before any ANSI stripping
+}
+
+// diagnose describes why a wait failed, because "got:" followed by
+// nothing is the least useful failure message available. It answers the
+// two questions that actually separate the causes: did the shell write
+// anything at all, and is it still alive?
+func (s *shellPTY) diagnose() string {
+	raw := atomic.LoadInt64(s.raw)
+	state := "still running"
+	if p := s.cmd.ProcessState; p != nil {
+		state = "exited: " + p.String()
+	} else if s.cmd.Process != nil {
+		// Signal 0 asks the kernel whether the pid is still there.
+		if err := s.cmd.Process.Signal(syscall.Signal(0)); err != nil {
+			state = "process gone: " + err.Error()
+		}
+	}
+	return fmt.Sprintf("[%d raw bytes read, %s]", raw, state)
 }
 
 func startShell(t *testing.T, dir string) *shellPTY {
@@ -50,9 +89,17 @@ func startShell(t *testing.T, dir string) *shellPTY {
 		"XDG_STATE_HOME=" + filepath.Join(base, "state"),
 		"TERM=xterm-256color",
 		"PATH=" + os.Getenv("PATH"),
+		// Capture on from the start rather than typed in. Every
+		// keystroke costs a full prompt redraw, and on a loaded runner
+		// that is ~0.3s each — typing `config blocks on` was a third of
+		// each test's budget spent proving something config_test already
+		// proves.
+		"GISH_BLOCKS=on",
 	}
 	cmd.Dir = dir
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 15, Cols: 80})
+	// Few rows so a pager actually pages; wide columns so a long CI
+	// hostname cannot wrap the prompt out of recognition.
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 15, Cols: 200})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +109,7 @@ func startShell(t *testing.T, dir string) *shellPTY {
 		_, _ = cmd.Process.Wait()
 	})
 
+	var raw int64
 	ch := make(chan []byte, 64)
 	go func() {
 		defer close(ch)
@@ -69,6 +117,7 @@ func startShell(t *testing.T, dir string) *shellPTY {
 			chunk := make([]byte, 8192)
 			n, err := f.Read(chunk)
 			if n > 0 {
+				atomic.AddInt64(&raw, int64(n))
 				ch <- chunk[:n]
 			}
 			if err != nil {
@@ -76,12 +125,33 @@ func startShell(t *testing.T, dir string) *shellPTY {
 			}
 		}
 	}()
-	return &shellPTY{t: t, f: f, buf: &bytes.Buffer{}, ch: ch}
+	return &shellPTY{t: t, f: f, buf: &bytes.Buffer{}, ch: ch, cmd: cmd, raw: &raw}
+}
+
+// waitForPrompt waits for a prompt to finish rendering, using the
+// semantic mark rather than the prompt's visible text.
+func (s *shellPTY) waitForPrompt() {
+	s.t.Helper()
+	deadline := time.After(e2eBudget)
+	for {
+		if bytes.Contains(s.buf.Bytes(), []byte(promptEnd)) {
+			return
+		}
+		select {
+		case chunk, ok := <-s.ch:
+			if !ok {
+				s.t.Fatalf("shell exited before a prompt %s", s.diagnose())
+			}
+			s.buf.Write(chunk)
+		case <-deadline:
+			s.t.Fatalf("no prompt within %s %s; got:\n%q", e2eBudget, s.diagnose(), s.buf.String())
+		}
+	}
 }
 
 func (s *shellPTY) waitFor(want string) string {
 	s.t.Helper()
-	deadline := time.After(20 * time.Second)
+	deadline := time.After(e2eBudget)
 	for {
 		plain := string(ansiRe.ReplaceAll(s.buf.Bytes(), nil))
 		if bytes.Contains([]byte(plain), []byte(want)) {
@@ -90,11 +160,11 @@ func (s *shellPTY) waitFor(want string) string {
 		select {
 		case chunk, ok := <-s.ch:
 			if !ok {
-				s.t.Fatalf("shell exited before %q; got:\n%s", want, plain)
+				s.t.Fatalf("shell exited before %q %s; got:\n%s", want, s.diagnose(), plain)
 			}
 			s.buf.Write(chunk)
 		case <-deadline:
-			s.t.Fatalf("did not see %q within 20s; got:\n%s", want, plain)
+			s.t.Fatalf("did not see %q within %s %s; got:\n%s", want, e2eBudget, s.diagnose(), plain)
 		}
 	}
 }
@@ -121,22 +191,36 @@ func (s *shellPTY) send(keys string) {
 func (s *shellPTY) sendUntil(keys, want string) {
 	s.t.Helper()
 	deadline := time.After(30 * time.Second)
+
+	send := func() bool {
+		_, err := s.f.WriteString(keys)
+		return err == nil
+	}
+	alive := send()
+	quiet := time.After(retryQuiet)
 	for {
-		s.send(keys)
+		// Raw, not stripped: callers may wait on a semantic mark, which
+		// stripping would remove.
+		if bytes.Contains(s.buf.Bytes(), []byte(want)) ||
+			bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
+			return
+		}
 		select {
 		case chunk, ok := <-s.ch:
 			if !ok {
-				s.t.Fatalf("shell exited before %q", want)
+				s.t.Fatalf("shell exited before %q %s", want, s.diagnose())
 			}
 			s.buf.Write(chunk)
-		case <-time.After(500 * time.Millisecond):
-			// nothing arrived; send again
+		case <-quiet:
+			// Resend only once the terminal is quiet; resending per
+			// chunk sends a key per burst of output.
+			if alive {
+				alive = send()
+			}
+			quiet = time.After(retryQuiet)
 		case <-deadline:
 			s.t.Fatalf("did not see %q within 30s; got:\n%s",
 				want, string(ansiRe.ReplaceAll(s.buf.Bytes(), nil)))
-		}
-		if bytes.Contains(ansiRe.ReplaceAll(s.buf.Bytes(), nil), []byte(want)) {
-			return
 		}
 	}
 }
@@ -165,17 +249,14 @@ func TestCapturedPagerStillWorks(t *testing.T) {
 	}
 
 	s := startShell(t, dir)
-	s.waitFor(promptReady)
-	s.send("config blocks on\r")
-	s.waitFor("blocks")
-
+	s.waitForPrompt()
 	s.send("less big.txt\r")
 	s.waitFor("big.txt") // the pager's status line
 
 	// `q` is a raw keystroke, not a line: only a program actually in raw
 	// mode acts on it, which is the whole assertion. Repeated because the
 	// pager may not be listening the instant its status line lands.
-	s.sendUntil("q", promptReady)
+	s.sendUntil("q", promptEnd)
 	s.probe("PAGERDONE")
 	s.waitFor("resPAGERDONE")
 }
@@ -216,13 +297,10 @@ func TestCapturedGitStillPages(t *testing.T) {
 	}
 
 	s := startShell(t, dir)
-	s.waitFor(promptReady)
-	s.send("config blocks on\r")
-	s.waitFor("blocks")
-
+	s.waitForPrompt()
 	s.send("git log --oneline\r")
 	s.waitFor("commit-number") // paged output on screen
-	s.sendUntil("q", promptReady)
+	s.sendUntil("q", promptEnd)
 	s.probe("GITDONE")
 	s.waitFor("resGITDONE")
 }
@@ -241,10 +319,7 @@ func TestCaptureLeavesRedirectionAlone(t *testing.T) {
 	}
 	dir := t.TempDir()
 	s := startShell(t, dir)
-	s.waitFor(promptReady)
-	s.send("config blocks on\r")
-	s.waitFor("blocks")
-
+	s.waitForPrompt()
 	s.send("printf 'hello\\n' > out.txt\r")
 	s.probe("WROTE")
 	s.waitFor("resWROTE")
