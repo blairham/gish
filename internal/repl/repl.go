@@ -387,6 +387,11 @@ func runEditor(ctx context.Context, login bool) error {
 		drainSignals(sigs) // a signal from prompt-time must not cancel this command
 		markOutputStart(os.Stdout, marks)
 		start := time.Now()
+		// Which parts of this line were written with & (#57). The parse
+		// already happened, so this is a walk of an AST we hold; without
+		// it the exec seam has only timing to go on, and timing is a race
+		// that resolves differently per platform.
+		table.SetBackgroundRanges(backgroundRanges(file))
 		table.BeginLine(line)
 		lastCommandText = line
 		releasePrevLine() // the previous line's background work has had its window
@@ -711,4 +716,21 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		return err
 	}
 	return runner.Run(ctx, file)
+}
+
+// backgroundRanges reports the source spans of the statements in file
+// written with &.
+//
+// Nested statements count: `{ sleep 1 & }` and a background statement
+// inside a function body are still background, and Walk reaches them
+// without this having to enumerate shapes.
+func backgroundRanges(file *syntax.File) []jobs.Range {
+	var out []jobs.Range
+	syntax.Walk(file, func(n syntax.Node) bool {
+		if st, ok := n.(*syntax.Stmt); ok && st.Background {
+			out = append(out, jobs.Range{Start: st.Pos().Offset(), End: st.End().Offset()})
+		}
+		return true
+	})
+	return out
 }
