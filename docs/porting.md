@@ -73,6 +73,40 @@ no visual mode, no named registers, and no marks; what is missing is
 missing uniformly rather than scattered through the pairs, which is the
 difference between a vi mode with gaps and one that cannot be trusted.
 
+## Your existing tools
+
+gish implements bash's **hook surface**, so the add-ons you already have
+work without waiting to be adopted:
+
+| what your rc does | what happens |
+| --- | --- |
+| `eval "$(starship init bash)"` | your starship prompt renders |
+| `eval "$(direnv hook bash)"` | `.envrc` applies on `cd` |
+| `eval "$(fzf --bash)"` | fzf's `Ctrl-T` and `Ctrl-R` widgets bind |
+| `eval "$(zoxide init bash)"` / `"$(mise activate bash)"` | the `PROMPT_COMMAND` hook runs each prompt |
+| `PS1='\u@\h \w\$ '` | your own prompt renders, escapes and all |
+| `PROMPT_COMMAND`, `PS0`, `trap … DEBUG`, `shopt -s extdebug` | all honored |
+| `bind -x '"\C-t": widget'` | the key runs your command, with `READLINE_LINE`/`READLINE_POINT` |
+| `complete -F _fn cmd`, `compgen -W …` | your completions drive Tab |
+| `command_not_found_handle` | runs, with the whole command line |
+
+Measured per release in
+[docs/interactive-compat.md](interactive-compat.md), by sourcing each
+tool's own init line and asserting what it does — not by asserting that
+we implement the hooks.
+
+**gish claims bash's interface, not bash's identity.** `BASH_VERSION`
+and `BASH_VERSINFO` report a modern bash, because tools use them as
+feature probes and gate on them: fzf checks `BASH_VERSINFO[0] < 4` to
+decide between a readline macro and `bind -x`, and gish implements the
+latter. `$0` stays `gish`, and `GISH_VERSION` says exactly what you are
+running.
+
+Two known gaps, both honest: readline **macro** bindings (a key bound to
+a string of editing commands) are not emulated, and `declare -F name` —
+the "is this function defined?" test — is a substrate gap tracked in
+[#119](https://github.com/blairham/gish/issues/119).
+
 ## Things that changed on purpose
 
 **The prompt starts naked.** Out of the box you get `user@host dir %` —

@@ -55,6 +55,12 @@ echo "[$x]"
 echo 'a'\''b'`,
 	},
 	{
+		Name: "declare -F tests for a function", Category: CatToolInit,
+		Provenance: "fzf and bash-completion both gate whole branches on `declare -F name`",
+		Script: `f() { :; }
+declare -F f >/dev/null && echo have-f || echo missing-f`,
+	},
+	{
 		Name: "shell detection via $0 and BASH_VERSION", Category: CatToolInit,
 		Provenance: "init scripts branch on shell identity before emitting hooks",
 		Script: `if [ -n "${BASH_VERSION:-}" ]; then echo bash-ish; else echo other; fi

@@ -40,6 +40,7 @@ func TestInteractiveGates(t *testing.T) {
 
 	pasteResults := compat.RunPasteAll(ctx, bashBin, gishBin)
 	sourceResults := compat.RunSourceAll(ctx, bashBin, gishBin, t.TempDir())
+	ecoResults := compat.RunEcosystemAll(ctx, gishBin)
 
 	pastePassed := 0
 	for _, r := range pasteResults {
@@ -65,13 +66,27 @@ func TestInteractiveGates(t *testing.T) {
 		sourcePassed++
 	}
 
+	ecoRan, ecoPassed := 0, 0
+	for _, r := range ecoResults {
+		if !r.Present {
+			t.Logf("ECOSYSTEM SKIP %s: not installed on this machine", r.Name)
+			continue
+		}
+		ecoRan++
+		if !r.Pass {
+			t.Logf("ECOSYSTEM FAIL %s: %s\n  session output: %q", r.Name, r.Reason, r.Output)
+			continue
+		}
+		ecoPassed++
+	}
+
 	if *update {
-		doc := compat.InteractiveDoc(pasteResults, sourceResults, bashVersion(t, bashBin))
+		doc := compat.InteractiveDoc(pasteResults, sourceResults, ecoResults, bashVersion(t, bashBin))
 		if err := os.WriteFile(interactivePath, []byte(doc), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("wrote %s: paste %d/%d, source %d/%d present",
-			interactivePath, pastePassed, len(pasteResults), sourcePassed, sourceRan)
+		t.Logf("wrote %s: paste %d/%d, source %d/%d present, ecosystem %d/%d present",
+			interactivePath, pastePassed, len(pasteResults), sourcePassed, sourceRan, ecoPassed, ecoRan)
 		return
 	}
 
@@ -89,6 +104,11 @@ func TestInteractiveGates(t *testing.T) {
 	// the rule is "everything present must pass".
 	if sourcePassed < sourceRan {
 		t.Errorf("source gate: %d of %d installed tools failed", sourceRan-sourcePassed, sourceRan)
+	}
+	// Same rule for the ecosystem matrix, and for the same reason: what
+	// a runner has installed is not a property of the shell.
+	if ecoPassed < ecoRan {
+		t.Errorf("ecosystem matrix: %d of %d installed tools failed", ecoRan-ecoPassed, ecoRan)
 	}
 	if pastePassed > recordedPaste {
 		t.Logf("paste gate improved: %d vs %d recorded — run `make paste-gate` to publish",

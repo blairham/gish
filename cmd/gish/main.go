@@ -57,6 +57,9 @@ func run() int {
 	rcPath := flag.String("rc", "", "read startup settings from `file`")
 	flag.Parse()
 
+	// The session reports this as GISH_VERSION (#120).
+	repl.Version = version
+
 	if *rcPath != "" {
 		os.Setenv("GISH_RC", *rcPath) //nolint:errcheck // process-local
 	}

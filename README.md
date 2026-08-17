@@ -29,7 +29,10 @@ included, is in [docs/compat.md](docs/compat.md). What happens when you
 *paste* a bash one-liner at the prompt, and when you source nvm, conda
 or an activate script unmodified, is measured separately in
 [docs/interactive-compat.md](docs/interactive-compat.md) — pasting and
-sourcing is the most-cited reason people go back.
+sourcing is the most-cited reason people go back. The same page carries
+the ecosystem matrix: **starship, direnv, fzf, zoxide, atuin and mise
+run in gish through their own bash init lines**, unmodified and with no
+gish-specific support on either side.
 
 **Try it without commitment.** Run `gish` in one tab — no `chsh`
 required, nothing to undo but two directories. Coming from bash or zsh,

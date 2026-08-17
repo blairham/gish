@@ -62,6 +62,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// Native brew shellenv (#44): pure stat/string work, no subprocess.
 	brewShellenv()
 	resetBashHooks()
+	resetCompletions()
 
 	// Tier-2 plugin host (#7): discovery now, launch on first demand.
 	// Prompt segments are consumed via %p{id} escapes; the `plugins`
@@ -106,6 +107,10 @@ func runEditor(ctx context.Context, login bool) error {
 		if w, h, err := term.NewTTY(os.Stdin, os.Stdout).Size(); err == nil {
 			table.Resize(w, h)
 		}
+		// A WINCH trap is noted here and run at the next prompt: this
+		// callback is another goroutine, and a runner is not safe to
+		// enter from two at once.
+		noteSignal("WINCH")
 	})
 	defer stopWinch()
 	execChain := []func(interp.ExecHandlerFunc) interp.ExecHandlerFunc{builtins.ExecHandler}
@@ -118,6 +123,7 @@ func runEditor(ctx context.Context, login bool) error {
 		sandboxExecMiddleware,
 		table.ExecMiddleware)
 	runnerOpts := []interp.RunnerOption{
+		interp.Env(sessionEnv(true)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(execChain...),
 	}
@@ -131,7 +137,7 @@ func runEditor(ctx context.Context, login bool) error {
 		builtins.Register("__gish_bg", table.Bg)
 		callBase = jobs.RewriteCall
 	}
-	runnerOpts = append(runnerOpts, interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase))))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(callBase)))))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -196,7 +202,11 @@ func runEditor(ctx context.Context, login bool) error {
 	// Ctrl-R is the full-screen fuzzy picker when the terminal can host
 	// it (#100); incremental search remains the fallback.
 	edCfg.HistoryPick = historyPickFn(store, host)
+	// `bind -x` commands run with the terminal ceded, so a full-screen
+	// widget (fzf's picker) really owns stdin (#159).
+	edCfg.KeyCommand = keyCommandRunner(runner)
 	ed := editor.New(term.NewTTY(os.Stdin, os.Stdout), os.Stdout, edCfg)
+	editorRef = func() *editor.Editor { return ed }
 	parser := syntax.NewParser()
 
 	sigs := make(chan os.Signal, 1)
@@ -206,6 +216,9 @@ func runEditor(ctx context.Context, login bool) error {
 	// Alias expansion goes on before anything is sourced, so aliases
 	// defined in a profile or rc work in the session they configure.
 	enableAliases(ctx, runner)
+	// What the shell answers to a feature probe (#120): set before any
+	// init script runs, since that is what those scripts branch on.
+	declareShellIdentity(ctx, runner)
 	// Login shells source profile files first (#41), then the rc file
 	// runs in the session runner so functions, vars, and cd persist.
 	if login {
@@ -254,6 +267,10 @@ func runEditor(ctx context.Context, login bool) error {
 		} else {
 			table.DisableCapture()
 		}
+		// Signal traps the loop delivers (#159): a WINCH noted while a
+		// command ran, and an INT from the command that was just
+		// interrupted, both fire here, where the runner is ours.
+		runPendingSignalTraps(ctx, runner)
 		// The bash hook surface (#159): PROMPT_COMMAND runs before the
 		// prompt is built, so a hook that sets PS1, exports variables or
 		// records the directory is reflected in the prompt it precedes.
@@ -434,6 +451,7 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 		switch {
 		case errors.Is(rerr, errInterrupted):
+			noteSignal("INT") // the trap fires at the next prompt
 			// The command was interrupted, not the shell: fresh prompt.
 			// Order matters — Runner.Exited() also reports true after a
 			// cancellation, and the runner stays usable with state intact.
@@ -556,14 +574,19 @@ func acceptWhen(text string) bool {
 
 // runPlain is the non-TTY loop (piped stdin).
 func runPlain(ctx context.Context, login bool) error {
+	var runnerRef *interp.Runner
+	trustRunner = func() *interp.Runner { return runnerRef }
 	runner, err := interp.New(
+		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
+		interp.CallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
 	}
+	runnerRef = runner
+	declareShellIdentity(ctx, runner)
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -626,14 +649,19 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool) error 
 	if err != nil {
 		return err
 	}
+	var runnerRef *interp.Runner
+	trustRunner = func() *interp.Runner { return runnerRef }
 	runner, err := interp.New(
+		interp.Env(sessionEnv(false)),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
+		interp.CallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))),
 	)
 	if err != nil {
 		return err
 	}
+	runnerRef = runner
+	declareShellIdentity(ctx, runner)
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -652,7 +680,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall))))))))))))))))))),
+			interp.CallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(p10kCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(passthroughCall)))))))))))))))))))))),
 		},
 		opts...,
 	)...)

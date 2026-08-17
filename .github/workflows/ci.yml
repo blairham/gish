@@ -33,10 +33,20 @@ jobs:
     - name: Bash-compat scoreboard
       run: make compat-check
 
+    # The ecosystem matrix (#159) is only meaningful against tools that
+    # are actually there, so the runner gets a few of them. What is
+    # missing is reported as missing rather than skipped silently.
+    - name: Install ecosystem tools for the matrix
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq fzf direnv zoxide || true
+        curl -sS https://starship.rs/install.sh | sh -s -- --yes || true
+
     # The #1 abandonment cause, gated (#161): text pasted at a real
-    # interactive prompt, and the named init scripts sourced unmodified.
-    # Runs on unix only — it drives gish on a pty.
-    - name: Paste and source gates
+    # interactive prompt, the named init scripts sourced unmodified, and
+    # the ecosystem matrix (#159). Unix only — it drives gish on a pty.
+    - name: Paste, source and ecosystem gates
       if: runner.os != 'Windows'
       run: make paste-gate-check
 

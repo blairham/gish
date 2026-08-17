@@ -45,12 +45,38 @@ type bashHooks struct {
 	// consumers is that a non-zero return from the DEBUG trap cancels
 	// the command — which is how tools implement "don't run that".
 	extdebug bool
+	// signalTraps holds handlers for the signals the interpreter does
+	// not take. Only ERR and EXIT exist there, so `trap … INT` — which
+	// direnv's own hook installs, and which a great many scripts use to
+	// clean up — was answered with "invalid signal specification",
+	// twice, at every startup.
+	//
+	// INT and WINCH are fired by the loop. The rest are recorded and
+	// not fired: recording them costs nothing and removes the error,
+	// while pretending to deliver a signal we do not catch would be a
+	// lie a script could depend on.
+	signalTraps map[string]string
 }
 
-var hooks = &bashHooks{}
+var hooks = &bashHooks{signalTraps: map[string]string{}}
 
 // resetBashHooks clears hook state; one session, one set.
-func resetBashHooks() { hooks = &bashHooks{} }
+func resetBashHooks() { hooks = &bashHooks{signalTraps: map[string]string{}} }
+
+// firedSignals are the ones the loop actually delivers.
+var firedSignals = map[string]bool{"INT": true, "WINCH": true}
+
+// interpSignals are the two the interpreter implements itself.
+var interpSignals = map[string]bool{"ERR": true, "EXIT": true}
+
+// runSignalTrap fires a stored handler, if there is one.
+func runSignalTrap(ctx context.Context, runner *interp.Runner, name string) {
+	body := hooks.signalTraps[name]
+	if body == "" || body == "-" {
+		return
+	}
+	runHookSource(ctx, runner, body) //nolint:errcheck // a trap's failure is the trap's problem
+}
 
 // trapCallHandler intercepts the DEBUG trap, which the interpreter does
 // not implement (it answers "invalid signal specification", so every
@@ -59,7 +85,17 @@ func resetBashHooks() { hooks = &bashHooks{} }
 // the DEBUG half here and hands EXIT to the interpreter.
 func trapCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
-		if args[0] != "trap" || !slices.Contains(args, "DEBUG") {
+		if args[0] != "trap" {
+			return next(ctx, args)
+		}
+		args = normalizeSignalNames(args)
+		if !slices.Contains(args, "DEBUG") {
+			if rest, handled := recordSignalTraps(args); handled {
+				if rest == nil {
+					return []string{"true"}, nil
+				}
+				args = rest
+			}
 			return next(ctx, args)
 		}
 		hc := interp.HandlerCtx(ctx)
@@ -73,6 +109,77 @@ func trapCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 			return []string{"true"}, nil
 		}
 	}
+}
+
+// normalizeSignalNames strips the SIG prefix the interpreter rejects.
+//
+// bash accepts `trap … SIGINT` and `trap … INT` alike, and direnv's own
+// hook uses the SIG form — which meant every direnv user's shell
+// printed "invalid signal specification" twice at startup. The names
+// are equivalent, so the prefix is simply removed.
+func normalizeSignalNames(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i, a := range args {
+		if i > 0 && strings.HasPrefix(a, "SIG") && len(a) > 3 && strings.ToUpper(a) == a {
+			a = strings.TrimPrefix(a, "SIG")
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// recordSignalTraps takes the signals the interpreter would reject and
+// records their handlers, leaving ERR and EXIT to it. It returns the
+// remaining invocation, or nil when there is nothing left to pass on.
+func recordSignalTraps(args []string) ([]string, bool) {
+	rest := args[1:]
+	// `trap -- '' SIGINT` is direnv's own spelling: the separator, then
+	// an empty action, then the signal. Reading args[1] as the action
+	// without skipping it recorded a handler named "--" and passed an
+	// empty signal name on, which is the error direnv users saw.
+	if len(rest) > 0 && rest[0] == "--" {
+		rest = rest[1:]
+	}
+	if len(rest) < 2 {
+		return nil, false // `trap`, `trap -p`: nothing to record
+	}
+	action := rest[0]
+	var ours, theirs []string
+	for _, sig := range rest[1:] {
+		switch {
+		case interpSignals[sig]:
+			theirs = append(theirs, sig)
+		case knownSignal(sig):
+			ours = append(ours, sig)
+		default:
+			theirs = append(theirs, sig) // let the interpreter say why
+		}
+	}
+	if len(ours) == 0 {
+		return nil, false
+	}
+	for _, sig := range ours {
+		if action == "-" || action == "" {
+			delete(hooks.signalTraps, sig)
+			continue
+		}
+		hooks.signalTraps[sig] = action
+	}
+	if len(theirs) == 0 {
+		return nil, true
+	}
+	return append([]string{"trap", action}, theirs...), true
+}
+
+// knownSignal reports whether the name is a signal gish is willing to
+// record. The list is bash's, minus the ones that cannot be caught.
+func knownSignal(name string) bool {
+	switch name {
+	case "INT", "TERM", "HUP", "QUIT", "WINCH", "USR1", "USR2", "ALRM",
+		"CHLD", "CONT", "TSTP", "TTIN", "TTOU", "PIPE", "IO", "PROF", "VTALRM":
+		return true
+	}
+	return false
 }
 
 // applyDebugTrap records or clears the DEBUG trap.
@@ -137,8 +244,37 @@ func doubleQuoteLiteral(s string) string {
 // but that init scripts set unconditionally. extdebug is the one that
 // matters: bash-preexec and friends set it, and an error message in the
 // middle of a tool's init is what makes a shell look unfinished.
+// ignorableShopts are bash options gish does not implement and does not
+// need to: they configure a history file format, a redraw, or a
+// completion cosmetic that gish handles its own way. Accepting them
+// silently is deliberate — an init script sets a handful in a row and
+// checks none of them, and an error in the middle of that is what makes
+// a shell look unfinished.
+//
+// Options that change what a command *means* are deliberately not on
+// this list, even when unimplemented: silently accepting `autocd` or
+// `failglob` would make the shell behave differently from what the user
+// just asked for, without saying so.
+var ignorableShopts = map[string]bool{
+	"checkwinsize": true, "histappend": true, "histreedit": true,
+	"histverify": true, "cmdhist": true, "lithist": true,
+	"promptvars": true, "progcomp": true, "hostcomplete": true,
+	"no_empty_cmd_completion": true, "force_fignore": true,
+	"complete_fullquote": true, "checkhash": true, "checkjobs": true,
+	"globasciiranges": true, "sourcepath": true, "interactive_comments": true,
+	"login_shell": true, "shift_verbose": true, "progcomp_alias": true,
+}
+
 func shoptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
+		if args[0] == "shopt" {
+			if rest, handled := stripIgnorableShopts(args); handled {
+				if rest == nil {
+					return []string{"true"}, nil
+				}
+				args = rest
+			}
+		}
 		if args[0] != "shopt" || !slices.Contains(args, "extdebug") {
 			return next(ctx, args)
 		}
@@ -169,6 +305,31 @@ func shoptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 		}
 		return []string{"true"}, nil
 	}
+}
+
+// stripIgnorableShopts removes the accepted-and-ignored names. It
+// returns nil when nothing is left for the interpreter to do.
+func stripIgnorableShopts(args []string) ([]string, bool) {
+	rest := []string{"shopt"}
+	names, dropped := 0, 0
+	for _, a := range args[1:] {
+		switch {
+		case strings.HasPrefix(a, "-"):
+			rest = append(rest, a)
+		case ignorableShopts[a]:
+			dropped++
+		default:
+			names++
+			rest = append(rest, a)
+		}
+	}
+	if dropped == 0 {
+		return nil, false
+	}
+	if names == 0 {
+		return nil, true
+	}
+	return rest, true
 }
 
 func onOff(b bool) string {
@@ -288,4 +449,61 @@ func runHookSource(ctx context.Context, runner *interp.Runner, src string) error
 		return err
 	}
 	return runner.Run(ctx, file)
+}
+
+// pendingSignals are traps whose signal arrived while something else
+// owned the runner. They fire at the next prompt.
+//
+// Deferring is not a shortcut: SIGWINCH is delivered on a signal
+// goroutine and an interrupt arrives while a command is mid-flight, and
+// a runner entered from two goroutines at once is a data race with the
+// user's whole session as its blast radius. The prompt is the moment
+// the loop owns the interpreter, which is why every other hook fires
+// there too.
+var pendingSignals []string
+
+func noteSignal(name string) {
+	if hooks.signalTraps[name] == "" || !firedSignals[name] {
+		return
+	}
+	if slices.Contains(pendingSignals, name) {
+		return // one delivery per prompt, as with a coalesced resize
+	}
+	pendingSignals = append(pendingSignals, name)
+}
+
+func runPendingSignalTraps(ctx context.Context, runner *interp.Runner) {
+	if len(pendingSignals) == 0 {
+		return
+	}
+	names := pendingSignals
+	pendingSignals = nil
+	for _, name := range names {
+		runSignalTrap(ctx, runner, name)
+	}
+}
+
+// `declare -F name` — the standard "is this function defined?" test,
+// used by fzf and by bash-completion constantly — cannot be intercepted
+// here at all: the parser turns `declare` into a declaration clause
+// before any handler sees it, so it never arrives as a call. It is a
+// substrate gap rather than a gish one, recorded in the compat corpus
+// and tracked in #119; the visible cost is that init scripts which
+// probe for their own functions that way take their "not defined"
+// branch.
+
+// evalSeparatorCallHandler drops the `--` that ends eval's options.
+//
+// starship's own documented init line is `eval -- "$(starship init bash
+// --print-full-init)"`, and the interpreter's eval does not know the
+// separator: it ran `--` as a command and answered "command not found",
+// so starship never initialized. bash treats `--` as end-of-options
+// everywhere, and eval is where the ecosystem actually relies on it.
+func evalSeparatorCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
+	return func(ctx context.Context, args []string) ([]string, error) {
+		if len(args) > 2 && args[0] == "eval" && args[1] == "--" {
+			args = append([]string{"eval"}, args[2:]...)
+		}
+		return next(ctx, args)
+	}
 }

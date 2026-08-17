@@ -161,3 +161,95 @@ PROMPT_COMMAND='__gish_prompt'
 	// return at once: every keystroke redraws the prompt, marks and all.
 	s.waitFor("precmd")
 }
+
+// `bind -x` is how fzf installs Ctrl-T, how atuin takes over Ctrl-R,
+// and how rc files add one-key shortcuts. The contract is
+// READLINE_LINE and READLINE_POINT: the command reads them, may rewrite
+// them, and the editor takes back whatever it left.
+func TestBindXRunsAndRewritesTheLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	// The shape of an fzf widget, minus fzf: read the line, put
+	// something else there, and move the cursor.
+	s := hookSession(t, `bind -x '"\C-t": READLINE_LINE="echo bound-widget-ran"; READLINE_POINT=${#READLINE_LINE}'`+"\n")
+	s.waitForPrompt()
+	s.buf.Reset()
+	s.sendUntil("\x14", "bound-widget-ran") // Ctrl-T, then the rewritten line is echoed back
+	s.send("\r")
+	s.waitFor("bound-widget-ran")
+}
+
+// A binding gish cannot express must cost that binding and nothing
+// else: an rc that sets a dozen keeps the other eleven.
+func TestBindTolerantOfWhatItCannotDo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	rc := `bind -m emacs-standard '"\C-g": redraw-current-line'
+bind '"\C-r": reverse-search-history'
+bind -x '"\C-t": READLINE_LINE="after-the-noise"'
+printf rc-finished\n
+`
+	s := hookSession(t, rc)
+	s.waitFor("rc-finished")
+	s.buf.Reset()
+	s.sendUntil("\x14", "after-the-noise")
+}
+
+// `complete -F` is the largest single piece of the ecosystem gish
+// inherits by speaking bash: bash-completion ships hundreds of these,
+// and every modern CLI emits one from `<tool> completion bash`. They are
+// all written against the same three things — the `complete` builtin,
+// the COMP_* variables, and COMPREPLY.
+func TestCompleteFunctionDrivesTab(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	rc := `
+_demo_complete() {
+  # The shape every bash completion has: read the current word out of
+  # COMP_WORDS, generate against it, leave the answer in COMPREPLY.
+  local cur="${COMP_WORDS[COMP_CWORD]}"
+  COMPREPLY=( $(compgen -W "deploy destroy diagnose" -- "$cur") )
+}
+complete -F _demo_complete demo
+`
+	s := hookSession(t, rc)
+	s.waitForPrompt()
+
+	// Two candidates share the prefix "de", so Tab completes as far as
+	// the common prefix and lists the rest.
+	s.buf.Reset()
+	s.send("demo d")
+	s.sendUntil("\t", "deploy")
+	out := s.plain()
+	for _, want := range []string{"deploy", "destroy", "diagnose"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("candidate %q missing from the listing: %q", want, out)
+		}
+	}
+
+	// A unique prefix completes outright, and the completion actually
+	// runs — which is the part a listing alone would not prove.
+	s.buf.Reset()
+	s.send("i")
+	s.sendUntil("\t", "diagnose")
+}
+
+// COMP_LINE and COMP_POINT are the other half of the contract: the
+// completions that cannot work from word splitting alone read them.
+func TestCompletionSeesTheWholeLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	rc := `
+_line_complete() { COMPREPLY=( "point-${COMP_POINT}-cword-${COMP_CWORD}" ); }
+complete -F _line_complete probe
+`
+	s := hookSession(t, rc)
+	s.waitForPrompt()
+	s.buf.Reset()
+	s.send("probe arg ")
+	s.sendUntil("\t", "point-10-cword-2")
+}

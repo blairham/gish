@@ -37,6 +37,18 @@ func trustCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 // alongside envMgr at interactive startup.
 var trustRunner func() *interp.Runner
 
+// sessionRunner is the runner of whichever session is running — the
+// interactive loop, a piped one, or a script. The builtins that answer
+// questions *about* the session (declare -F, compgen -c) need it on
+// every path, not only the interactive one, since an init script asks
+// the same questions wherever it is sourced.
+func sessionRunner() *interp.Runner {
+	if trustRunner == nil {
+		return nil
+	}
+	return trustRunner()
+}
+
 func runTrust(ctx context.Context, hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
 		fmt.Fprintln(hc.Stderr, "trust:", err)

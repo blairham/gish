@@ -58,6 +58,10 @@ type Config struct {
 	// terminal is ceded around it exactly like ExternalEdit. nil falls
 	// back to the incremental search.
 	HistoryPick func(query string) (string, bool)
+	// KeyCommand runs a `bind -x` command with the terminal ceded (#159).
+	// nil rejects the bindings, which is what a non-interactive editor
+	// should do. See bindx.go.
+	KeyCommand KeyCommand
 	// EditMode selects the keymap dialect: emacs (the default) or vi.
 	// In vi mode every line starts in insert mode, as in bash and zsh.
 	EditMode EditMode
@@ -121,8 +125,14 @@ type Editor struct {
 	arg      *numArg
 	argCount int
 	// pendingHandover is the function to run while the terminal is
-	// ceded; it maps the current buffer to its replacement.
-	pendingHandover func(current string) (string, bool)
+	// ceded; it maps the current buffer and cursor to their
+	// replacements. The cursor travels because a `bind -x` command may
+	// move it — READLINE_POINT is half of readline's contract with a
+	// key-bound command, and fzf's widgets use it.
+	pendingHandover func(current string, point int) (string, int, bool)
+	// keyCommands are `bind -x` bindings: a key sequence and the shell
+	// command it runs (#159).
+	keyCommands map[binding]string
 
 	// History navigation (see history.go): histPos is the entry shown
 	// (-1 = the live pending line), histPrefix the filter captured when
@@ -228,8 +238,8 @@ func (e *Editor) ReadCommand(ctx context.Context) (_ string, err error) {
 		}
 		if handover := e.pendingHandover; handover != nil {
 			e.pendingHandover = nil
-			if text, ok := handover(e.buf.String()); ok {
-				e.buf.Set(text, len([]rune(text)))
+			if text, point, ok := handover(e.buf.String(), e.buf.Cursor()); ok {
+				e.buf.Set(text, point)
 			}
 		}
 		if restore, err = e.term.EnterRaw(); err != nil {
@@ -446,6 +456,11 @@ func (e *Editor) dispatchKey(ev term.KeyEvent) {
 		}
 	} else if e.viEnabled() && ev.Key == term.KeyEscape {
 		e.viEnterNormal()
+		return
+	}
+	// `bind -x` bindings win over the built-in keymap, as they do in
+	// readline: the user asked for this key by name.
+	if e.runKeyCommand(ev) {
 		return
 	}
 	b := binding{key: ev.Key, r: ev.Rune, mod: ev.Mod}

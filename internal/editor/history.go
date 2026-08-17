@@ -86,7 +86,7 @@ func (e *Editor) startSearch() {
 	// metadata and fuzzy-matches. Incremental search remains the
 	// fallback for terminals that cannot host it.
 	if e.cfg.HistoryPick != nil && !e.search.active {
-		e.handover(e.cfg.HistoryPick)
+		e.handoverText(e.cfg.HistoryPick)
 		return
 	}
 	if e.search.active {

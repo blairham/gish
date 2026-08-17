@@ -33,6 +33,21 @@ func completionFn(runner *interp.Runner, host *pluginhost.Host) func(string, int
 			}
 		}
 
+		// bash's programmable completion (#159) answers first when a
+		// spec is registered for this command, because that is what the
+		// user's own rc — or kubectl's, or git's — asked for. A spec
+		// that matched and produced nothing is still an answer: falling
+		// back to file names there is the behavior people file bugs
+		// about.
+		if !isCmd {
+			if fields := strings.Fields(text[:cursor]); len(fields) > 0 {
+				loadCompletionFor(runner, fields[0])
+			}
+		}
+		if cands, nospace, ok := bashCompletions(runner, text, cursor); ok {
+			return editor.CompleteResult{WordStart: start, Candidates: cands, NoSpace: nospace}
+		}
+
 		var core []complete.Candidate
 		if isCmd && !strings.ContainsAny(word, "/~") {
 			extra := builtins.ShellBuiltins()
