@@ -42,6 +42,11 @@ jobs:
         sudo apt-get update -qq
         sudo apt-get install -y -qq fzf direnv zoxide || true
         curl -sS https://starship.rs/install.sh | sh -s -- --yes || true
+        # oh-my-posh is the other cross-shell prompt, and its init is a
+        # harder test than starship's: a two-stage bootstrap ending in
+        # PS0, a PROMPT_COMMAND array and PS1 holding a command
+        # substitution. Its own installer, into a dir already on PATH.
+        curl -sS https://ohmyposh.dev/install.sh | sudo bash -s -- -d /usr/local/bin || true
 
     # The #1 abandonment cause, gated (#161): text pasted at a real
     # interactive prompt, the named init scripts sourced unmodified, and

@@ -4,7 +4,7 @@
 
 **Paste gate: 18 of 18 cases pass.** **Source gate: 2 of 2 installed tools pass** (6 of 8 not installed on the machine that generated this).
 
-**Ecosystem matrix: 3 of 3 installed tools pass** (3 of 6 not installed here).
+**Ecosystem matrix: 4 of 4 installed tools pass** (3 of 7 not installed here).
 
 Oracle: bash 5.3.15(1)-release.
 
@@ -81,6 +81,7 @@ prompt renders, the widget binds, the environment changes on cd.
 | tool | result | what it proves |
 | --- | --- | --- |
 | starship | ✅ | the prompt renders through starship's own bash init |
+| oh-my-posh | ✅ | the prompt renders through oh-my-posh's own bash init |
 | zoxide | — not installed here | `z` jumps — the user's own zoxide, not gish's native jumper |
 | atuin | — not installed here | atuin's Ctrl-R binding is installed |
 | direnv | ✅ | the .envrc applies on cd, through direnv's own hook |

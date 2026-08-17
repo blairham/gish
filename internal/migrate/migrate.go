@@ -195,7 +195,14 @@ func (p *Plan) readCall(path, src string, call *syntax.CallExpr) bool {
 		case strings.Contains(joined, "starship init"):
 			p.setTheme("starship", "your rc runs `starship init`")
 		case strings.Contains(joined, "oh-my-posh"):
-			p.note(path, src, call, "oh-my-posh is not ported; the nearest gish theme is p10k")
+			// Not a gish theme and does not need to be: oh-my-posh's
+			// bash init sets PS1 from a PROMPT_COMMAND, which #159
+			// inherits, and the ecosystem matrix asserts it rendering
+			// in a live shell. Telling a switcher to abandon their
+			// prompt for p10k — as this line used to — gave up a
+			// working setup in the one place they are looking for
+			// reasons not to move.
+			p.note(path, src, call, "keep this line unchanged — your oh-my-posh prompt works in gish as-is (docs/interactive-compat.md)")
 		default:
 			return false
 		}
