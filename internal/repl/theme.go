@@ -14,7 +14,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/p10k"
+	"github.com/blairham/gish/internal/promptengine"
 	"github.com/blairham/gish/internal/tools"
 )
 
@@ -48,7 +48,7 @@ var builtinThemes = map[string]func(*interp.Runner, promptInfo) (string, string,
 		p, cp := nakedPrompt(info)
 		return p, cp, ""
 	},
-	// p10k is the native powerlevel10k engine (internal/p10k): the
+	// p10k is the native powerlevel10k engine (internal/promptengine): the
 	// presets, the segment set and the layout, rendered in-process.
 	"p10k": p10kTheme,
 	// gish is this shell's own segment-knob theme — the one GISH_THEME_*
@@ -110,7 +110,7 @@ func transientPrompt(runner *interp.Runner, info promptInfo) string {
 	if themeName(runner) != "p10k" {
 		return ""
 	}
-	prompt, ok := p10k.RenderTransient(p10kConfigFor(runner), p10kContext(runner, info))
+	prompt, ok := promptengine.RenderTransient(p10kConfigFor(runner), p10kContext(runner, info))
 	if !ok {
 		return ""
 	}

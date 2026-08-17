@@ -14,6 +14,21 @@ import (
 	"github.com/blairham/gish/pkg/pluginapi"
 )
 
+// callHandlerCommands are gish's own commands that are routed by a
+// CallHandler rewrite rather than implemented on the exec seam. They are
+// invisible to builtins.Native(), so Tab completion and the did-you-mean
+// suggester have to be told about them by name or they look like typos.
+//
+// This is the whole list on purpose: it was `zi, config` for a long time
+// while a dozen other commands shipped, so every one of them was
+// uncompletable. A new CallHandler command belongs here the same day it
+// is wired into the chain in repl.go.
+var callHandlerCommands = []string{
+	"blocks", "clip", "config", "doctor", "explain", "migrate", "pick",
+	"plugin", "prompt", "p10k", "sandbox", "sessions", "tool", "trust",
+	"z", "zi",
+}
+
 // completionFn builds the editor's Tab hook: core command/file
 // candidates (docs/plugins.md: core, pure-local) plus plugin providers
 // merged behind the 80ms budget. Candidates are raw values — the editor
@@ -52,7 +67,7 @@ func completionFn(runner *interp.Runner, host *pluginhost.Host) func(string, int
 		if isCmd && !strings.ContainsAny(word, "/~") {
 			extra := builtins.ShellBuiltins()
 			extra = append(extra, builtins.Native()...)
-			extra = append(extra, "zi", "config")
+			extra = append(extra, callHandlerCommands...)
 			for name := range runner.Funcs {
 				extra = append(extra, name)
 			}

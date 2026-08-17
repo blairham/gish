@@ -18,7 +18,7 @@ under `-race`:
 `term`, `complete`, `editor`, `history`, `envtrust`, `tools`, `sandbox`
 (schema), `pluginhost` — including a real go-plugin round trip over the
 TCP fallback — `repl`, `builtins`, `remote`, `session`, `capture`,
-`blocks`, `p10k`, `migrate`, and the plugin binaries.
+`blocks`, `prompt`, `migrate`, and the plugin binaries.
 
 That covers the line editor's buffer, keymap, history, completion and
 renderer; the prompt engine including its path handling; the plugin

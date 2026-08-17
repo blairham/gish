@@ -17,8 +17,8 @@ import (
 
 	"github.com/blairham/gish/internal/envtrust"
 	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/p10k"
 	"github.com/blairham/gish/internal/pluginhost"
+	"github.com/blairham/gish/internal/promptengine"
 	"github.com/blairham/gish/internal/remote"
 	"github.com/blairham/gish/internal/sandbox"
 	"github.com/blairham/gish/internal/term"
@@ -146,11 +146,11 @@ func checkTheme(env expand.Environ) checkResult {
 		}
 	}
 	if theme == "p10k" {
-		if preset := env.Get("GISH_P10K_PRESET").String(); preset != "" && p10k.Preset(preset) == nil {
+		if preset := env.Get("GISH_P10K_PRESET").String(); preset != "" && promptengine.Preset(preset) == nil {
 			return checkResult{
 				checkWarn, "theme",
-				fmt.Sprintf("GISH_P10K_PRESET=%q is not a preset — rendering %s instead", preset, p10k.DefaultPreset),
-				"p10k configure   (presets: " + strings.Join(p10k.Presets(), " | ") + ")",
+				fmt.Sprintf("GISH_P10K_PRESET=%q is not a preset — rendering %s instead", preset, promptengine.DefaultPreset),
+				"prompt configure   (presets: " + strings.Join(promptengine.Presets(), " | ") + ")",
 			}
 		}
 	}

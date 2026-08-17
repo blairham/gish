@@ -206,7 +206,7 @@ func (p *Plan) readCall(path, src string, call *syntax.CallExpr) bool {
 		case strings.Contains(joined, "oh-my-zsh.sh"):
 			p.addManager("oh-my-zsh", "themes and plugins are zsh scripts; `plugin add` can load the ones that are shell-agnostic", false)
 		case strings.Contains(joined, "p10k.zsh"):
-			p.setTheme("p10k", "your rc sources a powerlevel10k config — import it with `p10k import`")
+			p.setTheme("p10k", "your rc sources a powerlevel10k config — import it with `prompt import`")
 		case strings.Contains(joined, "zinit") || strings.Contains(joined, "zi.zsh"):
 			p.addManager("zinit/zi", "gish has the engine natively: `zi migrate` imports installed objects", true)
 		case strings.Contains(joined, "antidote"):
@@ -241,7 +241,7 @@ func (p *Plan) readAssign(path, src string, a *syntax.Assign) {
 			p.PathAdds = append(p.PathAdds, part)
 		}
 	case strings.HasPrefix(name, "POWERLEVEL9K_"):
-		p.setTheme("p10k", "your rc sets POWERLEVEL9K_* — gish has a native port; `p10k import` takes the whole config")
+		p.setTheme("p10k", "your rc sets POWERLEVEL9K_* — gish has a native port; `prompt import` takes the whole config")
 	case name == "ZSH_THEME":
 		p.setTheme("p10k", "oh-my-zsh theme "+unquote(value)+" has no port; p10k is the closest built-in")
 	case name == "PS1" || name == "PROMPT":

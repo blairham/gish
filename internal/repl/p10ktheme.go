@@ -8,12 +8,12 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/p10k"
+	"github.com/blairham/gish/internal/promptengine"
 )
 
 // The p10k theme's front door in the shell.
 //
-// GISH_THEME=p10k renders through internal/p10k in this process: no
+// GISH_THEME=p10k renders through internal/promptengine in this process: no
 // subprocess, no plugin, no IPC on the prompt path. The engine is shared
 // with cmd/gish-p10k, which serves the same themes to other shells over
 // the tier-2 contract; this path exists because the shell's own prompt
@@ -28,12 +28,12 @@ import (
 // Layer 3 is there because it is what a person arriving from
 // powerlevel10k already knows how to type. It reads settings as *data* —
 // there is no shell being interpreted, and a .p10k.zsh is not consulted
-// here; importing one is an explicit, one-time step (`p10k import`).
+// here; importing one is an explicit, one-time step (`prompt import`).
 
 // presetCache holds built presets so a prompt costs a map lookup rather
 // than a rebuild. Presets are pure data and never mutated in place —
 // anything layered on top happens on a clone.
-var presetCache sync.Map // preset name -> *p10k.Config
+var presetCache sync.Map // preset name -> *promptengine.Config
 
 // lastPromptDir is the directory the previous prompt rendered in. The
 // same-dir transient mode needs it, and prompt resolution is
@@ -52,26 +52,26 @@ var lastPromptDir string
 
 // p10kTheme is the builtinThemes entry for "p10k".
 func p10kTheme(runner *interp.Runner, info promptInfo) (string, string, string) {
-	out := p10k.Render(p10kConfigFor(runner), p10kContext(runner, info))
+	out := promptengine.Render(p10kConfigFor(runner), p10kContext(runner, info))
 	return out.Prompt, out.Cont, out.RPrompt
 }
 
 // p10kConfigFor assembles the configuration for this prompt.
-func p10kConfigFor(runner *interp.Runner) *p10k.Config {
-	return p10kConfig(shellVar(runner, "GISH_P10K_PRESET", p10k.DefaultPreset), sessionOverrides(runner))
+func p10kConfigFor(runner *interp.Runner) *promptengine.Config {
+	return p10kConfig(shellVar(runner, "GISH_P10K_PRESET", promptengine.DefaultPreset), sessionOverrides(runner))
 }
 
 // p10kConfigFromEnv is the same assembly for callers that hold a handler
-// context rather than the runner (`p10k show`). It has to exist: a
+// context rather than the runner (`prompt show`). It has to exist: a
 // setting assigned in the session is a *shell* variable, not an exported
 // one, so reading os.Environ would report a configuration the prompt is
 // not actually using.
-func p10kConfigFromEnv(env expand.Environ) *p10k.Config {
+func p10kConfigFromEnv(env expand.Environ) *promptengine.Config {
 	name := env.Get("GISH_P10K_PRESET").String()
 	if name == "" {
-		name = p10k.DefaultPreset
+		name = promptengine.DefaultPreset
 	}
-	var overrides *p10k.Config
+	var overrides *promptengine.Config
 	env.Each(func(varName string, v expand.Variable) bool {
 		overrides = addOverride(overrides, varName, v.String())
 		return true
@@ -81,26 +81,26 @@ func p10kConfigFromEnv(env expand.Environ) *p10k.Config {
 
 // p10kConfig layers the preset, the config file and any session
 // overrides into the configuration one render will read.
-func p10kConfig(name string, overrides *p10k.Config) *p10k.Config {
+func p10kConfig(name string, overrides *promptengine.Config) *promptengine.Config {
 	if name == "" {
-		name = p10k.DefaultPreset
+		name = promptengine.DefaultPreset
 	}
 	cached, ok := presetCache.Load(name)
 	if !ok {
-		cfg := p10k.Preset(name)
+		cfg := promptengine.Preset(name)
 		if cfg == nil {
 			// An unknown preset name degrades to the default rather than
 			// to no prompt; doctor reports the typo.
-			cfg = p10k.Preset(p10k.DefaultPreset)
+			cfg = promptengine.Preset(promptengine.DefaultPreset)
 		}
 		presetCache.Store(name, cfg)
 		cached = cfg
 	}
-	base := cached.(*p10k.Config)
+	base := cached.(*promptengine.Config)
 
 	// The file layer is mtime-cached rather than session-cached, so an
 	// edit shows up on the next prompt instead of the next shell.
-	file := p10k.LoadNativeConfig()
+	file := promptengine.LoadNativeConfig()
 	if file == nil && overrides == nil {
 		return base
 	}
@@ -113,8 +113,8 @@ func p10kConfig(name string, overrides *p10k.Config) *p10k.Config {
 // sessionOverrides collects POWERLEVEL9K_* settings from the session,
 // returning nil when there are none — the common case, which then costs
 // no clone and no merge.
-func sessionOverrides(runner *interp.Runner) *p10k.Config {
-	var out *p10k.Config
+func sessionOverrides(runner *interp.Runner) *promptengine.Config {
+	var out *promptengine.Config
 	if runner == nil {
 		for _, kv := range os.Environ() {
 			if name, value, found := strings.Cut(kv, "="); found {
@@ -140,13 +140,13 @@ func sessionOverrides(runner *interp.Runner) *p10k.Config {
 // addOverride records one POWERLEVEL9K_* setting, allocating the config
 // only once something actually matches — the common case is that nothing
 // does, and a prompt should not pay for a map it will not use.
-func addOverride(out *p10k.Config, name, value string) *p10k.Config {
+func addOverride(out *promptengine.Config, name, value string) *promptengine.Config {
 	key, ok := strings.CutPrefix(name, "POWERLEVEL9K_")
 	if !ok {
 		return out
 	}
 	if out == nil {
-		out = p10k.NewConfig()
+		out = promptengine.NewConfig()
 		out.Sources = append(out.Sources, "session")
 	}
 	// Element lists are the one place a value is plural. Everything else
@@ -162,12 +162,12 @@ func addOverride(out *p10k.Config, name, value string) *p10k.Config {
 
 // p10kContext converts the shell's prompt state into what a segment is
 // allowed to see.
-func p10kContext(runner *interp.Runner, info promptInfo) *p10k.Context {
+func p10kContext(runner *interp.Runner, info promptInfo) *promptengine.Context {
 	dir := info.dir
 	if dir == "" && runner != nil {
 		dir = runner.Dir
 	}
-	ctx := &p10k.Context{
+	ctx := &promptengine.Context{
 		Cwd:      dir,
 		Home:     info.home,
 		Username: info.username,
@@ -186,7 +186,7 @@ func p10kContext(runner *interp.Runner, info promptInfo) *p10k.Context {
 	// The branch is read here and now — one cached file read. Counts come
 	// from whoever is scanning the repository and are merged when they
 	// describe this same working tree.
-	ctx.Git = p10k.HeadStatus(dir)
+	ctx.Git = promptengine.HeadStatus(dir)
 	// The counts arrive from a background scan (#52); the prompt never
 	// waits for one.
 	mergeVCSCounts(ctx.Git)

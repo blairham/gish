@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/p10k"
+	"github.com/blairham/gish/internal/promptengine"
 	"github.com/blairham/gish/pkg/pluginapi"
 )
 
@@ -35,8 +35,8 @@ func TestThemesCoverEveryPreset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.GetThemes()) != len(p10k.Presets()) {
-		t.Fatalf("advertised %d themes, have %d presets", len(got.GetThemes()), len(p10k.Presets()))
+	if len(got.GetThemes()) != len(promptengine.Presets()) {
+		t.Fatalf("advertised %d themes, have %d presets", len(got.GetThemes()), len(promptengine.Presets()))
 	}
 	for _, th := range got.GetThemes() {
 		// Built-in names are reserved by the host and would be dropped
@@ -68,7 +68,7 @@ func sampleRequest(name string) *pluginapi.RenderPromptRequest {
 
 func TestRenderPromptServesEachPreset(t *testing.T) {
 	isolate(t)
-	for _, preset := range p10k.Presets() {
+	for _, preset := range promptengine.Presets() {
 		t.Run(preset, func(t *testing.T) {
 			got, err := theme{}.RenderPrompt(context.Background(), sampleRequest("p10k-"+preset))
 			if err != nil {
@@ -89,14 +89,14 @@ func TestRenderPromptServesEachPreset(t *testing.T) {
 
 func TestRenderPromptMatchesTheInProcessEngine(t *testing.T) {
 	isolate(t)
-	// The whole point of sharing internal/p10k is that the two front
+	// The whole point of sharing internal/promptengine is that the two front
 	// doors cannot drift. Same inputs, same bytes.
 	req := sampleRequest("p10k-lean")
 	got, err := theme{}.RenderPrompt(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := p10k.Render(p10k.Preset("lean"), promptContext(req.GetContext()))
+	want := promptengine.Render(promptengine.Preset("lean"), promptContext(req.GetContext()))
 	if got.GetPrompt() != want.Prompt {
 		t.Errorf("plugin and in-process prompts differ:\n plugin: %q\n direct: %q", got.GetPrompt(), want.Prompt)
 	}

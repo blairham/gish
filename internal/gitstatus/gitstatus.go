@@ -4,7 +4,7 @@
 // It exists because there were nearly two of it. cmd/gish-git already
 // ran `git status --porcelain=v2 --branch` and parsed it for the
 // %p{git} escape, while the native p10k theme rendered counters that
-// nothing ever filled — internal/p10k's MergeCounts had no caller at
+// nothing ever filled — internal/promptengine's MergeCounts had no caller at
 // all, so `vcs` could not show dirty, staged, untracked or stashed state
 // in any repository. Writing a second parser would have been the third
 // copy of a rule in this codebase in a week.
