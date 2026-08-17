@@ -3,7 +3,9 @@
 package main
 
 import (
+	"os/exec"
 	"testing"
+	"time"
 )
 
 // Job control end to end (#55, #5).
@@ -171,13 +173,16 @@ func TestBackgroundCommandRuns(t *testing.T) {
 	s.send(`sleep 45 & printf "res%s\n" BACKGROUNDED` + "\r")
 	s.waitFor("resBACKGROUNDED")
 
-	// The child is really running, asked of the system rather than of
-	// the shell's own bookkeeping — which is the part under dispute.
-	s.buf.Reset()
-	s.send(`pgrep -f "sleep 45" >/dev/null; printf "res%s\n" "PG$?"` + "\r")
-	s.waitFor("resPG")
-	if !s.seen("resPG0") {
-		t.Errorf("`sleep 45 &` did not leave a running process:\n%s", s.plain())
+	// The child is really running — asked of the operating system from
+	// the test process, not from inside the shell.
+	//
+	// The in-shell version of this check was worthless: gish under the
+	// test pty cannot exec pgrep at all ("fork/exec /usr/bin/pgrep:
+	// operation not permitted"), so the assertion was reading a failed
+	// command rather than an absent process. Asking from out here has no
+	// such problem and is the more direct question anyway.
+	if !processExists(t, "sleep 45") {
+		t.Errorf("`sleep 45 &` left no running process:\n%s", s.plain())
 	}
 
 	// And the shell kept the terminal: a background command must never
@@ -295,4 +300,22 @@ func TestKillRejectsUnknownJobSpec(t *testing.T) {
 	if !s.seen("no such job") {
 		t.Errorf("kill %%99 did not report a missing job:\n%s", s.plain())
 	}
+}
+
+// processExists polls the system for a process whose command line
+// matches pattern, from the test process rather than through the shell.
+//
+// Polled because `cmd &` returns before the child exists: the
+// interpreter spawns it on its own goroutine, so a marker printed by the
+// same line proves the line ran, not that the process is there yet.
+// Bounded, so a genuine absence fails rather than hangs.
+func processExists(t *testing.T, pattern string) bool {
+	t.Helper()
+	for range 20 {
+		if err := exec.Command("pgrep", "-f", pattern).Run(); err == nil {
+			return true
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return false
 }
