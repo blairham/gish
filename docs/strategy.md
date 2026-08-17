@@ -55,6 +55,12 @@ Everything else is table stakes we happen to have.
 
 ## What actually decides shell adoption
 
+The lifecycle evidence behind this section — the composite law, the
+churn funnel stage by stage, and the growth mechanics ranked by whether
+they transfer — is recorded in [docs/adoption.md](adoption.md) (#207).
+This page says what gish should *claim*; that one says what determines
+whether anyone ever runs it.
+
 **Distribution, not merit.** zsh's rise was caused by Apple making it
 the default in Catalina, and the evidence is causal rather than
 correlational: Wikipedia pageviews for `Z_shell` sat flat at ~6,500/mo
