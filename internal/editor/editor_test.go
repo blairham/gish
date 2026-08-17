@@ -30,22 +30,36 @@ func (f *fakeTerm) Events(ctx context.Context) (<-chan term.Event, error) {
 	go func() {
 		defer close(ch)
 		for {
+			// The lock is held across the send, which is what makes
+			// "advance only on delivery" actually atomic.
+			//
+			// Reading the position, unlocking to send, then locking again
+			// to advance leaves a window: the handover cancels this
+			// context the moment it takes an event, and the next decoder
+			// session could read the same position and redeliver it. One
+			// duplicated keystroke shifts the whole script by one, so the
+			// final Enter never arrives and the read ends in EOF —
+			// TestExternalEditReplacesBuffer failing as `"", EOF`, on CI
+			// and about once in forty runs locally.
+			//
+			// Holding the lock is safe because only one session is live at
+			// a time: the editor cancels this context before opening the
+			// next, which releases a send that nobody is reading.
 			f.mu.Lock()
 			if f.pos >= len(f.events) {
 				f.mu.Unlock()
 				return
 			}
 			ev := f.events[f.pos]
-			f.mu.Unlock()
 			select {
 			case ch <- ev:
 				// Advance only on delivery: an event still in flight
 				// when the context dies must survive for the next
 				// decoder session (the shell's type-ahead rule).
-				f.mu.Lock()
 				f.pos++
 				f.mu.Unlock()
 			case <-ctx.Done():
+				f.mu.Unlock()
 				return
 			}
 		}
