@@ -481,6 +481,17 @@ func reservedCommandName(name string) bool {
 // plugins on demand.
 func pluginsBuiltin(host *pluginhost.Host, cmdIndex *pluginhost.CommandIndex, dir string) builtins.Func {
 	return func(ctx context.Context, hc interp.HandlerContext, _ []string) error {
+		if host == nil {
+			// Registered with no host on the script paths, so the name
+			// resolves there. Without this it fell through to PATH and
+			// reported `"plugins": executable file not found` with status
+			// 127 — a builtin gish documents, answering exactly like a
+			// typo. Every neighboring builtin says what is unavailable
+			// and why (`trust: env plugins are not available in this
+			// session`); this now does too.
+			fmt.Fprintln(hc.Stderr, "plugins: the plugin host runs only in an interactive session")
+			return interp.ExitStatus(1)
+		}
 		_ = host.Discover() //nolint:errcheck // newly installed plugins picked up best-effort
 		statuses := host.Statuses(ctx, true)
 		if len(statuses) == 0 {
@@ -629,6 +640,9 @@ func runScript(ctx context.Context, r io.Reader, name string, login bool, params
 	if err != nil {
 		return err
 	}
+	// The name must resolve here too, so an unavailable builtin reports
+	// itself rather than looking like a missing program.
+	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))
 	if login {
 		loadProfile(ctx, runner)
 	}
