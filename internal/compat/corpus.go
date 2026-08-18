@@ -89,6 +89,20 @@ echo "${PATH%%:*}"`,
 		Script: `if command -v echo >/dev/null 2>&1; then echo have-echo; fi
 command -v definitely-not-a-real-binary-xyz >/dev/null 2>&1 || echo missing-ok`,
 	},
+	{
+		Name: "compgen generates path candidates", Category: CatToolInit,
+		Provenance: "bash-completion's _filedir is compgen -f/-d, and every completion script sourced at startup calls it",
+		Script: `d=$(mktemp -d) || exit 1
+mkdir -p "$d/adir" "$d/sub"
+touch "$d/afile" "$d/.hidden" "$d/sub/x"
+cd "$d" || exit 1
+echo "dirs: $(compgen -d | sort | tr '\n' ' ')"
+echo "files: $(compgen -f | sort | tr '\n' ' ')"
+echo "under sub: $(compgen -f sub/ | sort | tr '\n' ' ')"
+echo "hidden: $(compgen -f .h | sort | tr '\n' ' ')"
+compgen -d zzz >/dev/null; echo "no match st=$?"
+cd / && rm -rf "$d"`,
+	},
 
 	// --- parameter expansion: the densest source of "does it work" ---
 	{
