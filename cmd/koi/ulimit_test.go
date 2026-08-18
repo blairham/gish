@@ -27,7 +27,7 @@ import (
 // them.
 func bashLimitLetters(t *testing.T, bash, dir string) []string {
 	t.Helper()
-	lines, _ := shellLines(t, bash, dir, "ulimit -a")
+	lines, _ := shellRows(t, bash, dir, "ulimit -a")
 	var out []string
 	for _, line := range lines {
 		open := strings.LastIndex(line, "(")
@@ -71,8 +71,8 @@ func TestUlimitMatchesBash(t *testing.T) {
 			script := "ulimit " + which + letter
 			t.Run(script, func(t *testing.T) {
 				t.Parallel()
-				got, gotStatus := shellLines(t, koi, dir, script)
-				want, wantStatus := shellLines(t, bash, dir, script)
+				got, gotStatus := shellRows(t, koi, dir, script)
+				want, wantStatus := shellRows(t, bash, dir, script)
 				if strings.Join(got, "\n") != strings.Join(want, "\n") {
 					t.Errorf("%s: koi %q, bash %q", script, got, want)
 				}
@@ -87,30 +87,51 @@ func TestUlimitMatchesBash(t *testing.T) {
 // The labeled form, which pins the descriptions, the units, the option
 // order and the padding all at once — `ulimit -a | grep 'open files'` is
 // a normal way to read this, so the strings are a contract.
+// squeeze collapses runs of spaces, for comparing against an oracle whose
+// column widths are not the ones koi targets.
+func squeeze(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 func TestUlimitListingMatchesBash(t *testing.T) {
 	t.Parallel()
 	koi, bash := buildKoi(t), bashBin(t)
 	dir := t.TempDir()
 
+	// bash 3 pads the suffix into a sixteen-wide field and bash 4 and
+	// later into a twenty-wide one. koi matches the modern one, so
+	// against an older oracle — macOS still ships 3.2 — the padding is
+	// compared with spaces collapsed. Everything else, including the row
+	// order and every value, is still compared exactly.
+	major := bashMajor(t, bash)
+	exactColumns := major >= 4
+	if !exactColumns {
+		t.Logf("bash %d is the oracle: comparing rows with spacing collapsed", major)
+	}
+
 	for _, script := range []string{"ulimit -a", "ulimit -aH", "ulimit -aS"} {
 		t.Run(script, func(t *testing.T) {
 			t.Parallel()
-			got, _ := shellLines(t, koi, dir, script)
-			want, _ := shellLines(t, bash, dir, script)
+			got, _ := shellRows(t, koi, dir, script)
+			want, _ := shellRows(t, bash, dir, script)
 			if len(got) != len(want) {
 				t.Fatalf("%s: koi listed %d rows, bash %d:\nkoi:  %q\nbash: %q", script, len(got), len(want), got, want)
 			}
 			for i := range want {
+				gotRow, wantRow := got[i], want[i]
+				if !exactColumns {
+					gotRow, wantRow = squeeze(gotRow), squeeze(wantRow)
+				}
 				// The open-files row carries the one value the Go runtime
 				// owns; its label and column are still compared.
-				if strings.Contains(want[i], "-n)") {
-					if labelOf(got[i]) != labelOf(want[i]) {
-						t.Errorf("%s row %d: koi %q, bash %q", script, i, labelOf(got[i]), labelOf(want[i]))
+				if strings.Contains(wantRow, "-n)") {
+					if labelOf(gotRow) != labelOf(wantRow) {
+						t.Errorf("%s row %d: koi %q, bash %q", script, i, labelOf(gotRow), labelOf(wantRow))
 					}
 					continue
 				}
-				if got[i] != want[i] {
-					t.Errorf("%s row %d:\nkoi:  %q\nbash: %q", script, i, got[i], want[i])
+				if gotRow != wantRow {
+					t.Errorf("%s row %d:\nkoi:  %q\nbash: %q", script, i, gotRow, wantRow)
 				}
 			}
 		})
@@ -151,8 +172,8 @@ func TestUlimitSetMatchesBash(t *testing.T) {
 	} {
 		t.Run(script, func(t *testing.T) {
 			t.Parallel()
-			got, gotStatus := shellLines(t, koi, dir, script)
-			want, wantStatus := shellLines(t, bash, dir, script)
+			got, gotStatus := shellRows(t, koi, dir, script)
+			want, wantStatus := shellRows(t, bash, dir, script)
 			if strings.Join(got, "\n") != strings.Join(want, "\n") {
 				t.Errorf("%s: koi %q, bash %q", script, got, want)
 			}
@@ -177,7 +198,7 @@ func TestUlimitSetReachesChildren(t *testing.T) {
 	script := "ulimit -n " + want + "; " + bash + " -c 'ulimit -n'"
 
 	for _, shell := range []struct{ name, bin string }{{"koi", koi}, {"bash", bash}} {
-		got, status := shellLines(t, shell.bin, dir, script)
+		got, status := shellRows(t, shell.bin, dir, script)
 		if status != 0 || strings.Join(got, "") != want {
 			t.Errorf("under %s a child saw %q (status %d), want %q", shell.name, got, status, want)
 		}
@@ -193,12 +214,21 @@ func TestUlimitOptionGrammarMatchesBash(t *testing.T) {
 	koi, bash := buildKoi(t), bashBin(t)
 	dir := t.TempDir()
 
+	exactColumns := bashMajor(t, bash) >= 4
 	compare := func(t *testing.T, script string, output bool) {
 		t.Helper()
-		got, gotStatus := shellLines(t, koi, dir, script)
-		want, wantStatus := shellLines(t, bash, dir, script)
+		got, gotStatus := shellRows(t, koi, dir, script)
+		want, wantStatus := shellRows(t, bash, dir, script)
 		if gotStatus != wantStatus {
 			t.Errorf("%s: koi status %d, bash %d", script, gotStatus, wantStatus)
+		}
+		if !exactColumns {
+			for i := range got {
+				got[i] = squeeze(got[i])
+			}
+			for i := range want {
+				want[i] = squeeze(want[i])
+			}
 		}
 		if output && strings.Join(got, "\n") != strings.Join(want, "\n") {
 			t.Errorf("%s: koi %q, bash %q", script, got, want)
@@ -235,7 +265,7 @@ func TestUlimitOptionGrammarMatchesBash(t *testing.T) {
 			t.Run(script, func(t *testing.T) {
 				t.Parallel()
 				compare(t, script, false)
-				if _, status := shellLines(t, koi, dir, script); status == 0 {
+				if _, status := shellRows(t, koi, dir, script); status == 0 {
 					t.Errorf("%s: koi exited 0", script)
 				}
 			})
@@ -262,8 +292,8 @@ func TestUlimitReportsInBashsUnits(t *testing.T) {
 		script := "ulimit -" + tc.letter + " " + tc.set + "; ulimit -" + tc.letter
 		t.Run(script, func(t *testing.T) {
 			t.Parallel()
-			got, _ := shellLines(t, koi, dir, script)
-			want, _ := shellLines(t, bash, dir, script)
+			got, _ := shellRows(t, koi, dir, script)
+			want, _ := shellRows(t, bash, dir, script)
 			if strings.Join(got, "\n") != strings.Join(want, "\n") {
 				t.Errorf("%s: koi %q, bash %q", script, got, want)
 			}
@@ -287,8 +317,8 @@ func TestUlimitReportsInBashsUnits(t *testing.T) {
 		script := "ulimit -" + tc.letter + " " + tc.set + "; " + bash + " -c 'ulimit -" + tc.letter + "'"
 		t.Run("through a child: "+script, func(t *testing.T) {
 			t.Parallel()
-			got, _ := shellLines(t, koi, dir, script)
-			want, _ := shellLines(t, bash, dir, script)
+			got, _ := shellRows(t, koi, dir, script)
+			want, _ := shellRows(t, bash, dir, script)
 			if strings.Join(got, "\n") != strings.Join(want, "\n") {
 				t.Errorf("%s:\nkoi:  %q\nbash: %q", script, got, want)
 			}

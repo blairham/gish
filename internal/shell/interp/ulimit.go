@@ -190,18 +190,24 @@ func ulimitLetters() string {
 
 // ulimitLabel renders the description column of the labelled form.
 //
-// bash pads so that the closing parenthesis lands in a fixed column, not
-// so that the descriptions line up — which is why "open files" is
-// followed by far more spaces than "max locked memory" is.
-const ulimitLabelWidth = 40
+// Two fields of twenty, not one of forty: the description is padded on
+// the right to twenty and the "(unit, -x)" part is padded on the *left*
+// to twenty. Those agree for every row that fits — the closing
+// parenthesis lands in column forty either way, which is what made a
+// single fixed column look right — and disagree for the one row that
+// does not. Linux's "real-time non-blocking time" is twenty-seven
+// characters wide, so bash pushes its suffix past forty and still gives
+// it a full twenty-wide field; a single fixed column would have left it
+// one space, and that one row is the whole difference.
+const ulimitFieldWidth = 20
 
 func ulimitLabel(spec ulimitSpec) string {
 	opt := "(-" + string(spec.letter) + ")"
 	if spec.unit != "" {
 		opt = "(" + spec.unit + ", -" + string(spec.letter) + ")"
 	}
-	pad := max(ulimitLabelWidth-len(spec.label)-len(opt), 1)
-	return spec.label + strings.Repeat(" ", pad) + opt
+	label := spec.label + strings.Repeat(" ", max(ulimitFieldWidth-len(spec.label), 0))
+	return label + strings.Repeat(" ", max(ulimitFieldWidth-len(opt), 0)) + opt
 }
 
 // readUlimit answers one row, in the units bash reports it in.
