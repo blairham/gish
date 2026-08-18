@@ -66,7 +66,11 @@ bash-suite: ## Fetch bash's own tests/ and publish docs/bash-suite.md (#211)
 .PHONY: bash-suite-check
 bash-suite-check: ## Run the bash suite without republishing (harness sanity only)
 	./scripts/fetch-bash-tests.sh
-	KOI_GATES=1 go test ./internal/compat/ -run 'TestBashSuite|TestSuiteSummary|TestBashSuiteDoc|TestPublishedSuite' -timeout 30m
+	# -v is load-bearing: the run reports its delta against the published
+	# page with t.Logf, and go test discards Logf output from a passing test
+	# unless -v is set. Without it this target prints "ok" and the drift it
+	# exists to surface stays invisible — which is exactly how it shipped.
+	KOI_GATES=1 go test -v ./internal/compat/ -run 'TestBashSuite|TestSuiteSummary|TestBashSuiteDoc|TestPublishedSuite' -timeout 30m
 
 .PHONY: paste-gate
 paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161) and the ecosystem matrix (#159)
