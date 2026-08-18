@@ -64,7 +64,14 @@ func runScript(ctx context.Context, shell, script string) (string, int) {
 	cmd := exec.CommandContext(rctx, shell, "-c", script) //nolint:gosec // fixed shells, curated corpus
 	// A hermetic-ish environment: the corpus must not depend on the
 	// runner's dotfiles or locale.
-	cmd.Env = []string{"PATH=" + pathEnv(), "HOME=" + homeEnv(), "LC_ALL=C", "TERM=dumb"}
+	// TMPDIR is passed through rather than left unset: with no TMPDIR a
+	// shell falls back to /tmp, so a case needing a temp file (process
+	// substitution makes a fifo) fails wherever /tmp is not writable and
+	// the scoreboard publishes a compat gap that is really a sandbox.
+	cmd.Env = []string{
+		"PATH=" + pathEnv(), "HOME=" + homeEnv(), "LC_ALL=C", "TERM=dumb",
+		"TMPDIR=" + os.TempDir(),
+	}
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
 	err := cmd.Run()
