@@ -175,10 +175,9 @@ var AgentCorpus = []AgentCase{
 		Provenance: "Claude Code ships bundled bfs and ugrep behind one binary and installs them as snapshot functions that rewrite argv[0]: " +
 			"`(exec -a bfs \"$_cc_bin\" -S dfs ...)`. The zsh arm uses `ARGV0=`, which koi honors; the bash arm uses `exec -a`, which koi " +
 			"treats as a command named `-a`. koi announces bash (#120), so it always takes the arm it cannot run — and 39.6% of 59,836 " +
-			"recorded Bash-tool calls invoke bare find or grep",
-		Argv:      []string{"-c", `(exec -a nm /bin/echo shim-ran) 2>/dev/null || echo SHIM-FAILED`},
-		Known:     241,
-		KnownNote: "every bare `find` and `grep` an agent runs fails, with a message naming `-a` rather than find or grep",
+			"recorded Bash-tool calls invoke bare find or grep. Fixed in the substrate (mvdan/sh#1386, our exec-flags carry) " +
+			"rather than here, so this case is now an ordinary enforced gate",
+		Argv: []string{"-c", `(exec -a nm /bin/echo shim-ran) 2>/dev/null || echo SHIM-FAILED`},
 	},
 	{
 		Name:       "snapshot generator: declare -F survives eval",

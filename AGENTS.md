@@ -175,16 +175,29 @@ carry patches upstream has not taken *yet*, so a fix is one push and one
 
 Two things to know before reaching for it:
 
-- **The fork is not in the dependency path today**, because it has
-  nothing upstream lacks. Do not route through it for its own sake — a
-  pin to `mvdan.cc/sh/v3@<commit>` is simpler and is what CI resolves.
-- **Routing through it costs an import rewrite.** Go requires a
-  `replace` target's `go.mod` to declare the path it is replaced by, and
-  every internal import to be prefixed with it — so a real fork carry
-  means `module github.com/blairham/sh/v3` plus a sweep across ~18k
-  lines, which also makes clean upstream PRs harder. Pay that only when
-  we actually need a patch upstream has not merged, and keep the rename
-  as a single tip commit so the PR branch below it stays clean.
+- **The carry is cheap, and an earlier version of this section said it was
+  not.** It claimed Go requires the `replace` target's `go.mod` to declare
+  the right-hand path, so a carry meant renaming the module to
+  `github.com/blairham/sh/v3` and sweeping ~18k lines of imports. That is
+  backwards: Go matches the replacement's module path against the
+  **left**-hand side — the module being replaced — so a fork which *keeps*
+  `module mvdan.cc/sh/v3` is exactly what `replace` wants. One line, no
+  rename, no sweep, and upstream PRs stay clean because the fork's tree is
+  byte-identical to upstream's apart from the fix:
+
+  ```sh
+  go mod edit -replace=mvdan.cc/sh/v3=github.com/blairham/sh/v3@<commit>
+  ```
+
+  Verified end to end: with that line and the fork's `go.mod` still saying
+  `module mvdan.cc/sh/v3`, `go build` resolves and the fork's behavior is
+  what runs. The stated cost was the only argument for waiting on upstream
+  before unblocking ourselves, and it does not hold.
+- **Prefer the plain pin when it is enough.** A pin to
+  `mvdan.cc/sh/v3@<commit>` needs no `replace` at all, so it stays the
+  right answer whenever the fix is already upstream. Reach for the fork
+  only for a patch upstream has not merged **yet** — and open the upstream
+  PR at the same time, so the carry has a defined end.
 
 What we do *not* do is reimplement the substrate. `syntax`, `interp`,
 `expand` and `pattern` are ~18k lines of implementation against ~18k
