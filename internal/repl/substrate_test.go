@@ -228,10 +228,14 @@ func TestQuotedHeredocSurvivesSourceAndEval(t *testing.T) {
 	if err := os.WriteFile(script, []byte("cat <<'X'\nre=\\\\d+ and \\$var\nX\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The path is quoted rather than interpolated bare: on Windows it is
+	// full of backslashes, which the shell would read as escapes — the
+	// test would then fail on the same class of bug it is about.
+	quoted := singleQuote(script)
 	want := "re=\\\\d+ and \\$var\n"
 	for _, tc := range []struct{ name, src string }{
-		{"source", ". " + script},
-		{"eval", `eval "$(cat ` + script + `)"`},
+		{"source", ". " + quoted},
+		{"eval", `eval "$(cat ` + quoted + `)"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := runSession(t, tc.src); got != want {
