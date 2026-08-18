@@ -32,6 +32,7 @@ type shellArgs struct {
 	haveCommand   bool   // -c was given
 	login         bool   // -l / --login
 	interactive   bool   // -i
+	noexec        bool   // -n: parse, report syntax errors, run nothing
 	version       bool   // --version
 	remoteSession bool   // --remote-session
 	sandbox       string // --sandbox profile
@@ -106,6 +107,11 @@ func parseArgs(args []string) (shellArgs, error) {
 				out.interactive = true
 			case 'c':
 				out.haveCommand = true
+			case 'n':
+				// POSIX: read commands but do not execute them. Clustered
+				// like the rest, because `sh -nc '…'` is a shape callers
+				// write (#233).
+				out.noexec = true
 			default:
 				return out, fmt.Errorf("unknown option %q in %q", string(r), arg)
 			}
@@ -130,6 +136,8 @@ const usage = `usage: koi [options] [script [args…]]
                     command is the first operand, as in bash
   -l, --login       act as a login shell (source profile files)
   -i                interactive: source the rc file even with -c
+  -n                parse and report syntax errors; run nothing (exit 2
+                    on a syntax error, silent and 0 otherwise)
   --sandbox profile run every external command under a sandbox profile
                     (none opts out of the koi-agent default)
   --rc file         read startup settings from file

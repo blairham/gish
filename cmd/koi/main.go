@@ -14,6 +14,7 @@ import (
 
 	"github.com/blairham/koi-shell/internal/repl"
 	"github.com/blairham/koi-shell/internal/sandbox"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // Stamped by -ldflags at build/release time; see Makefile and .goreleaser.yaml.
@@ -120,6 +121,34 @@ func run() int {
 	login := opts.login || strings.HasPrefix(os.Args[0], "-")
 
 	ctx := context.Background()
+
+	// `-n` is a syntax check, so it must not reach any of the run paths
+	// below (#233). bash *ignores* -n for an interactive shell, and that
+	// is copied deliberately rather than improved on: a shell that
+	// refused to start because someone left -n in their terminal profile
+	// would be worse than one that quietly runs.
+	// bash ignores -n for an interactive shell, so an interactive session
+	// falls through to the normal path below rather than exiting. Copied
+	// deliberately: a shell that refused to start because -n was left in
+	// someone's terminal profile would be worse than one that runs.
+	if opts.noexec && (opts.haveCommand || len(opts.operands) > 0 || !term.IsTerminal(os.Stdin)) {
+		switch {
+		case opts.haveCommand:
+			// "-c" is the name bash puts in the message for this case, and
+			// the name is what appears before line:col.
+			err = repl.CheckCommand(opts.command, "-c")
+		case len(opts.operands) > 0:
+			err = repl.CheckFile(opts.operands[0])
+		default:
+			err = repl.CheckStdin()
+		}
+		if err != nil {
+			repl.ReportSyntaxError(os.Stderr, err)
+			return repl.NoExecStatus
+		}
+		return 0
+	}
+
 	switch {
 	case opts.haveCommand:
 		// Everything after the command string is $0 then $1…
