@@ -329,6 +329,25 @@ func (r *Runner) fdWriter(fd int) io.Writer {
 	return nil
 }
 
+// fdReader returns what is open for reading on a descriptor, or nil.
+//
+// The counterpart to fdWriter, added for `read -u` (#267): descriptors
+// above 2 have worked for redirection since #263, so `read x <&3` read the
+// right file while `read -u 3 x` — the spelling the manual uses, and the
+// one `flock` wrappers write — was refused outright.
+func (r *Runner) fdReader(fd int) io.Reader {
+	if fd == 0 {
+		if r.stdin == nil {
+			return nil
+		}
+		return r.stdin
+	}
+	if f, ok := r.extraFiles[fd]; ok {
+		return f
+	}
+	return nil
+}
+
 // setFdWriter points a descriptor at a writer. A descriptor above 2 has to hold
 // something closeable, so a plain writer is wrapped; note that only a real file
 // can be handed to another process, which is what [Runner.extraFileSlice] cares
@@ -896,7 +915,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					}
 					r.errf("%s", ps3)
 
-					line, err := r.readLine(ctx, true, '\n', -1, false)
+					line, _, err := r.readLine(ctx, r.stdin, true, '\n', -1, false, 0)
 					if err != nil {
 						r.errf("\n")
 						r.exit.code = 1

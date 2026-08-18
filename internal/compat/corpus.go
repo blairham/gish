@@ -307,6 +307,24 @@ g
 case $- in *i*) echo interactive;; *) echo noninteractive;; esac`,
 	},
 	{
+		Name: "read from a descriptor, and read with a deadline", Category: CatControl,
+		Provenance: "#267: `while read -r -u \"$fd\"` is how a script reads a stream it opened itself — flock wrappers and " +
+			"anything juggling more than stdin — and `read -t` is how it reads from something that might not answer. Both " +
+			"were refused with exit 2, which nothing calling `read` checks, so the variable stayed empty and the loop body " +
+			"never ran",
+		Script: `f=$(mktemp)
+printf 'alpha\nbeta\n' > "$f"
+exec 3< "$f"
+while read -r -u 3 line; do echo "got $line"; done
+exec 3<&-
+read -r -t 1 x <<< "quick"
+echo "timed read st=$? x=[$x]"
+{ printf partial; sleep 0.5; } | { read -r -t 0.1 y; echo "cut off st=$? y=[$y]"; }
+read -r -u 9 z 2>/dev/null; echo "bad fd st=$?"
+read -r -t nope w 2>/dev/null; echo "bad timeout st=$?"
+rm -f "$f"`,
+	},
+	{
 		Name: "an error helper knows where it was called from", Category: CatControl,
 		Provenance: "#266/#250: `die() { echo \"${BASH_SOURCE[1]}:${BASH_LINENO[0]}: ${FUNCNAME[1]}: $*\"; }` is the helper every " +
 			"script of any size grows, and koi printed the message with the location blank — the part worth having. Nothing " +
