@@ -169,24 +169,42 @@ year — which is how an ordinary `${x%%[![:space:]]*}` trim stayed a
 crash long after it was fixed. Waiting for a tag is not a strategy when
 the substrate is the compatibility claim.
 
-So the rule is: **pin to whatever commit has the fix, and upstream every
-fix we write.** `blairham/sh` is our fork of `mvdan/sh` — clone it beside
-this repo, `origin` the fork and `upstream` the real one. Its job is to
-carry patches upstream has not taken *yet*, so a fix is one push and one
-`go get` away rather than a negotiation.
+So the rule is: **pin to whatever commit has the fix.** `blairham/sh` is
+our fork of `mvdan/sh` — clone it beside this repo, `origin` the fork and
+`upstream` the real one. Its job is to carry patches upstream has not
+taken, so a fix is one push and one `go get` away rather than a
+negotiation. The `koi-carry` branch is that carry.
 
-Two things to know before reaching for it:
+Two things to know before reaching for it, both of which this file
+previously had wrong:
 
-- **The fork is not in the dependency path today**, because it has
-  nothing upstream lacks. Do not route through it for its own sake — a
-  pin to `mvdan.cc/sh/v3@<commit>` is simpler and is what CI resolves.
-- **Routing through it costs an import rewrite.** Go requires a
-  `replace` target's `go.mod` to declare the path it is replaced by, and
-  every internal import to be prefixed with it — so a real fork carry
-  means `module github.com/blairham/sh/v3` plus a sweep across ~18k
-  lines, which also makes clean upstream PRs harder. Pay that only when
-  we actually need a patch upstream has not merged, and keep the rename
-  as a single tip commit so the PR branch below it stays clean.
+- **The fork *is* the dependency path.** `go.mod` replaces
+  `mvdan.cc/sh/v3` with `github.com/blairham/sh/v3` at a pseudo-version
+  of `koi-carry`. Rebase that branch on `upstream/master` to pick up
+  upstream work; add a commit to it to carry a new fix.
+- **A carry costs one line, not an import rewrite.** This file used to
+  say a carry needed `module github.com/blairham/sh/v3` plus a sweep
+  across ~18k lines. That is backwards: Go matches a `replace` target's
+  `go.mod` against the **left**-hand path, so the fork keeps `module
+  mvdan.cc/sh/v3` untouched and the whole carry is
+
+  ```sh
+  go mod edit -replace=mvdan.cc/sh/v3=github.com/blairham/sh/v3@<pseudo-version>
+  ```
+
+  Keeping the fork byte-identical to upstream apart from the fix is what
+  makes that work, and it is also what would make an upstream PR easy.
+  Note that `go mod edit` rejects a bare commit SHA and leaves `go.mod`
+  unparseable until it is hand-edited; the pseudo-version is
+  `v3.13.2-0.<UTC commit time>-<12-char sha>`.
+
+**Do not open issues or pull requests on `mvdan/sh`.** An earlier attempt
+filed enough of both in one day that the maintainer asked twice to stop,
+closed the PRs, and warned that the account would be blocked next. The
+carry delivers the fix without upstream's involvement, which is the whole
+point of having it. Whether and when to re-engage upstream is the
+maintainer's call to make, not something to do in passing while fixing a
+bug.
 
 What we do *not* do is reimplement the substrate. `syntax`, `interp`,
 `expand` and `pattern` are ~18k lines of implementation against ~18k

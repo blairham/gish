@@ -120,6 +120,8 @@ github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bkielbasa/cyclop v1.2.3 h1:faIVMIGDIANuGPWH031CZJTi2ymOQBULs9H21HSMa5w=
 github.com/bkielbasa/cyclop v1.2.3/go.mod h1:kHTwA9Q0uZqOADdupvcFJQtp/ksSnytRMe8ztxG8Fuo=
+github.com/blairham/sh/v3 v3.13.2-0.20260818151216-87feed193f2e h1:ShlsZpLq/1SRWu9f+b0eXzlkmGASckr1KOLQ9435NUw=
+github.com/blairham/sh/v3 v3.13.2-0.20260818151216-87feed193f2e/go.mod h1:3tr4oDy8eX1SeblVXiVLVGk0PbLzqwQqOAEdu9yKWBM=
 github.com/blizzy78/varnamelen v0.8.0 h1:oqSblyuQvFsW1hbBHh1zfwrKe3kcSj0rnXkKzsQ089M=
 github.com/blizzy78/varnamelen v0.8.0/go.mod h1:V9TzQZ4fLJ1DSrjVDfl89H7aMnTvKkApdHeyESmyR7k=
 github.com/bombsimon/wsl/v4 v4.7.0 h1:1Ilm9JBPRczjyUs6hvOPKvd7VL1Q++PL8M0SXBDf+jQ=
@@ -1060,8 +1062,6 @@ kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 h1:Z06sMOzc0GNCwp6efaVrIrz
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.77/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
 mvdan.cc/gofumpt v0.11.0 h1:0H01XB95PnN2QgCSR9ELdZyTlJqNZ7181B0BTMh5VZc=
 mvdan.cc/gofumpt v0.11.0/go.mod h1:BeT5wCsOJt6J9zT2MZIOGszjUHzFkn1/l9g6xAzqsXo=
-mvdan.cc/sh/v3 v3.13.2-0.20260813221317-a04df9f0d4b8 h1:IZvjQcIMI1BZ2hLAs/ur2X1n8AAB5ExY8UTGooIRBDs=
-mvdan.cc/sh/v3 v3.13.2-0.20260813221317-a04df9f0d4b8/go.mod h1:3tr4oDy8eX1SeblVXiVLVGk0PbLzqwQqOAEdu9yKWBM=
 mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15 h1:ssMzja7PDPJV8FStj7hq9IKiuiKhgz9ErWw+m68e7DI=
 mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15/go.mod h1:4M5MMXl2kW6fivUT6yRGpLLPNfuGtU2Z0cPvFquGDYU=
 rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8=

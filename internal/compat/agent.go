@@ -176,9 +176,7 @@ var AgentCorpus = []AgentCase{
 			"`(exec -a bfs \"$_cc_bin\" -S dfs ...)`. The zsh arm uses `ARGV0=`, which koi honors; the bash arm uses `exec -a`, which koi " +
 			"treats as a command named `-a`. koi announces bash (#120), so it always takes the arm it cannot run — and 39.6% of 59,836 " +
 			"recorded Bash-tool calls invoke bare find or grep",
-		Argv:      []string{"-c", `(exec -a nm /bin/echo shim-ran) 2>/dev/null || echo SHIM-FAILED`},
-		Known:     241,
-		KnownNote: "every bare `find` and `grep` an agent runs fails, with a message naming `-a` rather than find or grep",
+		Argv: []string{"-c", `(exec -a nm /bin/echo shim-ran) 2>/dev/null || echo SHIM-FAILED`},
 	},
 	{
 		Name:       "snapshot generator: declare -F survives eval",
@@ -189,17 +187,13 @@ var AgentCorpus = []AgentCase{
 	},
 	{
 		Name:       "read -d '' consumes NUL-delimited input",
-		Provenance: "`find -print0 | while read -r -d '' f` is the only safe way to walk filenames with spaces or newlines; koi refuses -d, leaves the variable empty, and still exits 0",
+		Provenance: "`find -print0 | while read -r -d '' f` is the only safe way to walk filenames with spaces or newlines. -d was refused with exit 2, which nothing calling `read` checks, so the loop body simply never ran",
 		Argv:       []string{"-c", `printf 'a\000b\000' | { read -r -d '' x 2>/dev/null; echo "[${x}]"; }`},
-		Known:      243,
-		KnownNote:  "the read looks to the caller exactly like a successful read of an empty line, so no caller-side care can detect it",
 	},
 	{
 		Name:       "read -s does not silently return empty",
-		Provenance: "the same sweep found -s is accepted with no diagnostic at all — worse than -d, which at least complains",
+		Provenance: "the same sweep found -s returning nothing with no diagnostic. It was implemented, but read the process's own fd 0 rather than the shell's stdin, so every pipe and redirect — and every embedder supplying its own reader, koi included — got an empty string",
 		Argv:       []string{"-c", `echo hi | { read -r -s x 2>/dev/null; echo "[${x}]"; }`},
-		Known:      243,
-		KnownNote:  "no message and no status: a prompt reading a confirmation gets an empty string and proceeds",
 	},
 	{
 		Name: "quoted heredoc writes the file it was given",
@@ -210,17 +204,18 @@ var AgentCorpus = []AgentCase{
 	},
 	{
 		Name:       "strict-mode header takes effect",
-		Provenance: "`set -Eeuo pipefail` is the header on essentially every modern bash script and CI job. koi refuses the -E, applies none of the remaining flags, and returns 0",
-		Argv:       []string{"-c", `set -Eeuo pipefail 2>/dev/null; false; echo REACHED`},
-		Known:      245,
-		KnownNote:  "one unsupported letter voids the whole call, so the script runs unprotected past the failure it was written to stop at",
+		Provenance: "`set -Eeuo pipefail` is the header on essentially every modern bash script and CI job. -E was refused, and one refused letter voided the whole call, so none of -e, -u or pipefail applied either and the script ran on past the failure it was written to stop at",
+		Argv:       []string{"-c", `set -Eeuo pipefail; false; echo REACHED`},
 	},
 	{
 		Name:       "noclobber protects an existing file",
-		Provenance: "`set -C` is refused, so a redirect the script asked to be prevented proceeds — the data-loss corner of the same bug",
-		Argv:       []string{"-c", `printf old > "$HOME/n"; set -C 2>/dev/null; echo new > "$HOME/n" 2>/dev/null; cat "$HOME/n"`},
-		Known:      245,
-		KnownNote:  "a script that sets noclobber precisely so it cannot destroy a file destroys it, and reports success",
+		Provenance: "`set -C` was refused, so a redirect the script asked to have prevented proceeded — the data-loss corner of the same bug. Note that the stderr suppression has to come *before* the failing redirect: redirections are applied left to right, so a trailing `2>/dev/null` is set up too late to hide the diagnostic, in bash exactly as much as here",
+		Argv:       []string{"-c", `printf old > "$HOME/n"; set -C; echo new 2>/dev/null > "$HOME/n"; cat "$HOME/n"`},
+	},
+	{
+		Name:       "`>|` overrides noclobber",
+		Provenance: "Claude Code's shell snapshot opens with `echo … >| \"$SNAPSHOT_FILE\"`, so `>|` is on the first line of the first thing the harness runs. It earns a case of its own because koi used to rewrite it to a plain `>`, which was harmless while the substrate had no noclobber and became the exact opposite of the intent once it did",
+		Argv:       []string{"-c", `printf old > "$HOME/n"; set -C; echo new >| "$HOME/n"; cat "$HOME/n"`},
 	},
 	{
 		Name:       "file descriptors above 2 carry data",
@@ -231,18 +226,14 @@ var AgentCorpus = []AgentCase{
 	},
 	{
 		Name:       "PIPESTATUS reports each stage",
-		Provenance: "`cmd | tee log` then `[ \"${PIPESTATUS[0]}\" -ne 0 ]` is the standard way to recover the status $? cannot answer; koi leaves the array empty, so the test either errors on an empty operand or inverts the outcome",
+		Provenance: "`cmd | tee log` then `[ \"${PIPESTATUS[0]}\" -ne 0 ]` is the standard way to recover the status $? cannot answer; the array was left empty, so the test either errored on an empty operand or inverted the outcome",
 		Argv:       []string{"-c", `false | true; echo "[${PIPESTATUS[0]}:${PIPESTATUS[1]}]"`},
-		Known:      247,
-		KnownNote:  "a succeeding pipeline can read as failed and a failing one as succeeded, depending on which idiom the script used",
 	},
 	{
 		Name:         "case ;;& falls through",
 		Provenance:   "`;;&` is how a case classifies along several axes at once — the canonical `*.tar*) untar=1 ;;& *.gz) decomp=gunzip ;;` dispatch. koi parses the terminator and treats it as plain ;;",
 		Argv:         []string{"-c", `case ab in a*) echo one;;& *b) echo two;; esac`},
 		MinBashMajor: 4,
-		Known:        248,
-		KnownNote:    "wrong control flow with no diagnostic; a parse error would at least stop on the line responsible",
 	},
 	{
 		Name:       "declare -i does arithmetic",
