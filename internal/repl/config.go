@@ -157,6 +157,11 @@ func persistConfig(hc interp.HandlerContext, fail func(error) []string, name, va
 	if err != nil {
 		return fail(err)
 	}
+	// Whether the file existed before this write decides whether a line
+	// about precedence is worth printing below.
+	_, existedErr := os.Stat(rcPathForNotice())
+	created := existedErr != nil
+
 	path, err := writeRCSetting(varName, quoted)
 	if err != nil {
 		return fail(err)
@@ -166,6 +171,13 @@ func persistConfig(hc interp.HandlerContext, fail func(error) []string, name, va
 		display = tildify(path, home)
 	}
 	fmt.Fprintf(hc.Stdout, "%s = %q — saved to %s\n", name, value, display)
+	// Creating an rc file is a bigger side effect than setting one
+	// variable, because it decides which *other* file koi reads from now
+	// on (#232). Say so once, at the moment it happens, rather than
+	// leaving it to be discovered later as a theme that stopped applying.
+	if created {
+		fmt.Fprintf(hc.Stdout, "config: created %s — koi reads it before ~/.koirc\n", display)
+	}
 	// The interpreter runs the assignment in the live session.
 	return []string{"eval", varName + "=" + quoted}
 }
@@ -406,6 +418,17 @@ func showThemeKey(hc interp.HandlerContext, key string) []string {
 		fmt.Fprintf(hc.Stdout, "theme.%s = %s (KOI_THEME_SEGMENTS)\n", key, state)
 	}
 	return []string{"true"}
+}
+
+// rcPathForNotice is the file a write is about to land in, used only to
+// tell whether it already existed. Separate from rcWritePath so that a
+// path we cannot resolve simply means no notice.
+func rcPathForNotice() string {
+	p, err := rcWritePath()
+	if err != nil {
+		return ""
+	}
+	return p
 }
 
 // rcWritePath is where config persists: $KOI_RC when set, else the

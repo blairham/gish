@@ -21,9 +21,22 @@ import (
 //
 // The first path that exists wins; none existing is not an error.
 func rcPath() string {
+	// An explicit override wins unconditionally, existing or not: it is an
+	// instruction rather than a candidate, and config must create *that*
+	// file rather than quietly writing somewhere else. Pinned by
+	// TestRCPathPrecedence, which caught this being refactored away.
 	if p := os.Getenv("KOI_RC"); p != "" {
 		return p
 	}
+	for _, p := range defaultRCPaths() {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+func defaultRCPaths() []string {
 	var candidates []string
 	confHome := os.Getenv("XDG_CONFIG_HOME")
 	home, herr := os.UserHomeDir()
@@ -36,12 +49,47 @@ func rcPath() string {
 	if herr == nil {
 		candidates = append(candidates, filepath.Join(home, ".koirc"))
 	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
+	return candidates
+}
+
+// shadowedRCs returns the rc files that exist and are being skipped
+// because something above them in the precedence order exists too.
+//
+// This is the whole of #232. Nothing here misbehaves: rc resolution is
+// first-hit-wins and documented, `config` writes to whichever file is
+// already authoritative, and the theme correctly falls back when its
+// variable is unset. The failure is that the information needed to
+// understand any of that lives in three different places, and the one
+// surface built to make configuration legible — doctor — reported two
+// true and useless lines instead:
+//
+//	✔ rc        ~/.config/koi/koirc parses cleanly
+//	✔ theme     plain
+//
+// A user who edited ~/.koirc has no reason to suspect a second rc file
+// exists, so a ✔ actively argues their configuration is fine.
+func shadowedRCs() []string {
+	defaults := defaultRCPaths()
+	existing := func(paths []string) []string {
+		var out []string
+		for _, p := range paths {
+			if _, err := os.Stat(p); err == nil {
+				out = append(out, p)
+			}
 		}
+		return out
 	}
-	return ""
+	// With an explicit override in force, every default that exists is
+	// being skipped — a user who sets KOI_RC and keeps a ~/.koirc is in
+	// the same trap as anyone else.
+	if os.Getenv("KOI_RC") != "" {
+		return existing(defaults)
+	}
+	found := existing(defaults)
+	if len(found) < 2 {
+		return nil // the first is the active one; nothing below it exists
+	}
+	return found[1:]
 }
 
 // enableAliases turns on alias expansion for an interactive session.
