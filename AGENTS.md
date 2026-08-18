@@ -214,7 +214,13 @@ positioning, the rules earned from other projects' scar tissue (never
 headline gRPC, trust stance bolded up front, never require `chsh`,
 concede the ssh objection, be in the thread), the artifact checklist with
 honest state, and what we will *not* claim. `docs/porting.md` is the
-muscle-memory guide for arrivals from bash/zsh. The README leads with the
+muscle-memory guide for arrivals from bash/zsh. `docs/adoption.md` is
+the lifecycle evidence (#207): the composite law — adoption ceiling ≈
+min(distribution, bash-interop, first-minute delight, stability
+contract, maintainer count, trust) — the churn funnel mapped stage by
+stage against what has shipped, and which growth mechanics transfer.
+Its reconstructed maintainer quotes are marked ⚠ and are not usable
+publicly until re-verified. The README leads with the
 one idea and links the measured artifacts — keep those three, plus
 `docs/compat.md` and `docs/bench.md`, consistent with each other; a
 README claim without a doc behind it is exactly what the playbook exists

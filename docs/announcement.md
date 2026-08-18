@@ -94,10 +94,16 @@ The three demos, when someone records them:
 
 ## Success metric
 
-Fish-sized, not Warp-sized: the roughly 7% of developers who customize
-their shell at all, won a thousand enthusiasts at a time. A 90-point
-thread with the author answering every reply is the shape of success;
-a viral spike with a trust backlash is not.
+Fish-sized, not Warp-sized, won a thousand enthusiasts at a time. The
+only per-tool census that exists is Homebrew's, and it puts the ceiling
+at fish's ~193k installs/yr — that is the target shape, over about ten
+years (docs/adoption.md). A 90-point thread with the author answering
+every reply is the shape of success; a viral spike with a trust
+backlash is not.
+
+*The "roughly 7% of developers customize their shell" figure that used
+to anchor this section is retired* — it is unsourced, and docs/strategy.md
+records why it and two other numbers were dropped (#169).
 
 ## What we will not claim
 
