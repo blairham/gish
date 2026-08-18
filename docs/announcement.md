@@ -38,6 +38,25 @@ in the editor buffer, never auto-runs. The delta between ShellGPT's
 path. Reversibility is what makes people willing to *recommend* it —
 "try it in one tab" converts, "make it your login shell" does not.
 
+**Market the rollback as loudly as the install** (#212). Exit cost is
+the forgotten half of every fast-adoption story: uv's skeptics never
+blocked adoption because rollback was free, and ripgrep could refuse
+grep compatibility outright because quitting cost nothing. gish says
+this itself now — the first interactive run prints one dim line stating
+that nothing was changed and naming the uninstall command — and the
+`chsh` instructions lead with `/etc/shells` and carry the `chsh -s
+/bin/zsh` that undoes them. `doctor` reports login-shell state and knows
+the way back. Say all of this in the post; it is a conversion asset, not
+a disclaimer.
+
+**State the counterparty risk, before anyone asks.** MIT, no account, no
+telemetry, no CLA assigning copyright to a company, no hosted service in
+the core path. Fig was acqui-killed roughly six months after
+acquisition; Warp required a login until Nov 2024 and its 2026
+open-sourcing scored 3 points on HN because the audience had already
+left. Trust decays irreversibly (docs/adoption.md), so this paragraph
+ships *before* launch rather than being conceded after.
+
 **Concede the ssh objection, then flip it.** Yes, gish isn't on the
 remote box. It's a local daily driver whose bash compatibility means
 zero context-switch when you land on a server. #98 is the real answer,

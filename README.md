@@ -48,8 +48,19 @@ theme knobs, and bash's own hook surface — is written down in
 not covered and how a deprecation works. A shell is something people
 build on for years; the contract is what makes that reasonable.
 
+**No counterparty.** gish is MIT, open source, and there is no account,
+no telemetry, no CLA assigning copyright to a company, and no hosted
+service anywhere in the path — nothing here can be switched off by
+someone else's business decision. The shells and terminals that asked
+people to trust a company have a consistent history: Fig was acquired
+and shut down about six months later, and Warp required a login until
+late 2024 and open-sourced in 2026 to an audience that had already
+left. That is not a risk you can evaluate after adopting something,
+which is why it is stated here rather than conceded later.
+
 **Try it without commitment.** Run `gish` in one tab — no `chsh`
-required, nothing to undo but two directories. Coming from bash or zsh,
+required, nothing to undo but two directories. On its first run it
+tells you how to uninstall it, once, before you have invested anything. Coming from bash or zsh,
 run `gish migrate` to import your aliases, functions, exports, PATH,
 prompt and history in one command — it parses your rc rather than
 running it, and lists everything that did not translate
@@ -227,12 +238,26 @@ Nothing to undo but two directories under `$XDG_CONFIG_HOME/gish` and
 
 The non-interactive contract is POSIX-clean — tools that spawn `$SHELL -c` (editors, IDEs, cron, ssh, scp) get a fast, silent, script-compatible shell with no prompt machinery loaded. That includes the spawn *forms* they use, not just the flags: short options cluster (`$SHELL -lc 'cmd'`), options may follow `-c` because the command string is an operand (`$SHELL -c -l 'cmd'`), `--` ends the options, and `-i` sources your rc file the way bash does. Login invocations (`-l`, or argv[0] beginning with `-`) source `/etc/profile`, then `~/.gish_profile` or `~/.profile`.
 
-When you're sure, the login-shell route is the usual one:
+When you're sure, the login-shell route is the usual one. Both lines
+matter: a login shell that is **not** listed in `/etc/shells` is the
+documented way people lock themselves out, because some systems refuse
+to log in with an unlisted shell.
 
 ```sh
-which gish | sudo tee -a /etc/shells
+which gish | sudo tee -a /etc/shells   # do this first, not second
 chsh -s "$(which gish)"
 ```
+
+**The way back, before you need it:**
+
+```sh
+chsh -s /bin/zsh                       # or whatever you ran before
+```
+
+`doctor` knows this state and reports it: whether gish is your login
+shell, whether it is listed in `/etc/shells`, and the exact `chsh`
+command that undoes it. If you never run `chsh` at all, `doctor` says
+so and says there is nothing to revert — which is the supported path.
 
 ## Your shell follows you over ssh
 

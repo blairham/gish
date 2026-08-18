@@ -46,6 +46,7 @@ var configSettings = []configSetting{
 	{"highlight", "GISH_HIGHLIGHT", []string{"on", "quiet", "off"}, "syntax highlighting — quiet drops the unknown-command color"},
 	{"suggest", "GISH_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
 	{"editmode", "GISH_EDIT_MODE", []string{"emacs", "vi"}, "line editor dialect — `set -o vi` sets it too"},
+	{"welcome", "GISH_WELCOME", []string{"on", "off"}, "the first-run notice that says how to uninstall (#212)"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -85,6 +86,7 @@ settings:
   highlight  on | quiet | off       (GISH_HIGHLIGHT)
   suggest    on | off               (GISH_SUGGEST)
   editmode   emacs | vi             (GISH_EDIT_MODE)
+  welcome    on | off               (GISH_WELCOME)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
                     exit, plus any plugin segment id  (GISH_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default

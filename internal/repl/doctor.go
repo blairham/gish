@@ -78,6 +78,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkRemoteSSH(hc),
 		checkClipboard(),
 		checkTerminal(),
+		checkLoginShell(),
 	}
 
 	style := ui.Styles(ui.Enabled(hc.Stdout))
@@ -499,4 +500,117 @@ func checkShellIdentity(hc interp.HandlerContext) checkResult {
 		detail += "; running: " + strings.Join(known, ", ")
 	}
 	return checkResult{checkOK, "identity", detail, ""}
+}
+
+// checkLoginShell owns the /etc/shells failure mode (#212). The
+// documented fish lockout stories share one shape: a shell set with chsh
+// that is not listed in /etc/shells, on a system that refuses to log in
+// with an unlisted shell. doctor's charter (#67) is to verify state and
+// name the exact fix, and here the fix that matters most is the way
+// *back* — the escape hatch is worth showing while the door is still
+// open, not after it closes.
+func checkLoginShell() checkResult {
+	if runtime.GOOS == "windows" {
+		// Windows has no login-shell concept to change, which makes it the
+		// strongest form of the reversibility claim rather than an exception
+		// to it — say so, so doctor reads the same on every platform.
+		return checkResult{checkOK, "login", "not applicable on Windows — no login shell to change, so there is nothing to revert", ""}
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return checkResult{checkOK, "login", "cannot resolve this binary's path", ""}
+	}
+	if resolved, rerr := filepath.EvalSymlinks(self); rerr == nil {
+		self = resolved
+	}
+
+	listed, shells := listedInEtcShells(self)
+	if !sameFile(os.Getenv("SHELL"), self) {
+		// The supported path, and the whole reversibility claim: a shell
+		// you launch from a terminal profile has nothing to undo.
+		return checkResult{
+			checkOK, "login",
+			"not your login shell — launched per-terminal, so there is nothing to revert",
+			"",
+		}
+	}
+
+	back := fallbackShell(shells)
+	if !listed {
+		// Lockout shape: the login shell is set and the system may refuse
+		// it. Both commands are given, because someone reading this line
+		// may want either one.
+		return checkResult{
+			checkFail, "login",
+			fmt.Sprintf("gish is your login shell but %s is not in /etc/shells — some systems refuse to log in with an unlisted shell", self),
+			fmt.Sprintf("echo %s | sudo tee -a /etc/shells   (or go back: chsh -s %s)", self, back),
+		}
+	}
+	return checkResult{
+		checkOK, "login",
+		fmt.Sprintf("login shell, listed in /etc/shells — revert any time with `chsh -s %s`", back),
+		"",
+	}
+}
+
+// listedInEtcShells reports whether path appears in /etc/shells, and
+// returns the file's entries. A missing file counts as not listed: that
+// is what a system enforcing the list would conclude too.
+func listedInEtcShells(path string) (bool, []string) {
+	data, err := os.ReadFile("/etc/shells")
+	if err != nil {
+		return false, nil
+	}
+	var shells []string
+	found := false
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		shells = append(shells, line)
+		if line == path || sameFile(line, path) {
+			found = true
+		}
+	}
+	return found, shells
+}
+
+// fallbackShell picks the shell to name in the revert command. gish does
+// not know what the user ran before — that is not recorded anywhere — so
+// it names a conventional one that actually exists, preferring the
+// system default order rather than guessing.
+func fallbackShell(shells []string) string {
+	for _, candidate := range []string{"/bin/zsh", "/bin/bash", "/bin/sh"} {
+		if slices.Contains(shells, candidate) {
+			return candidate
+		}
+	}
+	for _, s := range shells {
+		if _, err := os.Stat(s); err == nil {
+			return s
+		}
+	}
+	return "/bin/sh"
+}
+
+// sameFile compares two shell paths through symlinks, since /etc/shells
+// commonly lists /bin/zsh while $SHELL or os.Executable resolves
+// elsewhere (a Homebrew Cellar path, /usr/local/bin, a nix store entry).
+func sameFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	ai, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bi, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(ai, bi)
 }

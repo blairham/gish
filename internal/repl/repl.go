@@ -240,6 +240,10 @@ func runEditor(ctx context.Context, login bool) error {
 	// never silently skipped — the user would just see nothing load.
 	loadPluginManifest(ctx, runner)
 	starshipHint(shellVar(runner, "GISH_THEME", "") != "", shellVar(runner, "GISH_PROMPT", "") != "")
+	// The exit story (#212), after the rc so `config welcome off` is
+	// honored on the first session — which is the one that matters when a
+	// new machine is bootstrapped from dotfiles.
+	exitStory(runner)
 	// The previous line's context, released once the next line starts so
 	// its background statements have a window to exec (see
 	// runInterruptible).
