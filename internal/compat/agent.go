@@ -60,6 +60,23 @@ type AgentCase struct {
 	// against it measures the runner's bash rather than koi. Skipped, not
 	// tolerated — the case still runs everywhere bash is new enough.
 	MinBashMajor int
+	// Known is the open issue number for a gap koi has not closed yet.
+	//
+	// The gate is a gate: a case without this must pass. But a gap that is
+	// filed, reproduced and waiting on a fix is a different thing from a
+	// regression, and the difference belongs in the corpus rather than in
+	// whoever happens to remember it. A Known case that fails is reported,
+	// not failed — and a Known case that *passes* fails the build, because
+	// the marker has become a lie and the published page is now
+	// understating koi.
+	//
+	// So a fix cannot land without deleting the marker in the same change,
+	// and a gap cannot be tolerated without an issue number on it.
+	Known int
+	// KnownNote is what breaks when this case fails, in one line, for the
+	// published table. Required whenever Known is set: "koi does not
+	// support X" restates the case name rather than saying what it costs.
+	KnownNote string
 }
 
 // AgentCorpus is the published gate.
@@ -139,6 +156,122 @@ var AgentCorpus = []AgentCase{
 		Provenance:   "tools branch on BASH_VERSINFO to pick an implementation — fzf picks its Ctrl-T path on `BASH_VERSINFO[0] < 4`, and unset reads as 0 (#120)",
 		Argv:         []string{"-c", `[ -n "$BASH_VERSION" ] && [ "${BASH_VERSINFO[0]}" -ge 4 ] && echo probe-answered`},
 		MinBashMajor: 4,
+	},
+
+	// The cases below came from pointing a real Claude Code session at koi
+	// for a working day and then running a bash-vs-koi differential sweep
+	// over the constructs it used (128 snippets, each run direct and
+	// through `eval`). Every one is filed, and every one is written to
+	// print a deterministic marker on both shells rather than to compare
+	// error text, because a diagnostic's wording is not the claim.
+	//
+	// The pattern across them is not "koi lacks a feature". It is **koi
+	// lacking a feature and reporting success** — which is why they belong
+	// on this page rather than in the compat corpus: a harness cannot
+	// route around a failure it is never told about.
+
+	{
+		Name: "find/grep shim: exec -a argv0 override",
+		Provenance: "Claude Code ships bundled bfs and ugrep behind one binary and installs them as snapshot functions that rewrite argv[0]: " +
+			"`(exec -a bfs \"$_cc_bin\" -S dfs ...)`. The zsh arm uses `ARGV0=`, which koi honors; the bash arm uses `exec -a`, which koi " +
+			"treats as a command named `-a`. koi announces bash (#120), so it always takes the arm it cannot run — and 39.6% of 59,836 " +
+			"recorded Bash-tool calls invoke bare find or grep",
+		Argv:      []string{"-c", `(exec -a nm /bin/echo shim-ran) 2>/dev/null || echo SHIM-FAILED`},
+		Known:     241,
+		KnownNote: "every bare `find` and `grep` an agent runs fails, with a message naming `-a` rather than find or grep",
+	},
+	{
+		Name:       "snapshot generator: declare -F survives eval",
+		Provenance: "#215 taught declare its -F flag as a REPL parse-time rewrite; text arriving through eval is parsed by the substrate directly and still refuses the flag, so a harness helper that evals its probes sees the unfixed shell",
+		Argv:       []string{"-c", `f(){ :; }; eval 'declare -F f' 2>/dev/null || echo EVAL-REFUSED`},
+		Known:      242,
+		KnownNote:  "the #215 fix is invisible to eval, command substitution and sourced files",
+	},
+	{
+		Name:       "read -d '' consumes NUL-delimited input",
+		Provenance: "`find -print0 | while read -r -d '' f` is the only safe way to walk filenames with spaces or newlines; koi refuses -d, leaves the variable empty, and still exits 0",
+		Argv:       []string{"-c", `printf 'a\000b\000' | { read -r -d '' x 2>/dev/null; echo "[${x}]"; }`},
+		Known:      243,
+		KnownNote:  "the read looks to the caller exactly like a successful read of an empty line, so no caller-side care can detect it",
+	},
+	{
+		Name:       "read -s does not silently return empty",
+		Provenance: "the same sweep found -s is accepted with no diagnostic at all — worse than -d, which at least complains",
+		Argv:       []string{"-c", `echo hi | { read -r -s x 2>/dev/null; echo "[${x}]"; }`},
+		Known:      243,
+		KnownNote:  "no message and no status: a prompt reading a confirmation gets an empty string and proceeds",
+	},
+	{
+		Name: "quoted heredoc writes the file it was given",
+		Provenance: "`cat > f <<'EOF'` is the idiom for writing a file whose content must not be interpreted, and it is how an agent writes a script. " +
+			"koi processes `\\\\`, `\\$` and backtick escapes anyway, so the file on disk is not the file requested",
+		Argv:      []string{"-c", `cat > "$HOME/w" <<'X'` + "\n" + `re='\\d+' and \$var` + "\nX\n" + `cat "$HOME/w"`},
+		Known:     244,
+		KnownNote: "silently corrupts any heredoc-written file containing a doubled backslash or an escaped $ — scripts, regexes, JSON, Makefiles",
+	},
+	{
+		Name:       "strict-mode header takes effect",
+		Provenance: "`set -Eeuo pipefail` is the header on essentially every modern bash script and CI job. koi refuses the -E, applies none of the remaining flags, and returns 0",
+		Argv:       []string{"-c", `set -Eeuo pipefail 2>/dev/null; false; echo REACHED`},
+		Known:      245,
+		KnownNote:  "one unsupported letter voids the whole call, so the script runs unprotected past the failure it was written to stop at",
+	},
+	{
+		Name:       "noclobber protects an existing file",
+		Provenance: "`set -C` is refused, so a redirect the script asked to be prevented proceeds — the data-loss corner of the same bug",
+		Argv:       []string{"-c", `printf old > "$HOME/n"; set -C 2>/dev/null; echo new > "$HOME/n" 2>/dev/null; cat "$HOME/n"`},
+		Known:      245,
+		KnownNote:  "a script that sets noclobber precisely so it cannot destroy a file destroys it, and reports success",
+	},
+	{
+		Name:       "file descriptors above 2 carry data",
+		Provenance: "fd 3+ is how a script separates a log or trace channel from stdout, and how `flock` and `read -u` are wired. Every spelling — exec 3>, 3<, per-command 3>, {v}> — accepts the write and discards it",
+		Argv:       []string{"-c", `exec 3> "$HOME/fd"; echo hi >&3; exec 3>&-; cat "$HOME/fd"`},
+		Known:      246,
+		KnownNote:  "the shell reports success and produces an empty artifact, pointing blame at the program that was meant to write it",
+	},
+	{
+		Name:       "PIPESTATUS reports each stage",
+		Provenance: "`cmd | tee log` then `[ \"${PIPESTATUS[0]}\" -ne 0 ]` is the standard way to recover the status $? cannot answer; koi leaves the array empty, so the test either errors on an empty operand or inverts the outcome",
+		Argv:       []string{"-c", `false | true; echo "[${PIPESTATUS[0]}:${PIPESTATUS[1]}]"`},
+		Known:      247,
+		KnownNote:  "a succeeding pipeline can read as failed and a failing one as succeeded, depending on which idiom the script used",
+	},
+	{
+		Name:         "case ;;& falls through",
+		Provenance:   "`;;&` is how a case classifies along several axes at once — the canonical `*.tar*) untar=1 ;;& *.gz) decomp=gunzip ;;` dispatch. koi parses the terminator and treats it as plain ;;",
+		Argv:         []string{"-c", `case ab in a*) echo one;;& *b) echo two;; esac`},
+		MinBashMajor: 4,
+		Known:        248,
+		KnownNote:    "wrong control flow with no diagnostic; a parse error would at least stop on the line responsible",
+	},
+	{
+		Name:       "declare -i does arithmetic",
+		Provenance: "an integer attribute that is refused leaves the literal source text in the variable, so every later comparison or accumulation is wrong",
+		Argv:       []string{"-c", `declare -i n 2>/dev/null; n=1+1; echo "$n"`},
+		Known:      249,
+		KnownNote:  "the variable holds `1+1`; a numeric test on it errors and a value written onward is source text, not a number",
+	},
+	{
+		Name:       "declare -r rejects assignment",
+		Provenance: "scripts use readonly as a guard — fail if anything rebinds this — and to freeze configuration before sourcing untrusted fragments. koi keeps the original value but accepts the assignment with exit 0",
+		Argv:       []string{"-c", `declare -r v=1 2>/dev/null; if v=2 2>/dev/null; then echo ASSIGN-ACCEPTED; else echo ASSIGN-REJECTED; fi`},
+		Known:      249,
+		KnownNote:  "the guard is decorative: no diagnostic and no status, so the intent behind readonly is silently unmet",
+	},
+	{
+		Name:       "FUNCNAME locates an error",
+		Provenance: "`die() { echo \"${BASH_SOURCE[1]}:${BASH_LINENO[0]}: ${FUNCNAME[1]}: $*\" >&2; }` is every hand-rolled error helper; under koi it prints the message with the location blank",
+		Argv:       []string{"-c", `f(){ echo "fn=${FUNCNAME[0]:-MISSING}"; }; f`},
+		Known:      250,
+		KnownNote:  "a script's own diagnostics lose the part worth having, and nothing errors to say so",
+	},
+	{
+		Name:       "compgen -A function enumerates functions",
+		Provenance: "the other way a harness asks which functions exist, alongside the declare -F that #215 fixed; this one still answers nothing",
+		Argv:       []string{"-c", `g(){ :; }; compgen -A function 2>/dev/null | grep -c '^g$'`},
+		Known:      250,
+		KnownNote:  "a snapshot generator using compgen rather than declare -F carries none of the user's functions across",
 	},
 }
 
@@ -299,6 +432,46 @@ func AgentFailures(results []AgentResult) []AgentResult {
 	var out []AgentResult
 	for _, r := range results {
 		if !r.Pass && !r.Skipped {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// AgentRegressions is the set that must be empty: a case failing with no
+// issue number on it. Everything Known is accounted for elsewhere.
+func AgentRegressions(results []AgentResult) []AgentResult {
+	var out []AgentResult
+	for _, r := range results {
+		if !r.Pass && !r.Skipped && r.Known == 0 {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// AgentKnownGaps is the filed-and-still-failing set — what the published
+// page owes the reader.
+func AgentKnownGaps(results []AgentResult) []AgentResult {
+	var out []AgentResult
+	for _, r := range results {
+		if !r.Pass && !r.Skipped && r.Known > 0 {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// AgentStaleKnown is a Known case that now passes.
+//
+// This is a build failure rather than good news quietly absorbed. The
+// marker suppresses a real gate, so leaving one in place after the fix
+// means the case stops being enforced the moment it starts working — and
+// the published page keeps claiming a gap koi no longer has.
+func AgentStaleKnown(results []AgentResult) []AgentResult {
+	var out []AgentResult
+	for _, r := range results {
+		if r.Pass && r.Known > 0 {
 			out = append(out, r)
 		}
 	}

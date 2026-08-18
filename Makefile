@@ -75,6 +75,14 @@ paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161
 paste-gate-check: ## Fail if a pasted construct, an init script, or an installed tool regressed
 	KOI_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
 
+.PHONY: agent-gate
+agent-gate: ## Regenerate the open-gap table in docs/agents.md from a live run (#208)
+	go test ./internal/compat/ -run TestAgentGapsDoc -update-agent -v
+
+.PHONY: agent-gate-check
+agent-gate-check: ## Run the agent gate: regressions fail, filed gaps report, a stale marker fails
+	go test ./internal/compat/ -run 'TestAgentGate|TestAgentKnownGaps|TestAgentGapsDoc' -v
+
 # Regenerate pkg/pluginapi/v1 from proto/koi/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.
 proto:

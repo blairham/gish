@@ -4,12 +4,21 @@ package compat_test
 
 import (
 	"context"
+	"flag"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/blairham/koi-shell/internal/compat"
 )
+
+// -update-agent regenerates the generated region of docs/agents.md.
+// Without it, TestAgentGapsDoc is the gate that keeps the published table
+// from drifting away from what the corpus actually reports.
+var updateAgent = flag.Bool("update-agent", false, "regenerate the generated region of docs/agents.md")
+
+const agentDocPath = "../../docs/agents.md"
 
 // The agent gate (#208). The claim being defended is specific: an agent
 // pointed at koi gets the user's real environment — functions, aliases,
@@ -42,9 +51,122 @@ func TestAgentGate(t *testing.T) {
 			t.Logf("%s: skipped — %s", r.Name, r.Reason)
 			continue
 		}
+		// A gap with an issue number on it is reported, not failed. The
+		// gate stays a gate for everything else, and TestAgentKnownGaps
+		// below is what keeps a marker from outliving its bug.
+		if r.Known > 0 {
+			t.Logf("%s: known gap (#%d) — %s\n  %s", r.Name, r.Known, r.Reason, r.KnownNote)
+			continue
+		}
 		t.Errorf("%s: %s\n  provenance: %s\n  argv: %q\n  bash(%d): %q\n  koi(%d): %q",
 			r.Name, r.Reason, r.Provenance, r.Argv, r.BashCode, r.BashOut, r.KoiCode, r.KoiOut)
 	}
+}
+
+// Known markers are load-bearing suppressions, so they get their own
+// gate. Two ways a marker goes wrong, and both are failures here:
+//
+//   - it outlives its bug. The case passes, the marker still suppresses
+//     it, and from then on nothing enforces a behavior koi has already
+//     earned. The published page also keeps advertising a gap that is
+//     closed, which is the kind of wrong that costs adoption.
+//   - it arrives without a reason. `Known` with no `KnownNote` is a
+//     silenced case, indistinguishable from a case someone found
+//     inconvenient.
+func TestAgentKnownGaps(t *testing.T) {
+	for _, c := range compat.AgentCorpus {
+		if c.Known == 0 {
+			if c.KnownNote != "" {
+				t.Errorf("%s: KnownNote without Known — nothing links this note to an issue", c.Name)
+			}
+			continue
+		}
+		if c.KnownNote == "" {
+			t.Errorf("%s: Known #%d with no KnownNote — a suppressed case needs to say what it costs", c.Name, c.Known)
+		}
+		if c.Expect != "" {
+			t.Errorf("%s: Known #%d and Expect together — a case is either a deliberate divergence or a bug, not both", c.Name, c.Known)
+		}
+	}
+
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash on PATH; the oracle is required")
+	}
+	koiBin := buildKoi(t)
+
+	results := compat.RunAgentAll(context.Background(), bashBin, koiBin)
+	for _, r := range compat.AgentStaleKnown(results) {
+		t.Errorf("%s: passes now, but is still marked Known #%d.\n"+
+			"  Delete the Known/KnownNote fields so this case is enforced again, and close the issue.",
+			r.Name, r.Known)
+	}
+	if gaps := compat.AgentKnownGaps(results); len(gaps) > 0 {
+		for _, r := range gaps {
+			t.Logf("still open: #%d %s — %s", r.Known, r.Name, r.KnownNote)
+		}
+	}
+}
+
+// The published table has to say what this machine's run says.
+//
+// A gap table maintained by hand drifts the moment one is fixed, and it
+// drifts flatteringly. So the page carries a generated region and this
+// test regenerates it under -update-agent, or checks it otherwise: every
+// open issue number in the corpus must appear in the page, and every
+// issue number the page claims must still be open in the corpus.
+func TestAgentGapsDoc(t *testing.T) {
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash on PATH; the oracle is required")
+	}
+	koiBin := buildKoi(t)
+	results := compat.RunAgentAll(context.Background(), bashBin, koiBin)
+
+	page, err := os.ReadFile(agentDocPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := compat.AgentGapsSection(results, bashVersion(t, bashBin))
+
+	if *updateAgent {
+		updated, rerr := compat.ReplaceAgentGaps(string(page), section)
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		if werr := os.WriteFile(agentDocPath, []byte(updated), 0o600); werr != nil {
+			t.Fatal(werr)
+		}
+		t.Logf("wrote %s: %d open gaps", agentDocPath, len(compat.AgentKnownGaps(results)))
+		return
+	}
+
+	if _, rerr := compat.ReplaceAgentGaps(string(page), section); rerr != nil {
+		t.Fatal(rerr)
+	}
+	// Compare membership rather than the rendered text: the headline
+	// carries a bash version and a pass count that legitimately differ by
+	// machine, and failing on those would train people to run
+	// -update-agent to make an unrelated red go away.
+	for _, r := range compat.AgentKnownGaps(results) {
+		ref := "issues/" + itoaTest(r.Known)
+		if !strings.Contains(string(page), ref) {
+			t.Errorf("#%d (%s) is an open gap in the corpus but is not in %s.\n"+
+				"  Run `make agent-gate` to republish.", r.Known, r.Name, agentDocPath)
+		}
+	}
+}
+
+func itoaTest(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var digits []byte
+	for n > 0 {
+		digits = append([]byte{byte('0' + n%10)}, digits...)
+		n /= 10
+	}
+	return string(digits)
 }
 
 // The two deliberate divergences are the ones most likely to be "fixed"

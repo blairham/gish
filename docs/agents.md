@@ -128,6 +128,61 @@ something ran it:
   carried the flag, making koi the only shell whose `$0` contains an
   option. bash answers `bash`. It now answers `koi`.
 
+### What a full day of agent use found
+
+The first-run bugs above came from reading a harness's snapshot
+generator. The next round came from the other direction: pointing a real
+Claude Code session at koi for a working day, then running a bash-vs-koi
+differential sweep over the constructs it actually used — 128 snippets,
+each run direct **and** through `eval`, because a fix that lives in the
+REPL's parse layer is invisible to `eval`, and one of them was.
+
+Two things about the method are worth writing down, because both nearly
+cost a correct result:
+
+- **The oracle has to be a bash worth comparing against.** macOS ships
+  bash 3.2.57 (2007), which lacks `${v^^}`, associative arrays,
+  `local -n`, `mapfile` and `case ;;&`. The first sweep used it and
+  reported 100 divergences, 23 of them koi being *more* capable than the
+  oracle — and that noise hid three real bugs. Against bash 5.3 the same
+  corpus reports 75.
+- **The suite cannot be written in the shell under test.** The
+  bash-driven first draft wrote itself to disk with
+  `cat > probe.sh <<'SH'`, and the heredoc gap below corrupted its own
+  source into a file that would not parse. The payloads now live outside
+  the shell as data.
+
+What came out, and what each one costs, is generated from the corpus
+rather than written here — `make agent-gate` republishes it, and a case
+that starts passing while still marked fails the build:
+
+<!-- BEGIN generated agent gaps -->
+
+**12 of 26 cases agree with bash 5.3.15(1)-release.** 14 open gaps, 0 unfiled failures.
+
+Each of these is filed, reproduced, and failing right now. They are suppressed in CI by an issue number in the corpus, and the suppression is itself gated — a case that starts passing while still marked fails the build, so a fix cannot land without updating this table.
+
+| issue | case | what it costs |
+| --- | --- | --- |
+| [#241](https://github.com/blairham/koi-shell/issues/241) | find/grep shim: exec -a argv0 override | every bare `find` and `grep` an agent runs fails, with a message naming `-a` rather than find or grep |
+| [#242](https://github.com/blairham/koi-shell/issues/242) | snapshot generator: declare -F survives eval | the #215 fix is invisible to eval, command substitution and sourced files |
+| [#243](https://github.com/blairham/koi-shell/issues/243) | read -d '' consumes NUL-delimited input | the read looks to the caller exactly like a successful read of an empty line, so no caller-side care can detect it |
+| [#243](https://github.com/blairham/koi-shell/issues/243) | read -s does not silently return empty | no message and no status: a prompt reading a confirmation gets an empty string and proceeds |
+| [#244](https://github.com/blairham/koi-shell/issues/244) | quoted heredoc writes the file it was given | silently corrupts any heredoc-written file containing a doubled backslash or an escaped $ — scripts, regexes, JSON, Makefiles |
+| [#245](https://github.com/blairham/koi-shell/issues/245) | noclobber protects an existing file | a script that sets noclobber precisely so it cannot destroy a file destroys it, and reports success |
+| [#245](https://github.com/blairham/koi-shell/issues/245) | strict-mode header takes effect | one unsupported letter voids the whole call, so the script runs unprotected past the failure it was written to stop at |
+| [#246](https://github.com/blairham/koi-shell/issues/246) | file descriptors above 2 carry data | the shell reports success and produces an empty artifact, pointing blame at the program that was meant to write it |
+| [#247](https://github.com/blairham/koi-shell/issues/247) | PIPESTATUS reports each stage | a succeeding pipeline can read as failed and a failing one as succeeded, depending on which idiom the script used |
+| [#248](https://github.com/blairham/koi-shell/issues/248) | case ;;& falls through | wrong control flow with no diagnostic; a parse error would at least stop on the line responsible |
+| [#249](https://github.com/blairham/koi-shell/issues/249) | declare -i does arithmetic | the variable holds `1+1`; a numeric test on it errors and a value written onward is source text, not a number |
+| [#249](https://github.com/blairham/koi-shell/issues/249) | declare -r rejects assignment | the guard is decorative: no diagnostic and no status, so the intent behind readonly is silently unmet |
+| [#250](https://github.com/blairham/koi-shell/issues/250) | FUNCNAME locates an error | a script's own diagnostics lose the part worth having, and nothing errors to say so |
+| [#250](https://github.com/blairham/koi-shell/issues/250) | compgen -A function enumerates functions | a snapshot generator using compgen rather than declare -F carries none of the user's functions across |
+
+The shape they share is not a missing feature — it is a missing feature that **reports success**. A harness cannot route around a failure it is never told about, which is what makes this class expensive out of proportion to its size.
+
+<!-- END generated agent gaps -->
+
 ## What this does not claim
 
 - Not that every agent respects `$SHELL` — several documented bugs say
