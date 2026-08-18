@@ -1801,6 +1801,68 @@ var runTests = []runTest{
 		"cat <<'EOF'\nfoo\\\nbar\nEOF",
 		"foo\\\nbar\n",
 	},
+	// `read -t` and `read -u` (#267). Both used to be refused with exit 2,
+	// which nothing calling `read` checks — so in practice the variable
+	// stayed empty and the loop body never ran.
+	{
+		"read -r -t 1 x <<< hi; echo \"st=$? x=[$x]\"",
+		"st=0 x=[hi]\n",
+	},
+	{
+		"read -r -t 0.2 x <<< hi; echo \"st=$? x=[$x]\"",
+		"st=0 x=[hi]\n",
+	},
+	{
+		// A timeout is reported as a status above 128, the way a signal is.
+		"{ sleep 0.5; } | { read -r -t 0.1 x; echo \"st=$? x=[$x]\"; }",
+		"st=142 x=[]\n",
+	},
+	{
+		// Whatever arrived before the timeout is still assigned: only the
+		// status says the read was cut short.
+		"{ printf par; sleep 0.5; } | { read -r -t 0.1 x; echo \"st=$? x=[$x]\"; }",
+		"st=142 x=[par]\n",
+	},
+	{
+		// A regular file cannot take a deadline and does not need one.
+		"printf 'hi\\n' > f; read -r -t 1 x < f; echo \"st=$? x=[$x]\"",
+		"st=0 x=[hi]\n",
+	},
+	{
+		"read -r -t zz x 2>/dev/null; echo \"st=$?\"",
+		"st=1\n",
+	},
+	{
+		"printf 'hi\\n' > f; exec 3< f; read -r -u 3 x; echo \"st=$? x=[$x]\"",
+		"st=0 x=[hi]\n",
+	},
+	{
+		// The descriptor keeps its position between reads, which is what a
+		// `while read -u "$fd"` loop depends on.
+		"printf 'a\\nb\\n' > f; exec 3< f; read -r -u 3 x; read -r -u 3 y; echo \"[$x][$y]\"",
+		"[a][b]\n",
+	},
+	{
+		"printf 'hi\\n' > f; exec 3< f; read -r -N 1 -u 3 x; echo \"[$x]\"",
+		"[h]\n",
+	},
+	{
+		"read -r -u 7 x 2>/dev/null; echo \"st=$?\"",
+		"st=1\n",
+	},
+	{
+		"read -r -u zz x 2>/dev/null; echo \"st=$?\"",
+		"st=1\n",
+	},
+	{
+		"printf 'hi\\n' > f; exec 3< f; read -r -t 1 -u 3 x; echo \"st=$? x=[$x]\"",
+		"st=0 x=[hi]\n",
+	},
+	{
+		// `-t 0` asks whether input is waiting and reads nothing at all.
+		"printf 'hi\\n' > f; read -r -t 0 x < f; echo \"st=$? x=[$x]\"",
+		"st=0 x=[]\n",
+	},
 	// The call-frame stack: FUNCNAME, BASH_SOURCE, BASH_LINENO and the
 	// `caller` builtin, which are four views of one thing (#266, #250).
 	//

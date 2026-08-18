@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -724,6 +725,16 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		// exactly is set by -N, which reads a fixed number of characters,
 		// ignoring the delimiter and doing no field splitting.
 		exactly := false
+		// fd is the descriptor -u names; 0 is the shell's own stdin. haveFd
+		// separates "the caller named a descriptor" from the default,
+		// because only the first is worth a Bad file descriptor: a shell
+		// with no stdin at all is the embedder's business, and readLine
+		// already says so in those words.
+		fd, haveFd := 0, false
+		// timeout is -t. haveTimeout is separate because -t 0 is its own
+		// thing — a test for whether input is waiting, reading nothing.
+		var timeout time.Duration
+		haveTimeout := false
 		fp := flagParser{remaining: args}
 		for fp.more() {
 			switch flag := fp.flag(); flag {
@@ -770,6 +781,30 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				}
 				maxChars = n
 				exactly = flag == "-N"
+			case "-t":
+				if len(fp.remaining) == 0 {
+					return failf(2, "read: -t: option requires an argument\n")
+				}
+				val := fp.value()
+				// Seconds, and fractional: `read -t 0.1` is how a script
+				// polls without spinning. Note the status is 1 rather than
+				// the usual 2 for a bad value, which is bash's.
+				secs, err := strconv.ParseFloat(val, 64)
+				if err != nil || secs < 0 {
+					return failf(1, "read: %s: invalid timeout specification\n", val)
+				}
+				haveTimeout = true
+				timeout = time.Duration(secs * float64(time.Second))
+			case "-u":
+				if len(fp.remaining) == 0 {
+					return failf(2, "read: -u: option requires an argument\n")
+				}
+				val := fp.value()
+				n, err := strconv.Atoi(val)
+				if err != nil || n < 0 {
+					return failf(1, "read: %s: invalid file descriptor specification\n", val)
+				}
+				fd, haveFd = n, true
 			default:
 				return failf(2, "read: invalid option %q\n", flag)
 			}
@@ -782,21 +817,44 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}
 		}
 
+		// After the names are validated, so `read 0ab` still complains
+		// about the identifier rather than about a descriptor.
+		src := r.fdReader(fd)
+		if src == nil && haveFd {
+			return failf(1, "read: %d: invalid file descriptor: Bad file descriptor\n", fd)
+		}
+
 		if prompt != "" {
 			r.out(prompt)
 		}
 
+		// `-t 0` reads nothing at all: it answers whether input is waiting,
+		// through the status alone. Anything else would consume the byte it
+		// was asked about, which is worse than not implementing it — a
+		// script that polls would eat its own input one character at a time.
+		if haveTimeout && timeout == 0 {
+			ready, err := readyToRead(src)
+			if err != nil {
+				return failf(1, "read: %v\n", err)
+			}
+			if !ready {
+				exit.code = 1
+			}
+			return exit
+		}
+
 		var line []byte
 		var err error
+		var timedOut bool
 		// -s only has an effect when reading from a terminal, as there is no
 		// echo to suppress when the input is a pipe or a file. Note that we
 		// must use the shell's stdin rather than the process's, as they differ
 		// under a redirect and when the caller supplied its own via [StdIO].
-		if silent && r.stdin != nil && delim == '\n' && maxChars < 0 &&
-			term.IsTerminal(int(r.stdin.Fd())) {
-			line, err = term.ReadPassword(int(r.stdin.Fd()))
+		if f, ok := src.(*os.File); ok && silent && delim == '\n' && maxChars < 0 &&
+			term.IsTerminal(int(f.Fd())) {
+			line, err = term.ReadPassword(int(f.Fd()))
 		} else {
-			line, err = r.readLine(ctx, raw, delim, maxChars, exactly)
+			line, timedOut, err = r.readLine(ctx, src, raw, delim, maxChars, exactly, timeout)
 		}
 		switch {
 		case arrayName != "":
@@ -836,8 +894,16 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 
 		// We can get data back from readLine and an error at the same time, so
-		// check err after we process the data.
-		if err != nil {
+		// check err after we process the data. The same goes for a timeout:
+		// whatever arrived before it is assigned, and only the status says
+		// the read was cut short.
+		switch {
+		case timedOut:
+			// bash reports a timeout as a status above 128, the way it
+			// reports a signal — 128 + SIGALRM.
+			exit.code = readTimeoutStatus
+			return exit
+		case err != nil:
 			exit.code = 1
 			return exit
 		}
@@ -1281,36 +1347,65 @@ func unescapeRead(val string) string {
 //
 // Note that the returned line still holds the backslashes which escape another
 // character, as whether they are dropped depends on the caller.
-func (r *Runner) readLine(ctx context.Context, raw bool, delim byte, maxChars int, exactly bool) ([]byte, error) {
-	if r.stdin == nil {
-		return nil, errors.New("interp: can't read, there's no stdin")
+// deadlineReader is what a source has to be for `read -t` to bound it,
+// and for the context to be able to interrupt it. A pipe and a terminal
+// both qualify; a regular file does not, and does not need to, since it
+// never blocks.
+type deadlineReader interface {
+	io.Reader
+	SetReadDeadline(time.Time) error
+}
+
+// readLine reads one line, or one -n/-N-bounded run, from src.
+//
+// It reports whether the read timed out separately from the error,
+// because a timeout is not a failure to the caller: bash assigns whatever
+// it managed to read — `{ printf par; sleep 2; } | read -t 1 x` leaves x
+// as "par" — and reports the timeout only through a status above 128
+// (#267).
+func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim byte, maxChars int, exactly bool, timeout time.Duration) (line []byte, timedOut bool, _ error) {
+	if src == nil {
+		return nil, false, errors.New("interp: can't read, there's no stdin")
 	}
 	if maxChars == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 
-	var line []byte
 	esc := false
 	// chars counts the characters that the line will hold once the escaping
 	// backslashes are dropped, which is what -n and -N count.
 	chars := 0
 
-	stopc := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() {
-		r.stdin.SetReadDeadline(time.Now())
-		close(stopc)
-	})
-	defer func() {
-		if !stop() {
-			// The AfterFunc was started.
-			// Wait for it to complete, and reset the file's deadline.
-			<-stopc
-			r.stdin.SetReadDeadline(time.Time{})
+	// The deadline serves two callers at once: the context, which sets it to
+	// now to interrupt a blocked read, and -t, which sets it ahead. Whichever
+	// fires, the read returns os.ErrDeadlineExceeded and which one it was is
+	// decided by asking the context afterwards.
+	if dr, ok := src.(deadlineReader); ok {
+		if timeout > 0 {
+			// A regular file refuses a deadline (ErrNoDeadline) and needs
+			// none, so the refusal is ignored rather than reported: bash
+			// returns the data immediately in that case too.
+			if err := dr.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+				timeout = 0
+			}
 		}
-	}()
+		stopc := make(chan struct{})
+		stop := context.AfterFunc(ctx, func() {
+			dr.SetReadDeadline(time.Now())
+			close(stopc)
+		})
+		defer func() {
+			if !stop() {
+				// The AfterFunc was started.
+				// Wait for it to complete before clearing the deadline.
+				<-stopc
+			}
+			dr.SetReadDeadline(time.Time{})
+		}()
+	}
 	for {
 		var buf [1]byte
-		n, err := r.stdin.Read(buf[:])
+		n, err := src.Read(buf[:])
 		if n > 0 {
 			b := buf[0]
 			switch {
@@ -1326,7 +1421,7 @@ func (r *Runner) readLine(ctx context.Context, raw bool, delim byte, maxChars in
 				line = line[:len(line)-1]
 				esc = false
 			case !exactly && b == delim && !esc:
-				return line, nil
+				return line, false, nil
 			default:
 				// Note that an escaped delimiter lands here, so it becomes a
 				// literal character rather than ending the line.
@@ -1335,11 +1430,17 @@ func (r *Runner) readLine(ctx context.Context, raw bool, delim byte, maxChars in
 				chars++
 			}
 			if maxChars >= 0 && chars >= maxChars {
-				return line, nil
+				return line, false, nil
 			}
 		}
 		if err != nil {
-			return line, err
+			// A deadline fired. It was -t unless the context is what
+			// cancelled, in which case this is an interrupted command and
+			// not a timeout the script asked for.
+			if timeout > 0 && errors.Is(err, os.ErrDeadlineExceeded) && ctx.Err() == nil {
+				return line, true, nil
+			}
+			return line, false, err
 		}
 	}
 }
