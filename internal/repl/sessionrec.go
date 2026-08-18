@@ -4,8 +4,8 @@ import (
 	"os"
 	"time"
 
-	"mvdan.cc/sh/v3/expand"
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/expand"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 
 	"github.com/blairham/koi-shell/internal/session"
 )

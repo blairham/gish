@@ -7,8 +7,9 @@ import (
 	"runtime"
 	"strings"
 
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Color-friendly defaults (#54).

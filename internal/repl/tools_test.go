@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // toolsHarness: a fake asdf tree, two directories (one pinned), and a

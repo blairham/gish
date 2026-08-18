@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Kill is unavailable where job control is (#47 tracks the Windows

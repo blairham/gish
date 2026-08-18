@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/expand"
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/expand"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Tests never touch real user state: HOME, XDG_CONFIG_HOME, and KOI_RC

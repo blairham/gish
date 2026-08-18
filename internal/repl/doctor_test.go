@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // runDoctorScript runs `doctor` through the full RunReader path with

@@ -4,8 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // `\export FOO=bar` — a declaration reached as a call (#119).

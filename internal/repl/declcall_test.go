@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // runScriptForTest runs a line through a runner wired with the handler

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 
 	"github.com/blairham/koi-shell/internal/complete"
 )

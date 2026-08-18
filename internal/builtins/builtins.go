@@ -19,7 +19,7 @@ import (
 	"slices"
 	"strings"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Func is a koi-native builtin. args excludes the command name; output

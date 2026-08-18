@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // The trust command (#12): the user-facing side of the env-diff trust
