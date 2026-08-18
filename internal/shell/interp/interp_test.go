@@ -86,6 +86,9 @@ let i=(2 + 3)
 
 var hasBash53 bool
 
+// koi-local: see skipIfOracleGap.
+var oracleTildeIgnoresHome bool
+
 func TestMain(m *testing.M) {
 	if os.Getenv("GOSH_PROG") != "" {
 		switch os.Getenv("GOSH_CMD") {
@@ -147,6 +150,7 @@ func TestMain(m *testing.M) {
 	shinternal.TestMainSetup()
 
 	hasBash53 = checkBash()
+	oracleTildeIgnoresHome = checkOracleTilde()
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -5393,30 +5397,38 @@ func testExecHandler(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 // Same as the syntax package.
 var requireShells = os.Getenv("REQUIRE_SHELLS") == "1"
 
-// koi-local: bash on darwin disagrees with bash on Linux about four of the
-// cases below, so the oracle rather than the interpreter is what differs.
-//
-//   - Tilde expansion resolves the home directory from the password database
-//     rather than from a reassigned HOME. `bash -c 'HOME=/foo; echo ~'` prints
-//     the real home even under `env -i`, where Linux bash prints /foo.
-//   - Writing to a closed descriptor reports "write error: Bad file
-//     descriptor", which Linux bash does not print.
-//
-// Matched on the exact scripts rather than a pattern: three other cases
-// combine HOME and ~ and do pass here, and a loose predicate would skip those
-// too and quietly cost coverage. If upstream edits one of these scripts the
-// match stops working, the case runs again, and it fails loudly — which is the
-// failure mode we want from a skip list. Tracked in #271.
-func skipIfDarwinOracleGap(t *testing.T, src string) {
-	if runtime.GOOS != "darwin" {
-		return
+// koi-local: checkOracleTilde asks the oracle what it does rather than
+// assuming from the platform, because assuming was wrong. Homebrew's bash
+// resolves ~ from the password database and ignores a reassigned HOME; a
+// vanilla bash built from source on the same Mac does not. The behavior
+// belongs to the build, not the operating system, so the only reliable
+// question is the one put to the bash that is actually about to run.
+func checkOracleTilde() bool {
+	out, err := exec.Command("bash", "-c", "HOME=/koi-oracle-probe; echo ~").Output()
+	if err != nil {
+		return false
 	}
+	return strings.TrimSpace(string(out)) != "/koi-oracle-probe"
+}
+
+// skipIfOracleGap skips the cases where bash itself, not the interpreter, is
+// what varies between machines. Both are matched on the exact script: other
+// cases combine HOME with ~ and do pass, and a loose predicate would skip
+// those too and quietly cost coverage. Tracked in #271.
+func skipIfOracleGap(t *testing.T, src string) {
 	switch src {
 	case `HOME='/*'; echo ~; echo "$HOME"`,
 		`HOME=/foo; rel=/bar; echo ~/bar ~/'bar' ~/"bar" ~/$rel ~/"$rel"`,
-		`HOME=/foo; echo ~ ~/ ~/'' ~'' ~""`,
-		`echo foo >&- 2>&-; :`:
-		t.Skip("bash on darwin is not the same oracle as bash on Linux here")
+		`HOME=/foo; echo ~ ~/ ~/'' ~'' ~""`:
+		if oracleTildeIgnoresHome {
+			t.Skip("this bash resolves ~ from the password database rather than from HOME")
+		}
+	case `echo foo >&- 2>&-; :`:
+		// Unlike the tilde cases this one survives a source build, so it
+		// really does look like the platform rather than the packaging.
+		if runtime.GOOS == "darwin" {
+			t.Skip("bash on darwin reports a write error for a closed fd that Linux bash does not")
+		}
 	}
 }
 
@@ -5444,7 +5456,7 @@ func TestRunnerRunConfirm(t *testing.T) {
 				return
 			}
 			skipIfUnsupported(t, c.in)
-			skipIfDarwinOracleGap(t, c.in)
+			skipIfOracleGap(t, c.in)
 			t.Parallel()
 			tdir := t.TempDir()
 			ctx, cancel := context.WithTimeout(t.Context(), runnerRunTimeout)
