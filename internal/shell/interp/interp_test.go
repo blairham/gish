@@ -1801,6 +1801,45 @@ var runTests = []runTest{
 		"cat <<'EOF'\nfoo\\\nbar\nEOF",
 		"foo\\\nbar\n",
 	},
+	// A quoted delimiter makes the body literal, and that includes escape
+	// processing — not only expansion (#244). The cases below were the
+	// whole bug: `\\`, `\$` and an escaped backquote were the one set
+	// still being unescaped, which is the *unquoted* form's rule.
+	{
+		"cat <<'EOF'\nre=\\\\d+\nEOF",
+		"re=\\\\d+\n",
+	},
+	{
+		"cat <<'EOF'\ncost=\\$5\nEOF",
+		"cost=\\$5\n",
+	},
+	{
+		"cat <<'EOF'\ncmd=\\`id`\nEOF",
+		"cmd=\\`id`\n",
+	},
+	{
+		"cat <<\"EOF\"\nre=\\\\d+\nEOF",
+		"re=\\\\d+\n",
+	},
+	{
+		"cat <<\\EOF\nre=\\\\d+\nEOF",
+		"re=\\\\d+\n",
+	},
+	{
+		"cat <<-'EOF'\n\tre=\\\\d+\n\t\tindented\n\tEOF",
+		"re=\\\\d+\nindented\n",
+	},
+	{
+		"cat <<-'EOF'\n\t  re=\\\\d+\n\tEOF",
+		"  re=\\\\d+\n",
+	},
+	// `eval` and `source` re-parse inside the interpreter, so a fix that
+	// rewrites the tree koi parses cannot reach them (#259). The tests
+	// above pass either way and would not have noticed.
+	{
+		"eval 'cat <<'\\''EOF'\\''\nre=\\\\d+\nEOF'",
+		"re=\\\\d+\n",
+	},
 	{
 		"cat <<EOF\nfoo\\\"bar\\baz\nEOF",
 		"foo\\\"bar\\baz\n",

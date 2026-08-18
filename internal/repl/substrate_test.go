@@ -126,6 +126,12 @@ func TestShoptPrintsEveryOptionWithoutNames(t *testing.T) {
 // `cat > f <<'EOF'` wrote a file that was not the file it was given, with
 // no message and exit 0.
 //
+// These stay here now that the fix has moved into the interpreter
+// (interp.literalHdoc, #259), because they ask the question from the
+// outside: whether the shell a person or a harness invokes writes the
+// file it was given. The unit coverage of the rule itself lives in
+// internal/shell/interp, confirmed case by case against real bash.
+//
 // Every `want` here is real bash's answer for the same script, taken by
 // running it rather than reasoned about, since that is the only thing
 // that makes these assertions worth anything.
@@ -207,5 +213,30 @@ func TestQuotedHeredocWritesTheFileItWasGiven(t *testing.T) {
 	}
 	if string(got) != body {
 		t.Errorf("file on disk = %q,\n              want %q", got, body)
+	}
+}
+
+// #244's first fix rewrote the tree *koi* parses, which is every path
+// except the two a script is most likely to take: `source` and `eval`
+// re-parse inside the interpreter, so the corruption stayed live there
+// while every test above passed — a fix that looked complete and covered
+// the cases least likely to matter. #259 closed it by moving the rule
+// into the interpreter, and this is the test that would have found the
+// gap in the first place.
+func TestQuotedHeredocSurvivesSourceAndEval(t *testing.T) {
+	script := filepath.Join(t.TempDir(), "inner.sh")
+	if err := os.WriteFile(script, []byte("cat <<'X'\nre=\\\\d+ and \\$var\nX\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := "re=\\\\d+ and \\$var\n"
+	for _, tc := range []struct{ name, src string }{
+		{"source", ". " + script},
+		{"eval", `eval "$(cat ` + script + `)"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runSession(t, tc.src); got != want {
+				t.Errorf("through %s = %q, want %q", tc.name, got, want)
+			}
+		})
 	}
 }
