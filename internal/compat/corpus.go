@@ -103,6 +103,18 @@ echo "hidden: $(compgen -f .h | sort | tr '\n' ' ')"
 compgen -d zzz >/dev/null; echo "no match st=$?"
 cd / && rm -rf "$d"`,
 	},
+	{
+		Name: "ulimit reports and sets a limit", Category: CatToolInit,
+		Provenance: "every service install script checks or raises a limit before starting a daemon; `ulimit -n` is the canonical line",
+		Script: `ulimit -S -f 64
+echo "file size now $(ulimit -f)"
+echo "soft is what asking answers: $([ "$(ulimit -Sf)" = "$(ulimit -f)" ] && echo yes || echo no)"
+echo "and -H is not: $([ "$(ulimit -Hf)" = "$(ulimit -f)" ] && echo same || echo different)"
+echo "rows $(ulimit -a | wc -l | tr -d " ")"
+echo "stack rows $(ulimit -a | grep -c "stack size")"
+ulimit -S -f unlimited
+echo "back to $(ulimit -f)"`,
+	},
 
 	// --- parameter expansion: the densest source of "does it work" ---
 	{

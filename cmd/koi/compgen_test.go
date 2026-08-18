@@ -50,7 +50,18 @@ func compgenFixture(t *testing.T) string {
 // sorted output and exit status. Sorted because bash returns readdir
 // order and koi sorts; the issue calls that difference harmless, and
 // what is being compared here is the set of names and their shape.
+//
+// Sorting is this caller's need and not the runner's — anything checking
+// output whose *order* is part of the answer wants shellRows instead.
 func shellLines(t *testing.T, shell, dir, script string) ([]string, int) {
+	t.Helper()
+	lines, status := shellRows(t, shell, dir, script)
+	sort.Strings(lines)
+	return lines, status
+}
+
+// shellRows runs one -c script and returns its output as written.
+func shellRows(t *testing.T, shell, dir, script string) ([]string, int) {
 	t.Helper()
 	cmd := exec.Command(shell, "-c", script)
 	cmd.Dir = dir
@@ -68,7 +79,6 @@ func shellLines(t *testing.T, shell, dir, script string) ([]string, int) {
 	if len(lines) == 1 && lines[0] == "" {
 		lines = nil
 	}
-	sort.Strings(lines)
 	return lines, status
 }
 

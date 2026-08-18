@@ -1278,6 +1278,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		up := frames[depth+1]
 		r.outf("%d %s %s\n", frames[depth].callLine, up.name, orNull(up.source))
 
+	case "ulimit":
+		return r.ulimitBuiltin(args)
+
 	default:
 		return failf(2, "%s: unsupported builtin\n", name)
 	}
