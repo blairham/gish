@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
@@ -26,6 +28,16 @@ import (
 // once at startup by SetSessionSandbox, read by the exec middleware.
 var sessionSandboxProfile string
 
+// sessionSandboxWrite are paths added to whatever profile is in force.
+//
+// No profile is the right shape for a program that keeps state outside
+// the tree it was pointed at: an agent writes the working directory,
+// which is workspace, *and* a state directory under $HOME, which no
+// profile allows. Adding paths is not a fifth profile because the need
+// is per-installation rather than per-posture — the directory belongs to
+// the harness, not to koi.
+var sessionSandboxWrite []string
+
 // SetSessionSandbox validates and installs the session-wide profile
 // (the koi --sandbox flag).
 func SetSessionSandbox(profile string) error {
@@ -33,6 +45,37 @@ func SetSessionSandbox(profile string) error {
 		return err
 	}
 	sessionSandboxProfile = profile
+	return nil
+}
+
+// SetSessionSandboxWrite installs extra writable paths for the session.
+//
+// Absolute only, and a relative path is an error rather than something
+// resolved against the current directory: the caller is a harness
+// writing a settings file, the shell's directory at the moment a command
+// runs is not what it meant, and a path that quietly covered the wrong
+// place would be the same silent-failure shape this exists to fix. A
+// leading ~/ is expanded, because a settings file is not shell source
+// and nothing else would expand it.
+func SetSessionSandboxWrite(paths []string) error {
+	var out []string
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(path, "~/"); ok {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("sandbox write path %q: %w", path, err)
+			}
+			path = filepath.Join(home, rest)
+		}
+		if !filepath.IsAbs(path) {
+			return fmt.Errorf("sandbox write path %q is not absolute", path)
+		}
+		out = append(out, filepath.Clean(path))
+	}
+	sessionSandboxWrite = out
 	return nil
 }
 
@@ -59,6 +102,11 @@ func wrapInSandbox(profile, cwd string, argv []string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Extra paths widen a profile that already restricts writes; a
+	// profile that allows all of them has nothing to add to.
+	if !policy.WriteAll && len(sessionSandboxWrite) > 0 {
+		policy.WritePaths = append(slices.Clone(policy.WritePaths), sessionSandboxWrite...)
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -78,7 +126,11 @@ profiles:
   isolated    readonly + no network + allowlisted environment
 
 Omitting --profile uses workspace. Enforcement: macOS Seatbelt, Linux
-Landlock (best-effort by kernel ABI — doctor reports the ceiling).`
+Landlock (best-effort by kernel ABI — doctor reports the ceiling).
+
+environment:
+  KOI_AGENT_PROFILE   profile for a koi-agent session (default workspace)
+  KOI_SANDBOX_WRITE   extra writable paths, separated like $PATH`
 
 // sandboxCallHandler intercepts `sandbox`, config-style: the rewrite
 // hands the interpreter the wrapped argv and execution takes the
@@ -102,6 +154,9 @@ func runSandbox(hc interp.HandlerContext, args []string) []string {
 			fmt.Fprintf(hc.Stdout, "session sandbox: %s\n", sessionSandboxProfile)
 		} else {
 			fmt.Fprintln(hc.Stdout, "session sandbox: off")
+		}
+		if len(sessionSandboxWrite) > 0 {
+			fmt.Fprintf(hc.Stdout, "also writable: %s\n", strings.Join(sessionSandboxWrite, " "))
 		}
 		fmt.Fprintf(hc.Stdout, "profiles: %s\n", strings.Join(sandbox.ProfileNames(), " | "))
 		fmt.Fprintf(hc.Stdout, "enforcement: %s\n", sandbox.Available())

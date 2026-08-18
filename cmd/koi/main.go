@@ -114,6 +114,10 @@ func run() int {
 			fmt.Fprintln(os.Stderr, "koi:", err)
 			return 2
 		}
+		if err := repl.SetSessionSandboxWrite(sandboxWritePaths()); err != nil {
+			fmt.Fprintln(os.Stderr, "koi:", err)
+			return 2
+		}
 	}
 
 	// Login invocation (#41): the -l flag, or argv[0] beginning with
@@ -186,10 +190,43 @@ const agentSandboxDefault = "workspace"
 // spelling, and refusing it would push people back to a wrapper script.
 func agentSandboxProfile(argv0 string) string {
 	name := strings.TrimPrefix(filepath.Base(argv0), "-")
-	if name == "koi-agent" || strings.HasPrefix(name, "koi-agent-") {
-		return agentSandboxDefault
+	if name != "koi-agent" && !strings.HasPrefix(name, "koi-agent-") {
+		return ""
 	}
-	return ""
+	// The environment is the only channel a harness that picks its shell
+	// through $SHELL actually controls: there is no argv to add a flag
+	// to, so without this the profile is whatever the default is and the
+	// only way out is a wrapper script on PATH — the same wrapper the
+	// koi-agent-bash spelling exists to avoid.
+	//
+	// An unknown value is rejected by SetSessionSandbox rather than
+	// falling back here, because falling back would silently confine a
+	// session differently from how it was asked to be.
+	if profile := os.Getenv(agentProfileEnv); profile != "" {
+		return profile
+	}
+	return agentSandboxDefault
+}
+
+// The two environment knobs, named apart from KOI_AGENT_SANDBOX, which
+// governs the `agent` builtin's own steps rather than the session the
+// shell starts in.
+const (
+	agentProfileEnv = "KOI_AGENT_PROFILE"
+	sandboxWriteEnv = "KOI_SANDBOX_WRITE"
+)
+
+// sandboxWritePaths reads the extra writable paths for the session.
+//
+// Split on the list separator rather than on spaces: these are paths,
+// and a directory with a space in it is ordinary on the platform this
+// feature is used on most.
+func sandboxWritePaths() []string {
+	value := os.Getenv(sandboxWriteEnv)
+	if value == "" {
+		return nil
+	}
+	return filepath.SplitList(value)
 }
 
 // runSandboxExec enforces the policy and becomes the command; it only

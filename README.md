@@ -243,6 +243,28 @@ wins. The `-bash` suffix is not decoration: harnesses pick a shell by
 grepping their own `$SHELL` for `bash` or `zsh`, and a binary called
 `koi` is invisible to them.
 
+**Two environment knobs, for the same reason the name exists.** A
+harness with nowhere to put a flag does have somewhere to put an
+environment variable — the settings block that names the shell:
+
+```sh
+KOI_AGENT_PROFILE=readonly     # pick the profile instead of taking workspace
+KOI_SANDBOX_WRITE=~/.claude    # add paths to whatever profile is in force
+```
+
+`KOI_SANDBOX_WRITE` exists because no profile fits an agent on its own:
+the work happens in the tree, which is `workspace`, while the agent's
+session state and memory live in a directory under `$HOME`, which no
+profile allows. Without it the agent runs and quietly stops remembering
+anything. Paths are absolute (a leading `~/` is expanded) and separated
+the way `$PATH` is; a relative path is an error rather than something
+resolved against wherever the shell happens to be. An unknown profile
+name stops the session instead of falling back, and `sandbox` with no
+arguments reports both.
+
+Not to be confused with `KOI_AGENT_SANDBOX`, which governs the `agent`
+builtin's own steps rather than the session the shell starts in.
+
 ## Making it your daily driver
 
 **Start with your terminal emulator, not `chsh`.** Point your profile's
