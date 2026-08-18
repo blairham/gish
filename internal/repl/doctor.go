@@ -511,7 +511,10 @@ func checkShellIdentity(hc interp.HandlerContext) checkResult {
 // open, not after it closes.
 func checkLoginShell() checkResult {
 	if runtime.GOOS == "windows" {
-		return checkResult{checkOK, "login", "not applicable on Windows", ""}
+		// Windows has no login-shell concept to change, which makes it the
+		// strongest form of the reversibility claim rather than an exception
+		// to it — say so, so doctor reads the same on every platform.
+		return checkResult{checkOK, "login", "not applicable on Windows — no login shell to change, so there is nothing to revert", ""}
 	}
 	self, err := os.Executable()
 	if err != nil {
