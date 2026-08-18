@@ -18,7 +18,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/command.proto
+// source: koi/plugin/v1/command.proto
 
 package pluginapi
 
@@ -45,7 +45,7 @@ type CommandsRequest struct {
 
 func (x *CommandsRequest) Reset() {
 	*x = CommandsRequest{}
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -57,7 +57,7 @@ func (x *CommandsRequest) String() string {
 func (*CommandsRequest) ProtoMessage() {}
 
 func (x *CommandsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -70,7 +70,7 @@ func (x *CommandsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandsRequest.ProtoReflect.Descriptor instead.
 func (*CommandsRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_command_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_command_proto_rawDescGZIP(), []int{0}
 }
 
 type CommandSpec struct {
@@ -85,7 +85,7 @@ type CommandSpec struct {
 
 func (x *CommandSpec) Reset() {
 	*x = CommandSpec{}
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -97,7 +97,7 @@ func (x *CommandSpec) String() string {
 func (*CommandSpec) ProtoMessage() {}
 
 func (x *CommandSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -110,7 +110,7 @@ func (x *CommandSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandSpec.ProtoReflect.Descriptor instead.
 func (*CommandSpec) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_command_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_command_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CommandSpec) GetName() string {
@@ -136,7 +136,7 @@ type CommandsResponse struct {
 
 func (x *CommandsResponse) Reset() {
 	*x = CommandsResponse{}
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -148,7 +148,7 @@ func (x *CommandsResponse) String() string {
 func (*CommandsResponse) ProtoMessage() {}
 
 func (x *CommandsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -161,7 +161,7 @@ func (x *CommandsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandsResponse.ProtoReflect.Descriptor instead.
 func (*CommandsResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_command_proto_rawDescGZIP(), []int{2}
+	return file_koi_plugin_v1_command_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CommandsResponse) GetCommands() []*CommandSpec {
@@ -185,7 +185,7 @@ type RunInput struct {
 
 func (x *RunInput) Reset() {
 	*x = RunInput{}
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -197,7 +197,7 @@ func (x *RunInput) String() string {
 func (*RunInput) ProtoMessage() {}
 
 func (x *RunInput) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -210,7 +210,7 @@ func (x *RunInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunInput.ProtoReflect.Descriptor instead.
 func (*RunInput) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_command_proto_rawDescGZIP(), []int{3}
+	return file_koi_plugin_v1_command_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RunInput) GetInput() isRunInput_Input {
@@ -282,7 +282,7 @@ type RunStart struct {
 
 func (x *RunStart) Reset() {
 	*x = RunStart{}
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -294,7 +294,7 @@ func (x *RunStart) String() string {
 func (*RunStart) ProtoMessage() {}
 
 func (x *RunStart) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -307,7 +307,7 @@ func (x *RunStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunStart.ProtoReflect.Descriptor instead.
 func (*RunStart) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_command_proto_rawDescGZIP(), []int{4}
+	return file_koi_plugin_v1_command_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RunStart) GetName() string {
@@ -352,7 +352,7 @@ type RunOutput struct {
 
 func (x *RunOutput) Reset() {
 	*x = RunOutput{}
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[5]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -364,7 +364,7 @@ func (x *RunOutput) String() string {
 func (*RunOutput) ProtoMessage() {}
 
 func (x *RunOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_command_proto_msgTypes[5]
+	mi := &file_koi_plugin_v1_command_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +377,7 @@ func (x *RunOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunOutput.ProtoReflect.Descriptor instead.
 func (*RunOutput) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_command_proto_rawDescGZIP(), []int{5}
+	return file_koi_plugin_v1_command_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RunOutput) GetOutput() isRunOutput_Output {
@@ -437,27 +437,27 @@ func (*RunOutput_Stderr) isRunOutput_Output() {}
 
 func (*RunOutput_Exit) isRunOutput_Output() {}
 
-var File_gish_plugin_v1_command_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_command_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_command_proto_rawDesc = "" +
+const file_koi_plugin_v1_command_proto_rawDesc = "" +
 	"\n" +
-	"\x1cgish/plugin/v1/command.proto\x12\x0egish.plugin.v1\"\x11\n" +
+	"\x1bkoi/plugin/v1/command.proto\x12\rkoi.plugin.v1\"\x11\n" +
 	"\x0fCommandsRequest\";\n" +
 	"\vCommandSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\asummary\x18\x02 \x01(\tR\asummary\"K\n" +
-	"\x10CommandsResponse\x127\n" +
-	"\bcommands\x18\x01 \x03(\v2\x1b.gish.plugin.v1.CommandSpecR\bcommands\"|\n" +
-	"\bRunInput\x120\n" +
-	"\x05start\x18\x01 \x01(\v2\x18.gish.plugin.v1.RunStartH\x00R\x05start\x12\x16\n" +
+	"\asummary\x18\x02 \x01(\tR\asummary\"J\n" +
+	"\x10CommandsResponse\x126\n" +
+	"\bcommands\x18\x01 \x03(\v2\x1a.koi.plugin.v1.CommandSpecR\bcommands\"{\n" +
+	"\bRunInput\x12/\n" +
+	"\x05start\x18\x01 \x01(\v2\x17.koi.plugin.v1.RunStartH\x00R\x05start\x12\x16\n" +
 	"\x05stdin\x18\x02 \x01(\fH\x00R\x05stdin\x12\x1d\n" +
 	"\tstdin_eof\x18\x03 \x01(\bH\x00R\bstdinEofB\a\n" +
-	"\x05input\"\xb1\x01\n" +
+	"\x05input\"\xb0\x01\n" +
 	"\bRunStart\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04args\x18\x02 \x03(\tR\x04args\x12\x10\n" +
-	"\x03cwd\x18\x03 \x01(\tR\x03cwd\x123\n" +
-	"\x03env\x18\x04 \x03(\v2!.gish.plugin.v1.RunStart.EnvEntryR\x03env\x1a6\n" +
+	"\x03cwd\x18\x03 \x01(\tR\x03cwd\x122\n" +
+	"\x03env\x18\x04 \x03(\v2 .koi.plugin.v1.RunStart.EnvEntryR\x03env\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"_\n" +
@@ -465,41 +465,41 @@ const file_gish_plugin_v1_command_proto_rawDesc = "" +
 	"\x06stdout\x18\x01 \x01(\fH\x00R\x06stdout\x12\x18\n" +
 	"\x06stderr\x18\x02 \x01(\fH\x00R\x06stderr\x12\x14\n" +
 	"\x04exit\x18\x03 \x01(\x05H\x00R\x04exitB\b\n" +
-	"\x06output2\xa0\x01\n" +
-	"\x0fCommandProvider\x12M\n" +
-	"\bCommands\x12\x1f.gish.plugin.v1.CommandsRequest\x1a .gish.plugin.v1.CommandsResponse\x12>\n" +
-	"\x03Run\x12\x18.gish.plugin.v1.RunInput\x1a\x19.gish.plugin.v1.RunOutput(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x06output2\x9c\x01\n" +
+	"\x0fCommandProvider\x12K\n" +
+	"\bCommands\x12\x1e.koi.plugin.v1.CommandsRequest\x1a\x1f.koi.plugin.v1.CommandsResponse\x12<\n" +
+	"\x03Run\x12\x17.koi.plugin.v1.RunInput\x1a\x18.koi.plugin.v1.RunOutput(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_command_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_command_proto_rawDescData []byte
+	file_koi_plugin_v1_command_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_command_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_command_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_command_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_command_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_command_proto_rawDesc), len(file_gish_plugin_v1_command_proto_rawDesc)))
+func file_koi_plugin_v1_command_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_command_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_command_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_command_proto_rawDesc), len(file_koi_plugin_v1_command_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_command_proto_rawDescData
+	return file_koi_plugin_v1_command_proto_rawDescData
 }
 
-var file_gish_plugin_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_gish_plugin_v1_command_proto_goTypes = []any{
-	(*CommandsRequest)(nil),  // 0: gish.plugin.v1.CommandsRequest
-	(*CommandSpec)(nil),      // 1: gish.plugin.v1.CommandSpec
-	(*CommandsResponse)(nil), // 2: gish.plugin.v1.CommandsResponse
-	(*RunInput)(nil),         // 3: gish.plugin.v1.RunInput
-	(*RunStart)(nil),         // 4: gish.plugin.v1.RunStart
-	(*RunOutput)(nil),        // 5: gish.plugin.v1.RunOutput
-	nil,                      // 6: gish.plugin.v1.RunStart.EnvEntry
+var file_koi_plugin_v1_command_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_koi_plugin_v1_command_proto_goTypes = []any{
+	(*CommandsRequest)(nil),  // 0: koi.plugin.v1.CommandsRequest
+	(*CommandSpec)(nil),      // 1: koi.plugin.v1.CommandSpec
+	(*CommandsResponse)(nil), // 2: koi.plugin.v1.CommandsResponse
+	(*RunInput)(nil),         // 3: koi.plugin.v1.RunInput
+	(*RunStart)(nil),         // 4: koi.plugin.v1.RunStart
+	(*RunOutput)(nil),        // 5: koi.plugin.v1.RunOutput
+	nil,                      // 6: koi.plugin.v1.RunStart.EnvEntry
 }
-var file_gish_plugin_v1_command_proto_depIdxs = []int32{
-	1, // 0: gish.plugin.v1.CommandsResponse.commands:type_name -> gish.plugin.v1.CommandSpec
-	4, // 1: gish.plugin.v1.RunInput.start:type_name -> gish.plugin.v1.RunStart
-	6, // 2: gish.plugin.v1.RunStart.env:type_name -> gish.plugin.v1.RunStart.EnvEntry
-	0, // 3: gish.plugin.v1.CommandProvider.Commands:input_type -> gish.plugin.v1.CommandsRequest
-	3, // 4: gish.plugin.v1.CommandProvider.Run:input_type -> gish.plugin.v1.RunInput
-	2, // 5: gish.plugin.v1.CommandProvider.Commands:output_type -> gish.plugin.v1.CommandsResponse
-	5, // 6: gish.plugin.v1.CommandProvider.Run:output_type -> gish.plugin.v1.RunOutput
+var file_koi_plugin_v1_command_proto_depIdxs = []int32{
+	1, // 0: koi.plugin.v1.CommandsResponse.commands:type_name -> koi.plugin.v1.CommandSpec
+	4, // 1: koi.plugin.v1.RunInput.start:type_name -> koi.plugin.v1.RunStart
+	6, // 2: koi.plugin.v1.RunStart.env:type_name -> koi.plugin.v1.RunStart.EnvEntry
+	0, // 3: koi.plugin.v1.CommandProvider.Commands:input_type -> koi.plugin.v1.CommandsRequest
+	3, // 4: koi.plugin.v1.CommandProvider.Run:input_type -> koi.plugin.v1.RunInput
+	2, // 5: koi.plugin.v1.CommandProvider.Commands:output_type -> koi.plugin.v1.CommandsResponse
+	5, // 6: koi.plugin.v1.CommandProvider.Run:output_type -> koi.plugin.v1.RunOutput
 	5, // [5:7] is the sub-list for method output_type
 	3, // [3:5] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -507,17 +507,17 @@ var file_gish_plugin_v1_command_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_command_proto_init() }
-func file_gish_plugin_v1_command_proto_init() {
-	if File_gish_plugin_v1_command_proto != nil {
+func init() { file_koi_plugin_v1_command_proto_init() }
+func file_koi_plugin_v1_command_proto_init() {
+	if File_koi_plugin_v1_command_proto != nil {
 		return
 	}
-	file_gish_plugin_v1_command_proto_msgTypes[3].OneofWrappers = []any{
+	file_koi_plugin_v1_command_proto_msgTypes[3].OneofWrappers = []any{
 		(*RunInput_Start)(nil),
 		(*RunInput_Stdin)(nil),
 		(*RunInput_StdinEof)(nil),
 	}
-	file_gish_plugin_v1_command_proto_msgTypes[5].OneofWrappers = []any{
+	file_koi_plugin_v1_command_proto_msgTypes[5].OneofWrappers = []any{
 		(*RunOutput_Stdout)(nil),
 		(*RunOutput_Stderr)(nil),
 		(*RunOutput_Exit)(nil),
@@ -526,17 +526,17 @@ func file_gish_plugin_v1_command_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_command_proto_rawDesc), len(file_gish_plugin_v1_command_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_command_proto_rawDesc), len(file_koi_plugin_v1_command_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_command_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_command_proto_depIdxs,
-		MessageInfos:      file_gish_plugin_v1_command_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_command_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_command_proto_depIdxs,
+		MessageInfos:      file_koi_plugin_v1_command_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_command_proto = out.File
-	file_gish_plugin_v1_command_proto_goTypes = nil
-	file_gish_plugin_v1_command_proto_depIdxs = nil
+	File_koi_plugin_v1_command_proto = out.File
+	file_koi_plugin_v1_command_proto_goTypes = nil
+	file_koi_plugin_v1_command_proto_depIdxs = nil
 }

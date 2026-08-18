@@ -7,7 +7,7 @@
 // arrive after it are dropped, not queued.
 syntax = "proto3";
 
-package gish.plugin.v1;
+package koi.plugin.v1;
 
 option go_package = "github.com/blairham/gish/pkg/pluginapi/v1;pluginapi";
 

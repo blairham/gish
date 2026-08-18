@@ -72,7 +72,7 @@ proto:
 	protoc --proto_path=proto \
 		--go_out=. --go_opt=module=github.com/blairham/gish \
 		--go-grpc_out=. --go-grpc_opt=module=github.com/blairham/gish \
-		proto/gish/plugin/v1/*.proto
+		proto/koi/plugin/v1/*.proto
 
 # Toolchain pin invariant. The check itself lives in blairham/pre-commit-hooks
 # and is wired up in .pre-commit-config.yaml — there is no local copy.

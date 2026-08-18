@@ -21,7 +21,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/env.proto
+// source: koi/plugin/v1/env.proto
 
 package pluginapi
 
@@ -38,8 +38,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EnvProvider_EnvDiff_FullMethodName = "/gish.plugin.v1.EnvProvider/EnvDiff"
-	EnvProvider_Allow_FullMethodName   = "/gish.plugin.v1.EnvProvider/Allow"
+	EnvProvider_EnvDiff_FullMethodName = "/koi.plugin.v1.EnvProvider/EnvDiff"
+	EnvProvider_Allow_FullMethodName   = "/koi.plugin.v1.EnvProvider/Allow"
 )
 
 // EnvProviderClient is the client API for EnvProvider service.
@@ -193,7 +193,7 @@ func _EnvProvider_Allow_Handler(srv interface{}, ctx context.Context, dec func(i
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var EnvProvider_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.EnvProvider",
+	ServiceName: "koi.plugin.v1.EnvProvider",
 	HandlerType: (*EnvProviderServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -206,5 +206,5 @@ var EnvProvider_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "gish/plugin/v1/env.proto",
+	Metadata: "koi/plugin/v1/env.proto",
 }

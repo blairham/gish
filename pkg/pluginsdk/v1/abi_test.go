@@ -25,11 +25,11 @@ import (
 func TestHandshakeIsFrozen(t *testing.T) {
 	// Written out rather than compared against the package variable, so the
 	// test fails when the value changes instead of moving with it.
-	if got := pluginsdk.Handshake.MagicCookieKey; got != "GISH_PLUGIN" {
-		t.Errorf("MagicCookieKey = %q, want GISH_PLUGIN", got)
+	if got := pluginsdk.Handshake.MagicCookieKey; got != "KOI_PLUGIN" {
+		t.Errorf("MagicCookieKey = %q, want KOI_PLUGIN", got)
 	}
-	if got := pluginsdk.Handshake.MagicCookieValue; got != "gish.plugin.v1" {
-		t.Errorf("MagicCookieValue = %q, want gish.plugin.v1", got)
+	if got := pluginsdk.Handshake.MagicCookieValue; got != "koi.plugin.v1" {
+		t.Errorf("MagicCookieValue = %q, want koi.plugin.v1", got)
 	}
 	if got := pluginsdk.Handshake.ProtocolVersion; got != 1 {
 		t.Errorf("ProtocolVersion = %d, want 1.\n"+

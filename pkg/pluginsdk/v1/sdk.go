@@ -43,13 +43,13 @@ import (
 )
 
 // Handshake gates plugin startup: a binary that doesn't present the magic
-// cookie is not treated as a gish plugin. ProtocolVersion tracks the proto
-// package version (gish.plugin.v1 == 1); bumping it is a breaking change and
+// cookie is not treated as a koi plugin. ProtocolVersion tracks the proto
+// package version (koi.plugin.v1 == 1); bumping it is a breaking change and
 // requires a v2 proto package.
 var Handshake = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
-	MagicCookieKey:   "GISH_PLUGIN",
-	MagicCookieValue: "gish.plugin.v1",
+	MagicCookieKey:   "KOI_PLUGIN",
+	MagicCookieValue: "koi.plugin.v1",
 }
 
 // Service names under which capabilities are dispensed. Both sides of the

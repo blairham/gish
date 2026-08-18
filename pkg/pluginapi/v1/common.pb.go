@@ -8,7 +8,7 @@
 //
 // Contract rules (the reason this tier exists):
 //   - This protobuf surface is versioned: breaking changes mean a new
-//     gish.plugin.v2 package, never an edit to v1.
+//     koi.plugin.v2 package, never an edit to v1.
 //   - Every host→plugin call carries a deadline. A plugin that misses it
 //     is skipped for that interaction, not waited on — a slow plugin must
 //     never block a keystroke or a prompt.
@@ -17,7 +17,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/common.proto
+// source: koi/plugin/v1/common.proto
 
 package pluginapi
 
@@ -88,11 +88,11 @@ func (x Capability) String() string {
 }
 
 func (Capability) Descriptor() protoreflect.EnumDescriptor {
-	return file_gish_plugin_v1_common_proto_enumTypes[0].Descriptor()
+	return file_koi_plugin_v1_common_proto_enumTypes[0].Descriptor()
 }
 
 func (Capability) Type() protoreflect.EnumType {
-	return &file_gish_plugin_v1_common_proto_enumTypes[0]
+	return &file_koi_plugin_v1_common_proto_enumTypes[0]
 }
 
 func (x Capability) Number() protoreflect.EnumNumber {
@@ -101,7 +101,7 @@ func (x Capability) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Capability.Descriptor instead.
 func (Capability) EnumDescriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_common_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
 type DescribeRequest struct {
@@ -112,7 +112,7 @@ type DescribeRequest struct {
 
 func (x *DescribeRequest) Reset() {
 	*x = DescribeRequest{}
-	mi := &file_gish_plugin_v1_common_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_common_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -124,7 +124,7 @@ func (x *DescribeRequest) String() string {
 func (*DescribeRequest) ProtoMessage() {}
 
 func (x *DescribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_common_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_common_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -137,7 +137,7 @@ func (x *DescribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeRequest.ProtoReflect.Descriptor instead.
 func (*DescribeRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_common_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
 type DescribeResponse struct {
@@ -148,14 +148,14 @@ type DescribeResponse struct {
 	// Plugin's own version string, informational only.
 	Version string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	// Which capability services this plugin serves.
-	Capabilities  []Capability `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=gish.plugin.v1.Capability" json:"capabilities,omitempty"`
+	Capabilities  []Capability `protobuf:"varint,3,rep,packed,name=capabilities,proto3,enum=koi.plugin.v1.Capability" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DescribeResponse) Reset() {
 	*x = DescribeResponse{}
-	mi := &file_gish_plugin_v1_common_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_common_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -167,7 +167,7 @@ func (x *DescribeResponse) String() string {
 func (*DescribeResponse) ProtoMessage() {}
 
 func (x *DescribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_common_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_common_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -180,7 +180,7 @@ func (x *DescribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeResponse.ProtoReflect.Descriptor instead.
 func (*DescribeResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_common_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *DescribeResponse) GetName() string {
@@ -204,16 +204,16 @@ func (x *DescribeResponse) GetCapabilities() []Capability {
 	return nil
 }
 
-var File_gish_plugin_v1_common_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_common_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_common_proto_rawDesc = "" +
+const file_koi_plugin_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x1bgish/plugin/v1/common.proto\x12\x0egish.plugin.v1\"\x11\n" +
-	"\x0fDescribeRequest\"\x80\x01\n" +
+	"\x1akoi/plugin/v1/common.proto\x12\rkoi.plugin.v1\"\x11\n" +
+	"\x0fDescribeRequest\"\x7f\n" +
 	"\x10DescribeResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion\x12>\n" +
-	"\fcapabilities\x18\x03 \x03(\x0e2\x1a.gish.plugin.v1.CapabilityR\fcapabilities*\xe6\x01\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12=\n" +
+	"\fcapabilities\x18\x03 \x03(\x0e2\x19.koi.plugin.v1.CapabilityR\fcapabilities*\xe6\x01\n" +
 	"\n" +
 	"Capability\x12\x1a\n" +
 	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -224,34 +224,34 @@ const file_gish_plugin_v1_common_proto_rawDesc = "" +
 	"\x10CAPABILITY_THEME\x10\x05\x12\x12\n" +
 	"\x0eCAPABILITY_ENV\x10\x06\x12\x11\n" +
 	"\rCAPABILITY_AI\x10\a\x12\x15\n" +
-	"\x11CAPABILITY_EVENTS\x10\b2[\n" +
+	"\x11CAPABILITY_EVENTS\x10\b2Y\n" +
 	"\n" +
-	"PluginInfo\x12M\n" +
-	"\bDescribe\x12\x1f.gish.plugin.v1.DescribeRequest\x1a .gish.plugin.v1.DescribeResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"PluginInfo\x12K\n" +
+	"\bDescribe\x12\x1e.koi.plugin.v1.DescribeRequest\x1a\x1f.koi.plugin.v1.DescribeResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_common_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_common_proto_rawDescData []byte
+	file_koi_plugin_v1_common_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_common_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_common_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_common_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_common_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_common_proto_rawDesc), len(file_gish_plugin_v1_common_proto_rawDesc)))
+func file_koi_plugin_v1_common_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_common_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_common_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_common_proto_rawDesc), len(file_koi_plugin_v1_common_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_common_proto_rawDescData
+	return file_koi_plugin_v1_common_proto_rawDescData
 }
 
-var file_gish_plugin_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_gish_plugin_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_gish_plugin_v1_common_proto_goTypes = []any{
-	(Capability)(0),          // 0: gish.plugin.v1.Capability
-	(*DescribeRequest)(nil),  // 1: gish.plugin.v1.DescribeRequest
-	(*DescribeResponse)(nil), // 2: gish.plugin.v1.DescribeResponse
+var file_koi_plugin_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_koi_plugin_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_koi_plugin_v1_common_proto_goTypes = []any{
+	(Capability)(0),          // 0: koi.plugin.v1.Capability
+	(*DescribeRequest)(nil),  // 1: koi.plugin.v1.DescribeRequest
+	(*DescribeResponse)(nil), // 2: koi.plugin.v1.DescribeResponse
 }
-var file_gish_plugin_v1_common_proto_depIdxs = []int32{
-	0, // 0: gish.plugin.v1.DescribeResponse.capabilities:type_name -> gish.plugin.v1.Capability
-	1, // 1: gish.plugin.v1.PluginInfo.Describe:input_type -> gish.plugin.v1.DescribeRequest
-	2, // 2: gish.plugin.v1.PluginInfo.Describe:output_type -> gish.plugin.v1.DescribeResponse
+var file_koi_plugin_v1_common_proto_depIdxs = []int32{
+	0, // 0: koi.plugin.v1.DescribeResponse.capabilities:type_name -> koi.plugin.v1.Capability
+	1, // 1: koi.plugin.v1.PluginInfo.Describe:input_type -> koi.plugin.v1.DescribeRequest
+	2, // 2: koi.plugin.v1.PluginInfo.Describe:output_type -> koi.plugin.v1.DescribeResponse
 	2, // [2:3] is the sub-list for method output_type
 	1, // [1:2] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -259,27 +259,27 @@ var file_gish_plugin_v1_common_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_common_proto_init() }
-func file_gish_plugin_v1_common_proto_init() {
-	if File_gish_plugin_v1_common_proto != nil {
+func init() { file_koi_plugin_v1_common_proto_init() }
+func file_koi_plugin_v1_common_proto_init() {
+	if File_koi_plugin_v1_common_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_common_proto_rawDesc), len(file_gish_plugin_v1_common_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_common_proto_rawDesc), len(file_koi_plugin_v1_common_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_common_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_common_proto_depIdxs,
-		EnumInfos:         file_gish_plugin_v1_common_proto_enumTypes,
-		MessageInfos:      file_gish_plugin_v1_common_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_common_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_common_proto_depIdxs,
+		EnumInfos:         file_koi_plugin_v1_common_proto_enumTypes,
+		MessageInfos:      file_koi_plugin_v1_common_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_common_proto = out.File
-	file_gish_plugin_v1_common_proto_goTypes = nil
-	file_gish_plugin_v1_common_proto_depIdxs = nil
+	File_koi_plugin_v1_common_proto = out.File
+	file_koi_plugin_v1_common_proto_goTypes = nil
+	file_koi_plugin_v1_common_proto_depIdxs = nil
 }

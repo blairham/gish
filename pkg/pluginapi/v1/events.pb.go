@@ -33,7 +33,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/events.proto
+// source: koi/plugin/v1/events.proto
 
 package pluginapi
 
@@ -99,11 +99,11 @@ func (x EventKind) String() string {
 }
 
 func (EventKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_gish_plugin_v1_events_proto_enumTypes[0].Descriptor()
+	return file_koi_plugin_v1_events_proto_enumTypes[0].Descriptor()
 }
 
 func (EventKind) Type() protoreflect.EnumType {
-	return &file_gish_plugin_v1_events_proto_enumTypes[0]
+	return &file_koi_plugin_v1_events_proto_enumTypes[0]
 }
 
 func (x EventKind) Number() protoreflect.EnumNumber {
@@ -112,12 +112,12 @@ func (x EventKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EventKind.Descriptor instead.
 func (EventKind) EnumDescriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_events_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_events_proto_rawDescGZIP(), []int{0}
 }
 
 type ShellEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Kind  EventKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=gish.plugin.v1.EventKind" json:"kind,omitempty"`
+	Kind  EventKind              `protobuf:"varint,1,opt,name=kind,proto3,enum=koi.plugin.v1.EventKind" json:"kind,omitempty"`
 	// Monotonic per-session sequence number. Same discipline as every
 	// other request here: a subscriber that falls behind can tell, and a
 	// proposal answering a superseded event can be dropped by the host.
@@ -145,7 +145,7 @@ type ShellEvent struct {
 
 func (x *ShellEvent) Reset() {
 	*x = ShellEvent{}
-	mi := &file_gish_plugin_v1_events_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_events_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -157,7 +157,7 @@ func (x *ShellEvent) String() string {
 func (*ShellEvent) ProtoMessage() {}
 
 func (x *ShellEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_events_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_events_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -170,7 +170,7 @@ func (x *ShellEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShellEvent.ProtoReflect.Descriptor instead.
 func (*ShellEvent) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_events_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_events_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ShellEvent) GetKind() EventKind {
@@ -265,7 +265,7 @@ type Proposal struct {
 
 func (x *Proposal) Reset() {
 	*x = Proposal{}
-	mi := &file_gish_plugin_v1_events_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_events_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -277,7 +277,7 @@ func (x *Proposal) String() string {
 func (*Proposal) ProtoMessage() {}
 
 func (x *Proposal) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_events_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_events_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -290,7 +290,7 @@ func (x *Proposal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Proposal.ProtoReflect.Descriptor instead.
 func (*Proposal) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_events_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_events_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Proposal) GetEventSeq() uint64 {
@@ -328,18 +328,18 @@ func (x *Proposal) GetWatchPaths() []string {
 	return nil
 }
 
-var File_gish_plugin_v1_events_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_events_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_events_proto_rawDesc = "" +
+const file_koi_plugin_v1_events_proto_rawDesc = "" +
 	"\n" +
-	"\x1bgish/plugin/v1/events.proto\x12\x0egish.plugin.v1\"\xe7\x02\n" +
+	"\x1akoi/plugin/v1/events.proto\x12\rkoi.plugin.v1\"\xe5\x02\n" +
 	"\n" +
-	"ShellEvent\x12-\n" +
-	"\x04kind\x18\x01 \x01(\x0e2\x19.gish.plugin.v1.EventKindR\x04kind\x12\x1b\n" +
+	"ShellEvent\x12,\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x18.koi.plugin.v1.EventKindR\x04kind\x12\x1b\n" +
 	"\tevent_seq\x18\x02 \x01(\x04R\beventSeq\x12\x10\n" +
 	"\x03cwd\x18\x03 \x01(\tR\x03cwd\x12\x17\n" +
-	"\aunix_ms\x18\x04 \x01(\x03R\x06unixMs\x125\n" +
-	"\x03env\x18\x05 \x03(\v2#.gish.plugin.v1.ShellEvent.EnvEntryR\x03env\x12!\n" +
+	"\aunix_ms\x18\x04 \x01(\x03R\x06unixMs\x124\n" +
+	"\x03env\x18\x05 \x03(\v2\".koi.plugin.v1.ShellEvent.EnvEntryR\x03env\x12!\n" +
 	"\fcommand_name\x18\x06 \x01(\tR\vcommandName\x12\x1b\n" +
 	"\texit_code\x18\a \x01(\x05R\bexitCode\x12\x1f\n" +
 	"\vduration_ms\x18\b \x01(\x03R\n" +
@@ -360,35 +360,35 @@ const file_gish_plugin_v1_events_proto_rawDesc = "" +
 	"\x15EVENT_KIND_DIR_CHANGE\x10\x01\x12\x1b\n" +
 	"\x17EVENT_KIND_COMMAND_DONE\x10\x02\x12\x1a\n" +
 	"\x16EVENT_KIND_FILE_CHANGE\x10\x03\x12\x1a\n" +
-	"\x16EVENT_KIND_SESSION_END\x10\x042T\n" +
-	"\vShellEvents\x12E\n" +
-	"\tSubscribe\x12\x1a.gish.plugin.v1.ShellEvent\x1a\x18.gish.plugin.v1.Proposal(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x16EVENT_KIND_SESSION_END\x10\x042R\n" +
+	"\vShellEvents\x12C\n" +
+	"\tSubscribe\x12\x19.koi.plugin.v1.ShellEvent\x1a\x17.koi.plugin.v1.Proposal(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_events_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_events_proto_rawDescData []byte
+	file_koi_plugin_v1_events_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_events_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_events_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_events_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_events_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_events_proto_rawDesc), len(file_gish_plugin_v1_events_proto_rawDesc)))
+func file_koi_plugin_v1_events_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_events_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_events_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_events_proto_rawDesc), len(file_koi_plugin_v1_events_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_events_proto_rawDescData
+	return file_koi_plugin_v1_events_proto_rawDescData
 }
 
-var file_gish_plugin_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_gish_plugin_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
-var file_gish_plugin_v1_events_proto_goTypes = []any{
-	(EventKind)(0),     // 0: gish.plugin.v1.EventKind
-	(*ShellEvent)(nil), // 1: gish.plugin.v1.ShellEvent
-	(*Proposal)(nil),   // 2: gish.plugin.v1.Proposal
-	nil,                // 3: gish.plugin.v1.ShellEvent.EnvEntry
+var file_koi_plugin_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_koi_plugin_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_koi_plugin_v1_events_proto_goTypes = []any{
+	(EventKind)(0),     // 0: koi.plugin.v1.EventKind
+	(*ShellEvent)(nil), // 1: koi.plugin.v1.ShellEvent
+	(*Proposal)(nil),   // 2: koi.plugin.v1.Proposal
+	nil,                // 3: koi.plugin.v1.ShellEvent.EnvEntry
 }
-var file_gish_plugin_v1_events_proto_depIdxs = []int32{
-	0, // 0: gish.plugin.v1.ShellEvent.kind:type_name -> gish.plugin.v1.EventKind
-	3, // 1: gish.plugin.v1.ShellEvent.env:type_name -> gish.plugin.v1.ShellEvent.EnvEntry
-	1, // 2: gish.plugin.v1.ShellEvents.Subscribe:input_type -> gish.plugin.v1.ShellEvent
-	2, // 3: gish.plugin.v1.ShellEvents.Subscribe:output_type -> gish.plugin.v1.Proposal
+var file_koi_plugin_v1_events_proto_depIdxs = []int32{
+	0, // 0: koi.plugin.v1.ShellEvent.kind:type_name -> koi.plugin.v1.EventKind
+	3, // 1: koi.plugin.v1.ShellEvent.env:type_name -> koi.plugin.v1.ShellEvent.EnvEntry
+	1, // 2: koi.plugin.v1.ShellEvents.Subscribe:input_type -> koi.plugin.v1.ShellEvent
+	2, // 3: koi.plugin.v1.ShellEvents.Subscribe:output_type -> koi.plugin.v1.Proposal
 	3, // [3:4] is the sub-list for method output_type
 	2, // [2:3] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -396,27 +396,27 @@ var file_gish_plugin_v1_events_proto_depIdxs = []int32{
 	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_events_proto_init() }
-func file_gish_plugin_v1_events_proto_init() {
-	if File_gish_plugin_v1_events_proto != nil {
+func init() { file_koi_plugin_v1_events_proto_init() }
+func file_koi_plugin_v1_events_proto_init() {
+	if File_koi_plugin_v1_events_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_events_proto_rawDesc), len(file_gish_plugin_v1_events_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_events_proto_rawDesc), len(file_koi_plugin_v1_events_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_events_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_events_proto_depIdxs,
-		EnumInfos:         file_gish_plugin_v1_events_proto_enumTypes,
-		MessageInfos:      file_gish_plugin_v1_events_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_events_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_events_proto_depIdxs,
+		EnumInfos:         file_koi_plugin_v1_events_proto_enumTypes,
+		MessageInfos:      file_koi_plugin_v1_events_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_events_proto = out.File
-	file_gish_plugin_v1_events_proto_goTypes = nil
-	file_gish_plugin_v1_events_proto_depIdxs = nil
+	File_koi_plugin_v1_events_proto = out.File
+	file_koi_plugin_v1_events_proto_goTypes = nil
+	file_koi_plugin_v1_events_proto_depIdxs = nil
 }

@@ -8,7 +8,7 @@
 //
 // Contract rules (the reason this tier exists):
 //   - This protobuf surface is versioned: breaking changes mean a new
-//     gish.plugin.v2 package, never an edit to v1.
+//     koi.plugin.v2 package, never an edit to v1.
 //   - Every host→plugin call carries a deadline. A plugin that misses it
 //     is skipped for that interaction, not waited on — a slow plugin must
 //     never block a keystroke or a prompt.
@@ -17,7 +17,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/common.proto
+// source: koi/plugin/v1/common.proto
 
 package pluginapi
 
@@ -34,7 +34,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PluginInfo_Describe_FullMethodName = "/gish.plugin.v1.PluginInfo/Describe"
+	PluginInfo_Describe_FullMethodName = "/koi.plugin.v1.PluginInfo/Describe"
 )
 
 // PluginInfoClient is the client API for PluginInfo service.
@@ -131,7 +131,7 @@ func _PluginInfo_Describe_Handler(srv interface{}, ctx context.Context, dec func
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var PluginInfo_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.PluginInfo",
+	ServiceName: "koi.plugin.v1.PluginInfo",
 	HandlerType: (*PluginInfoServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -140,5 +140,5 @@ var PluginInfo_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "gish/plugin/v1/common.proto",
+	Metadata: "koi/plugin/v1/common.proto",
 }

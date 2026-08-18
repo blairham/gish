@@ -33,7 +33,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/events.proto
+// source: koi/plugin/v1/events.proto
 
 package pluginapi
 
@@ -50,7 +50,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ShellEvents_Subscribe_FullMethodName = "/gish.plugin.v1.ShellEvents/Subscribe"
+	ShellEvents_Subscribe_FullMethodName = "/koi.plugin.v1.ShellEvents/Subscribe"
 )
 
 // ShellEventsClient is the client API for ShellEvents service.
@@ -147,7 +147,7 @@ type ShellEvents_SubscribeServer = grpc.BidiStreamingServer[ShellEvent, Proposal
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ShellEvents_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.ShellEvents",
+	ServiceName: "koi.plugin.v1.ShellEvents",
 	HandlerType: (*ShellEventsServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
@@ -158,5 +158,5 @@ var ShellEvents_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "gish/plugin/v1/events.proto",
+	Metadata: "koi/plugin/v1/events.proto",
 }

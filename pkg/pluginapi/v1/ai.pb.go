@@ -21,7 +21,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/ai.proto
+// source: koi/plugin/v1/ai.proto
 
 package pluginapi
 
@@ -62,7 +62,7 @@ type ShellContext struct {
 
 func (x *ShellContext) Reset() {
 	*x = ShellContext{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -74,7 +74,7 @@ func (x *ShellContext) String() string {
 func (*ShellContext) ProtoMessage() {}
 
 func (x *ShellContext) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -87,7 +87,7 @@ func (x *ShellContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShellContext.ProtoReflect.Descriptor instead.
 func (*ShellContext) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ShellContext) GetCwd() string {
@@ -144,7 +144,7 @@ type ComposeRequest struct {
 
 func (x *ComposeRequest) Reset() {
 	*x = ComposeRequest{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -156,7 +156,7 @@ func (x *ComposeRequest) String() string {
 func (*ComposeRequest) ProtoMessage() {}
 
 func (x *ComposeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -169,7 +169,7 @@ func (x *ComposeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComposeRequest.ProtoReflect.Descriptor instead.
 func (*ComposeRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ComposeRequest) GetQuery() string {
@@ -208,7 +208,7 @@ type ComposeCandidate struct {
 
 func (x *ComposeCandidate) Reset() {
 	*x = ComposeCandidate{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -220,7 +220,7 @@ func (x *ComposeCandidate) String() string {
 func (*ComposeCandidate) ProtoMessage() {}
 
 func (x *ComposeCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -233,7 +233,7 @@ func (x *ComposeCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComposeCandidate.ProtoReflect.Descriptor instead.
 func (*ComposeCandidate) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{2}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ComposeCandidate) GetCommand() string {
@@ -269,7 +269,7 @@ type ExplainRequest struct {
 
 func (x *ExplainRequest) Reset() {
 	*x = ExplainRequest{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -281,7 +281,7 @@ func (x *ExplainRequest) String() string {
 func (*ExplainRequest) ProtoMessage() {}
 
 func (x *ExplainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -294,7 +294,7 @@ func (x *ExplainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainRequest.ProtoReflect.Descriptor instead.
 func (*ExplainRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{3}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ExplainRequest) GetCommand() string {
@@ -327,7 +327,7 @@ type ExplainResponse struct {
 
 func (x *ExplainResponse) Reset() {
 	*x = ExplainResponse{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -339,7 +339,7 @@ func (x *ExplainResponse) String() string {
 func (*ExplainResponse) ProtoMessage() {}
 
 func (x *ExplainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -352,7 +352,7 @@ func (x *ExplainResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainResponse.ProtoReflect.Descriptor instead.
 func (*ExplainResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{4}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExplainResponse) GetExplanation() string {
@@ -374,7 +374,7 @@ type PlanRequest struct {
 
 func (x *PlanRequest) Reset() {
 	*x = PlanRequest{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[5]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +386,7 @@ func (x *PlanRequest) String() string {
 func (*PlanRequest) ProtoMessage() {}
 
 func (x *PlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[5]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +399,7 @@ func (x *PlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanRequest.ProtoReflect.Descriptor instead.
 func (*PlanRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{5}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PlanRequest) GetTask() string {
@@ -439,7 +439,7 @@ type PlanStep struct {
 
 func (x *PlanStep) Reset() {
 	*x = PlanStep{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[6]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -451,7 +451,7 @@ func (x *PlanStep) String() string {
 func (*PlanStep) ProtoMessage() {}
 
 func (x *PlanStep) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[6]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -464,7 +464,7 @@ func (x *PlanStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanStep.ProtoReflect.Descriptor instead.
 func (*PlanStep) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{6}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PlanStep) GetTitle() string {
@@ -499,7 +499,7 @@ type PlanResponse struct {
 
 func (x *PlanResponse) Reset() {
 	*x = PlanResponse{}
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[7]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -511,7 +511,7 @@ func (x *PlanResponse) String() string {
 func (*PlanResponse) ProtoMessage() {}
 
 func (x *PlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_ai_proto_msgTypes[7]
+	mi := &file_koi_plugin_v1_ai_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -524,7 +524,7 @@ func (x *PlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanResponse.ProtoReflect.Descriptor instead.
 func (*PlanResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_ai_proto_rawDescGZIP(), []int{7}
+	return file_koi_plugin_v1_ai_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PlanResponse) GetSummary() string {
@@ -541,89 +541,89 @@ func (x *PlanResponse) GetSteps() []*PlanStep {
 	return nil
 }
 
-var File_gish_plugin_v1_ai_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_ai_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_ai_proto_rawDesc = "" +
+const file_koi_plugin_v1_ai_proto_rawDesc = "" +
 	"\n" +
-	"\x17gish/plugin/v1/ai.proto\x12\x0egish.plugin.v1\"\x91\x02\n" +
+	"\x16koi/plugin/v1/ai.proto\x12\rkoi.plugin.v1\"\x90\x02\n" +
 	"\fShellContext\x12\x10\n" +
 	"\x03cwd\x18\x01 \x01(\tR\x03cwd\x12'\n" +
 	"\x0frecent_commands\x18\x02 \x03(\tR\x0erecentCommands\x12$\n" +
 	"\x0elast_exit_code\x18\x03 \x01(\x05R\flastExitCode\x12\x1f\n" +
 	"\voutput_tail\x18\x04 \x01(\tR\n" +
-	"outputTail\x127\n" +
-	"\x03env\x18\x05 \x03(\v2%.gish.plugin.v1.ShellContext.EnvEntryR\x03env\x12\x0e\n" +
+	"outputTail\x126\n" +
+	"\x03env\x18\x05 \x03(\v2$.koi.plugin.v1.ShellContext.EnvEntryR\x03env\x12\x0e\n" +
 	"\x02os\x18\x06 \x01(\tR\x02os\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"{\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"z\n" +
 	"\x0eComposeRequest\x12\x14\n" +
-	"\x05query\x18\x01 \x01(\tR\x05query\x126\n" +
-	"\acontext\x18\x02 \x01(\v2\x1c.gish.plugin.v1.ShellContextR\acontext\x12\x1b\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x125\n" +
+	"\acontext\x18\x02 \x01(\v2\x1b.koi.plugin.v1.ShellContextR\acontext\x12\x1b\n" +
 	"\tevent_seq\x18\x03 \x01(\x04R\beventSeq\"d\n" +
 	"\x10ComposeCandidate\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12 \n" +
 	"\vexplanation\x18\x02 \x01(\tR\vexplanation\x12\x14\n" +
-	"\x05final\x18\x04 \x01(\bR\x05final\"\x7f\n" +
+	"\x05final\x18\x04 \x01(\bR\x05final\"~\n" +
 	"\x0eExplainRequest\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12\x1b\n" +
-	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x126\n" +
-	"\acontext\x18\x03 \x01(\v2\x1c.gish.plugin.v1.ShellContextR\acontext\"3\n" +
+	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x125\n" +
+	"\acontext\x18\x03 \x01(\v2\x1b.koi.plugin.v1.ShellContextR\acontext\"3\n" +
 	"\x0fExplainResponse\x12 \n" +
-	"\vexplanation\x18\x01 \x01(\tR\vexplanation\"v\n" +
+	"\vexplanation\x18\x01 \x01(\tR\vexplanation\"u\n" +
 	"\vPlanRequest\x12\x12\n" +
-	"\x04task\x18\x01 \x01(\tR\x04task\x126\n" +
-	"\acontext\x18\x02 \x01(\v2\x1c.gish.plugin.v1.ShellContextR\acontext\x12\x1b\n" +
+	"\x04task\x18\x01 \x01(\tR\x04task\x125\n" +
+	"\acontext\x18\x02 \x01(\v2\x1b.koi.plugin.v1.ShellContextR\acontext\x12\x1b\n" +
 	"\tevent_seq\x18\x03 \x01(\x04R\beventSeq\"\\\n" +
 	"\bPlanStep\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x18\n" +
 	"\acommand\x18\x02 \x01(\tR\acommand\x12 \n" +
-	"\vdestructive\x18\x03 \x01(\bR\vdestructive\"X\n" +
+	"\vdestructive\x18\x03 \x01(\bR\vdestructive\"W\n" +
 	"\fPlanResponse\x12\x18\n" +
-	"\asummary\x18\x01 \x01(\tR\asummary\x12.\n" +
-	"\x05steps\x18\x02 \x03(\v2\x18.gish.plugin.v1.PlanStepR\x05steps2\xea\x01\n" +
+	"\asummary\x18\x01 \x01(\tR\asummary\x12-\n" +
+	"\x05steps\x18\x02 \x03(\v2\x17.koi.plugin.v1.PlanStepR\x05steps2\xe4\x01\n" +
 	"\n" +
-	"AIProvider\x12M\n" +
-	"\aCompose\x12\x1e.gish.plugin.v1.ComposeRequest\x1a .gish.plugin.v1.ComposeCandidate0\x01\x12J\n" +
-	"\aExplain\x12\x1e.gish.plugin.v1.ExplainRequest\x1a\x1f.gish.plugin.v1.ExplainResponse\x12A\n" +
-	"\x04Plan\x12\x1b.gish.plugin.v1.PlanRequest\x1a\x1c.gish.plugin.v1.PlanResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"AIProvider\x12K\n" +
+	"\aCompose\x12\x1d.koi.plugin.v1.ComposeRequest\x1a\x1f.koi.plugin.v1.ComposeCandidate0\x01\x12H\n" +
+	"\aExplain\x12\x1d.koi.plugin.v1.ExplainRequest\x1a\x1e.koi.plugin.v1.ExplainResponse\x12?\n" +
+	"\x04Plan\x12\x1a.koi.plugin.v1.PlanRequest\x1a\x1b.koi.plugin.v1.PlanResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_ai_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_ai_proto_rawDescData []byte
+	file_koi_plugin_v1_ai_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_ai_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_ai_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_ai_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_ai_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_ai_proto_rawDesc), len(file_gish_plugin_v1_ai_proto_rawDesc)))
+func file_koi_plugin_v1_ai_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_ai_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_ai_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_ai_proto_rawDesc), len(file_koi_plugin_v1_ai_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_ai_proto_rawDescData
+	return file_koi_plugin_v1_ai_proto_rawDescData
 }
 
-var file_gish_plugin_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
-var file_gish_plugin_v1_ai_proto_goTypes = []any{
-	(*ShellContext)(nil),     // 0: gish.plugin.v1.ShellContext
-	(*ComposeRequest)(nil),   // 1: gish.plugin.v1.ComposeRequest
-	(*ComposeCandidate)(nil), // 2: gish.plugin.v1.ComposeCandidate
-	(*ExplainRequest)(nil),   // 3: gish.plugin.v1.ExplainRequest
-	(*ExplainResponse)(nil),  // 4: gish.plugin.v1.ExplainResponse
-	(*PlanRequest)(nil),      // 5: gish.plugin.v1.PlanRequest
-	(*PlanStep)(nil),         // 6: gish.plugin.v1.PlanStep
-	(*PlanResponse)(nil),     // 7: gish.plugin.v1.PlanResponse
-	nil,                      // 8: gish.plugin.v1.ShellContext.EnvEntry
+var file_koi_plugin_v1_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_koi_plugin_v1_ai_proto_goTypes = []any{
+	(*ShellContext)(nil),     // 0: koi.plugin.v1.ShellContext
+	(*ComposeRequest)(nil),   // 1: koi.plugin.v1.ComposeRequest
+	(*ComposeCandidate)(nil), // 2: koi.plugin.v1.ComposeCandidate
+	(*ExplainRequest)(nil),   // 3: koi.plugin.v1.ExplainRequest
+	(*ExplainResponse)(nil),  // 4: koi.plugin.v1.ExplainResponse
+	(*PlanRequest)(nil),      // 5: koi.plugin.v1.PlanRequest
+	(*PlanStep)(nil),         // 6: koi.plugin.v1.PlanStep
+	(*PlanResponse)(nil),     // 7: koi.plugin.v1.PlanResponse
+	nil,                      // 8: koi.plugin.v1.ShellContext.EnvEntry
 }
-var file_gish_plugin_v1_ai_proto_depIdxs = []int32{
-	8, // 0: gish.plugin.v1.ShellContext.env:type_name -> gish.plugin.v1.ShellContext.EnvEntry
-	0, // 1: gish.plugin.v1.ComposeRequest.context:type_name -> gish.plugin.v1.ShellContext
-	0, // 2: gish.plugin.v1.ExplainRequest.context:type_name -> gish.plugin.v1.ShellContext
-	0, // 3: gish.plugin.v1.PlanRequest.context:type_name -> gish.plugin.v1.ShellContext
-	6, // 4: gish.plugin.v1.PlanResponse.steps:type_name -> gish.plugin.v1.PlanStep
-	1, // 5: gish.plugin.v1.AIProvider.Compose:input_type -> gish.plugin.v1.ComposeRequest
-	3, // 6: gish.plugin.v1.AIProvider.Explain:input_type -> gish.plugin.v1.ExplainRequest
-	5, // 7: gish.plugin.v1.AIProvider.Plan:input_type -> gish.plugin.v1.PlanRequest
-	2, // 8: gish.plugin.v1.AIProvider.Compose:output_type -> gish.plugin.v1.ComposeCandidate
-	4, // 9: gish.plugin.v1.AIProvider.Explain:output_type -> gish.plugin.v1.ExplainResponse
-	7, // 10: gish.plugin.v1.AIProvider.Plan:output_type -> gish.plugin.v1.PlanResponse
+var file_koi_plugin_v1_ai_proto_depIdxs = []int32{
+	8, // 0: koi.plugin.v1.ShellContext.env:type_name -> koi.plugin.v1.ShellContext.EnvEntry
+	0, // 1: koi.plugin.v1.ComposeRequest.context:type_name -> koi.plugin.v1.ShellContext
+	0, // 2: koi.plugin.v1.ExplainRequest.context:type_name -> koi.plugin.v1.ShellContext
+	0, // 3: koi.plugin.v1.PlanRequest.context:type_name -> koi.plugin.v1.ShellContext
+	6, // 4: koi.plugin.v1.PlanResponse.steps:type_name -> koi.plugin.v1.PlanStep
+	1, // 5: koi.plugin.v1.AIProvider.Compose:input_type -> koi.plugin.v1.ComposeRequest
+	3, // 6: koi.plugin.v1.AIProvider.Explain:input_type -> koi.plugin.v1.ExplainRequest
+	5, // 7: koi.plugin.v1.AIProvider.Plan:input_type -> koi.plugin.v1.PlanRequest
+	2, // 8: koi.plugin.v1.AIProvider.Compose:output_type -> koi.plugin.v1.ComposeCandidate
+	4, // 9: koi.plugin.v1.AIProvider.Explain:output_type -> koi.plugin.v1.ExplainResponse
+	7, // 10: koi.plugin.v1.AIProvider.Plan:output_type -> koi.plugin.v1.PlanResponse
 	8, // [8:11] is the sub-list for method output_type
 	5, // [5:8] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name
@@ -631,26 +631,26 @@ var file_gish_plugin_v1_ai_proto_depIdxs = []int32{
 	0, // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_ai_proto_init() }
-func file_gish_plugin_v1_ai_proto_init() {
-	if File_gish_plugin_v1_ai_proto != nil {
+func init() { file_koi_plugin_v1_ai_proto_init() }
+func file_koi_plugin_v1_ai_proto_init() {
+	if File_koi_plugin_v1_ai_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_ai_proto_rawDesc), len(file_gish_plugin_v1_ai_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_ai_proto_rawDesc), len(file_koi_plugin_v1_ai_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_ai_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_ai_proto_depIdxs,
-		MessageInfos:      file_gish_plugin_v1_ai_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_ai_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_ai_proto_depIdxs,
+		MessageInfos:      file_koi_plugin_v1_ai_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_ai_proto = out.File
-	file_gish_plugin_v1_ai_proto_goTypes = nil
-	file_gish_plugin_v1_ai_proto_depIdxs = nil
+	File_koi_plugin_v1_ai_proto = out.File
+	file_koi_plugin_v1_ai_proto_goTypes = nil
+	file_koi_plugin_v1_ai_proto_depIdxs = nil
 }
