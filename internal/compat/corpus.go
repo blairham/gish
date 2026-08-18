@@ -186,6 +186,21 @@ EOF`,
 			"trailing \\\nEOF",
 	},
 	{
+		Name: "quoted heredoc is byte-literal through source and eval", Category: CatRedirection,
+		Provenance: "#259: #244's first fix rewrote the tree koi parses, which reaches an interactive line, `-c` and a script file — " +
+			"and not `source` or `eval`, which re-parse inside the interpreter. So the corruption stayed live on the two paths " +
+			"a generated script is most likely to arrive by, with every test of the fix passing",
+		Script: `d=$(mktemp -d)
+cat > "$d/h.sh" <<'OUTER'
+cat <<'X'
+re=\\d+ and \$var
+X
+OUTER
+. "$d/h.sh"
+eval "$(cat "$d/h.sh")"
+rm -rf "$d"`,
+	},
+	{
 		Name: "indented heredoc", Category: CatRedirection,
 		Provenance: "heredocs inside indented functions",
 		Script: `f() {

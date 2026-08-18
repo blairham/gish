@@ -1230,6 +1230,16 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 	// as pipe writes may block once the buffer gets full.
 	// We still construct and buffer the entire heredoc first,
 	// as doing it concurrently would lead to different semantics and be racy.
+	//
+	// A quoted delimiter means the body never expands, and that includes
+	// escape processing — so it does not go through expansion at all (#244).
+	if hdoc, ok := literalHdoc(rd); ok {
+		go func() {
+			pw.WriteString(hdoc)
+			pw.Close()
+		}()
+		return pr, nil
+	}
 	if rd.Op != syntax.DashHdoc {
 		hdoc := r.document(rd.Hdoc)
 		go func() {
@@ -1270,6 +1280,84 @@ func (r *Runner) hdocReader(rd *syntax.Redirect) (*os.File, error) {
 		pw.Close()
 	}()
 	return pr, nil
+}
+
+// literalHdoc returns a here-document body that must not be expanded at
+// all, and reports whether this is one.
+//
+// POSIX is unambiguous: "if any character in word is quoted, the
+// here-document lines shall not be expanded". Expansion was getting the
+// obvious half right — `$HOME`, `$(cmd)`, backquotes and `$((1+1))` all
+// stay literal under `<<'X'` — and the escapes wrong, because escapes are
+// processed during expansion and by then the delimiter's quoting is gone:
+// [expand.Document] runs one backslash pass for both forms, stripping the
+// `\` before `\`, `$` and a backquote. That is precisely the *unquoted*
+// heredoc's rule, applied to the quoted one.
+//
+// `cat > file <<'EOF'` is the idiom for writing a file whose content must
+// not be interpreted — the quoted delimiter is the whole reason it is
+// safe — so the damage was a wrong artifact rather than a refusal. A regex
+// spelled `\\d`, a Windows path, a Makefile recipe, a printf format or an
+// escaped `\$` landed on disk with a backslash missing, no message, and
+// exit 0.
+//
+// The body is returned as the text it already is rather than re-escaped:
+// doubling every backslash would be an exact inverse of the pass in
+// expand.go and would become a silent lie the moment that pass changes.
+func literalHdoc(rd *syntax.Redirect) (string, bool) {
+	if rd.Hdoc == nil || !hdocDelimQuoted(rd.Word) {
+		return "", false
+	}
+	// The quoted delimiter sends the lexer down its own path
+	// ([syntax.Parser.quotedHdocWord]), which yields exactly one literal
+	// and no expansion tree to preserve. Any other shape means the parser
+	// did *not* agree the delimiter was quoted, and treating live
+	// expansions as text is the same bug pointing the other way — so leave
+	// it to the expanding path.
+	if len(rd.Hdoc.Parts) != 1 {
+		return "", false
+	}
+	lit, ok := rd.Hdoc.Parts[0].(*syntax.Lit)
+	if !ok {
+		return "", false
+	}
+	// `<<-'X'` strips leading tabs from every line. The lexer skips them
+	// only when matching the delimiter, not when building the body, so the
+	// stripping is the consumer's job either way — see the DashHdoc branch
+	// in hdocReader, which does the same thing a line at a time because it
+	// has expansions to interleave and this does not.
+	if rd.Op != syntax.DashHdoc {
+		return lit.Value, true
+	}
+	lines := strings.Split(lit.Value, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimLeft(line, "\t")
+	}
+	return strings.Join(lines, "\n"), true
+}
+
+// hdocDelimQuoted reports whether the *parser* treated this
+// here-document's delimiter as quoted.
+//
+// The parser decides this in unquotedWordBytes and keeps the verdict to
+// itself — nothing on the tree records it — so it has to be recomputed
+// here, quirk included: that function overwrites its verdict per part
+// instead of accumulating it, so only the last part decides and `<<'X'Y`
+// reads as unquoted (#258). Matching the parser is the point rather than
+// an oversight, because that verdict is what picked the lexer path which
+// built the body; being more correct than it here would mean handing back
+// a body that still has real expansions in it.
+func hdocDelimQuoted(w *syntax.Word) bool {
+	if w == nil || len(w.Parts) == 0 {
+		return false
+	}
+	switch part := w.Parts[len(w.Parts)-1].(type) {
+	case *syntax.SglQuoted, *syntax.DblQuoted:
+		return true
+	case *syntax.Lit:
+		return strings.Contains(part.Value, "\\")
+	}
+	return false
 }
 
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
