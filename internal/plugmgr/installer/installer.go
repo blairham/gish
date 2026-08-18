@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blairham/gish/internal/plugmgr/config"
-	"github.com/blairham/gish/internal/plugmgr/ghr"
-	"github.com/blairham/gish/internal/plugmgr/gitutil"
-	"github.com/blairham/gish/internal/plugmgr/ice"
-	"github.com/blairham/gish/internal/plugmgr/spec"
-	"github.com/blairham/gish/internal/plugmgr/state"
+	"github.com/blairham/koi-shell/internal/plugmgr/config"
+	"github.com/blairham/koi-shell/internal/plugmgr/ghr"
+	"github.com/blairham/koi-shell/internal/plugmgr/gitutil"
+	"github.com/blairham/koi-shell/internal/plugmgr/ice"
+	"github.com/blairham/koi-shell/internal/plugmgr/spec"
+	"github.com/blairham/koi-shell/internal/plugmgr/state"
 )
 
 type Installer struct {
@@ -28,7 +28,7 @@ type Installer struct {
 	Out io.Writer
 }
 
-// Annex hooks from upstream zi-go are not ported: gish's tier-2 plugin
+// Annex hooks from upstream zi-go are not ported: koi's tier-2 plugin
 // system is the extension mechanism here (see issue #23).
 
 var snippetClient = &http.Client{Timeout: 2 * time.Minute}

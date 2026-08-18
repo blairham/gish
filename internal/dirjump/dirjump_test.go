@@ -39,13 +39,13 @@ func TestQueryZoxideMatchingRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	s.Visit("/home/u/projects/gish/internal", now)
-	s.Visit("/home/u/projects/gish", now)
-	s.Visit("/home/u/gishlike/other", now)
+	s.Visit("/home/u/projects/koi/internal", now)
+	s.Visit("/home/u/projects/koi", now)
+	s.Visit("/home/u/koilike/other", now)
 
 	// The last term must match the final component.
-	got := s.Query([]string{"gish"}, now)
-	if len(got) != 1 || got[0].Dir != "/home/u/projects/gish" {
+	got := s.Query([]string{"koi"}, now)
+	if len(got) != 1 || got[0].Dir != "/home/u/projects/koi" {
 		t.Errorf("last-component rule: %+v", got)
 	}
 	// Earlier terms match in path order.
@@ -56,7 +56,7 @@ func TestQueryZoxideMatchingRules(t *testing.T) {
 		t.Errorf("out-of-order terms matched: %+v", got)
 	}
 	// Case-insensitive.
-	if got = s.Query([]string{"GISH"}, now); len(got) != 1 {
+	if got = s.Query([]string{"KOI"}, now); len(got) != 1 {
 		t.Errorf("case sensitivity crept in: %+v", got)
 	}
 }

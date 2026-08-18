@@ -357,7 +357,7 @@ const file_koi_plugin_v1_history_proto_rawDesc = "" +
 	"\x05final\x18\x02 \x01(\bR\x05final2\x9d\x01\n" +
 	"\x0eHistoryBackend\x12E\n" +
 	"\x06Append\x12\x1c.koi.plugin.v1.AppendRequest\x1a\x1d.koi.plugin.v1.AppendResponse\x12D\n" +
-	"\x06Search\x12\x1c.koi.plugin.v1.SearchRequest\x1a\x1a.koi.plugin.v1.SearchBatch0\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x06Search\x12\x1c.koi.plugin.v1.SearchRequest\x1a\x1a.koi.plugin.v1.SearchBatch0\x01B:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_history_proto_rawDescOnce sync.Once

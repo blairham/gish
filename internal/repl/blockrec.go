@@ -3,8 +3,8 @@ package repl
 import (
 	"time"
 
-	"github.com/blairham/gish/internal/blocks"
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/blocks"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // Recording a command's output alongside its history entry (#99 stage

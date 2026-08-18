@@ -37,7 +37,7 @@ func newHarness(t *testing.T) *harness {
 	// Only the temp tree is a candidate: a test must never be able to
 	// fall through to the real /tmp.
 	prev := candidateDirs
-	candidateDirs = []string{`"${HOME:-}/.cache/gish"`, `"${GISH_TEST_ALT:-}/gish"`}
+	candidateDirs = []string{`"${HOME:-}/.cache/koi"`, `"${KOI_TEST_ALT:-}/koi"`}
 	t.Cleanup(func() { candidateDirs = prev })
 
 	return &harness{
@@ -46,7 +46,7 @@ func newHarness(t *testing.T) *harness {
 		local: &Local{Env: []string{
 			"HOME=" + home,
 			"PATH=" + os.Getenv("PATH"),
-			"GISH_TEST_ALT=" + filepath.Join(base, "alt"),
+			"KOI_TEST_ALT=" + filepath.Join(base, "alt"),
 		}},
 	}
 }
@@ -54,7 +54,7 @@ func newHarness(t *testing.T) *harness {
 // payload makes a small fake "binary" to push.
 func payload(t *testing.T, content string) Payload {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "fake-gish")
+	path := filepath.Join(t.TempDir(), "fake-koi")
 	if err := os.WriteFile(path, []byte(content), 0o700); err != nil { //nolint:gosec // fake binary in a temp dir
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestProbeFindsAnExecutableDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
-	if want := filepath.Join(h.home, ".cache", "gish"); got.Dir != want {
+	if want := filepath.Join(h.home, ".cache", "koi"); got.Dir != want {
 		t.Errorf("dir = %q, want %q", got.Dir, want)
 	}
 	if got.OS == "" || got.Arch == "" {
@@ -98,7 +98,7 @@ func TestProbeSkipsNoexecDirectory(t *testing.T) {
 	if err := os.MkdirAll(cache, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cache, "gish"), []byte("not a dir"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(cache, "koi"), []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,7 +116,7 @@ func TestProbeSkipsNoexecDirectory(t *testing.T) {
 // caller must get the sentinel that means "fall back to plain ssh".
 func TestProbeFailsWhenNoCandidateWorks(t *testing.T) {
 	h := newHarness(t)
-	h.local.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=/nonexistent-gish-test", "GISH_TEST_ALT=/nonexistent-gish-test"}
+	h.local.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=/nonexistent-koi-test", "KOI_TEST_ALT=/nonexistent-koi-test"}
 
 	p := payload(t, "x")
 	_, err := RunProbe(probeCtx(t), h.local, p.Name, p.Sum, p.Size)
@@ -283,12 +283,12 @@ func TestNormalizeArch(t *testing.T) {
 // keeps a future contributor from adding "just the history file" to it.
 func TestBundleCarriesSettingsAndNothingElse(t *testing.T) {
 	env := map[string]string{
-		"GISH_THEME":            "p10k",
-		"GISH_THEME_COLOR_DIR":  "cyan",
-		"GISH_LINT":             "native",
+		"KOI_THEME":             "p10k",
+		"KOI_THEME_COLOR_DIR":   "cyan",
+		"KOI_LINT":              "native",
 		"AWS_SECRET_ACCESS_KEY": "shouldnottravel",
 		"GITHUB_TOKEN":          "shouldnottravel",
-		"GISH_PLUGIN_DIR":       "/local/only",
+		"KOI_PLUGIN_DIR":        "/local/only",
 		"HOME":                  "/home/local",
 	}
 	names := make([]string, 0, len(env))
@@ -297,12 +297,12 @@ func TestBundleCarriesSettingsAndNothingElse(t *testing.T) {
 	}
 	out := string(Bundle(func(k string) string { return env[k] }, names))
 
-	for _, want := range []string{"GISH_THEME='p10k'", "GISH_THEME_COLOR_DIR='cyan'", "GISH_LINT='native'"} {
+	for _, want := range []string{"KOI_THEME='p10k'", "KOI_THEME_COLOR_DIR='cyan'", "KOI_LINT='native'"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("bundle missing %q:\n%s", want, out)
 		}
 	}
-	for _, forbidden := range []string{"shouldnottravel", "GISH_PLUGIN_DIR", "HOME="} {
+	for _, forbidden := range []string{"shouldnottravel", "KOI_PLUGIN_DIR", "HOME="} {
 		if strings.Contains(out, forbidden) {
 			t.Errorf("bundle carried %q, which must stay local:\n%s", forbidden, out)
 		}
@@ -310,7 +310,7 @@ func TestBundleCarriesSettingsAndNothingElse(t *testing.T) {
 }
 
 func TestBundleQuotesValues(t *testing.T) {
-	env := map[string]string{"GISH_PROMPT": "it's %~ $ "}
+	env := map[string]string{"KOI_PROMPT": "it's %~ $ "}
 	out := string(Bundle(func(k string) string { return env[k] }, nil))
 	if !strings.Contains(out, `'it'\''s %~ $ '`) {
 		t.Errorf("prompt not shell-quoted:\n%s", out)
@@ -322,14 +322,14 @@ func TestBundleQuotesValues(t *testing.T) {
 // since argv is world-readable through /proc), and --remote-session so
 // the shell knows it was brought rather than installed.
 func TestRemoteCommand(t *testing.T) {
-	got := remoteCommand("/home/u/.cache/gish", "gish-abc", "rc-def", false)
-	for _, want := range []string{"exec ", "gish-abc", "--remote-session", "--rc ", "rc-def"} {
+	got := remoteCommand("/home/u/.cache/koi", "koi-abc", "rc-def", false)
+	for _, want := range []string{"exec ", "koi-abc", "--remote-session", "--rc ", "rc-def"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("command %q missing %q", got, want)
 		}
 	}
 
-	eph := remoteCommand("/home/u/.cache/gish", "gish-abc", "rc-def", true)
+	eph := remoteCommand("/home/u/.cache/koi", "koi-abc", "rc-def", true)
 	if !strings.Contains(eph, "trap ") || !strings.Contains(eph, "rm -rf") {
 		t.Errorf("ephemeral command does not clean up: %q", eph)
 	}
@@ -423,7 +423,7 @@ func TestBinaryForRefusesUnsupportedPlatforms(t *testing.T) {
 	}
 
 	// A platform we have no cached build for must name the exact command
-	// that fixes it — gish does not download release artifacts (#112).
+	// that fixes it — koi does not download release artifacts (#112).
 	_, err := BinaryFor(Probe{OS: "linux", Arch: "riscv64"})
 	if !errors.Is(err, errNoBinary) {
 		t.Fatalf("err = %v, want errNoBinary", err)
@@ -448,7 +448,7 @@ func TestBinaryForUsesSelfOnMatchingPlatform(t *testing.T) {
 func TestREADMEExplainsItself(t *testing.T) {
 	// Someone finding this file is a sysadmin deciding whether to open a
 	// ticket. It has to answer their questions without them asking us.
-	for _, want := range []string{"not a daemon", "did not modify any dotfile", "--uninstall", "github.com/blairham/gish"} {
+	for _, want := range []string{"not a daemon", "did not modify any dotfile", "--uninstall", "github.com/blairham/koi-shell"} {
 		if !strings.Contains(readmeText, want) {
 			t.Errorf("README does not say %q", want)
 		}
@@ -464,10 +464,10 @@ func TestBringEndToEnd(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", data)
 	t.Setenv("HOME", data)
 	t.Setenv("USERPROFILE", data)
-	t.Setenv("GISH_THEME", "p10k")
+	t.Setenv("KOI_THEME", "p10k")
 
 	// Pose as a small binary rather than shipping the test executable.
-	fake := filepath.Join(t.TempDir(), "gish")
+	fake := filepath.Join(t.TempDir(), "koi")
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil { //nolint:gosec // fake binary in a temp dir
 		t.Fatal(err)
 	}
@@ -510,7 +510,7 @@ func TestBringEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(cfg), "GISH_THEME='p10k'") {
+	if !strings.Contains(string(cfg), "KOI_THEME='p10k'") {
 		t.Errorf("theme did not travel:\n%s", cfg)
 	}
 
@@ -524,7 +524,7 @@ func TestBringEndToEnd(t *testing.T) {
 	}
 }
 
-// GISH_SSH_BRING=never must reach no further than the decision: no
+// KOI_SSH_BRING=never must reach no further than the decision: no
 // probe, no connection, nothing touched on the remote.
 func TestBringNeverTouchesTheRemote(t *testing.T) {
 	h := newHarness(t)
@@ -538,7 +538,7 @@ func TestBringNeverTouchesTheRemote(t *testing.T) {
 	}); err == nil {
 		t.Fatal("never mode returned a session")
 	}
-	if _, err := os.Stat(filepath.Join(h.home, ".cache", "gish")); err == nil {
+	if _, err := os.Stat(filepath.Join(h.home, ".cache", "koi")); err == nil {
 		t.Error("never mode created a directory on the remote")
 	}
 }

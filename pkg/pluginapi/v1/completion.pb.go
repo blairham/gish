@@ -263,7 +263,7 @@ const file_koi_plugin_v1_completion_proto_rawDesc = "" +
 	"candidates\x12\x14\n" +
 	"\x05final\x18\x02 \x01(\bR\x05final2`\n" +
 	"\x12CompletionProvider\x12J\n" +
-	"\bComplete\x12\x1e.koi.plugin.v1.CompleteRequest\x1a\x1c.koi.plugin.v1.CompleteBatch0\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\bComplete\x12\x1e.koi.plugin.v1.CompleteRequest\x1a\x1c.koi.plugin.v1.CompleteBatch0\x01B:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_completion_proto_rawDescOnce sync.Once

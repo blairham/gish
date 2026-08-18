@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // segmentRenderer resolves %p{id} prompt escapes against tier-2 prompt

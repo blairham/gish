@@ -11,7 +11,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // OSC 133 semantic prompt marks (#99): the standard way a shell tells
@@ -21,8 +21,8 @@ import (
 // This is the cheap half of blocks, and it is not a consolation prize:
 // kitty, WezTerm, Ghostty, iTerm2, and VS Code already implement
 // scroll-to-previous-prompt, select-command-output, and click-to-rerun
-// on top of these marks. Emitting them means gish users get block
-// navigation *today*, in the terminal they already run, without gish
+// on top of these marks. Emitting them means koi users get block
+// navigation *today*, in the terminal they already run, without koi
 // having to become a terminal.
 //
 // The sequences:
@@ -69,11 +69,11 @@ type termFeatures struct {
 	userVars bool // OSC 1337 SetUserVar
 }
 
-// semanticFeatures parses GISH_SEMANTIC_MARKS: `on` (everything, the
+// semanticFeatures parses KOI_SEMANTIC_MARKS: `on` (everything, the
 // default), `off` (nothing), or a comma-separated subset of
 // marks,cwd,uservars.
 func semanticFeatures(runner *interp.Runner) termFeatures {
-	setting := strings.ToLower(strings.TrimSpace(shellVar(runner, "GISH_SEMANTIC_MARKS", "on")))
+	setting := strings.ToLower(strings.TrimSpace(shellVar(runner, "KOI_SEMANTIC_MARKS", "on")))
 	switch setting {
 	case "", "on", "all":
 		// SetUserVar is off in the default set on purpose: it is the
@@ -177,8 +177,8 @@ func markUserVars(w io.Writer, on bool, command string, duration time.Duration) 
 	if history.SecretReason(command) != "" {
 		command = firstWord(command)
 	}
-	fmt.Fprintf(w, oscUserVarF, "gish_command", base64.StdEncoding.EncodeToString([]byte(command)))
-	fmt.Fprintf(w, oscUserVarF, "gish_duration_ms",
+	fmt.Fprintf(w, oscUserVarF, "koi_command", base64.StdEncoding.EncodeToString([]byte(command)))
+	fmt.Fprintf(w, oscUserVarF, "koi_duration_ms",
 		base64.StdEncoding.EncodeToString([]byte(strconv.FormatInt(duration.Milliseconds(), 10))))
 }
 
@@ -200,7 +200,7 @@ func doctorSemanticMarks() (detail string, known bool) {
 	return t.name + ": " + t.supports, t.known
 }
 
-// terminalInfo is what a terminal actually does with what gish emits.
+// terminalInfo is what a terminal actually does with what koi emits.
 //
 // The per-affordance detail matters more than the name. docs/blocks.md
 // used to say users "get block navigation today" in a list of terminals

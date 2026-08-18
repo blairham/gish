@@ -21,20 +21,20 @@ import (
 // abbreviations and PATH edits simply are not there inside the agent's
 // subshell, and some agents emit a syntax-error preamble on every
 // command. The wild's recommended workaround is the dual-shell split —
-// fish for humans, zsh for agents — which is exactly the partition gish
+// fish for humans, zsh for agents — which is exactly the partition koi
 // exists to collapse.
 //
-// So the claim is two-sided: an agent pointed at gish gets the user's
-// real environment with no syntax errors, and `gish --sandbox` confines
+// So the claim is two-sided: an agent pointed at koi gets the user's
+// real environment with no syntax errors, and `koi --sandbox` confines
 // what that agent can touch. The first half is what this gate holds us
-// to, because #11475-class bugs mean even SHELL=gish is not always
+// to, because #11475-class bugs mean even SHELL=koi is not always
 // respected and an untested claim about someone else's tool ages badly.
 //
 // These are the invocation *shapes* harnesses actually write, captured
 // from real ones (see #215 and #217), run differentially: the same argv
-// through real bash and through gish, same rc, same profile. bash is the
+// through real bash and through koi, same rc, same profile. bash is the
 // oracle. The two deliberate divergences carry Expect instead, because
-// pretending gish is bash where it has decided not to be would be the
+// pretending koi is bash where it has decided not to be would be the
 // dishonest kind of green.
 
 // AgentCase is one harness-shaped invocation.
@@ -48,7 +48,7 @@ type AgentCase struct {
 	Argv []string
 	// RC and Profile are written into the scratch home when non-empty.
 	RC, Profile string
-	// Expect, when set, is what gish must print — for the places gish
+	// Expect, when set, is what koi must print — for the places koi
 	// deliberately differs from bash and the difference is the feature.
 	Expect string
 	// Why explains an Expect divergence in the published table.
@@ -56,8 +56,8 @@ type AgentCase struct {
 	// MinBashMajor, when set, is the oldest bash that can serve as this
 	// case's oracle. A probe *about* a bash version cannot be answered by
 	// a bash that predates it: macOS still ships 3.2.57, where a
-	// `BASH_VERSINFO[0] -ge 4` probe is correctly false, so comparing gish
-	// against it measures the runner's bash rather than gish. Skipped, not
+	// `BASH_VERSINFO[0] -ge 4` probe is correctly false, so comparing koi
+	// against it measures the runner's bash rather than koi. Skipped, not
 	// tolerated — the case still runs everywhere bash is new enough.
 	MinBashMajor int
 }
@@ -66,7 +66,7 @@ type AgentCase struct {
 var AgentCorpus = []AgentCase{
 	{
 		Name:       "clustered login+command (-lc)",
-		Provenance: "how tools spawn a login shell for one command; gish answered \"flag provided but not defined: -lc\" until #217",
+		Provenance: "how tools spawn a login shell for one command; koi answered \"flag provided but not defined: -lc\" until #217",
 		Profile:    "export FROM_PROFILE=yes\n",
 		Argv:       []string{"-lc", `echo "profile=${FROM_PROFILE:-MISSING}"`},
 	},
@@ -89,7 +89,7 @@ var AgentCorpus = []AgentCase{
 		// asks only about the functions this case defined. A system-wide rc is
 		// outside the scratch $HOME and cannot be isolated: Debian and Ubuntu
 		// ship /etc/bash.bashrc defining command_not_found_handle, which bash
-		// lists and gish does not, so an unfiltered listing compares the
+		// lists and koi does not, so an unfiltered listing compares the
 		// runner's OS rather than the claim — that the user's own functions
 		// reach an agent's subshell.
 		Argv: []string{"-ic", `declare -F | cut -d' ' -f3 | grep -E '^(deploy|greet)$' | sort | tr '\n' ' '`},
@@ -128,11 +128,11 @@ var AgentCorpus = []AgentCase{
 		Argv:       []string{"-lc", "echo only-this"},
 	},
 	{
-		Name:       "$0 says gish, not bash",
-		Provenance: "shell identity is decided (#120): gish claims bash's interface, not bash's identity",
+		Name:       "$0 says koi, not bash",
+		Provenance: "shell identity is decided (#120): koi claims bash's interface, not bash's identity",
 		Argv:       []string{"-c", "echo $0"},
-		Expect:     "gish\n",
-		Why:        "bash prints its own path; gish is not pretending to be bash, and a harness that needs the difference can see it",
+		Expect:     "koi\n",
+		Why:        "bash prints its own path; koi is not pretending to be bash, and a harness that needs the difference can see it",
 	},
 	{
 		Name:         "BASH_VERSION answers feature probes",
@@ -145,31 +145,31 @@ var AgentCorpus = []AgentCase{
 // AgentResult is one case's verdict.
 type AgentResult struct {
 	AgentCase
-	BashOut, GishOut   string
-	BashCode, GishCode int
-	Pass               bool
-	Reason             string
+	BashOut, KoiOut   string
+	BashCode, KoiCode int
+	Pass              bool
+	Reason            string
 	// Skipped marks a case whose oracle is too old to answer it. Not a
 	// pass: it says the gate did not get to run here.
 	Skipped bool
 }
 
 // RunAgentAll runs the whole gate.
-func RunAgentAll(ctx context.Context, bashBin, gishBin string) []AgentResult {
+func RunAgentAll(ctx context.Context, bashBin, koiBin string) []AgentResult {
 	out := make([]AgentResult, 0, len(AgentCorpus))
 	for _, c := range AgentCorpus {
-		out = append(out, RunAgent(ctx, bashBin, gishBin, c))
+		out = append(out, RunAgent(ctx, bashBin, koiBin, c))
 	}
 	return out
 }
 
 // RunAgent runs one case under both shells and compares — or, for a case
-// carrying Expect, holds gish to the stated behavior instead.
-func RunAgent(ctx context.Context, bashBin, gishBin string, c AgentCase) AgentResult {
+// carrying Expect, holds koi to the stated behavior instead.
+func RunAgent(ctx context.Context, bashBin, koiBin string, c AgentCase) AgentResult {
 	r := AgentResult{AgentCase: c}
-	r.GishOut, r.GishCode = runAgentArgv(ctx, gishBin, c)
+	r.KoiOut, r.KoiCode = runAgentArgv(ctx, koiBin, c)
 	if c.Expect != "" {
-		r.Pass = r.GishOut == c.Expect
+		r.Pass = r.KoiOut == c.Expect
 		if !r.Pass {
 			r.Reason = "want " + firstLine(strings.TrimSpace(c.Expect))
 		}
@@ -185,11 +185,11 @@ func RunAgent(ctx context.Context, bashBin, gishBin string, c AgentCase) AgentRe
 	r.BashOut, r.BashCode = runAgentArgv(ctx, bashBin, c)
 	r.BashOut = dropJobControlPreamble(r.BashOut)
 	switch {
-	case r.BashOut == r.GishOut && r.BashCode == r.GishCode:
+	case r.BashOut == r.KoiOut && r.BashCode == r.KoiCode:
 		r.Pass = true
-	case r.BashOut != r.GishOut && r.BashCode != r.GishCode:
+	case r.BashOut != r.KoiOut && r.BashCode != r.KoiCode:
 		r.Reason = "output and exit status differ"
-	case r.BashOut != r.GishOut:
+	case r.BashOut != r.KoiOut:
 		r.Reason = "output differs"
 	default:
 		r.Reason = "exit status differs"
@@ -201,24 +201,24 @@ func RunAgent(ctx context.Context, bashBin, gishBin string, c AgentCase) AgentRe
 // under test are the only ones it can find. The runner's real dotfiles
 // must never decide whether this gate passes.
 func runAgentArgv(ctx context.Context, shell string, c AgentCase) (string, int) {
-	home, err := os.MkdirTemp("", "gish-agent-")
+	home, err := os.MkdirTemp("", "koi-agent-")
 	if err != nil {
 		return "[runner error: " + err.Error() + "]", -1
 	}
 	defer os.RemoveAll(home) //nolint:errcheck // scratch dir
 
-	// bash and gish read different file names for the same two roles, so
+	// bash and koi read different file names for the same two roles, so
 	// each shell is given the pair it actually looks for. Writing only
-	// gish's would test gish against a bash that was never configured.
+	// koi's would test koi against a bash that was never configured.
 	if c.RC != "" {
-		for _, name := range []string{".bashrc", ".gishrc"} {
+		for _, name := range []string{".bashrc", ".koirc"} {
 			if werr := os.WriteFile(filepath.Join(home, name), []byte(c.RC), 0o600); werr != nil {
 				return "[runner error: " + werr.Error() + "]", -1
 			}
 		}
 	}
 	if c.Profile != "" {
-		for _, name := range []string{".bash_profile", ".profile", ".gish_profile"} {
+		for _, name := range []string{".bash_profile", ".profile", ".koi_profile"} {
 			if werr := os.WriteFile(filepath.Join(home, name), []byte(c.Profile), 0o600); werr != nil {
 				return "[runner error: " + werr.Error() + "]", -1
 			}
@@ -234,13 +234,13 @@ func runAgentArgv(ctx context.Context, shell string, c AgentCase) (string, int) 
 	cmd.Dir = home
 	cmd.Env = []string{
 		"PATH=" + pathEnv(), "HOME=" + home, "LC_ALL=C", "TERM=dumb",
-		// Point every XDG root into the scratch home too: gish resolves its
+		// Point every XDG root into the scratch home too: koi resolves its
 		// rc through XDG first, and a developer's real config would
 		// otherwise leak into the gate.
 		"XDG_CONFIG_HOME=" + filepath.Join(home, "config"),
 		"XDG_DATA_HOME=" + filepath.Join(home, "data"),
 		"XDG_STATE_HOME=" + filepath.Join(home, "state"),
-		"GISH_WELCOME=off",
+		"KOI_WELCOME=off",
 	}
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
@@ -311,14 +311,14 @@ func (r AgentResult) Diff() string {
 		return ""
 	}
 	if r.Expect != "" {
-		return "gish: " + firstLine(strings.TrimSpace(r.GishOut)) + " · " + r.Reason
+		return "koi: " + firstLine(strings.TrimSpace(r.KoiOut)) + " · " + r.Reason
 	}
 	bash := strings.TrimSpace(r.BashOut)
-	gish := strings.TrimSpace(r.GishOut)
-	if bash == gish {
-		return "exit " + itoa(r.BashCode) + " vs " + itoa(r.GishCode)
+	koi := strings.TrimSpace(r.KoiOut)
+	if bash == koi {
+		return "exit " + itoa(r.BashCode) + " vs " + itoa(r.KoiCode)
 	}
-	return "bash: " + firstLine(bash) + " · gish: " + firstLine(gish)
+	return "bash: " + firstLine(bash) + " · koi: " + firstLine(koi)
 }
 
 // dropJobControlPreamble removes the two lines bash prints when asked for
@@ -329,7 +329,7 @@ func (r AgentResult) Diff() string {
 //
 // That is an artifact of running the gate from a test process, not a
 // compatibility difference — and normalizing it is the honest move only
-// because the direction is in gish's favor: the preamble is bash's, gish
+// because the direction is in koi's favor: the preamble is bash's, koi
 // prints nothing, and leaving it in would fail every `-i` case for the
 // wrong reason while hiding any real difference underneath.
 //

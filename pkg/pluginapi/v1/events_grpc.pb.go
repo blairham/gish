@@ -13,7 +13,7 @@
 // inherited rather than invented:
 //
 //   - **No exec channel, ever.** A plugin proposes; the shell decides.
-//     This is the #111 line — gish hosts other people's agents rather
+//     This is the #111 line — koi hosts other people's agents rather
 //     than being one — and it is why orchestration cannot move behind
 //     the plugin boundary. Every proposal that leads to running
 //     something goes through the same preview-and-approve surfaces as

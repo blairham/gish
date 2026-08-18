@@ -50,7 +50,7 @@ jobs:
 
     # The #1 abandonment cause, gated (#161): text pasted at a real
     # interactive prompt, the named init scripts sourced unmodified, and
-    # the ecosystem matrix (#159). Unix only — it drives gish on a pty.
+    # the ecosystem matrix (#159). Unix only — it drives koi on a pty.
     - name: Paste, source and ecosystem gates
       if: runner.os != 'Windows'
       run: make paste-gate-check
@@ -87,7 +87,7 @@ jobs:
     # there is a claim, not a guarantee — the same distinction the
     # builtin matrices exist to close.
     - name: Run portable tests
-      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./internal/remote/ ./internal/session/ ./internal/capture/ ./internal/blocks/ ./internal/promptengine/ ./internal/gitstatus/ ./internal/dirjump/ ./internal/manifest/ ./internal/ui/ ./internal/jobs/ ./cmd/gish-aws/ ./cmd/gish-atuin/ ./cmd/gish-claude/ ./cmd/gish-direnv/ ./internal/migrate/
+      run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./internal/remote/ ./internal/session/ ./internal/capture/ ./internal/blocks/ ./internal/promptengine/ ./internal/gitstatus/ ./internal/dirjump/ ./internal/manifest/ ./internal/ui/ ./internal/jobs/ ./cmd/koi-aws/ ./cmd/koi-atuin/ ./cmd/koi-claude/ ./cmd/koi-direnv/ ./internal/migrate/
 
   lint:
     runs-on: ubuntu-latest

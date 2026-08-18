@@ -8,7 +8,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // fc (#60): the POSIX history builtin.
@@ -23,7 +23,7 @@ import (
 //
 // Numbering counts from the oldest entry held, so the numbers `fc -l`
 // prints are the ones its own range arguments accept. bash numbers
-// across the whole session history; gish's store is shared across
+// across the whole session history; koi's store is shared across
 // sessions (#40), so the numbers are positions in the recent window
 // rather than a global sequence — stated in the help rather than left
 // for someone to infer from a mismatch.
@@ -45,7 +45,7 @@ const fcUsage = `usage: fc -l [-nr] [first] [last]
   fc -l -r           newest first
 
 Numbers are positions in the recent history window, not a session-global
-sequence: gish's history is shared across sessions (#40).
+sequence: koi's history is shared across sessions (#40).
 
 Editing forms (fc without -l, and fc -s) are not implemented — they
 re-execute a command, which belongs to the shell's run loop rather than

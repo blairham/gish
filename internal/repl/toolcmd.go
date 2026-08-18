@@ -11,8 +11,8 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/tools"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/tools"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The tool command (#77 v2): the user surface over native version
@@ -100,7 +100,7 @@ func runTool(hc interp.HandlerContext, args []string) []string {
 
 	case args[0] == "install" && len(args) == 5 && args[3] == "--from":
 		// Descoped (#112): installing software is a package manager's
-		// job. gish switches versions; it does not ship a downloader.
+		// job. koi switches versions; it does not ship a downloader.
 		printInstallDelegation(hc, args[1], args[2], args[4])
 		return []string{"false"}
 
@@ -177,19 +177,19 @@ func showToolOverview(hc interp.HandlerContext, roots []string) {
 }
 
 // printInstallDelegation names the tool that should do this install.
-// The scope line (#112): gish is native for the keystroke, prompt, and
+// The scope line (#112): koi is native for the keystroke, prompt, and
 // cd path — switching versions is its job — and delegates everything
 // else. A release downloader carries package-manager obligations
 // (archive formats, provenance, platform matrices, rate limits) that
 // mise, ubi, and asdf already own full time.
 func printInstallDelegation(hc interp.HandlerContext, tool, version, repo string) {
 	v := strings.TrimPrefix(version, "v")
-	fmt.Fprintf(hc.Stderr, "tool: gish switches versions, it does not install them.\n")
+	fmt.Fprintf(hc.Stderr, "tool: koi switches versions, it does not install them.\n")
 	fmt.Fprintf(hc.Stderr, "  ubi  --project %s --tag %s --in %s\n",
 		repo, version, asdfBinDir(tool, v))
 	fmt.Fprintf(hc.Stderr, "  mise use -g %s@%s        (if mise has a backend for it)\n", tool, v)
 	fmt.Fprintf(hc.Stderr, "  asdf plugin add %s && asdf install %s %s\n", tool, tool, v)
-	fmt.Fprintf(hc.Stderr, "Any of those installs into a tree gish already resolves; `tool list %s` will show it.\n", tool)
+	fmt.Fprintf(hc.Stderr, "Any of those installs into a tree koi already resolves; `tool list %s` will show it.\n", tool)
 }
 
 // asdfBinDir is where a manually installed version must land for the

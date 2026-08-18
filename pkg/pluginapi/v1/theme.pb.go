@@ -466,7 +466,7 @@ const file_koi_plugin_v1_theme_proto_rawDesc = "" +
 	"\arprompt\x18\x03 \x01(\tR\arprompt2\xaf\x01\n" +
 	"\rThemeProvider\x12E\n" +
 	"\x06Themes\x12\x1c.koi.plugin.v1.ThemesRequest\x1a\x1d.koi.plugin.v1.ThemesResponse\x12W\n" +
-	"\fRenderPrompt\x12\".koi.plugin.v1.RenderPromptRequest\x1a#.koi.plugin.v1.RenderPromptResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\fRenderPrompt\x12\".koi.plugin.v1.RenderPromptRequest\x1a#.koi.plugin.v1.RenderPromptResponseB:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_theme_proto_rawDescOnce sync.Once

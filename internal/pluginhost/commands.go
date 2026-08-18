@@ -14,8 +14,8 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
-	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/koi-shell/pkg/pluginsdk/v1"
 )
 
 // CommandIndex routes command names to the plugins that provide them
@@ -25,7 +25,7 @@ import (
 // plugin launches lazily on first invocation.
 //
 // Precedence (decided on #11): reserved names (interpreter and
-// gish-native builtins) are rejected with a warning; shell functions
+// koi-native builtins) are rejected with a warning; shell functions
 // shadow these automatically (dispatched before the exec seam); plugin
 // commands shadow PATH. Contested names go to the lexicographically
 // first plugin.
@@ -36,7 +36,7 @@ type CommandIndex struct {
 
 	// persisting tracks in-flight cache writes. The interrogation runs
 	// detached so discovery never blocks a prompt, but that goroutine
-	// creates and writes $XDG_STATE_HOME/gish — so something has to be
+	// creates and writes $XDG_STATE_HOME/koi — so something has to be
 	// able to wait for it. Without this, a shell (or a test) that exits
 	// while it is running races the write against its own teardown; on
 	// Windows that surfaces as "directory is not empty" when the state
@@ -68,7 +68,7 @@ type cachedCommand struct {
 	Summary string `json:"summary,omitempty"`
 }
 
-// defaultIndexPath is the cache location: $XDG_STATE_HOME/gish/
+// defaultIndexPath is the cache location: $XDG_STATE_HOME/koi/
 // command-index.json (state, not config: derived and disposable).
 func defaultIndexPath() string {
 	stateHome := os.Getenv("XDG_STATE_HOME")
@@ -79,7 +79,7 @@ func defaultIndexPath() string {
 		}
 		stateHome = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(stateHome, "gish", "command-index.json")
+	return filepath.Join(stateHome, "koi", "command-index.json")
 }
 
 // NewCommandIndex builds the index from the cache and kicks off an
@@ -238,11 +238,11 @@ func (ci *CommandIndex) setCommands(pluginName string, commands []cachedCommand)
 	for _, plug := range plugins {
 		for _, c := range ci.specs[plug] {
 			if ci.reserved != nil && ci.reserved(c.Name) {
-				fmt.Fprintf(os.Stderr, "gish: plugin %s: command %q is a reserved builtin name, ignored\n", plug, c.Name)
+				fmt.Fprintf(os.Stderr, "koi: plugin %s: command %q is a reserved builtin name, ignored\n", plug, c.Name)
 				continue
 			}
 			if owner, taken := ci.byName[c.Name]; taken && owner != plug {
-				fmt.Fprintf(os.Stderr, "gish: plugin %s: command %q already provided by %s, ignored\n", plug, c.Name, owner)
+				fmt.Fprintf(os.Stderr, "koi: plugin %s: command %q already provided by %s, ignored\n", plug, c.Name, owner)
 				continue
 			}
 			ci.byName[c.Name] = plug
@@ -285,7 +285,7 @@ func (ci *CommandIndex) lookup(name string) string {
 	return ci.byName[name]
 }
 
-// ExecMiddleware dispatches plugin-provided commands: after gish-native
+// ExecMiddleware dispatches plugin-provided commands: after koi-native
 // builtins, before PATH execution.
 func (ci *CommandIndex) ExecMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {

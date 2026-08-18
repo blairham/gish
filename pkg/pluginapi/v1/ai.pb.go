@@ -586,7 +586,7 @@ const file_koi_plugin_v1_ai_proto_rawDesc = "" +
 	"AIProvider\x12K\n" +
 	"\aCompose\x12\x1d.koi.plugin.v1.ComposeRequest\x1a\x1f.koi.plugin.v1.ComposeCandidate0\x01\x12H\n" +
 	"\aExplain\x12\x1d.koi.plugin.v1.ExplainRequest\x1a\x1e.koi.plugin.v1.ExplainResponse\x12?\n" +
-	"\x04Plan\x12\x1a.koi.plugin.v1.PlanRequest\x1a\x1b.koi.plugin.v1.PlanResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x04Plan\x12\x1a.koi.plugin.v1.PlanRequest\x1a\x1b.koi.plugin.v1.PlanResponseB:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_ai_proto_rawDescOnce sync.Once

@@ -15,22 +15,22 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/envtrust"
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/internal/promptengine"
-	"github.com/blairham/gish/internal/remote"
-	"github.com/blairham/gish/internal/sandbox"
-	"github.com/blairham/gish/internal/term"
-	"github.com/blairham/gish/internal/tools"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/envtrust"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	"github.com/blairham/koi-shell/internal/promptengine"
+	"github.com/blairham/koi-shell/internal/remote"
+	"github.com/blairham/koi-shell/internal/sandbox"
+	"github.com/blairham/koi-shell/internal/term"
+	"github.com/blairham/koi-shell/internal/tools"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The doctor command (#67): one command that checks the moving parts,
 // says what's wrong, and names the exact fix — so a broken setup is
 // self-serviceable. Advisory only: doctor never mutates state. It runs
 // as a CallHandler builtin like config, which also makes it reachable
-// from a working shell via `gish -c doctor` when gish itself won't
+// from a working shell via `koi -c doctor` when koi itself won't
 // start cleanly.
 
 type checkStatus int
@@ -113,13 +113,13 @@ func checkRC() checkResult {
 	}
 	display := displayPath(path)
 	f, err := os.Open(path) //nolint:gosec // the user's own rc path
-	if os.IsNotExist(err) { // $GISH_RC may point at a file not created yet
+	if os.IsNotExist(err) { // $KOI_RC may point at a file not created yet
 		return checkResult{checkOK, "rc", "no rc file — defaults apply (config <setting> <value> creates one)", ""}
 	}
 	if err != nil {
 		return checkResult{
 			checkFail, "rc", fmt.Sprintf("%s: %v", display, err),
-			"make the file readable, or point $GISH_RC elsewhere",
+			"make the file readable, or point $KOI_RC elsewhere",
 		}
 	}
 	defer f.Close()
@@ -132,25 +132,25 @@ func checkRC() checkResult {
 	return checkResult{checkOK, "rc", display + " parses cleanly", ""}
 }
 
-// checkTheme validates the whole GISH_THEME_* surface. The prompt
+// checkTheme validates the whole KOI_THEME_* surface. The prompt
 // already degrades on bad values; doctor says why it degraded.
 func checkTheme(env expand.Environ) checkResult {
-	theme := env.Get("GISH_THEME").String()
+	theme := env.Get("KOI_THEME").String()
 	if theme == "" {
 		theme = "plain"
 	}
-	if !slices.Contains([]string{"plain", "p10k", "gish", "starship"}, theme) {
+	if !slices.Contains([]string{"plain", "p10k", "koi", "starship"}, theme) {
 		return checkResult{
 			checkWarn, "theme",
-			fmt.Sprintf("GISH_THEME=%q is not built-in — a plugin theme may claim it; otherwise the native theme renders", theme),
-			"config theme p10k   (or plain | gish | starship, or install the plugin that serves it)",
+			fmt.Sprintf("KOI_THEME=%q is not built-in — a plugin theme may claim it; otherwise the native theme renders", theme),
+			"config theme p10k   (or plain | koi | starship, or install the plugin that serves it)",
 		}
 	}
 	if theme == "p10k" {
-		if preset := env.Get("GISH_P10K_PRESET").String(); preset != "" && promptengine.Preset(preset) == nil {
+		if preset := env.Get("KOI_P10K_PRESET").String(); preset != "" && promptengine.Preset(preset) == nil {
 			return checkResult{
 				checkWarn, "theme",
-				fmt.Sprintf("GISH_P10K_PRESET=%q is not a preset — rendering %s instead", preset, promptengine.DefaultPreset),
+				fmt.Sprintf("KOI_P10K_PRESET=%q is not a preset — rendering %s instead", preset, promptengine.DefaultPreset),
 				"prompt configure   (presets: " + strings.Join(promptengine.Presets(), " | ") + ")",
 			}
 		}
@@ -159,20 +159,20 @@ func checkTheme(env expand.Environ) checkResult {
 		if _, err := exec.LookPath("starship"); err != nil {
 			return checkResult{
 				checkWarn, "theme",
-				"GISH_THEME=starship but no starship binary on PATH — using the native theme",
+				"KOI_THEME=starship but no starship binary on PATH — using the native theme",
 				"install starship, or config theme p10k",
 			}
 		}
 	}
 
 	var problems []string
-	for id := range strings.FieldsSeq(env.Get("GISH_THEME_SEGMENTS").String()) {
+	for id := range strings.FieldsSeq(env.Get("KOI_THEME_SEGMENTS").String()) {
 		if !segmentIDRe.MatchString(id) {
 			problems = append(problems, fmt.Sprintf("segment id %q", id))
 		}
 	}
 	env.Each(func(name string, vr expand.Variable) bool {
-		if id, ok := strings.CutPrefix(name, "GISH_THEME_COLOR_"); ok {
+		if id, ok := strings.CutPrefix(name, "KOI_THEME_COLOR_"); ok {
 			if v := vr.String(); v != "" {
 				if _, valid := colorSGR(v); !valid {
 					problems = append(problems, fmt.Sprintf("color %s=%q", id, v))
@@ -181,14 +181,14 @@ func checkTheme(env expand.Environ) checkResult {
 		}
 		return true
 	})
-	if v := env.Get("GISH_THEME_LINES").String(); v != "" && v != "1" && v != "2" {
-		problems = append(problems, fmt.Sprintf("GISH_THEME_LINES=%q (want 1 or 2)", v))
+	if v := env.Get("KOI_THEME_LINES").String(); v != "" && v != "1" && v != "2" {
+		problems = append(problems, fmt.Sprintf("KOI_THEME_LINES=%q (want 1 or 2)", v))
 	}
-	if v := env.Get("GISH_THEME_SEP").String(); v != "" && v != "plain" && v != "powerline" {
-		problems = append(problems, fmt.Sprintf("GISH_THEME_SEP=%q (want plain or powerline)", v))
+	if v := env.Get("KOI_THEME_SEP").String(); v != "" && v != "plain" && v != "powerline" {
+		problems = append(problems, fmt.Sprintf("KOI_THEME_SEP=%q (want plain or powerline)", v))
 	}
-	if v := env.Get("GISH_THEME_FRAME").String(); v != "" && v != "on" && v != "off" {
-		problems = append(problems, fmt.Sprintf("GISH_THEME_FRAME=%q (want on or off)", v))
+	if v := env.Get("KOI_THEME_FRAME").String(); v != "" && v != "on" && v != "off" {
+		problems = append(problems, fmt.Sprintf("KOI_THEME_FRAME=%q (want on or off)", v))
 	}
 	if len(problems) > 0 {
 		return checkResult{
@@ -201,10 +201,10 @@ func checkTheme(env expand.Environ) checkResult {
 }
 
 // checkLint flags the half-enabled state: the Enter-time multi-line
-// pass wants shellcheck, and GISH_LINT=on quietly skips it when the
+// pass wants shellcheck, and KOI_LINT=on quietly skips it when the
 // binary is missing.
 func checkLint(env expand.Environ) checkResult {
-	mode := env.Get("GISH_LINT").String()
+	mode := env.Get("KOI_LINT").String()
 	switch mode {
 	case "off", "native":
 		return checkResult{checkOK, "lint", mode, ""}
@@ -212,7 +212,7 @@ func checkLint(env expand.Environ) checkResult {
 	if _, err := exec.LookPath("shellcheck"); err != nil {
 		return checkResult{
 			checkWarn, "lint",
-			"GISH_LINT=on but shellcheck is not on PATH — the Enter-time multi-line pass is inactive",
+			"KOI_LINT=on but shellcheck is not on PATH — the Enter-time multi-line pass is inactive",
 			"install shellcheck, or config lint native",
 		}
 	}
@@ -330,8 +330,8 @@ func checkEnvTrust() checkResult {
 // checkTools reports what the directory's pins resolve to (#77): a
 // pinned-but-not-installed version is the one silent gap worth naming.
 func checkTools(hc interp.HandlerContext) checkResult {
-	if hc.Env.Get("GISH_TOOLS").String() == "off" {
-		return checkResult{checkOK, "tools", "off (GISH_TOOLS)", ""}
+	if hc.Env.Get("KOI_TOOLS").String() == "off" {
+		return checkResult{checkOK, "tools", "off (KOI_TOOLS)", ""}
 	}
 	res := tools.Resolve(hc.Dir, tools.InstallRoots())
 	if res.File == "" {
@@ -367,11 +367,11 @@ func checkSandbox() checkResult {
 }
 
 // checkSemanticMarks reports OSC 133 block-navigation support (#99):
-// gish emits the marks, and this says whether the terminal is one
+// koi emits the marks, and this says whether the terminal is one
 // known to act on them.
 func checkSemanticMarks(hc interp.HandlerContext) checkResult {
-	if hc.Env.Get("GISH_SEMANTIC_MARKS").String() == "off" {
-		return checkResult{checkOK, "blocks", "semantic marks off (GISH_SEMANTIC_MARKS)", ""}
+	if hc.Env.Get("KOI_SEMANTIC_MARKS").String() == "off" {
+		return checkResult{checkOK, "blocks", "semantic marks off (KOI_SEMANTIC_MARKS)", ""}
 	}
 	detail, known := doctorSemanticMarks()
 	if !known {
@@ -379,11 +379,11 @@ func checkSemanticMarks(hc interp.HandlerContext) checkResult {
 	}
 	// Which affordances this terminal actually has, not which ones the
 	// protocol defines (#165): they are different lists, and only the
-	// first one is a claim gish can stand behind.
+	// first one is a claim koi can stand behind.
 	return checkResult{checkOK, "blocks", detail, ""}
 }
 
-// checkHistorySync explains the gish-atuin bridge's state (#97). The
+// checkHistorySync explains the koi-atuin bridge's state (#97). The
 // failure it exists to catch is silent: the plugin installed but atuin
 // itself missing, which leaves ctrl-r working perfectly on local history
 // while the sync the user installed the plugin for does nothing.
@@ -392,34 +392,34 @@ func checkHistorySync() checkResult {
 	if err != nil {
 		return checkResult{checkOK, "sync", "no plugin dir — local history only", ""}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "gish-atuin")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "koi-atuin")); err != nil {
 		return checkResult{checkOK, "sync", "not installed — local history only", ""}
 	}
 	if _, err := exec.LookPath("atuin"); err != nil {
 		return checkResult{
 			checkWarn, "sync",
-			"gish-atuin is installed but atuin is not on PATH — ctrl-r is local-only",
-			"install atuin (https://atuin.sh), or remove " + displayPath(filepath.Join(dir, "gish-atuin")),
+			"koi-atuin is installed but atuin is not on PATH — ctrl-r is local-only",
+			"install atuin (https://atuin.sh), or remove " + displayPath(filepath.Join(dir, "koi-atuin")),
 		}
 	}
-	return checkResult{checkOK, "sync", "gish-atuin bridging to your atuin", ""}
+	return checkResult{checkOK, "sync", "koi-atuin bridging to your atuin", ""}
 }
 
-// checkRemoteSSH reports what `gish ssh` (#98) would be able to do from
+// checkRemoteSSH reports what `koi ssh` (#98) would be able to do from
 // here. The one finding that actually bites is a cgo-linked binary:
 // `uname -sm` says "linux x86_64" and nothing about glibc versus musl,
 // so such a build lands on Alpine and fails with an error that looks
 // like the file is missing.
 func checkRemoteSSH(hc interp.HandlerContext) checkResult {
-	if os.Getenv("GISH_REMOTE_SESSION") != "" {
-		return checkResult{checkOK, "ssh", "this session was brought here by `gish ssh`", ""}
+	if os.Getenv("KOI_REMOTE_SESSION") != "" {
+		return checkResult{checkOK, "ssh", "this session was brought here by `koi ssh`", ""}
 	}
-	mode := hc.Env.Get("GISH_SSH_BRING").String()
+	mode := hc.Env.Get("KOI_SSH_BRING").String()
 	if mode == "" {
 		mode = "ask"
 	}
 	if _, err := exec.LookPath("ssh"); err != nil {
-		return checkResult{checkWarn, "ssh", "no ssh binary — `gish ssh` unavailable", "install openssh-client"}
+		return checkResult{checkWarn, "ssh", "no ssh binary — `koi ssh` unavailable", "install openssh-client"}
 	}
 	if ok, detail := remote.StaticCheck(); !ok {
 		return checkResult{
@@ -427,7 +427,7 @@ func checkRemoteSSH(hc interp.HandlerContext) checkResult {
 			"go build -ldflags='-s -w' with CGO_ENABLED=0, or install a release build",
 		}
 	}
-	return checkResult{checkOK, "ssh", fmt.Sprintf("`gish ssh` ready, bring=%s (static build)", mode), ""}
+	return checkResult{checkOK, "ssh", fmt.Sprintf("`koi ssh` ready, bring=%s (static build)", mode), ""}
 }
 
 // checkClipboard reports OSC 52 support (#140). Several terminals ship
@@ -470,8 +470,8 @@ func displayPath(path string) string {
 	return tildify(path, home)
 }
 
-// checkShellIdentity reports what gish tells a tool's init script it is
-// (#120), and names the tools installed here whose bash hook gish is
+// checkShellIdentity reports what koi tells a tool's init script it is
+// (#120), and names the tools installed here whose bash hook koi is
 // known to run — or not.
 //
 // The check exists because the identity claim is the one setting whose
@@ -479,7 +479,7 @@ func displayPath(path string) string {
 // and the consequence is a hook script taking a branch three levels
 // down. Naming it makes the claim inspectable rather than magic.
 func checkShellIdentity(hc interp.HandlerContext) checkResult {
-	detail := fmt.Sprintf("BASH_VERSION=%s, $0=gish (feature probes answered, identity not)", claimedBashVersion)
+	detail := fmt.Sprintf("BASH_VERSION=%s, $0=koi (feature probes answered, identity not)", claimedBashVersion)
 
 	// The tools whose init this claim actually steers, when they are
 	// here to steer.
@@ -542,7 +542,7 @@ func checkLoginShell() checkResult {
 		// may want either one.
 		return checkResult{
 			checkFail, "login",
-			fmt.Sprintf("gish is your login shell but %s is not in /etc/shells — some systems refuse to log in with an unlisted shell", self),
+			fmt.Sprintf("koi is your login shell but %s is not in /etc/shells — some systems refuse to log in with an unlisted shell", self),
 			fmt.Sprintf("echo %s | sudo tee -a /etc/shells   (or go back: chsh -s %s)", self, back),
 		}
 	}
@@ -576,7 +576,7 @@ func listedInEtcShells(path string) (bool, []string) {
 	return found, shells
 }
 
-// fallbackShell picks the shell to name in the revert command. gish does
+// fallbackShell picks the shell to name in the revert command. koi does
 // not know what the user ran before — that is not recorded anywhere — so
 // it names a conventional one that actually exists, preferring the
 // system default order rather than guessing.

@@ -10,15 +10,15 @@ import (
 	"sync"
 )
 
-// Client is gish acting as an ACP client: it launches an agent, tells
+// Client is koi acting as an ACP client: it launches an agent, tells
 // it what this client can do, and services the requests that come back.
 //
 // The capability set is the honest one. `terminal` is true because that
-// is the whole point — an agent's commands run through gish's exec path
+// is the whole point — an agent's commands run through koi's exec path
 // with a sandbox profile and a deadline rather than through a raw
 // `bash -c`. `fs` is false: reading and writing files on an agent's
 // behalf is a different trust decision from running a command it showed
-// you, and gish does not yet have a place to ask for it.
+// you, and koi does not yet have a place to ask for it.
 
 // Client drives one agent process.
 type Client struct {
@@ -142,7 +142,7 @@ func (c *Client) notified(msg Message) {
 func (c *Client) Initialize(ctx context.Context) (AgentInfo, error) {
 	capabilities := map[string]any{
 		// No fs: reading and writing files for an agent is a different
-		// trust decision from running a command, and gish has nowhere
+		// trust decision from running a command, and koi has nowhere
 		// to ask for it yet.
 		"fs": map[string]any{"readTextFile": false, "writeTextFile": false},
 	}
@@ -155,7 +155,7 @@ func (c *Client) Initialize(ctx context.Context) (AgentInfo, error) {
 	err := c.conn.Call(ctx, "initialize", map[string]any{
 		"protocolVersion":    ProtocolVersion,
 		"clientCapabilities": capabilities,
-		"clientInfo":         map[string]any{"name": "gish", "version": "1"},
+		"clientInfo":         map[string]any{"name": "koi", "version": "1"},
 	}, &resp)
 	if err != nil {
 		return AgentInfo{}, err
@@ -166,7 +166,7 @@ func (c *Client) Initialize(ctx context.Context) (AgentInfo, error) {
 		// is a fact to report rather than a failure to hide.
 		return resp.AgentInfo, &Error{
 			Code:    CodeInternal,
-			Message: "agent speaks ACP v" + itoa(resp.ProtocolVersion) + "; gish speaks v" + itoa(ProtocolVersion),
+			Message: "agent speaks ACP v" + itoa(resp.ProtocolVersion) + "; koi speaks v" + itoa(ProtocolVersion),
 		}
 	}
 	return resp.AgentInfo, nil

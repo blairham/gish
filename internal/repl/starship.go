@@ -12,7 +12,7 @@ import (
 )
 
 // starshipBudget bounds one whole-prompt render. Starship typically
-// answers in 20–50ms; a miss serves the previous prompt — the gish rule.
+// answers in 20–50ms; a miss serves the previous prompt — the koi rule.
 const starshipBudget = 150 * time.Millisecond
 
 // starshipTheme renders the prompt through the user's starship binary
@@ -40,7 +40,7 @@ func (s *starshipTheme) render(info promptInfo, width int) (string, string, bool
 	if s.path == "" {
 		if !s.warned {
 			s.warned = true
-			fmt.Fprintln(os.Stderr, "gish: GISH_THEME=starship but starship is not installed; using the native theme")
+			fmt.Fprintln(os.Stderr, "koi: KOI_THEME=starship but starship is not installed; using the native theme")
 		}
 		return "", "", false
 	}
@@ -56,7 +56,7 @@ func (s *starshipTheme) render(info promptInfo, width int) (string, string, bool
 	}
 	cmd := exec.CommandContext(ctx, s.path, args...)
 	cmd.Dir = info.dir
-	cmd.Env = append(os.Environ(), "STARSHIP_SHELL=gish")
+	cmd.Env = append(os.Environ(), "STARSHIP_SHELL=koi")
 	out, err := cmd.Output()
 
 	s.mu.Lock()
@@ -84,7 +84,7 @@ func (s *starshipTheme) render(info promptInfo, width int) (string, string, bool
 }
 
 // starshipHint prints a one-time nudge when the user clearly uses
-// starship but hasn't told gish (never auto-switch — #45 rule).
+// starship but hasn't told koi (never auto-switch — #45 rule).
 func starshipHint(themeSet, promptSet bool) {
 	if themeSet || promptSet {
 		return
@@ -101,6 +101,6 @@ func starshipHint(themeSet, promptSet bool) {
 		confHome = filepath.Join(home, ".config")
 	}
 	if _, err := os.Stat(filepath.Join(confHome, "starship.toml")); err == nil {
-		fmt.Fprintln(os.Stderr, "gish: starship detected — set GISH_THEME=starship in your gishrc to use it")
+		fmt.Fprintln(os.Stderr, "koi: starship detected — set KOI_THEME=starship in your koirc to use it")
 	}
 }

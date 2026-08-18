@@ -353,7 +353,7 @@ func segmentBody(cfg *Config, s side, p placed) string {
 // coalesce merges neighboring spans that would render identically.
 //
 // A path arrives as one span per component and separator, which would
-// otherwise emit an escape sequence for each — five for ~/dev/gish. The
+// otherwise emit an escape sequence for each — five for ~/dev/koi. The
 // prompt is re-rendered on every keystroke, so those bytes are paid for
 // continuously; merging them is free and makes the output legible when
 // something goes wrong and you have to read the escapes by eye.

@@ -8,7 +8,7 @@
 //     diff-hash). Any change to the proposal — a different hash —
 //     re-pends and re-prompts, direnv's edit-reprompts semantics.
 //   - A deny-list of variables no plugin may set (loader hooks like
-//     LD_PRELOAD/DYLD_*, IFS, shell-internal GISH_*) is stripped
+//     LD_PRELOAD/DYLD_*, IFS, shell-internal KOI_*) is stripped
 //     host-side before a diff is even proposed. PATH is settable, but
 //     only ever through the visible allow flow above.
 //   - Requests carry the allowlisted env subset, never the full
@@ -231,7 +231,7 @@ type AllowResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// False means the plugin could not record the approval (the wrapped
 	// tool failed, or is missing). The host still applies the diff it
-	// showed — gish's own trust record is authoritative for gish — but it
+	// showed — koi's own trust record is authoritative for koi — but it
 	// says so, because the next shell may see the proposal again.
 	Recorded bool `protobuf:"varint,1,opt,name=recorded,proto3" json:"recorded,omitempty"`
 	// Optional one-line explanation for the user when recorded is false.
@@ -314,7 +314,7 @@ const file_koi_plugin_v1_env_proto_rawDesc = "" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail2\x9b\x01\n" +
 	"\vEnvProvider\x12H\n" +
 	"\aEnvDiff\x12\x1d.koi.plugin.v1.EnvDiffRequest\x1a\x1e.koi.plugin.v1.EnvDiffResponse\x12B\n" +
-	"\x05Allow\x12\x1b.koi.plugin.v1.AllowRequest\x1a\x1c.koi.plugin.v1.AllowResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x05Allow\x12\x1b.koi.plugin.v1.AllowRequest\x1a\x1c.koi.plugin.v1.AllowResponseB:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_env_proto_rawDescOnce sync.Once

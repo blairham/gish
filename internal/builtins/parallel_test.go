@@ -29,7 +29,7 @@ var (
 func partool(t *testing.T) string {
 	t.Helper()
 	partoolOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "gish-partool")
+		dir, err := os.MkdirTemp("", "koi-partool")
 		if err != nil {
 			partoolErr = err
 			return

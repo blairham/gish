@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blairham/gish/internal/acp"
-	"github.com/blairham/gish/internal/sandbox"
+	"github.com/blairham/koi-shell/internal/acp"
+	"github.com/blairham/koi-shell/internal/sandbox"
 )
 
-// `gish acp` — hosting an agent inside the shell (#167, role 2).
+// `koi acp` — hosting an agent inside the shell (#167, role 2).
 //
 // The market evidence is about the execution substrate, not about shell
 // users: every agent runner shells out with no sandbox, no deadline and
@@ -25,7 +25,7 @@ import (
 // Reddit corpus check. So this is built because the substrate is
 // unserved, and it is deliberately not a marketing pillar (#169).
 //
-// What gish adds to ACP is exactly what ACP leaves out: the spec has no
+// What koi adds to ACP is exactly what ACP leaves out: the spec has no
 // permission model, no sandboxing and no timeout. Every command an agent
 // asks for here runs through the same sandbox profile machinery as
 // `sandbox --profile workspace --`, and the agent sees an ordinary
@@ -35,19 +35,19 @@ import (
 // exec channel (#34). That invariant is worth more than the convenience
 // of shipping it outside the binary.
 
-const acpUsage = `usage: gish acp [--profile PROFILE] [--] AGENT [ARGS...]
+const acpUsage = `usage: koi acp [--profile PROFILE] [--] AGENT [ARGS...]
 
-  gish acp claude-code-acp          host an agent; its commands run sandboxed
-  gish acp --profile readonly AGENT  a stricter profile for the session
-  gish acp --profile none AGENT      no sandbox (says so, loudly)
+  koi acp claude-code-acp          host an agent; its commands run sandboxed
+  koi acp --profile readonly AGENT  a stricter profile for the session
+  koi acp --profile none AGENT      no sandbox (says so, loudly)
 
 Type a prompt and press Enter. The agent's answer streams back; the
-commands it runs go through gish's exec path with a sandbox profile and
+commands it runs go through koi's exec path with a sandbox profile and
 a deadline, which is what ACP itself deliberately does not define.`
 
 // RunACP hosts an ACP agent. It is a subcommand rather than a builtin
-// for the same reason `gish ssh` is: it owns the terminal for its whole
-// run, and it needs to work before anyone has a gish session open.
+// for the same reason `koi ssh` is: it owns the terminal for its whole
+// run, and it needs to work before anyone has a koi session open.
 func RunACP(ctx context.Context, in io.Reader, out, errOut io.Writer, args []string) error {
 	profile := "workspace"
 	var argv []string
@@ -108,7 +108,7 @@ func RunACP(ctx context.Context, in io.Reader, out, errOut io.Writer, args []str
 	if _, err := client.NewSession(ctx, cwd); err != nil {
 		return err
 	}
-	fmt.Fprintf(errOut, "gish: hosting %s %s — commands run %s\n", info.Name, info.Version, describe)
+	fmt.Fprintf(errOut, "koi: hosting %s %s — commands run %s\n", info.Name, info.Version, describe)
 
 	return promptLoop(ctx, client, in, out, errOut)
 }
@@ -134,12 +134,12 @@ func promptLoop(ctx context.Context, client *acp.Client, in io.Reader, out, errO
 		fmt.Fprintln(out)
 		switch {
 		case err != nil:
-			fmt.Fprintln(errOut, "gish: acp:", err)
+			fmt.Fprintln(errOut, "koi: acp:", err)
 		case stop != "" && stop != "end_turn":
 			// A turn that ended for another reason is worth saying:
 			// "refusal" and "max_tokens" look identical to a user
 			// otherwise, and they call for different next moves.
-			fmt.Fprintln(errOut, "gish: agent stopped:", stop)
+			fmt.Fprintln(errOut, "koi: agent stopped:", stop)
 		}
 	}
 }
@@ -164,7 +164,7 @@ func sandboxedRunner(profile string) (acp.Runner, string, error) {
 			Cwd:     cmd.Cwd,
 			Env:     cmd.Env,
 		}
-		// The same rewrite `sandbox --profile p -- cmd` performs: gish
+		// The same rewrite `sandbox --profile p -- cmd` performs: koi
 		// re-execs itself in the private sandbox mode, which then filters
 		// the environment and applies the platform enforcement before
 		// exec'ing the real command. The cwd is the agent's, since that

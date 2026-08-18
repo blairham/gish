@@ -14,7 +14,7 @@ func themeInfo() promptInfo {
 		username: "blair",
 		host:     "mba",
 		home:     filepath.FromSlash("/home/blair"),
-		dir:      filepath.FromSlash("/home/blair/dev/gish"),
+		dir:      filepath.FromSlash("/home/blair/dev/koi"),
 	}
 }
 
@@ -31,7 +31,7 @@ func TestThemedPromptLayout(t *testing.T) {
 	info.jobs = 2
 
 	p, cont := themedPrompt(info, defaultThemeConfig())
-	for _, want := range []string{filepath.FromSlash("~/dev/gish"), "main !2", "✘ 7", "5.0s", "⚙2", "\n", "❯"} {
+	for _, want := range []string{filepath.FromSlash("~/dev/koi"), "main !2", "✘ 7", "5.0s", "⚙2", "\n", "❯"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("themed prompt missing %q:\n%q", want, p)
 		}
@@ -65,7 +65,7 @@ func TestThemeSegmentsPickAndOrder(t *testing.T) {
 
 	// exit before dir, git dropped entirely.
 	p, _ := themedPrompt(info, themeConfig{segments: []string{"exit", "dir"}})
-	exitAt, dirAt := strings.Index(p, "✘ 7"), strings.Index(p, filepath.FromSlash("~/dev/gish"))
+	exitAt, dirAt := strings.Index(p, "✘ 7"), strings.Index(p, filepath.FromSlash("~/dev/koi"))
 	if exitAt == -1 || dirAt == -1 || exitAt > dirAt {
 		t.Errorf("segment order not respected (exit@%d dir@%d):\n%q", exitAt, dirAt, p)
 	}
@@ -94,10 +94,10 @@ func TestThemeColorOverride(t *testing.T) {
 		colors:   map[string]string{"dir": "\x1b[33m"},
 	}
 	p, _ := themedPrompt(themeInfo(), cfg)
-	if !strings.Contains(p, "\x1b[33m"+filepath.FromSlash("~/dev/gish")) {
+	if !strings.Contains(p, "\x1b[33m"+filepath.FromSlash("~/dev/koi")) {
 		t.Errorf("color override not applied: %q", p)
 	}
-	if strings.Contains(p, cCyan+filepath.FromSlash("~/dev/gish")) {
+	if strings.Contains(p, cCyan+filepath.FromSlash("~/dev/koi")) {
 		t.Errorf("default color still applied over override: %q", p)
 	}
 }
@@ -112,7 +112,7 @@ func TestThemeOneLineLayout(t *testing.T) {
 	if !strings.HasSuffix(p, "❯"+cReset+" ") {
 		t.Errorf("one-line prompt should end with the arrow: %q", p)
 	}
-	if !strings.Contains(p, filepath.FromSlash("~/dev/gish")) || !strings.Contains(p, "✘ 7") {
+	if !strings.Contains(p, filepath.FromSlash("~/dev/koi")) || !strings.Contains(p, "✘ 7") {
 		t.Errorf("one-line prompt missing segments: %q", p)
 	}
 }
@@ -134,11 +134,11 @@ func TestThemePowerlineSeparator(t *testing.T) {
 
 func TestThemeConfigFrom(t *testing.T) {
 	runner := newTestRunner(t)
-	script := `GISH_THEME_SEGMENTS='git dir'
-GISH_THEME_COLOR_DIR=yellow
-GISH_THEME_COLOR_GIT='; rm -rf'
-GISH_THEME_LINES=1
-GISH_THEME_SEP=powerline`
+	script := `KOI_THEME_SEGMENTS='git dir'
+KOI_THEME_COLOR_DIR=yellow
+KOI_THEME_COLOR_GIT='; rm -rf'
+KOI_THEME_LINES=1
+KOI_THEME_SEP=powerline`
 	if err := runner.Run(t.Context(), parseLine(t, script)); err != nil {
 		t.Fatal(err)
 	}
@@ -198,28 +198,28 @@ func TestPromptStringsPrecedence(t *testing.T) {
 	// Default: naked — the stock zsh/bash shape, no theme until asked.
 	runner := newTestRunner(t)
 	p, _, _ := promptStrings(runner, info)
-	if p != "blair@mba gish % " {
+	if p != "blair@mba koi % " {
 		t.Errorf("default prompt not naked: %q", p)
 	}
 
-	// GISH_THEME=p10k: the native theme, opt-in.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+	// KOI_THEME=p10k: the native theme, opt-in.
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
 	if p, _, _ = promptStrings(runner, info); !strings.Contains(p, "❯") {
 		t.Errorf("p10k theme not themed: %q", p)
 	}
 
-	// GISH_THEME=plain: same naked prompt, explicitly.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=plain`)); err != nil {
+	// KOI_THEME=plain: same naked prompt, explicitly.
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=plain`)); err != nil {
 		t.Fatal(err)
 	}
-	if p, _, _ = promptStrings(runner, info); p != "blair@mba gish % " {
+	if p, _, _ = promptStrings(runner, info); p != "blair@mba koi % " {
 		t.Errorf("plain theme = %q, want naked", p)
 	}
 
-	// Manual GISH_PROMPT beats everything.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; GISH_PROMPT='mine> '`)); err != nil {
+	// Manual KOI_PROMPT beats everything.
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k; KOI_PROMPT='mine> '`)); err != nil {
 		t.Fatal(err)
 	}
 	if p, _, _ = promptStrings(runner, info); p != "mine> " {
@@ -231,11 +231,11 @@ func TestPromptStringsRespectsNoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	runner := newTestRunner(t)
 	// Even with the theme opted in, NO_COLOR forces the naked prompt.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
 	p, _, _ := promptStrings(runner, themeInfo())
-	if p != "blair@mba gish % " {
+	if p != "blair@mba koi % " {
 		t.Errorf("NO_COLOR prompt = %q, want naked", p)
 	}
 }
@@ -246,8 +246,8 @@ func TestSmartPath(t *testing.T) {
 	tests := []struct{ dir, want string }{
 		{"/home/blair", "~"},
 		{"/home/blair/dev", "~/dev"},
-		{"/home/blair/dev/gish", "~/dev/gish"},
-		{"/home/blair/Developer/github.com/blairham/gish", "~/D/g/blairham/gish"},
+		{"/home/blair/dev/koi", "~/dev/koi"},
+		{"/home/blair/Developer/github.com/blairham/koi-shell", "~/D/g/blairham/koi-shell"},
 		{"/etc/nginx/conf.d", "/etc/nginx/conf.d"},
 	}
 	for _, tt := range tests {
@@ -338,18 +338,18 @@ func TestRPromptString(t *testing.T) {
 		t.Errorf("plain theme rprompt = %q, want empty", rp)
 	}
 
-	// The gish theme with configured segments. GISH_THEME_RPROMPT is
+	// The koi theme with configured segments. KOI_THEME_RPROMPT is
 	// this theme's knob; the p10k engine takes its right-hand side from
 	// RIGHT_PROMPT_ELEMENTS instead (see TestP10kThemeRenders).
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=gish; GISH_THEME_RPROMPT=time`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=koi; KOI_THEME_RPROMPT=time`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, rp := promptStrings(runner, info); rp == "" {
-		t.Error("gish rprompt empty despite GISH_THEME_RPROMPT=time")
+		t.Error("koi rprompt empty despite KOI_THEME_RPROMPT=time")
 	}
 
-	// Manual GISH_PROMPT wins: the theme (and its rprompt) stand down.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_PROMPT='mine> '`)); err != nil {
+	// Manual KOI_PROMPT wins: the theme (and its rprompt) stand down.
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_PROMPT='mine> '`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, rp := promptStrings(runner, info); rp != "" {
@@ -377,17 +377,17 @@ func TestPromptEscapeSet(t *testing.T) {
 		username: "blair",
 		host:     "mba",
 		home:     filepath.FromSlash("/home/blair"),
-		dir:      filepath.FromSlash("/home/blair/dev/gish"),
+		dir:      filepath.FromSlash("/home/blair/dev/koi"),
 		exitCode: 7,
 		segment:  func(id string) string { return "seg-" + id },
 	}
 	tests := []struct{ format, want string }{
-		// zsh spellings and gish spellings are the same escape.
+		// zsh spellings and koi spellings are the same escape.
 		{"%n|%u", "blair|blair"},
 		{"%m|%h", "mba|mba"},
-		{"%~|%w", filepath.FromSlash("~/dev/gish") + "|" + filepath.FromSlash("~/dev/gish")},
-		{"%d", filepath.FromSlash("/home/blair/dev/gish")},
-		{"%W", "gish"},
+		{"%~|%w", filepath.FromSlash("~/dev/koi") + "|" + filepath.FromSlash("~/dev/koi")},
+		{"%d", filepath.FromSlash("/home/blair/dev/koi")},
+		{"%W", "koi"},
 		{"%?", "7"},
 		{"%p{git}", "seg-git"},
 		{"100%%", "100%"},
@@ -415,18 +415,18 @@ func TestThemeNamePrecedence(t *testing.T) {
 	if got := themeName(runner); got != "plain" {
 		t.Errorf("default theme = %q", got)
 	}
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
 	if got := themeName(runner); got != "p10k" {
-		t.Errorf("GISH_THEME ignored: %q", got)
+		t.Errorf("KOI_THEME ignored: %q", got)
 	}
 	// A manual prompt outranks the theme — one pipeline, one precedence.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_PROMPT='mine> '`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_PROMPT='mine> '`)); err != nil {
 		t.Fatal(err)
 	}
 	if got := themeName(runner); got != "literal" {
-		t.Errorf("GISH_PROMPT did not win: %q", got)
+		t.Errorf("KOI_PROMPT did not win: %q", got)
 	}
 	// The literal theme renders through the same dispatch as any theme.
 	p, cp, rp := promptStrings(runner, themeInfo())
@@ -438,7 +438,7 @@ func TestThemeNamePrecedence(t *testing.T) {
 func TestColorlessTerminalForcesPlain(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	runner := newTestRunner(t)
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
 	if got := themeName(runner); got != "plain" {

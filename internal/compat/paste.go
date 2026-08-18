@@ -29,7 +29,7 @@ import (
 // paste a line at an interactive prompt and press Enter.
 //
 // The difference is not academic. A script runs through `-c`, where
-// gish is deliberately POSIX-clean; a pasted line goes through the line
+// koi is deliberately POSIX-clean; a pasted line goes through the line
 // editor, bracketed paste, history expansion, the diagnostics pass and
 // the accept-or-continue decision before the interpreter ever sees it.
 // Every one of those is a place a line can change meaning, and none of
@@ -55,7 +55,7 @@ type PasteCase struct {
 	// MinBashMajor skips the case when the oracle is older than this.
 	//
 	// macOS still ships bash 3.2.57 from 2007, where `${x^^}` is a "bad
-	// substitution" — so on that runner gish is *ahead* of the oracle and
+	// substitution" — so on that runner koi is *ahead* of the oracle and
 	// the differential dutifully reports a difference. docs/compat.md
 	// already handles this for the script corpus by comparing majors;
 	// this is the same rule per case, because one paste case needing
@@ -171,16 +171,16 @@ var PasteCorpus = []PasteCase{
 // failure — see PasteCase.MinBashMajor.
 type PasteResult struct {
 	PasteCase
-	Skipped            bool
-	BashOut, GishOut   string
-	BashCode, GishCode int
-	Pass               bool
-	Reason             string
+	Skipped           bool
+	BashOut, KoiOut   string
+	BashCode, KoiCode int
+	Pass              bool
+	Reason            string
 }
 
 // RunPaste runs one case: the text through real bash for the oracle,
-// and the same text pasted into an interactive gish on a pty.
-func RunPaste(ctx context.Context, bashBin, gishBin string, c PasteCase) PasteResult {
+// and the same text pasted into an interactive koi on a pty.
+func RunPaste(ctx context.Context, bashBin, koiBin string, c PasteCase) PasteResult {
 	r := PasteResult{PasteCase: c}
 	if c.MinBashMajor > 0 && bashMajorVersion(bashBin) < c.MinBashMajor {
 		r.Skipped = true
@@ -196,19 +196,19 @@ func RunPaste(ctx context.Context, bashBin, gishBin string, c PasteCase) PasteRe
 	}
 	r.BashOut, r.BashCode = runScript(ctx, bashBin, oracle)
 
-	out, code, err := pasteIntoGish(ctx, gishBin, c)
+	out, code, err := pasteIntoKoi(ctx, koiBin, c)
 	if err != nil {
-		r.Reason = "gish: " + err.Error()
+		r.Reason = "koi: " + err.Error()
 		return r
 	}
-	r.GishOut, r.GishCode = out, code
+	r.KoiOut, r.KoiCode = out, code
 
 	switch {
-	case r.BashOut == r.GishOut && r.BashCode == r.GishCode:
+	case r.BashOut == r.KoiOut && r.BashCode == r.KoiCode:
 		r.Pass = true
-	case r.BashOut != r.GishOut && r.BashCode != r.GishCode:
+	case r.BashOut != r.KoiOut && r.BashCode != r.KoiCode:
 		r.Reason = "output and exit status differ"
-	case r.BashOut != r.GishOut:
+	case r.BashOut != r.KoiOut:
 		r.Reason = "output differs"
 	default:
 		r.Reason = "exit status differs"
@@ -236,24 +236,24 @@ var (
 )
 
 // RunPasteAll runs the whole paste corpus.
-func RunPasteAll(ctx context.Context, bashBin, gishBin string) []PasteResult {
+func RunPasteAll(ctx context.Context, bashBin, koiBin string) []PasteResult {
 	out := make([]PasteResult, 0, len(PasteCorpus))
 	for _, c := range PasteCorpus {
-		out = append(out, RunPaste(ctx, bashBin, gishBin, c))
+		out = append(out, RunPaste(ctx, bashBin, koiBin, c))
 	}
 	return out
 }
 
 // pasteTimeout caps one pasted case outright, as a backstop against a
 // shell that emits forever without ever printing the mark. See
-// pasteIntoGish.
+// pasteIntoKoi.
 const pasteTimeout = 4 * time.Minute
 
 // pasteIdle is the bound that actually fires: how long the terminal may
 // say *nothing* before the case is called stuck (#189).
 //
 // The paste gate is enforced as an absolute pass count, on the reasoning
-// that it "is hermetic — it depends on nothing but bash and gish". That
+// that it "is hermetic — it depends on nothing but bash and koi". That
 // is true of its dependencies and false of its scheduling: `go test
 // -race ./...` runs every package at once, and one starved case drops
 // 18/18 to 17/18 and hard-fails a build whose diff was innocent. Exactly
@@ -279,10 +279,10 @@ var (
 	ansiEscapes = regexp.MustCompile(`\x1b\][^\x1b\a]*(?:\x1b\\|\a)|\x1b\[[0-9;?]* ?[A-Za-z@\[\]^_` + "`" + `{|}~]|\x1b[A-Z\\_]`)
 )
 
-// pasteIntoGish drives a real interactive gish: bracketed paste in,
+// pasteIntoKoi drives a real interactive koi: bracketed paste in,
 // Enter, and the output read back from between the semantic marks.
-func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, int, error) {
-	home, err := os.MkdirTemp("", "gish-paste-*")
+func pasteIntoKoi(ctx context.Context, koiBin string, c PasteCase) (string, int, error) {
+	home, err := os.MkdirTemp("", "koi-paste-*")
 	if err != nil {
 		return "", 0, err
 	}
@@ -291,14 +291,14 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 	// The pty path gets its own budget rather than the script one. A
 	// case here starts a real shell, waits for a real prompt and types
 	// into it, and a loaded CI runner redraws the prompt for every
-	// echoed keystroke — the same reason cmd/gish's e2e harness settled
+	// echoed keystroke — the same reason cmd/koi's e2e harness settled
 	// on a minute. The gate is not measuring speed, so a tight bound
 	// only buys flakes: a macOS runner missed the *first prompt* inside
 	// 20s and reported a shell that had produced nothing.
 	ctx, cancel := context.WithTimeout(ctx, pasteTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, gishBin)
+	cmd := exec.CommandContext(ctx, koiBin)
 	cmd.Dir = home
 	cmd.Env = []string{
 		"HOME=" + home,
@@ -309,7 +309,7 @@ func pasteIntoGish(ctx context.Context, gishBin string, c PasteCase) (string, in
 		"PATH=" + pathEnv(),
 		// The gate is about what the shell does with the text, not about
 		// what a theme paints around it.
-		"GISH_PROMPT=gish-paste-gate% ",
+		"KOI_PROMPT=koi-paste-gate% ",
 		"NO_COLOR=1",
 	}
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 200})

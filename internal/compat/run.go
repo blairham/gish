@@ -16,29 +16,29 @@ import (
 const runTimeout = 20 * time.Second
 
 // Result is one case's verdict. The comparison is differential: the
-// same script runs under bash and under gish, and the outputs must
+// same script runs under bash and under koi, and the outputs must
 // agree. Nothing here encodes what bash "should" print — bash on the
 // running machine is the oracle.
 type Result struct {
 	Case
-	BashOut, GishOut   string
-	BashCode, GishCode int
-	Pass               bool
-	Reason             string // why it failed, for the published table
+	BashOut, KoiOut   string
+	BashCode, KoiCode int
+	Pass              bool
+	Reason            string // why it failed, for the published table
 }
 
 // Run executes one case under both shells and compares.
-func Run(ctx context.Context, bashBin, gishBin string, c Case) Result {
+func Run(ctx context.Context, bashBin, koiBin string, c Case) Result {
 	r := Result{Case: c}
 	r.BashOut, r.BashCode = runScript(ctx, bashBin, c.Script)
-	r.GishOut, r.GishCode = runScript(ctx, gishBin, c.Script)
+	r.KoiOut, r.KoiCode = runScript(ctx, koiBin, c.Script)
 
 	switch {
-	case r.BashOut == r.GishOut && r.BashCode == r.GishCode:
+	case r.BashOut == r.KoiOut && r.BashCode == r.KoiCode:
 		r.Pass = true
-	case r.BashOut != r.GishOut && r.BashCode != r.GishCode:
+	case r.BashOut != r.KoiOut && r.BashCode != r.KoiCode:
 		r.Reason = "output and exit status differ"
-	case r.BashOut != r.GishOut:
+	case r.BashOut != r.KoiOut:
 		r.Reason = "output differs"
 	default:
 		r.Reason = "exit status differs"
@@ -47,10 +47,10 @@ func Run(ctx context.Context, bashBin, gishBin string, c Case) Result {
 }
 
 // RunAll runs the whole corpus.
-func RunAll(ctx context.Context, bashBin, gishBin string) []Result {
+func RunAll(ctx context.Context, bashBin, koiBin string) []Result {
 	out := make([]Result, 0, len(Corpus))
 	for _, c := range Corpus {
-		out = append(out, Run(ctx, bashBin, gishBin, c))
+		out = append(out, Run(ctx, bashBin, koiBin, c))
 	}
 	return out
 }
@@ -142,11 +142,11 @@ func (r Result) Diff() string {
 		return ""
 	}
 	bash := strings.TrimSpace(r.BashOut)
-	gish := strings.TrimSpace(r.GishOut)
-	if bash == gish {
-		return "exit " + itoa(r.BashCode) + " vs " + itoa(r.GishCode)
+	koi := strings.TrimSpace(r.KoiOut)
+	if bash == koi {
+		return "exit " + itoa(r.BashCode) + " vs " + itoa(r.KoiCode)
 	}
-	return "bash: " + firstLine(bash) + " · gish: " + firstLine(gish)
+	return "bash: " + firstLine(bash) + " · koi: " + firstLine(koi)
 }
 
 func firstLine(s string) string {

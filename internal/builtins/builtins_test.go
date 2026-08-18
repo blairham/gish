@@ -9,7 +9,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/builtins"
+	"github.com/blairham/koi-shell/internal/builtins"
 )
 
 func run(t *testing.T, src string) (string, error) {
@@ -38,7 +38,7 @@ func TestBuiltinsListsSections(t *testing.T) {
 		t.Fatalf("builtins: %v", err)
 	}
 	for _, want := range []string{
-		"gish builtins:", "builtins",
+		"koi builtins:", "builtins",
 		"shell builtins:", " cd ", " echo ",
 		"recognized but not yet supported:", "jobs",
 	} {

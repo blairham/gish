@@ -20,7 +20,7 @@ import (
 )
 
 // DefaultPath returns the trust file location:
-// $XDG_DATA_HOME/gish/env-trust.json.
+// $XDG_DATA_HOME/koi/env-trust.json.
 func DefaultPath() (string, error) {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome == "" {
@@ -30,7 +30,7 @@ func DefaultPath() (string, error) {
 		}
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dataHome, "gish", "env-trust.json"), nil
+	return filepath.Join(dataHome, "koi", "env-trust.json"), nil
 }
 
 // Entry is one allow record.

@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The zi help screen (#90), styled after the original Zi's usage

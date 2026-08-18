@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 func completeConfig(cands ...editor.Candidate) editor.Config {

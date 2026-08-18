@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // A command that greets before it works would preview its least useful

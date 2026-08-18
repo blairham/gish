@@ -1,6 +1,6 @@
 // Tier-2 native plugin API — shared types and the discovery service.
 //
-// Gish plugins are resident subprocesses speaking gRPC via
+// Koi plugins are resident subprocesses speaking gRPC via
 // hashicorp/go-plugin. The host launches a plugin lazily on first use,
 // performs the go-plugin handshake (see internal/pluginhost), then calls
 // Describe once to learn which capability services the plugin serves on
@@ -227,7 +227,7 @@ const file_koi_plugin_v1_common_proto_rawDesc = "" +
 	"\x11CAPABILITY_EVENTS\x10\b2Y\n" +
 	"\n" +
 	"PluginInfo\x12K\n" +
-	"\bDescribe\x12\x1e.koi.plugin.v1.DescribeRequest\x1a\x1f.koi.plugin.v1.DescribeResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\bDescribe\x12\x1e.koi.plugin.v1.DescribeRequest\x1a\x1f.koi.plugin.v1.DescribeResponseB:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_common_proto_rawDescOnce sync.Once

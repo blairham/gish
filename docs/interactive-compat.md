@@ -11,7 +11,7 @@ Oracle: bash 5.3.15(1)-release.
 "Pasted bash one-liners and sourced bash scripts fail" is the top
 abandonment cause on two independent corpora — 22 first-person accounts
 across a decade on HN/Lobsters, and 27 of 62 churn accounts on Reddit.
-[docs/compat.md](compat.md) scores bash *scripts* through `gish -c`.
+[docs/compat.md](compat.md) scores bash *scripts* through `koi -c`.
 This page covers the two paths that scoreboard does not: text pasted at
 an interactive prompt, and real init scripts sourced unmodified.
 
@@ -22,7 +22,7 @@ a line can change meaning, none of them exercised by running a script.
 
 ## Paste gate
 
-Each case is pasted into a real interactive gish on a pty, as a
+Each case is pasted into a real interactive koi on a pty, as a
 terminal delivers a paste, and Enter is pressed. Output is read from
 between the OSC 133 semantic marks, so there is no guessing where the
 prompt ended. bash is the oracle: the same text is run through real
@@ -53,7 +53,7 @@ bash and the results must agree.
 
 The named breakers, sourced **unmodified** as installed on the machine,
 then probed for what they defined. Differential again: the same
-load-and-probe script through bash and through gish.
+load-and-probe script through bash and through koi.
 
 A tool that is not installed is listed as such rather than dropped —
 "every case we ran passed" means nothing without the list of what was
@@ -75,14 +75,14 @@ not run.
 The point of implementing bash's hook surface is that the tools people
 already have keep working. This is that claim, measured: each tool is
 installed unmodified, **its own documented init line** is sourced, and
-its behavior is asserted in a live interactive gish on a pty — the
+its behavior is asserted in a live interactive koi on a pty — the
 prompt renders, the widget binds, the environment changes on cd.
 
 | tool | result | what it proves |
 | --- | --- | --- |
 | starship | ✅ | the prompt renders through starship's own bash init |
 | oh-my-posh | ✅ | the prompt renders through oh-my-posh's own bash init |
-| zoxide | — not installed here | `z` jumps — the user's own zoxide, not gish's native jumper |
+| zoxide | — not installed here | `z` jumps — the user's own zoxide, not koi's native jumper |
 | atuin | — not installed here | atuin's Ctrl-R binding is installed |
 | direnv | ✅ | the .envrc applies on cd, through direnv's own hook |
 | mise | — not installed here | mise activates and stays usable |

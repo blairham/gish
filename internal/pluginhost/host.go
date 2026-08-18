@@ -13,7 +13,7 @@
 // lifecycle remains free to change while the contract does not.
 package pluginhost
 
-import pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
+import pluginsdk "github.com/blairham/koi-shell/pkg/pluginsdk/v1"
 
 // Handshake gates plugin startup. It lives in pkg/pluginsdk, where plugin
 // authors can reach it; this is the host's name for the same value.

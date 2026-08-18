@@ -3,7 +3,7 @@ package repl
 import (
 	"testing"
 
-	"github.com/blairham/gish/internal/session"
+	"github.com/blairham/koi-shell/internal/session"
 )
 
 // The recorder's whole job is to notice what changed. These drive it

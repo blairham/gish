@@ -13,24 +13,24 @@ both, because quoting only your best number is how benchmarks lie.
 
 | configuration | median | best | what it includes |
 | --- | ---: | ---: | --- |
-| gish (naked default) | 7.4 ms | 6.4 ms | out-of-box: no rc, no plugins, stock prompt |
-| gish (p10k theme) | 6.1 ms | 5.8 ms | the full native powerlevel10k engine, every segment resolved |
-| gish (lint + highlight + suggestions) | 5.6 ms | 5.3 ms | every interactive feature on |
+| koi (naked default) | 7.4 ms | 6.4 ms | out-of-box: no rc, no plugins, stock prompt |
+| koi (p10k theme) | 6.1 ms | 5.8 ms | the full native powerlevel10k engine, every segment resolved |
+| koi (lint + highlight + suggestions) | 5.6 ms | 5.3 ms | every interactive feature on |
 | bash (no rc) | 5.5 ms | 5.4 ms | empty rc: the floor for a bash-family shell |
 | zsh (no rc) | 8.4 ms | 8.3 ms | empty rc: zsh's own floor |
 | dash (POSIX baseline) | 1.3 ms | 1.2 ms | not a competitor — the floor a process-spawn can reach |
 | fish | — | — | *not installed on the measuring machine* |
 | nushell | — | — | *not installed on the measuring machine* |
-| zsh + powerlevel10k | 86.3 ms | 85.4 ms | powerlevel10k with the measuring user's own .p10k.zsh — the thing gish's p10k theme is a port of |
+| zsh + powerlevel10k | 86.3 ms | 85.4 ms | powerlevel10k with the measuring user's own .p10k.zsh — the thing koi's p10k theme is a port of |
 | zsh (this machine's real config) | 302.7 ms | 296.7 ms | the measuring user's own 129-line .zshrc (plugin manager, theme, tool hooks) |
 
 ### What the loaded-config row means
 
 The empty-config rows are floors nobody runs. The row that matters is
 the loaded one: a real .zshrc with a plugin manager, a theme, and tool
-init hooks against gish with its theme, highlighting, suggestions, and
+init hooks against koi with its theme, highlighting, suggestions, and
 lint all on — because that is the comparison a switcher actually
-experiences. gish's features are compiled in rather than sourced, so
+experiences. koi's features are compiled in rather than sourced, so
 turning them on costs approximately nothing at startup; the zsh
 equivalent pays for each one at every prompt.
 
@@ -70,7 +70,7 @@ what the terminal sees is the honest measurement.
 - **Keystroke latency includes the render.** A shell that decodes fast
   and paints slowly is slow, and this measurement says so.
 - **Differences under about a millisecond are noise.** Process spawn
-  and pty setup dominate at this scale, which is why the gish rows sit
+  and pty setup dominate at this scale, which is why the koi rows sit
   within noise of each other regardless of features enabled — the
   features are not on the startup path. Do not read a ranking into
   sub-millisecond gaps.

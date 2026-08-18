@@ -5,8 +5,8 @@ import (
 	"sort"
 	"testing"
 
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
-	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/koi-shell/pkg/pluginsdk/v1"
 )
 
 // The SDK half of the #168 ABI freeze.
@@ -19,7 +19,7 @@ import (
 // covered by a proto descriptor.
 //
 // These tests exist because the promise in #188 is only worth making if it
-// is mechanical: a binary built against v1 keeps working across gish
+// is mechanical: a binary built against v1 keeps working across koi
 // releases without a rebuild.
 
 func TestHandshakeIsFrozen(t *testing.T) {
@@ -114,7 +114,7 @@ func TestEveryServableCapabilityHasAField(t *testing.T) {
 
 // The nil-Impl trap, closed by construction: registering a service with no
 // implementation behind it leaves a door the host can open onto a nil
-// pointer. Before #188, gish-git and gish-carapace both did exactly that.
+// pointer. Before #188, koi-git and koi-carapace both did exactly that.
 func TestServeMapRegistersOnlyImplementedServices(t *testing.T) {
 	e := &everything{}
 	p := pluginsdk.Plugin{Info: e, Prompt: e}

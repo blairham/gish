@@ -1,4 +1,4 @@
-//go:build !gishpanicprobe
+//go:build !koipanicprobe
 
 package repl
 

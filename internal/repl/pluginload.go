@@ -9,8 +9,8 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/manifest"
-	"github.com/blairham/gish/internal/plugmgr"
+	"github.com/blairham/koi-shell/internal/manifest"
+	"github.com/blairham/koi-shell/internal/plugmgr"
 )
 
 // loadPluginManifest brings up the declarative plugin surface (#108):
@@ -24,7 +24,7 @@ func loadPluginManifest(ctx context.Context, runner *interp.Runner) {
 	}
 	pluginMgr, err = newPluginManager(mgr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gish: plugins:", err)
+		fmt.Fprintln(os.Stderr, "koi: plugins:", err)
 		pluginMgr = nil
 		return
 	}
@@ -34,7 +34,7 @@ func loadPluginManifest(ctx context.Context, runner *interp.Runner) {
 			continue
 		}
 		if rerr := runEnvScript(ctx, runner, "source "+quoted+"\n"); rerr != nil {
-			fmt.Fprintf(os.Stderr, "gish: plugin %s: %v\n", payload, rerr)
+			fmt.Fprintf(os.Stderr, "koi: plugin %s: %v\n", payload, rerr)
 		}
 	}
 }
@@ -48,7 +48,7 @@ func ziDeprecationNotice(w interp.HandlerContext) {
 	}
 	ziNoticeShown = true
 	fmt.Fprintln(w.Stderr, strings.TrimSpace(`
-gish: zi still works, but `+"`plugin`"+` is the supported surface now — four
+koi: zi still works, but `+"`plugin`"+` is the supported surface now — four
       knobs in one file instead of ice modifiers to memorize. See
       `+"`plugin help`"+`; `+"`zi migrate`"+` converts what you already have.`))
 }

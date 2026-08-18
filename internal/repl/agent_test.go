@@ -10,7 +10,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // planningAIClient extends the fake with a canned plan.
@@ -130,7 +130,7 @@ func TestAgentSkipAndArtifact(t *testing.T) {
 	}
 
 	// The plan is an artifact with recorded outcomes.
-	dir := filepath.Join(os.Getenv("XDG_DATA_HOME"), "gish", "agent")
+	dir := filepath.Join(os.Getenv("XDG_DATA_HOME"), "koi", "agent")
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) == 0 {
 		t.Fatalf("no plan artifact: %v", err)

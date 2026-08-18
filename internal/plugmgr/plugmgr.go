@@ -1,6 +1,6 @@
-// Package plugmgr is gish's native plugin manager: the zi-go engine
+// Package plugmgr is koi's native plugin manager: the zi-go engine
 // (github.com/blairham/zi-go) moved in-tree per issue #23. The zsh shim
-// that drove upstream zi-go is gone — gish sources payloads directly.
+// that drove upstream zi-go is gone — koi sources payloads directly.
 //
 // The Manager interface is the replaceability contract: the in-tree zi
 // engine is the compiled-in default (a manager that must be installed by
@@ -17,12 +17,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blairham/gish/internal/plugmgr/config"
-	"github.com/blairham/gish/internal/plugmgr/emit"
-	"github.com/blairham/gish/internal/plugmgr/ice"
-	"github.com/blairham/gish/internal/plugmgr/installer"
-	"github.com/blairham/gish/internal/plugmgr/spec"
-	"github.com/blairham/gish/internal/plugmgr/state"
+	"github.com/blairham/koi-shell/internal/plugmgr/config"
+	"github.com/blairham/koi-shell/internal/plugmgr/emit"
+	"github.com/blairham/koi-shell/internal/plugmgr/ice"
+	"github.com/blairham/koi-shell/internal/plugmgr/installer"
+	"github.com/blairham/koi-shell/internal/plugmgr/spec"
+	"github.com/blairham/koi-shell/internal/plugmgr/state"
 )
 
 // Manager is the plugin-manager contract. Load and Snippet install as
@@ -128,13 +128,13 @@ func (z *Zi) Snippet(rawSpec string) (string, error) {
 }
 
 // writePayload stores the load script under run/. Upstream printed an
-// eval line for the shim here; gish just sources the file.
+// eval line for the shim here; koi just sources the file.
 func (z *Zi) writePayload(id, payload string) (string, error) {
 	dir, err := config.Ensure(z.cfg.RunDir()) // created on first use, not at startup (#163)
 	if err != nil {
 		return "", err
 	}
-	runFile := filepath.Join(dir, id+".gish")
+	runFile := filepath.Join(dir, id+".koi")
 	if err := os.WriteFile(runFile, []byte(payload), 0o644); err != nil {
 		return "", err
 	}

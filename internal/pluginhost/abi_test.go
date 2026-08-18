@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -29,7 +29,7 @@ import (
 // Their top plugin has 85 stars, with out-of-process plugins in any
 // language — the same architecture as ours. What failed was
 // distribution, and the fix is a promise a plugin author can rely on: a
-// binary built against plugin/v1 keeps working across gish releases
+// binary built against plugin/v1 keeps working across koi releases
 // without a rebuild.
 //
 // "Frozen-additive" was a habit written in AGENTS.md. This makes it a

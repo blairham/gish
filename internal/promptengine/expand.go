@@ -11,7 +11,7 @@ import (
 // settings; they store the string '%242F╭─'. That %-markup is zsh's
 // prompt-escape format, and honoring it is not the same thing as
 // interpreting zsh: it is a color markup with a fixed vocabulary, in
-// the same family as gish's own %-escapes in internal/repl/theme.go.
+// the same family as koi's own %-escapes in internal/repl/theme.go.
 // The subset below is what the presets actually use — anything outside
 // it passes through untouched rather than being guessed at.
 //

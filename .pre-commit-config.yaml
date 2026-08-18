@@ -1,4 +1,4 @@
-# Pre-commit configuration for gish
+# Pre-commit configuration for koi
 # Install: pre-commit install
 # Run:     pre-commit run --all-files
 # Update:  pre-commit autoupdate

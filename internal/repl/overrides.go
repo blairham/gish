@@ -5,8 +5,8 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/builtins"
-	"github.com/blairham/gish/internal/jobs"
+	"github.com/blairham/koi-shell/internal/builtins"
+	"github.com/blairham/koi-shell/internal/jobs"
 )
 
 // Builtins the interpreter claims but does not implement (#55).
@@ -24,10 +24,10 @@ import (
 // script, so `kill somepid || echo nope` would take the shell down
 // rather than run the fallback.
 var nativeOverrides = map[string]string{
-	"kill":   "__gish_kill",
-	"umask":  "__gish_umask",
-	"times":  "__gish_times",
-	"newgrp": "__gish_newgrp",
+	"kill":   "__koi_kill",
+	"umask":  "__koi_umask",
+	"times":  "__koi_times",
+	"newgrp": "__koi_newgrp",
 }
 
 // overrideCallHandler renames the overridden builtins. One map rather
@@ -56,8 +56,8 @@ func overrideCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 // and that is what scripts use, while a %job spec correctly finds
 // nothing to name. umask needs no shell state whatsoever.
 func registerScriptOverrides() {
-	builtins.Register("__gish_kill", (&jobs.Table{}).Kill)
-	builtins.Register("__gish_umask", builtins.Umask)
-	builtins.Register("__gish_times", builtins.Times)
-	builtins.Register("__gish_newgrp", builtins.Newgrp)
+	builtins.Register("__koi_kill", (&jobs.Table{}).Kill)
+	builtins.Register("__koi_umask", builtins.Umask)
+	builtins.Register("__koi_times", builtins.Times)
+	builtins.Register("__koi_newgrp", builtins.Newgrp)
 }

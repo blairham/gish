@@ -96,7 +96,7 @@ func TestNotFoundHookGetsFullCommandLine(t *testing.T) {
 				t.Errorf("hook did not see the full line: %q", got)
 			}
 			if strings.Contains(out.String(), "command not found") {
-				t.Errorf("gish spoke over the hook: %q", out.String())
+				t.Errorf("koi spoke over the hook: %q", out.String())
 			}
 			// The hook's status is the command's status, as in bash.
 			if status, ok := errors.AsType[interp.ExitStatus](rerr); !ok || status != 42 {

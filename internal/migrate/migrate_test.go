@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/migrate"
+	"github.com/blairham/koi-shell/internal/migrate"
 )
 
 // The import is only trustworthy if it is complete *or* honest, so the
@@ -171,7 +171,7 @@ func TestParseHistoryBothFormats(t *testing.T) {
 	})
 }
 
-// The generated rc has to be a file gish can actually read.
+// The generated rc has to be a file koi can actually read.
 func TestGeneratedRCParses(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HISTFILE", "")
@@ -185,7 +185,7 @@ helper() { echo "$@"; }
 	if err != nil {
 		t.Fatal(err)
 	}
-	rc := plan.GishRC()
+	rc := plan.KoiRC()
 	for _, want := range []string{"alias q=", "export GREETING=", "PATH=/opt/bin:$PATH", "helper()"} {
 		if !strings.Contains(rc, want) {
 			t.Errorf("rc is missing %q:\n%s", want, rc)

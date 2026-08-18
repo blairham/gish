@@ -19,7 +19,7 @@ import (
 // maxEntries caps the index; the lowest-scored entries fall off.
 const maxEntries = 1000
 
-// DefaultPath is the index location: $XDG_DATA_HOME/gish/dirs.json.
+// DefaultPath is the index location: $XDG_DATA_HOME/koi/dirs.json.
 func DefaultPath() (string, error) {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome == "" {
@@ -29,7 +29,7 @@ func DefaultPath() (string, error) {
 		}
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dataHome, "gish", "dirs.json"), nil
+	return filepath.Join(dataHome, "koi", "dirs.json"), nil
 }
 
 type entry struct {

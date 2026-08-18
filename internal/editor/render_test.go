@@ -39,7 +39,7 @@ func TestWrapLine(t *testing.T) {
 func TestFrameCursorPosition(t *testing.T) {
 	t.Parallel()
 
-	lines := []string{"gish$ echo hi", "> done"}
+	lines := []string{"koi$ echo hi", "> done"}
 
 	// Cursor on line 0 at display col 12: inside the wrapped second row.
 	rows, curRow, curCol := frame(lines, 10, 0, 12)
@@ -62,7 +62,7 @@ func TestRendererDiffSkipsUnchangedRows(t *testing.T) {
 
 	var out strings.Builder
 	r := newRenderer(&out, 40)
-	r.render([]string{"gish$ echo one", "> two"}, 0, 14)
+	r.render([]string{"koi$ echo one", "> two"}, 0, 14)
 	first := out.String()
 	if !strings.Contains(first, "echo one") || !strings.Contains(first, "two") {
 		t.Fatalf("first frame missing content: %q", first)
@@ -70,7 +70,7 @@ func TestRendererDiffSkipsUnchangedRows(t *testing.T) {
 
 	out.Reset()
 	// Only the second line changes; the first row must not be rewritten.
-	r.render([]string{"gish$ echo one", "> tvo"}, 1, 5)
+	r.render([]string{"koi$ echo one", "> tvo"}, 1, 5)
 	second := out.String()
 	if strings.Contains(second, "echo one") {
 		t.Errorf("unchanged row was rewritten: %q", second)
@@ -85,9 +85,9 @@ func TestRendererClearsShrunkRegion(t *testing.T) {
 
 	var out strings.Builder
 	r := newRenderer(&out, 40)
-	r.render([]string{"gish$ a", "> b", "> c"}, 2, 3)
+	r.render([]string{"koi$ a", "> b", "> c"}, 2, 3)
 	out.Reset()
-	r.render([]string{"gish$ a"}, 0, 7)
+	r.render([]string{"koi$ a"}, 0, 7)
 	got := out.String()
 	if !strings.Contains(got, "\x1b[J") {
 		t.Errorf("shrinking frame did not erase below: %q", got)
@@ -99,7 +99,7 @@ func TestRendererFinishMovesBelowRegion(t *testing.T) {
 
 	var out strings.Builder
 	r := newRenderer(&out, 40)
-	r.render([]string{"gish$ a", "> b"}, 0, 7) // cursor on top row
+	r.render([]string{"koi$ a", "> b"}, 0, 7) // cursor on top row
 	out.Reset()
 	r.finish()
 	got := out.String()
@@ -125,26 +125,26 @@ func TestWithRPrompt(t *testing.T) {
 		want    string
 	}{
 		{
-			// "gish$ ab" is 8 wide, "12:00" is 5: pad to column width-1.
+			// "koi$ abc" is 8 wide, "12:00" is 5: pad to column width-1.
 			name: "fits right-aligned with one-column indent",
-			line: "gish$ ab", rprompt: "12:00", width: 20,
-			want: "gish$ ab" + strings.Repeat(" ", 6) + "12:00",
+			line: "koi$ abc", rprompt: "12:00", width: 20,
+			want: "koi$ abc" + strings.Repeat(" ", 6) + "12:00",
 		},
 		{
 			name: "hides when the line reaches it",
-			line: "gish$ abcdefghij", rprompt: "12:00", width: 20,
-			want: "gish$ abcdefghij",
+			line: "koi$ abcdefghijk", rprompt: "12:00", width: 20,
+			want: "koi$ abcdefghijk",
 		},
 		{
 			name: "hides at zero gap rather than touch the text",
-			line: "gish$ abcdefgh", rprompt: "12:00", width: 20,
-			want: "gish$ abcdefgh",
+			line: "koi$ abcdefghi", rprompt: "12:00", width: 20,
+			want: "koi$ abcdefghi",
 		},
 		{
 			// ANSI escapes are zero-width on both sides of the math.
 			name: "ansi escapes do not count toward width",
-			line: "\x1b[36mgish$ ab\x1b[0m", rprompt: "\x1b[2m12:00\x1b[0m", width: 20,
-			want: "\x1b[36mgish$ ab\x1b[0m" + strings.Repeat(" ", 6) + "\x1b[2m12:00\x1b[0m",
+			line: "\x1b[36mkoi$ abc\x1b[0m", rprompt: "\x1b[2m12:00\x1b[0m", width: 20,
+			want: "\x1b[36mkoi$ abc\x1b[0m" + strings.Repeat(" ", 6) + "\x1b[2m12:00\x1b[0m",
 		},
 	}
 	for _, tt := range tests {

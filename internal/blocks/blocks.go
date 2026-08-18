@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // Retention bounds. Output is far bulkier than history lines, so it is
@@ -73,7 +73,7 @@ func (s *Store) WithRetention(r Retention) *Store {
 	return &Store{dir: s.dir, retention: r}
 }
 
-// DefaultDir is $XDG_DATA_HOME/gish/blocks. Data rather than state: it
+// DefaultDir is $XDG_DATA_HOME/koi/blocks. Data rather than state: it
 // is the user's own command output, the same class as history, and it
 // should survive a reboot for as long as retention allows.
 func DefaultDir() (string, error) {
@@ -85,7 +85,7 @@ func DefaultDir() (string, error) {
 		}
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, "gish", "blocks"), nil
+	return filepath.Join(base, "koi", "blocks"), nil
 }
 
 // Open returns a store over dir. The directory itself is created by the

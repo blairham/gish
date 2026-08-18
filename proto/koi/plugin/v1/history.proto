@@ -9,7 +9,7 @@ syntax = "proto3";
 
 package koi.plugin.v1;
 
-option go_package = "github.com/blairham/gish/pkg/pluginapi/v1;pluginapi";
+option go_package = "github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapi";
 
 service HistoryBackend {
   // Append records an executed command. Called after the command exits.

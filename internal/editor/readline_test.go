@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // muscleCfg is a config with history, for the parity commands.
 func muscleCfg(commands ...string) editor.Config {
 	return editor.Config{
-		Prompt:  "gish$ ",
+		Prompt:  "koi$ ",
 		History: &fakeHistory{commands: commands},
 	}
 }

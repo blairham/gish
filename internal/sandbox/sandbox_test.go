@@ -30,11 +30,11 @@ func TestWrapArgv(t *testing.T) {
 	t.Parallel()
 
 	p, _ := Resolve("readonly", "")
-	got, err := WrapArgv("/bin/gish", p, []string{"make", "test"})
+	got, err := WrapArgv("/bin/koi", p, []string{"make", "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[0] != "/bin/gish" || got[1] != ExecFlag || got[3] != "--" ||
+	if got[0] != "/bin/koi" || got[1] != ExecFlag || got[3] != "--" ||
 		got[4] != "make" || got[5] != "test" {
 		t.Fatalf("wrapped = %q", got)
 	}

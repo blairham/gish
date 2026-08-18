@@ -10,24 +10,24 @@ import (
 
 // The substrate gaps (#119), reduced to minimal reproductions.
 //
-// All four are `mvdan.cc/sh` behaviors rather than gish code, so the
+// All four are `mvdan.cc/sh` behaviors rather than koi code, so the
 // fix belongs upstream where it improves every consumer. What this file
 // is for is the other half of that: **noticing when one is fixed.** A
-// gap that is quietly corrected upstream leaves gish carrying a
+// gap that is quietly corrected upstream leaves koi carrying a
 // workaround, a doc paragraph and a corpus row that are all now wrong,
 // and nothing would say so.
 //
 // So each case asserts the *current* state and fails when it changes —
 // in either direction. A failure here is not a regression; it is a
 // prompt to re-check the gap, update docs/compat.md, and drop whatever
-// gish carries for it.
+// koi carries for it.
 
 // substrateGap is one reproduction, with what bash says and what the
 // substrate says today.
 type substrateGap struct {
 	name     string
 	script   string
-	gishWant string // today's behavior, which is what this pins
+	koiWant  string // today's behavior, which is what this pins
 	upstream string // the issue's disposition
 }
 
@@ -35,53 +35,53 @@ var substrateGaps = []substrateGap{
 	{
 		name:     "associative array element count",
 		script:   `declare -A m; m[a]=1; m[b]=2; echo "${#m[@]}"`,
-		gishWant: "1",
+		koiWant:  "1",
 		upstream: "the count path is wrong; the keys themselves are present",
 	},
 	{
 		name:     "prefix-anchored substitution",
 		script:   `s=a-b-c; echo "${s/#a/A}"`,
-		gishWant: "a-b-c",
+		koiWant:  "a-b-c",
 		upstream: "silently no-ops, which is the dangerous kind: wrong data, not an error",
 	},
 	{
 		name:     "suffix-anchored substitution",
 		script:   `s=a-b-c; echo "${s/%c/C}"`,
-		gishWant: "a-b-c",
+		koiWant:  "a-b-c",
 		upstream: "same as the prefix form",
 	},
 	{
 		name:     "exec file-descriptor persistence",
 		script:   `exec 3>&1; echo via-fd3 >&3; exec 3>&-`,
-		gishWant: "",
+		koiWant:  "",
 		upstream: "output to the duplicated fd is lost; common in logging wrappers",
 	},
 	{
 		name:     "single quote escaped inside an assignment",
 		script:   `x='a'\''b'; printf '%s' "$x"`,
-		gishWant: `a\'b`,
+		koiWant:  `a\'b`,
 		upstream: "the `'\\''` form is correct in a command word and wrong in an assignment",
 	},
 }
 
 func TestSubstrateGapsAreStillThere(t *testing.T) {
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 	ctx := context.Background()
 
 	for _, gap := range substrateGaps {
 		t.Run(gap.name, func(t *testing.T) {
-			out, err := exec.CommandContext(ctx, gishBin, "-c", gap.script).CombinedOutput()
+			out, err := exec.CommandContext(ctx, koiBin, "-c", gap.script).CombinedOutput()
 			_ = err // a gap may exit non-zero; the output is the evidence
 			got := strings.TrimSpace(string(out))
-			if got == gap.gishWant {
+			if got == gap.koiWant {
 				return
 			}
 			// Both directions are worth knowing about, and "fixed" is
-			// the more likely one — it means gish is carrying a
+			// the more likely one — it means koi is carrying a
 			// workaround and a doc paragraph that are now wrong.
 			t.Errorf("substrate behavior changed for %q\n  now:      %q\n  recorded: %q\n  upstream: %s\n"+
-				"Re-check the gap, update docs/compat.md, and drop anything gish carries for it.",
-				gap.script, got, gap.gishWant, gap.upstream)
+				"Re-check the gap, update docs/compat.md, and drop anything koi carries for it.",
+				gap.script, got, gap.koiWant, gap.upstream)
 		})
 	}
 }
@@ -98,14 +98,14 @@ func TestSubstrateGapsAreStillThere(t *testing.T) {
 // Worth knowing why it was expensive: the translation emitted an
 // uncompilable regexp and handed it to MustCompile, so an ordinary
 // `${x%%[![:space:]]*}` trim did not misbehave, it *panicked* — and it
-// reached gish through a vendor's ~/.profile block, which meant every
+// reached koi through a vendor's ~/.profile block, which meant every
 // login shell died before its first prompt.
 func TestPatternCharacterClassesMatchBash(t *testing.T) {
 	bashBin, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skip("no bash: the differential oracle is unavailable")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 	ctx := context.Background()
 
 	for _, script := range []string{
@@ -118,10 +118,10 @@ func TestPatternCharacterClassesMatchBash(t *testing.T) {
 		`case x in [![:digit:]]) echo no-digit;; esac`,
 	} {
 		t.Run(script, func(t *testing.T) {
-			gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+			koiOut, _ := exec.CommandContext(ctx, koiBin, "-c", script).CombinedOutput()
 			bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
-			if string(gishOut) != string(bashOut) {
-				t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+			if string(koiOut) != string(bashOut) {
+				t.Errorf("koi %q vs bash %q", koiOut, bashOut)
 			}
 		})
 	}
@@ -145,7 +145,7 @@ func TestPrintfDashVMatchesBash(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash: the differential oracle is unavailable")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 	ctx := context.Background()
 
 	for _, script := range []string{
@@ -164,10 +164,10 @@ func TestPrintfDashVMatchesBash(t *testing.T) {
 		`f(){ local y; printf -v y "%s" in; echo "[$y]"; }; f; echo "[${y-unset}]"`,
 	} {
 		t.Run(script, func(t *testing.T) {
-			gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+			koiOut, _ := exec.CommandContext(ctx, koiBin, "-c", script).CombinedOutput()
 			bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
-			if string(gishOut) != string(bashOut) {
-				t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+			if string(koiOut) != string(bashOut) {
+				t.Errorf("koi %q vs bash %q", koiOut, bashOut)
 			}
 		})
 	}
@@ -175,7 +175,7 @@ func TestPrintfDashVMatchesBash(t *testing.T) {
 	// Assigning through a subscript is a bash 4 feature, and the oracle
 	// on a stock macOS is /bin/bash 3.2 — the last GPLv2 release, which
 	// Apple has shipped frozen since 2007. It answers `arr[2]': not a
-	// valid identifier, so comparing there would assert that gish
+	// valid identifier, so comparing there would assert that koi
 	// should refuse something modern bash accepts.
 	//
 	// The scoreboard already refuses to compare across bash majors for
@@ -190,10 +190,10 @@ func TestPrintfDashVMatchesBash(t *testing.T) {
 		if n, err := strconv.Atoi(major); err != nil || n < 4 {
 			t.Skipf("oracle is bash %s: `printf -v arr[i]' arrived in bash 4", major)
 		}
-		gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+		koiOut, _ := exec.CommandContext(ctx, koiBin, "-c", script).CombinedOutput()
 		bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
-		if string(gishOut) != string(bashOut) {
-			t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+		if string(koiOut) != string(bashOut) {
+			t.Errorf("koi %q vs bash %q", koiOut, bashOut)
 		}
 	})
 }
@@ -206,7 +206,7 @@ func TestPrintfDashVStatusesMatchBash(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash: the differential oracle is unavailable")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 	ctx := context.Background()
 
 	for _, script := range []string{
@@ -220,10 +220,10 @@ func TestPrintfDashVStatusesMatchBash(t *testing.T) {
 		`printf -v x "%s" ok`,                  // the success case, for contrast
 	} {
 		t.Run(script, func(t *testing.T) {
-			gishCode := runStatus(ctx, t, gishBin, script)
+			koiCode := runStatus(ctx, t, koiBin, script)
 			bashCode := runStatus(ctx, t, bashBin, script)
-			if gishCode != bashCode {
-				t.Errorf("exit status: gish %d, bash %d", gishCode, bashCode)
+			if koiCode != bashCode {
+				t.Errorf("exit status: koi %d, bash %d", koiCode, bashCode)
 			}
 		})
 	}
@@ -245,7 +245,7 @@ func TestPrintfPrecisionIsFixedLocally(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash: the differential oracle is unavailable")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 	ctx := context.Background()
 
 	for _, script := range []string{
@@ -257,10 +257,10 @@ func TestPrintfPrecisionIsFixedLocally(t *testing.T) {
 		`printf "%-8s|\n" left`,
 	} {
 		t.Run(script, func(t *testing.T) {
-			gishOut, _ := exec.CommandContext(ctx, gishBin, "-c", script).CombinedOutput()
+			koiOut, _ := exec.CommandContext(ctx, koiBin, "-c", script).CombinedOutput()
 			bashOut, _ := exec.CommandContext(ctx, bashBin, "-c", script).CombinedOutput()
-			if string(gishOut) != string(bashOut) {
-				t.Errorf("gish %q vs bash %q", gishOut, bashOut)
+			if string(koiOut) != string(bashOut) {
+				t.Errorf("koi %q vs bash %q", koiOut, bashOut)
 			}
 		})
 	}

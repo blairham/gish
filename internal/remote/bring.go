@@ -8,19 +8,19 @@ import (
 	"strings"
 )
 
-// Options configure one `gish ssh` invocation.
+// Options configure one `koi ssh` invocation.
 type Options struct {
 	// Host is the ssh destination, [user@]host.
 	Host string
 	// SSHArgs are the user's own ssh flags, passed through untouched.
 	SSHArgs []string
-	// Mode is GISH_SSH_BRING: ask, always, or never.
+	// Mode is KOI_SSH_BRING: ask, always, or never.
 	Mode string
 	// Interactive reports whether there is a human to ask.
 	Interactive bool
 	// Ephemeral wipes the dropped files when the session ends.
 	Ephemeral bool
-	// Stderr receives the one-line notices. Never stdout: `gish ssh` is
+	// Stderr receives the one-line notices. Never stdout: `koi ssh` is
 	// used in pipelines, and a notice on stdout would corrupt them.
 	Stderr io.Writer
 	// Stdin is where the bring question is read from.
@@ -29,7 +29,7 @@ type Options struct {
 	Prompt func(string) (bool, error)
 }
 
-// Session is one prepared remote gish: what was pushed and where.
+// Session is one prepared remote koi: what was pushed and where.
 type Session struct {
 	Probe   Probe
 	Binary  Payload
@@ -38,7 +38,7 @@ type Session struct {
 	Pushed  bool   // false on the repeat-visit fast path
 }
 
-// Bring probes the remote, drops gish if policy and platform allow, and
+// Bring probes the remote, drops koi if policy and platform allow, and
 // returns the session to exec. Every failure it can meet is returned as
 // an error whose text is one line fit for stderr — the caller's job is
 // then to run plain ssh, not to interpret this.
@@ -52,7 +52,7 @@ func Bring(ctx context.Context, t Transport, opts Options) (*Session, error) {
 		return nil, err
 	}
 	if !bring {
-		return nil, fmt.Errorf("not bringing gish to %s (GISH_SSH_BRING=%s)", opts.Host, orDefault(opts.Mode, BringAsk))
+		return nil, fmt.Errorf("not bringing koi to %s (KOI_SSH_BRING=%s)", opts.Host, orDefault(opts.Mode, BringAsk))
 	}
 
 	// The probe needs the payload name to look for, and the payload
@@ -133,7 +133,7 @@ func dropREADME(ctx context.Context, t Transport, dir string) error {
 	return nil
 }
 
-// Uninstall removes everything gish left on a host. One command, because
+// Uninstall removes everything koi left on a host. One command, because
 // "nothing persists beyond the dropped binary + config" is only a real
 // promise if undoing it is trivial.
 func Uninstall(ctx context.Context, t Transport) (removed []string, err error) {
@@ -147,7 +147,7 @@ func Uninstall(ctx context.Context, t Transport) (removed []string, err error) {
 set -u
 uid=$(id -u 2>/dev/null || echo 0)
 for cand in %s; do
-	case "$cand" in /gish|/gish/*) continue ;; esac
+	case "$cand" in /koi|/koi/*) continue ;; esac
 	if [ -d "$cand" ]; then
 		rm -rf "$cand" 2>/dev/null && echo "$cand"
 	fi

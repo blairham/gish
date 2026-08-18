@@ -12,7 +12,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/tools"
+	"github.com/blairham/koi-shell/internal/tools"
 )
 
 // Native tool-version switching (#77 v1): on directory change the pins
@@ -46,10 +46,10 @@ func newToolsManager(notices io.Writer) *toolsManager {
 // changed under the same directory).
 func (t *toolsManager) invalidate() { t.lastDir = "" }
 
-// atPrompt rebuilds PATH when the directory (or the GISH_TOOLS switch)
+// atPrompt rebuilds PATH when the directory (or the KOI_TOOLS switch)
 // changed what should be active.
 func (t *toolsManager) atPrompt(ctx context.Context, runner *interp.Runner) {
-	if shellVar(runner, "GISH_TOOLS", "on") == "off" {
+	if shellVar(runner, "KOI_TOOLS", "on") == "off" {
 		t.lastDir = "" // re-resolve when re-enabled
 		t.setPrepends(ctx, runner, nil)
 		return
@@ -68,7 +68,7 @@ func (t *toolsManager) atPrompt(ctx context.Context, runner *interp.Runner) {
 			continue
 		}
 		t.warned[key] = true
-		fmt.Fprintf(t.notices, "gish: tools: %s pins %s %s but it is not installed (asdf install %s %s)\n",
+		fmt.Fprintf(t.notices, "koi: tools: %s pins %s %s but it is not installed (asdf install %s %s)\n",
 			displayPath(res.File), pin.Tool, pin.Versions[0], pin.Tool, pin.Versions[0])
 	}
 	t.setPrepends(ctx, runner, res.Bins)

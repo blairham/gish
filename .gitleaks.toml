@@ -1,6 +1,6 @@
-# Gitleaks configuration for gish
+# Gitleaks configuration for koi
 
-title = "gish Gitleaks Configuration"
+title = "koi Gitleaks Configuration"
 
 [extend]
 # Extend the default gitleaks configuration

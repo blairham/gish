@@ -48,9 +48,9 @@ both, because quoting only your best number is how benchmarks lie.
 
 The empty-config rows are floors nobody runs. The row that matters is
 the loaded one: a real .zshrc with a plugin manager, a theme, and tool
-init hooks against gish with its theme, highlighting, suggestions, and
+init hooks against koi with its theme, highlighting, suggestions, and
 lint all on — because that is the comparison a switcher actually
-experiences. gish's features are compiled in rather than sourced, so
+experiences. koi's features are compiled in rather than sourced, so
 turning them on costs approximately nothing at startup; the zsh
 equivalent pays for each one at every prompt.
 
@@ -92,7 +92,7 @@ what the terminal sees is the honest measurement.
 - **Keystroke latency includes the render.** A shell that decodes fast
   and paints slowly is slow, and this measurement says so.
 - **Differences under about a millisecond are noise.** Process spawn
-  and pty setup dominate at this scale, which is why the gish rows sit
+  and pty setup dominate at this scale, which is why the koi rows sit
   within noise of each other regardless of features enabled — the
   features are not on the startup path. Do not read a ranking into
   sub-millisecond gaps.

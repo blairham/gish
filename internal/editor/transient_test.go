@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // readOutput is read() plus what actually reached the terminal, which is
@@ -30,7 +30,7 @@ func TestTransientPromptReplacesTheAcceptedPrompt(t *testing.T) {
 	t.Parallel()
 
 	line, out := readOutput(t, editor.Config{
-		Prompt:    "~/dev/gish  main\n❯ ",
+		Prompt:    "~/dev/koi  main\n❯ ",
 		Transient: "❯ ",
 	}, typed("echo hi"), []term.Event{key(term.KeyEnter)})
 
@@ -65,10 +65,10 @@ func TestTransientPromptDropsTheRightPrompt(t *testing.T) {
 func TestWithoutTransientTheAcceptedPromptStands(t *testing.T) {
 	t.Parallel()
 
-	_, out := readOutput(t, editor.Config{Prompt: "~/dev/gish\n❯ "},
+	_, out := readOutput(t, editor.Config{Prompt: "~/dev/koi\n❯ "},
 		typed("ls"), []term.Event{key(term.KeyEnter)})
 
-	if !strings.Contains(out, "~/dev/gish") {
+	if !strings.Contains(out, "~/dev/koi") {
 		t.Errorf("prompt vanished without anyone asking: %q", out)
 	}
 }

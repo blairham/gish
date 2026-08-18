@@ -7,13 +7,13 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/complete"
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/complete"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
-// callHandlerCommands are gish's own commands that are routed by a
+// callHandlerCommands are koi's own commands that are routed by a
 // CallHandler rewrite rather than implemented on the exec seam. They are
 // invisible to builtins.Native(), so every surface that judges a name —
 // Tab completion, the did-you-mean suggester, the highlighter's verdict,
@@ -24,7 +24,7 @@ import (
 // This is the whole list on purpose: it was `zi, config` for a long time
 // while a dozen other commands shipped, so every one of them was
 // uncompletable — and the highlighter kept its own private `zi, config`
-// pair long after this list existed, which is how gish's own commands
+// pair long after this list existed, which is how koi's own commands
 // spent months rendering red (#193). A new CallHandler command belongs
 // here the same day it is wired into the chain in repl.go.
 var callHandlerCommands = []string{

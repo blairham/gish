@@ -51,7 +51,7 @@ func TestIconsAreStateAware(t *testing.T) {
 	}
 }
 
-// A mode gish does not carry is served by the default one and says so,
+// A mode koi does not carry is served by the default one and says so,
 // rather than silently substituting a different glyph set.
 func TestUnknownModeFallsBackAudibly(t *testing.T) {
 	t.Parallel()

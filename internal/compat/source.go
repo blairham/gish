@@ -18,7 +18,7 @@ import (
 //
 // These are run **unmodified**, as the user has them installed, and
 // differentially: the same load-and-probe script through real bash and
-// through gish. A tool that is not installed is reported as absent
+// through koi. A tool that is not installed is reported as absent
 // rather than skipped silently, because "we pass every case we ran" is
 // only meaningful alongside what was not run.
 
@@ -155,16 +155,16 @@ func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''
 // means the *oracle* misbehaved, which is a third state — see RunSource.
 type SourceResult struct {
 	SourceCase
-	Present            bool
-	Unstable           bool
-	BashOut, GishOut   string
-	BashCode, GishCode int
-	Pass               bool
-	Reason             string
+	Present           bool
+	Unstable          bool
+	BashOut, KoiOut   string
+	BashCode, KoiCode int
+	Pass              bool
+	Reason            string
 }
 
 // RunSource loads and probes one tool under both shells.
-func RunSource(ctx context.Context, bashBin, gishBin, scratch string, c SourceCase) SourceResult {
+func RunSource(ctx context.Context, bashBin, koiBin, scratch string, c SourceCase) SourceResult {
 	r := SourceResult{SourceCase: c}
 	load, ok := c.Locate(scratch)
 	if !ok {
@@ -173,25 +173,25 @@ func RunSource(ctx context.Context, bashBin, gishBin, scratch string, c SourceCa
 	r.Present = true
 	script := load + "\n" + c.Probe
 	r.BashOut, r.BashCode = runScript(ctx, bashBin, script)
-	r.GishOut, r.GishCode = runScript(ctx, gishBin, script)
+	r.KoiOut, r.KoiCode = runScript(ctx, koiBin, script)
 
 	// A differential test is only as good as its oracle, and an oracle
 	// that died of a signal is not one. Real init scripts spawn helper
 	// programs, and a helper still writing when the script exits dies of
 	// SIGPIPE — bash then exits -1 with the helper's traceback in its
-	// output. Comparing against that would report a gish failure for
-	// something gish did not do.
+	// output. Comparing against that would report a koi failure for
+	// something koi did not do.
 	if r.BashCode < 0 {
 		r.Unstable = true
 		r.Reason = "the oracle exited abnormally (" + itoa(r.BashCode) + "); nothing to compare against"
 		return r
 	}
 	switch {
-	case r.BashOut == r.GishOut && r.BashCode == r.GishCode:
+	case r.BashOut == r.KoiOut && r.BashCode == r.KoiCode:
 		r.Pass = true
-	case r.BashOut != r.GishOut && r.BashCode != r.GishCode:
+	case r.BashOut != r.KoiOut && r.BashCode != r.KoiCode:
 		r.Reason = "output and exit status differ"
-	case r.BashOut != r.GishOut:
+	case r.BashOut != r.KoiOut:
 		r.Reason = "output differs"
 	default:
 		r.Reason = "exit status differs"
@@ -200,10 +200,10 @@ func RunSource(ctx context.Context, bashBin, gishBin, scratch string, c SourceCa
 }
 
 // RunSourceAll runs every case whose tool is installed.
-func RunSourceAll(ctx context.Context, bashBin, gishBin, scratch string) []SourceResult {
+func RunSourceAll(ctx context.Context, bashBin, koiBin, scratch string) []SourceResult {
 	out := make([]SourceResult, 0, len(SourceCorpus))
 	for _, c := range SourceCorpus {
-		out = append(out, RunSource(ctx, bashBin, gishBin, scratch, c))
+		out = append(out, RunSource(ctx, bashBin, koiBin, scratch, c))
 	}
 	return out
 }

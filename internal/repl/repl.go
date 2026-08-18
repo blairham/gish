@@ -1,8 +1,8 @@
-// Package repl implements gish's read-eval loop on top of mvdan.cc/sh's
+// Package repl implements koi's read-eval loop on top of mvdan.cc/sh's
 // POSIX/bash parser and interpreter.
 //
 // Interactive terminals get the raw-mode line editor (internal/editor);
-// piped stdin falls back to the plain line loop so `echo cmd | gish` and
+// piped stdin falls back to the plain line loop so `echo cmd | koi` and
 // tests behave like a non-interactive shell. Script and -c execution are
 // separate paths via RunReader.
 package repl
@@ -22,17 +22,17 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/builtins"
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/envtrust"
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/jobs"
-	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/builtins"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/envtrust"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/jobs"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 const (
-	prompt     = "gish$ "
+	prompt     = "koi$ "
 	contPrompt = "> "
 )
 
@@ -53,7 +53,7 @@ func Run(ctx context.Context, login bool) error {
 // user's Ctrl-C or Ctrl-\. At the prompt those arrive as key events (raw
 // mode); while a command runs, the terminal delivers them to the whole
 // foreground process group — children included, which is what kills the
-// child. gish catches its own copy via Notify (NOT Ignore: an ignored
+// child. koi catches its own copy via Notify (NOT Ignore: an ignored
 // disposition would be inherited across exec and make children immune to
 // Ctrl-C) and reacts by canceling the command context, which is what
 // stops pure-builtin loops the kernel can't reach. SIGTSTP is left at
@@ -68,7 +68,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// Tier-2 plugin host (#7): discovery now, launch on first demand.
 	// Prompt segments are consumed via %p{id} escapes; the `plugins`
 	// builtin makes the host inspectable. Plugin-provided commands (#11)
-	// dispatch through the command index, after gish builtins and before
+	// dispatch through the command index, after koi builtins and before
 	// PATH.
 	var segs *segmentRenderer
 	var host *pluginhost.Host
@@ -76,7 +76,7 @@ func runEditor(ctx context.Context, login bool) error {
 	if dir, derr := pluginhost.DefaultDir(); derr == nil {
 		host = pluginhost.NewHost(dir)
 		if derr := host.Discover(); derr != nil {
-			fmt.Fprintln(os.Stderr, "gish: plugins:", derr)
+			fmt.Fprintln(os.Stderr, "koi: plugins:", derr)
 		}
 		defer host.Close()
 		cmdIndex = host.NewCommandIndex(reservedCommandName)
@@ -90,14 +90,14 @@ func runEditor(ctx context.Context, login bool) error {
 			if store, serr := envtrust.Open(trustPath); serr == nil {
 				envMgr = newEnvManager(host, store, os.Stderr)
 			} else {
-				fmt.Fprintln(os.Stderr, "gish: env trust:", serr)
+				fmt.Fprintln(os.Stderr, "koi: env trust:", serr)
 			}
 		}
 	}
 
 	// Job control (#5): externals of each command line run in their own
 	// process group and own the terminal while foreground; jobs/fg/bg
-	// are gish builtins reached via the CallHandler rewrite.
+	// are koi builtins reached via the CallHandler rewrite.
 	table := jobs.NewTable(os.Stdin)
 	// Keep a live capture pty the same size as the real terminal. The
 	// editor's own resize handling only runs while it is reading, and a
@@ -133,18 +133,18 @@ func runEditor(ctx context.Context, login bool) error {
 	// umask needs no shell state, so it is registered regardless of
 	// whether job control is available — tying it to jobs.Supported
 	// would make a mask-setting builtin depend on process groups.
-	builtins.Register("__gish_umask", builtins.Umask)
-	builtins.Register("__gish_times", builtins.Times)
-	builtins.Register("__gish_newgrp", builtins.Newgrp)
+	builtins.Register("__koi_umask", builtins.Umask)
+	builtins.Register("__koi_times", builtins.Times)
+	builtins.Register("__koi_newgrp", builtins.Newgrp)
 	if jobs.Supported() {
 		// Reclaiming the terminal from the background must not stop the
 		// shell. Children inherit the ignore; acceptable (see #5 design).
 		ignoreTTOU()
-		builtins.Register("__gish_jobs", table.Jobs)
-		builtins.Register("__gish_fg", table.Fg)
-		builtins.Register("__gish_bg", table.Bg)
+		builtins.Register("__koi_jobs", table.Jobs)
+		builtins.Register("__koi_fg", table.Fg)
+		builtins.Register("__koi_bg", table.Bg)
 		// kill belongs here: %1 resolves through this table.
-		builtins.Register("__gish_kill", table.Kill)
+		builtins.Register("__koi_kill", table.Kill)
 		callBase = jobs.RewriteCall
 	}
 	// aliasTrackCallHandler is interactive-only and outermost: only this
@@ -239,7 +239,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// still set variables plugins read. A broken manifest is reported,
 	// never silently skipped — the user would just see nothing load.
 	loadPluginManifest(ctx, runner)
-	starshipHint(shellVar(runner, "GISH_THEME", "") != "", shellVar(runner, "GISH_PROMPT", "") != "")
+	starshipHint(shellVar(runner, "KOI_THEME", "") != "", shellVar(runner, "KOI_PROMPT", "") != "")
 	// The exit story (#212), after the rc so `config welcome off` is
 	// honored on the first session — which is the one that matters when a
 	// new machine is bootstrapped from dotfiles.
@@ -257,12 +257,12 @@ func runEditor(ctx context.Context, login bool) error {
 	// meaningful and when the shell is idle.
 	sessionMgr = newSessionRecorder(sessionID, runner, table.Commands)
 	defer sessionMgr.close()
-	if id := os.Getenv("GISH_RESTORE_SESSION"); id != "" {
-		os.Unsetenv("GISH_RESTORE_SESSION") //nolint:errcheck // consume it once
+	if id := os.Getenv("KOI_RESTORE_SESSION"); id != "" {
+		os.Unsetenv("KOI_RESTORE_SESSION") //nolint:errcheck // consume it once
 		if detail, ok := restoreOnStart(id, runner); ok {
-			fmt.Fprintf(os.Stderr, "gish: restored %s\n", detail)
+			fmt.Fprintf(os.Stderr, "koi: restored %s\n", detail)
 		} else {
-			fmt.Fprintf(os.Stderr, "gish: --restore: %s\n", detail)
+			fmt.Fprintf(os.Stderr, "koi: --restore: %s\n", detail)
 		}
 	}
 	lastDuration := time.Duration(0)
@@ -281,7 +281,7 @@ func runEditor(ctx context.Context, login bool) error {
 		sessionMgr.atPrompt(runner, lastCommandText)
 		// Output capture (#99 stage 2) is opt-in and re-read each
 		// prompt, so `config blocks on` takes effect without a restart.
-		if shellVar(runner, "GISH_BLOCKS", "off") == "on" {
+		if shellVar(runner, "KOI_BLOCKS", "off") == "on" {
 			table.EnableCapture(0)
 		} else {
 			table.DisableCapture()
@@ -349,7 +349,7 @@ func runEditor(ctx context.Context, login bool) error {
 			expanded, changed, herr := expandHistory(line, store.Match)
 			switch {
 			case herr != nil:
-				fmt.Fprintln(os.Stderr, "gish:", herr)
+				fmt.Fprintln(os.Stderr, "koi:", herr)
 				lastExit = 1
 				continue
 			case changed:
@@ -373,7 +373,7 @@ func runEditor(ctx context.Context, login bool) error {
 			execStep := func(stepLine string) int {
 				file, perr := parser.Parse(strings.NewReader(stepLine), "agent-step")
 				if perr != nil {
-					fmt.Fprintln(os.Stderr, "gish:", perr)
+					fmt.Fprintln(os.Stderr, "koi:", perr)
 					return 2
 				}
 				drainSignals(sigs)
@@ -411,9 +411,9 @@ func runEditor(ctx context.Context, login bool) error {
 			cancelCompose()
 			continue
 		}
-		file, perr := parser.Parse(strings.NewReader(line), "gish")
+		file, perr := parser.Parse(strings.NewReader(line), "koi")
 		if perr != nil {
-			fmt.Fprintln(os.Stderr, "gish:", perr)
+			fmt.Fprintln(os.Stderr, "koi:", perr)
 			continue
 		}
 		rewriteSubstrateGaps(file)
@@ -465,7 +465,7 @@ func runEditor(ctx context.Context, login bool) error {
 			// record and is written either way (#99 stage 3).
 			captured, truncated := table.LastCapture()
 			// Cwd comes from the runner: `cd` moves the interpreter's
-			// directory, not the gish process's.
+			// directory, not the koi process's.
 			entry := history.Entry{
 				Command:       line,
 				StartedUnixMs: start.UnixMilli(),
@@ -478,9 +478,9 @@ func runEditor(ctx context.Context, login bool) error {
 			skip, aerr := store.Append(entry)
 			switch {
 			case aerr != nil:
-				fmt.Fprintln(os.Stderr, "gish: history:", aerr)
+				fmt.Fprintln(os.Stderr, "koi: history:", aerr)
 			case skip == history.SkipSecret:
-				fmt.Fprintln(os.Stderr, "gish: history: possible secret detected — command not recorded")
+				fmt.Fprintln(os.Stderr, "koi: history: possible secret detected — command not recorded")
 			case skip == history.SkipNone:
 				// Backends only ever see entries that passed the scrub.
 				fanoutHistory(host, entry)
@@ -499,7 +499,7 @@ func runEditor(ctx context.Context, login bool) error {
 		case rerr == nil:
 		default:
 			if _, ok := errors.AsType[interp.ExitStatus](rerr); !ok {
-				fmt.Fprintln(os.Stderr, "gish:", rerr)
+				fmt.Fprintln(os.Stderr, "koi:", rerr)
 			}
 		}
 	}
@@ -567,7 +567,7 @@ func drainSignals(sigs <-chan os.Signal) {
 }
 
 // reservedCommandName reports names a plugin command may not claim:
-// interpreter builtins, gish-native builtins, and the CallHandler-routed
+// interpreter builtins, koi-native builtins, and the CallHandler-routed
 // commands (#11 precedence rules). The CallHandler names matter because
 // the rewrite chain runs before exec dispatch — a plugin allowed to
 // register `doctor` would be accepted and then silently never reached.
@@ -588,7 +588,7 @@ func pluginsBuiltin(host *pluginhost.Host, cmdIndex *pluginhost.CommandIndex, di
 			// Registered with no host on the script paths, so the name
 			// resolves there. Without this it fell through to PATH and
 			// reported `"plugins": executable file not found` with status
-			// 127 — a builtin gish documents, answering exactly like a
+			// 127 — a builtin koi documents, answering exactly like a
 			// typo. Every neighboring builtin says what is unavailable
 			// and why (`trust: env plugins are not available in this
 			// session`); this now does too.
@@ -616,7 +616,7 @@ func openHistory() *history.Store {
 			return store
 		}
 	}
-	fmt.Fprintln(os.Stderr, "gish: history disabled:", err)
+	fmt.Fprintln(os.Stderr, "koi: history disabled:", err)
 	return nil
 }
 
@@ -639,7 +639,7 @@ func exitCode(err error) int {
 // errors submit too — the interpreter reports them, matching how a shell
 // treats a finished-but-wrong line.
 func acceptWhen(text string) bool {
-	_, err := syntax.NewParser().Parse(strings.NewReader(text), "gish")
+	_, err := syntax.NewParser().Parse(strings.NewReader(text), "koi")
 	return err == nil || !syntax.IsIncomplete(err)
 }
 
@@ -686,7 +686,7 @@ loop:
 				// Nonzero statuses are ordinary interactive life; only
 				// surface real interpreter errors.
 				if _, ok := errors.AsType[interp.ExitStatus](err); !ok {
-					fmt.Fprintln(os.Stderr, "gish:", err)
+					fmt.Fprintln(os.Stderr, "koi:", err)
 				}
 			}
 		}
@@ -696,7 +696,7 @@ loop:
 	return exitErr
 }
 
-// RunCommand parses and runs src as a complete script (gish -c). This
+// RunCommand parses and runs src as a complete script (koi -c). This
 // is the path tools take when they spawn $SHELL -c: it stays POSIX-clean
 // — no editor, theme, plugins, history, or extra output (#41).
 //
@@ -707,10 +707,10 @@ loop:
 // into the script text.
 func RunCommand(ctx context.Context, src string, login, interactive bool, operands ...string) error {
 	// $0 is the parse name, so this is also what `echo $0` answers. It is
-	// "gish" rather than "gish -c" because $0 is a shell-identity surface
+	// "koi" rather than "koi -c" because $0 is a shell-identity surface
 	// (#120) that harnesses read: bash -c answers "bash", and answering
-	// "gish -c" made gish the only shell whose $0 carries a flag.
-	name := "gish"
+	// "koi -c" made koi the only shell whose $0 carries a flag.
+	name := "koi"
 	var params []string
 	if len(operands) > 0 {
 		name, params = operands[0], operands[1:]
@@ -744,7 +744,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	registerSubstrateBuiltins()
 	runner, err := interp.New(
 		// The "--" matters: without it a parameter that begins with a
-		// dash would be read as a shell option, so `gish script.sh -v`
+		// dash would be read as a shell option, so `koi script.sh -v`
 		// would try to set -v instead of passing it along.
 		interp.Params(append([]string{"--"}, params...)...),
 		interp.Env(sessionEnv(false)),
@@ -771,7 +771,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	// would silently not be there.
 	//
 	// Alias *expansion* is part of that, and was missing: the rc's
-	// aliases were recorded and never expanded, so `gish -ic ll` answered
+	// aliases were recorded and never expanded, so `koi -ic ll` answered
 	// 127 while `bash -ic ll` ran it. That is the #163 alias trap on the
 	// path a coding agent actually uses (#208) — the definitions are all
 	// there, `alias ll` even prints one, and the command still is not

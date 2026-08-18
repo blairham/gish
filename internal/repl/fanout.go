@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // fanoutHistory delivers a stored entry to every HistoryBackend plugin —

@@ -3,7 +3,7 @@ package repl
 import (
 	"testing"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // The merge rule that matters: the local store is authoritative, so a

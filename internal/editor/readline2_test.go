@@ -3,8 +3,8 @@ package editor_test
 import (
 	"testing"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // Round 2 of the readline keymap (#118) and numeric arguments (#116).

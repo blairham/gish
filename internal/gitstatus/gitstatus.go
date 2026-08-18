@@ -1,7 +1,7 @@
 // Package gitstatus is the working-tree scan behind the git prompt
 // segments: the expensive half that HeadStatus deliberately leaves out.
 //
-// It exists because there were nearly two of it. cmd/gish-git already
+// It exists because there were nearly two of it. cmd/koi-git already
 // ran `git status --porcelain=v2 --branch` and parsed it for the
 // %p{git} escape, while the native p10k theme rendered counters that
 // nothing ever filled — internal/promptengine's MergeCounts had no caller at

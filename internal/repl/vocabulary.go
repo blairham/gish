@@ -8,9 +8,9 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/builtins"
-	"github.com/blairham/gish/internal/complete"
-	"github.com/blairham/gish/internal/pluginhost"
+	"github.com/blairham/koi-shell/internal/builtins"
+	"github.com/blairham/koi-shell/internal/complete"
+	"github.com/blairham/koi-shell/internal/pluginhost"
 )
 
 // The session command vocabulary (#193): every surface that judges a
@@ -19,8 +19,8 @@ import (
 // this session run", or one of them calls a valid command a typo. The
 // highlighter shipped with its own private answer (interpreter builtins,
 // a hardcoded zi/config pair, functions, PATH) and painted every alias,
-// gish command, and plugin command red — the exact signal #38 exists to
-// make trustworthy, lying about the commands gish itself documents.
+// koi command, and plugin command red — the exact signal #38 exists to
+// make trustworthy, lying about the commands koi itself documents.
 
 // sessionAliases mirrors the interactive session's alias names. The
 // interpreter owns the real definitions and does not export them, so the
@@ -105,7 +105,7 @@ func aliasTrackCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 var commandIndex *pluginhost.CommandIndex
 
 // sessionCommandNames returns every command name the session answers
-// besides PATH executables: implemented shell builtins, gish-native
+// besides PATH executables: implemented shell builtins, koi-native
 // builtins, the CallHandler-routed commands, shell functions, aliases,
 // pending lazy plugin triggers, and plugin-provided commands.
 func sessionCommandNames(runner *interp.Runner) []string {

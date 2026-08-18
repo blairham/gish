@@ -15,13 +15,13 @@ import (
 
 // rcPath resolves the interactive startup file. Precedence:
 //
-//  1. $GISH_RC — explicit override (and the testing seam)
-//  2. $XDG_CONFIG_HOME/gish/gishrc — XDG_CONFIG_HOME defaults to ~/.config
-//  3. ~/.gishrc — the classic location
+//  1. $KOI_RC — explicit override (and the testing seam)
+//  2. $XDG_CONFIG_HOME/koi/koirc — XDG_CONFIG_HOME defaults to ~/.config
+//  3. ~/.koirc — the classic location
 //
 // The first path that exists wins; none existing is not an error.
 func rcPath() string {
-	if p := os.Getenv("GISH_RC"); p != "" {
+	if p := os.Getenv("KOI_RC"); p != "" {
 		return p
 	}
 	var candidates []string
@@ -31,10 +31,10 @@ func rcPath() string {
 		confHome = filepath.Join(home, ".config")
 	}
 	if confHome != "" {
-		candidates = append(candidates, filepath.Join(confHome, "gish", "gishrc"))
+		candidates = append(candidates, filepath.Join(confHome, "koi", "koirc"))
 	}
 	if herr == nil {
-		candidates = append(candidates, filepath.Join(home, ".gishrc"))
+		candidates = append(candidates, filepath.Join(home, ".koirc"))
 	}
 	for _, p := range candidates {
 		if _, err := os.Stat(p); err == nil {
@@ -54,7 +54,7 @@ func rcPath() string {
 //
 // Interactive only, which is bash's rule and worth keeping: expanding
 // aliases in scripts changes what a script means depending on who runs
-// it, and gish's -c path is pinned POSIX-clean by the compat suite. So
+// it, and koi's -c path is pinned POSIX-clean by the compat suite. So
 // runPlain (piped stdin) and RunReader (-c, script files) deliberately
 // do not call this.
 //
@@ -62,14 +62,14 @@ func rcPath() string {
 // alias expansion is a shopt in the interpreter too; this is the same
 // "make it true in the live runner" move `config` uses.
 func enableAliases(ctx context.Context, runner *interp.Runner) {
-	file, err := syntax.NewParser().Parse(strings.NewReader("shopt -s expand_aliases"), "gish")
+	file, err := syntax.NewParser().Parse(strings.NewReader("shopt -s expand_aliases"), "koi")
 	if err != nil {
 		return
 	}
 	if err := runner.Run(ctx, file); err != nil {
 		// Not fatal: a shell that cannot expand aliases is worse than one
 		// that can, but far better than one that refuses to start.
-		fmt.Fprintf(os.Stderr, "gish: enabling aliases: %v\n", err)
+		fmt.Fprintf(os.Stderr, "koi: enabling aliases: %v\n", err)
 	}
 }
 
@@ -84,31 +84,31 @@ func loadRC(ctx context.Context, runner *interp.Runner) {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, err)
 		return
 	}
 	defer f.Close()
 	file, err := syntax.NewParser().Parse(f, path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, err)
 		return
 	}
 	if err := safely("running "+path, func() error { return runner.Run(ctx, file) }); err != nil {
-		fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, err)
 	}
 }
 
 // loadProfile sources login-shell startup files (#41): /etc/profile
 // when present (macOS path_helper and distro PATH setup live there),
-// then the first of $GISH_PROFILE, ~/.gish_profile, ~/.profile. Errors
+// then the first of $KOI_PROFILE, ~/.koi_profile, ~/.profile. Errors
 // warn and continue — a broken profile must never lock the user out.
 func loadProfile(ctx context.Context, runner *interp.Runner) {
 	paths := []string{"/etc/profile"}
-	if p := os.Getenv("GISH_PROFILE"); p != "" {
+	if p := os.Getenv("KOI_PROFILE"); p != "" {
 		paths = append(paths, p)
 	} else if home, err := os.UserHomeDir(); err == nil {
 		for _, candidate := range []string{
-			filepath.Join(home, ".gish_profile"),
+			filepath.Join(home, ".koi_profile"),
 			filepath.Join(home, ".profile"),
 		} {
 			if _, err := os.Stat(candidate); err == nil {
@@ -125,18 +125,18 @@ func loadProfile(ctx context.Context, runner *interp.Runner) {
 		file, perr := syntax.NewParser().Parse(f, path)
 		f.Close()
 		if perr != nil {
-			fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, perr)
+			fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, perr)
 			continue
 		}
 		if rerr := safely("running "+path, func() error { return runner.Run(ctx, file) }); rerr != nil {
-			fmt.Fprintf(os.Stderr, "gish: %s: %v\n", path, rerr)
+			fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, rerr)
 		}
 	}
 }
 
 // shellVar reads a scalar setting from the runner: shell variables
 // first (an rc assignment or a live `config` change wins), then the
-// inherited environment, so `GISH_THEME=p10k gish` works the way
+// inherited environment, so `KOI_THEME=p10k koi` works the way
 // every other env-configured program does. runner.Vars holds only
 // variables the session set; inherited ones live in runner.Env.
 func shellVar(runner *interp.Runner, name, fallback string) string {

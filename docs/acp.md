@@ -1,15 +1,15 @@
 # ACP: the agent edge
 
-gish speaks the [Agent Client Protocol](https://agentclientprotocol.com)
+koi speaks the [Agent Client Protocol](https://agentclientprotocol.com)
 in two directions, deliberately in different places.
 
 | direction | what it means | where it lives |
 | --- | --- | --- |
-| **inbound** — gish uses an agent | `??` and `explain` are answered by any ACP agent | `cmd/gish-acp`, a plugin |
-| **outbound** — an agent runs inside gish | the agent's commands execute through gish's sandbox and deadlines | `gish acp`, core |
+| **inbound** — koi uses an agent | `??` and `explain` are answered by any ACP agent | `cmd/koi-acp`, a plugin |
+| **outbound** — an agent runs inside koi | the agent's commands execute through koi's sandbox and deadlines | `koi acp`, core |
 
 The split is not organizational. **A plugin may never hold an exec
-channel** ([#34](https://github.com/blairham/gish/issues/34)), so the
+channel** ([#34](https://github.com/blairham/koi-shell/issues/34)), so the
 outbound role cannot be a plugin without weakening the invariant that
 makes plugins safe. The inbound role is a plugin precisely because it is
 deletable if ACP does not take.
@@ -23,7 +23,7 @@ adopters. Checked against the protocol's own documentation and the
 - **The terminal capability is client-side and optional.** A client
   advertises `"terminal": true` in its `initialize` response, and an
   agent that does not see it **MUST NOT** call any terminal method. So
-  gish implementing it is purely additive — every agent already has the
+  koi implementing it is purely additive — every agent already has the
   branch for "no".
 - **The methods are what the design assumed**: `terminal/create`
   (returns a terminal id immediately, the command runs in the
@@ -47,7 +47,7 @@ adopters. Checked against the protocol's own documentation and the
 
 **Verdict: go**, on v1, for both roles.
 
-## What gish adds that ACP leaves out
+## What koi adds that ACP leaves out
 
 The spec defines **no permission model, no sandboxing, and no timeout**
 — it tells agents to race a timer against `wait_for_exit` and call
@@ -55,10 +55,10 @@ The spec defines **no permission model, no sandboxing, and no timeout**
 for whoever hosts it. Every other ACP client today runs an agent's
 commands the way `bash -c` would.
 
-gish already has the missing pieces as invariants:
+koi already has the missing pieces as invariants:
 
-- **Sandbox profiles** ([#21](https://github.com/blairham/gish/issues/21)).
-  `gish acp` wraps every command the agent asks for in the same re-exec
+- **Sandbox profiles** ([#21](https://github.com/blairham/koi-shell/issues/21)).
+  `koi acp` wraps every command the agent asks for in the same re-exec
   the `sandbox` builtin uses — `workspace` by default. `--profile none`
   is allowed and says so loudly, because a sandbox the user turned off
   is a decision and one that quietly did nothing is a lie.
@@ -73,7 +73,7 @@ gish already has the missing pieces as invariants:
 
 - **No `fs` capability.** Reading and writing files on an agent's behalf
   is a different trust decision from running a command you can see, and
-  gish has nowhere to ask for it yet. The client advertises `false` and
+  koi has nowhere to ask for it yet. The client advertises `false` and
   refuses the methods by name.
 - **The inbound plugin declines the terminal capability outright.** `??`
   composes a command for you to read; nothing there may execute.
@@ -91,20 +91,20 @@ shipped a `riskAssessment` feature that has an LLM guess what a command
 does.
 
 So this is built because the substrate is unserved. It is **not** a
-marketing pillar ([#169](https://github.com/blairham/gish/issues/169)).
+marketing pillar ([#169](https://github.com/blairham/koi-shell/issues/169)).
 
 ## Using it
 
 ```sh
 # Host an agent; its commands run under the workspace sandbox profile.
-gish acp claude-code-acp
+koi acp claude-code-acp
 
 # Stricter, for an agent you are letting explore.
-gish acp --profile readonly claude-code-acp
+koi acp --profile readonly claude-code-acp
 
 # The inbound half: any ACP agent answers ?? and explain.
-export GISH_AI_PROVIDER=gish-acp
-export GISH_ACP_AGENT="claude-code-acp"     # or `gemini --acp`, …
+export KOI_AI_PROVIDER=koi-acp
+export KOI_ACP_AGENT="claude-code-acp"     # or `gemini --acp`, …
 ```
 
 Sources: [agentclientprotocol.com/protocol/terminals](https://agentclientprotocol.com/protocol/terminals),

@@ -17,7 +17,7 @@ import (
 //
 // Rewritten to the assignment that already drives the editor, so there
 // is one source of truth for the mode and `set -o vi`, `config editmode
-// vi`, and GISH_EDIT_MODE=vi are the same switch reached three ways.
+// vi`, and KOI_EDIT_MODE=vi are the same switch reached three ways.
 // Only the four exact forms are claimed; every other `set` invocation
 // belongs to the interpreter and is passed through untouched.
 func setOptionCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
@@ -40,5 +40,5 @@ func editModeAssign(vi bool) []string {
 	if vi {
 		mode = "vi"
 	}
-	return []string{"eval", "GISH_EDIT_MODE=" + mode}
+	return []string{"eval", "KOI_EDIT_MODE=" + mode}
 }

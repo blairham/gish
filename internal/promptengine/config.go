@@ -97,7 +97,7 @@ func (c *Config) List(key string) []string {
 
 // Bool reads a truth setting. Upstream writes these as the strings true
 // and false; 1/0, yes/no and on/off are accepted too, since the native
-// config surface and the gish `config` command speak those.
+// config surface and the koi `config` command speak those.
 func (c *Config) Bool(key string, def bool) bool {
 	v, ok := c.scalars[normKey(key)]
 	if !ok {

@@ -19,7 +19,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/capture"
+	"github.com/blairham/koi-shell/internal/capture"
 )
 
 // Supported reports whether job control is available on this platform.
@@ -597,7 +597,7 @@ func (t *Table) pick(args []string) *Job {
 	return nil
 }
 
-// --- builtins (registered by the shell as __gish_jobs/fg/bg) ---
+// --- builtins (registered by the shell as __koi_jobs/fg/bg) ---
 
 // Jobs lists the table.
 func (t *Table) Jobs(_ context.Context, hc interp.HandlerContext, _ []string) error {

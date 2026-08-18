@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // fakeTerm scripts a sequence of input events. Events are *consumed*:

@@ -135,7 +135,7 @@ func TestImportedConfigRenders(t *testing.T) {
 	cfg := Preset("lean")
 	cfg.Merge(importFixture(t))
 	got := Render(cfg, sampleContext())
-	if !strings.Contains(plain(got.Prompt), "gish") {
+	if !strings.Contains(plain(got.Prompt), "koi") {
 		t.Errorf("imported config did not render: %q", plain(got.Prompt))
 	}
 }

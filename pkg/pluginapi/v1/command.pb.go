@@ -3,7 +3,7 @@
 // like a builtin: dispatched by name before PATH lookup, with its I/O
 // streamed over the connection.
 //
-// Precedence rules (decided on #11): interpreter and gish-native builtin
+// Precedence rules (decided on #11): interpreter and koi-native builtin
 // names are reserved — claims on them are rejected. Shell functions
 // shadow plugin commands (the user always wins). Plugin commands shadow
 // PATH binaries, like functions do. Between plugins, the
@@ -468,7 +468,7 @@ const file_koi_plugin_v1_command_proto_rawDesc = "" +
 	"\x06output2\x9c\x01\n" +
 	"\x0fCommandProvider\x12K\n" +
 	"\bCommands\x12\x1e.koi.plugin.v1.CommandsRequest\x1a\x1f.koi.plugin.v1.CommandsResponse\x12<\n" +
-	"\x03Run\x12\x17.koi.plugin.v1.RunInput\x1a\x18.koi.plugin.v1.RunOutput(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x03Run\x12\x17.koi.plugin.v1.RunInput\x1a\x18.koi.plugin.v1.RunOutput(\x010\x01B:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_command_proto_rawDescOnce sync.Once

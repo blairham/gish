@@ -6,8 +6,8 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // The hooks the editor is handed at startup, tested through the real
@@ -59,9 +59,9 @@ func TestSuggestFnUsesKnobAndStore(t *testing.T) {
 
 	// The knob is read per call, so an rc line or a live `config`
 	// change takes effect without rebuilding the editor.
-	off := suggestFn(runnerWithVars(t, map[string]string{"GISH_SUGGEST": "off"}), store)
+	off := suggestFn(runnerWithVars(t, map[string]string{"KOI_SUGGEST": "off"}), store)
 	if got := off("make "); got != "" {
-		t.Errorf("GISH_SUGGEST=off still suggested %q", got)
+		t.Errorf("KOI_SUGGEST=off still suggested %q", got)
 	}
 }
 
@@ -80,38 +80,38 @@ func TestTransientPromptFollowsTheTheme(t *testing.T) {
 	info := promptInfo{}
 
 	// The setting is off by default, for every theme.
-	if got := transientPrompt(runnerWithVars(t, map[string]string{"GISH_THEME": "p10k"}), info); got != "" {
+	if got := transientPrompt(runnerWithVars(t, map[string]string{"KOI_THEME": "p10k"}), info); got != "" {
 		t.Errorf("transient prompt is off by default, got %q", got)
 	}
 
 	// Turned on in the session, p10k renders one.
-	on := map[string]string{"GISH_THEME": "p10k", "POWERLEVEL9K_TRANSIENT_PROMPT": "always"}
+	on := map[string]string{"KOI_THEME": "p10k", "POWERLEVEL9K_TRANSIENT_PROMPT": "always"}
 	if got := transientPrompt(runnerWithVars(t, on), info); got == "" {
 		t.Error("p10k with TRANSIENT_PROMPT=always produced nothing")
 	}
 
 	// Every other theme gets nothing even with the setting on: only the
 	// p10k engine implements a transient prompt today.
-	for _, theme := range []string{"plain", "gish", "starship", ""} {
-		vars := map[string]string{"GISH_THEME": theme, "POWERLEVEL9K_TRANSIENT_PROMPT": "always"}
+	for _, theme := range []string{"plain", "koi", "starship", ""} {
+		vars := map[string]string{"KOI_THEME": theme, "POWERLEVEL9K_TRANSIENT_PROMPT": "always"}
 		if got := transientPrompt(runnerWithVars(t, vars), info); got != "" {
-			t.Errorf("GISH_THEME=%q produced a transient prompt %q; only p10k implements one", theme, got)
+			t.Errorf("KOI_THEME=%q produced a transient prompt %q; only p10k implements one", theme, got)
 		}
 	}
 
 	// A manual prompt outranks every theme, transient included.
 	manual := map[string]string{
-		"GISH_THEME": "p10k", "GISH_PROMPT": "> ",
+		"KOI_THEME": "p10k", "KOI_PROMPT": "> ",
 		"POWERLEVEL9K_TRANSIENT_PROMPT": "always",
 	}
 	if got := transientPrompt(runnerWithVars(t, manual), info); got != "" {
-		t.Errorf("manual GISH_PROMPT still got a transient prompt %q", got)
+		t.Errorf("manual KOI_PROMPT still got a transient prompt %q", got)
 	}
 }
 
 // editModeOf decides whether the session is emacs or vi. `set -o vi` in
 // an inherited rc is the case that matters, and it reaches this through
-// GISH_EDIT_MODE.
+// KOI_EDIT_MODE.
 func TestEditModeOf(t *testing.T) {
 	for value, want := range map[string]editor.EditMode{
 		"":         editor.ModeEmacs,
@@ -120,16 +120,16 @@ func TestEditModeOf(t *testing.T) {
 		"VI":       editor.ModeVi, // case is not a configuration error
 		"nonsense": editor.ModeEmacs,
 	} {
-		runner := runnerWithVars(t, map[string]string{"GISH_EDIT_MODE": value})
+		runner := runnerWithVars(t, map[string]string{"KOI_EDIT_MODE": value})
 		if got := editModeOf(runner); got != want {
-			t.Errorf("GISH_EDIT_MODE=%q resolved to %v, want %v", value, got, want)
+			t.Errorf("KOI_EDIT_MODE=%q resolved to %v, want %v", value, got, want)
 		}
 	}
 }
 
 // A runner is not required to have run anything before the editor asks
 // for its hooks: the first prompt is resolved before any command. A nil
-// Vars map is the shape that produced the GISH_THEME no-op bug (#45).
+// Vars map is the shape that produced the KOI_THEME no-op bug (#45).
 func TestHooksSurviveAFreshRunner(t *testing.T) {
 	runner, err := interp.New()
 	if err != nil {

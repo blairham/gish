@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/plugmgr/ice"
-	"github.com/blairham/gish/internal/plugmgr/spec"
+	"github.com/blairham/koi-shell/internal/plugmgr/ice"
+	"github.com/blairham/koi-shell/internal/plugmgr/spec"
 )
 
 // The object manifest is what `zi list` and `Update` read to decide what

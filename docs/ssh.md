@@ -1,4 +1,4 @@
-# `gish ssh`: your shell follows you
+# `koi ssh`: your shell follows you
 
 "My shell has to be everywhere I ssh" is the single most-cited blocker
 to adopting any new shell. It comes up in every new-shell thread, always
@@ -6,22 +6,22 @@ with the same scenario — the 2AM incident box, bash-only, that you did
 not provision and cannot change — and no incumbent alternative shell has
 an answer to it.
 
-gish's answer is not a syntax feature. It is that a single static Go
-binary is `scp`-able, and nobody will do that by hand, so gish does it:
+koi's answer is not a syntax feature. It is that a single static Go
+binary is `scp`-able, and nobody will do that by hand, so koi does it:
 
 ```
-gish ssh prod-web-3
+koi ssh prod-web-3
 ```
 
 Probe the host, copy one file into a cache directory under your own home
-there, open an interactive gish. Repeat visits copy nothing.
+there, open an interactive koi. Repeat visits copy nothing.
 
 ## What it does, exactly
 
 1. **One connection, one authentication.** ControlMaster multiplexing,
    with the socket under `$XDG_RUNTIME_DIR`. Probe, push, and session all
    ride it. Without this, anyone behind a bastion or holding a hardware
-   key gets three prompts and uninstalls gish that afternoon.
+   key gets three prompts and uninstalls koi that afternoon.
 2. **One probe round trip** — `uname -sm`, a writable *and executable*
    directory, whether a hash tool exists, and whether the binary is
    already there. Bounded at two seconds.
@@ -37,7 +37,7 @@ standard on CIS-benchmarked hosts — precisely the hardened box in the
 pitch. So the probe writes a 20-byte script, `chmod +x`, runs it, and
 checks the status. The fallback chain is:
 
-    ~/.cache/gish → $XDG_RUNTIME_DIR/gish → /dev/shm/gish-$UID → /tmp/gish-$UID
+    ~/.cache/koi → $XDG_RUNTIME_DIR/koi → /dev/shm/koi-$UID → /tmp/koi-$UID
 
 Every candidate failing means plain ssh, not a broken session.
 
@@ -71,39 +71,39 @@ Linux CI and not on macOS.
 and says nothing about glibc versus musl. A cgo-linked binary lands on
 Alpine and fails with an error that *looks like the file is missing*.
 The release build sets `CGO_ENABLED=0` everywhere; `doctor` warns if the
-gish you are running was not built that way.
+koi you are running was not built that way.
 
 **Terminfo is not pushed, on purpose.** The usual cause of "my shell
 looks broken over ssh" is a RHEL box with no ghostty/kitty/wezterm
-terminfo entry. gish's terminal layer (`internal/term`) is
+terminfo entry. koi's terminal layer (`internal/term`) is
 escape-sequence based end to end — `charmbracelet/ultraviolet` and
 `golang.org/x/term`, no terminfo lookup anywhere — so there is nothing to
 push. kitty ships a compiled terminfo entry beside its binary precisely
-to solve this problem; gish does not have it.
+to solve this problem; koi does not have it.
 
 **Cross-platform builds are not downloaded.** Going from an arm64 laptop
-to an amd64 server needs a build for the far side, and gish does not
-fetch one: [#112](https://github.com/blairham/gish/issues/112) settled
+to an amd64 server needs a build for the far side, and koi does not
+fetch one: [#112](https://github.com/blairham/koi-shell/issues/112) settled
 the scope line at *native for the keystroke, prompt, and cd path;
 delegate everything else*, and a release downloader carries a package
 manager's obligations. Drop a build in
-`$XDG_CACHE_HOME/gish/remote-bin/<os>-<arch>/gish` and the error message
+`$XDG_CACHE_HOME/koi/remote-bin/<os>-<arch>/koi` and the error message
 tells you the exact `go build` line if you have not.
 
 ## What it will never do
 
 - **Never install.** No `chsh`, no remote dotfile edits, no daemon.
-  A `~/.bashrc` hook that auto-launches gish is the obvious shortcut and
+  A `~/.bashrc` hook that auto-launches koi is the obvious shortcut and
   it is forbidden: it breaks `rsync` and `scp` the day the remote rc
   prints one byte. The POSIX-clean non-interactive contract is exactly
   what that protects.
-- **Never shadow `ssh`.** `gish ssh` is explicit. Auto-hijacking `ssh`
+- **Never shadow `ssh`.** `koi ssh` is explicit. Auto-hijacking `ssh`
   would drop executables on servers people do not own — that trips
   file-integrity monitoring (Tripwire, Wazuh) and violates change control
   at plenty of shops.
 - **Never carry secrets.** What travels is a generated rc file of
-  `GISH_*` display settings, mode 0600, named by its hash and passed to
-  the remote gish *as a path* — argv is world-readable through `/proc`,
+  `KOI_*` display settings, mode 0600, named by its hash and passed to
+  the remote koi *as a path* — argv is world-readable through `/proc`,
   and `SendEnv` is restricted server-side by `AcceptEnv`. History does
   not travel. Credentials do not travel. Plugins do not travel in v1;
   the deadline-bounded degradation already makes their absence safe.
@@ -118,12 +118,12 @@ config ssh.bring ask        # default: ask once per host, then remember
 config ssh.bring always     # trust yourself
 config ssh.bring never      # off
 
-gish ssh --ephemeral host   # wipe the dropped files when the session ends
-gish ssh --forget host      # forget the remembered answer, ask again
-gish ssh --uninstall host   # remove everything gish left there
+koi ssh --ephemeral host   # wipe the dropped files when the session ends
+koi ssh --forget host      # forget the remembered answer, ask again
+koi ssh --uninstall host   # remove everything koi left there
 ```
 
-Remembered per-host answers live in `$XDG_DATA_HOME/gish/ssh-hosts.json`.
+Remembered per-host answers live in `$XDG_DATA_HOME/koi/ssh-hosts.json`.
 It is preference state, not security state: a corrupt file resets to
 "ask again", which is the direction that touches fewer hosts.
 

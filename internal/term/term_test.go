@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // fake implements term.Terminal and records raw-mode transitions.

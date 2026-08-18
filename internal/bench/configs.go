@@ -13,9 +13,9 @@ import (
 // that column is a magic trick.
 
 // StartupConfigs builds the comparison matrix for the shells present
-// on this machine. gishBin is the binary under test.
-func StartupConfigs(gishBin string) []Config {
-	gishEnv := []string{
+// on this machine. koiBin is the binary under test.
+func StartupConfigs(koiBin string) []Config {
+	koiEnv := []string{
 		"HOME={{home}}",
 		"XDG_CONFIG_HOME={{home}}/config",
 		"XDG_DATA_HOME={{home}}/data",
@@ -25,28 +25,28 @@ func StartupConfigs(gishBin string) []Config {
 	}
 	configs := []Config{
 		{
-			Label: "gish (naked default)", Bin: gishBin,
-			Env:  append(slicesClone(gishEnv), "GISH_PROMPT="+marker+" "),
+			Label: "koi (naked default)", Bin: koiBin,
+			Env:  append(slicesClone(koiEnv), "KOI_PROMPT="+marker+" "),
 			Note: "out-of-box: no rc, no plugins, stock prompt",
 		},
 		{
-			Label: "gish (p10k theme)", Bin: gishBin,
-			// The marker cannot be GISH_PROMPT here: a manual prompt
+			Label: "koi (p10k theme)", Bin: koiBin,
+			// The marker cannot be KOI_PROMPT here: a manual prompt
 			// outranks the theme, so setting it would measure a string
 			// literal and call it a theme. Instead the theme renders in
 			// full — directory, git, every segment — and its prompt
 			// character *is* the marker, so the clock stops only once
 			// the whole prompt has been computed.
-			Env: append(slicesClone(gishEnv),
-				"GISH_THEME=p10k",
+			Env: append(slicesClone(koiEnv),
+				"KOI_THEME=p10k",
 				"POWERLEVEL9K_PROMPT_CHAR_OK_CONTENT_EXPANSION="+marker,
 				"POWERLEVEL9K_PROMPT_CHAR_ERROR_CONTENT_EXPANSION="+marker),
 			Note: "the full native powerlevel10k engine, every segment resolved",
 		},
 		{
-			Label: "gish (lint + highlight + suggestions)", Bin: gishBin,
-			Env: append(slicesClone(gishEnv),
-				"GISH_LINT=on", "GISH_PROMPT="+marker+" "),
+			Label: "koi (lint + highlight + suggestions)", Bin: koiBin,
+			Env: append(slicesClone(koiEnv),
+				"KOI_LINT=on", "KOI_PROMPT="+marker+" "),
 			Note: "every interactive feature on",
 		},
 	}
@@ -113,7 +113,7 @@ func StartupConfigs(gishBin string) []Config {
 }
 
 // PowerlevelConfig is the head-to-head: real zsh running real
-// powerlevel10k, against gish running its native port of it.
+// powerlevel10k, against koi running its native port of it.
 //
 // This is the only comparison that answers "is the port actually
 // faster", and it is deliberately generous to upstream — instant prompt
@@ -147,8 +147,8 @@ func PowerlevelConfig() (Config, bool) {
 		rc += "source " + p10krc + "\n"
 		note = "powerlevel10k with the measuring user's own .p10k.zsh"
 	}
-	rc += "gish_bench_marker() { print -n '" + marker + " ' }\n" +
-		"precmd_functions+=(gish_bench_marker)\n"
+	rc += "koi_bench_marker() { print -n '" + marker + " ' }\n" +
+		"precmd_functions+=(koi_bench_marker)\n"
 
 	return Config{
 		Label: "zsh + powerlevel10k", Bin: zsh,
@@ -158,7 +158,7 @@ func PowerlevelConfig() (Config, bool) {
 			"TERM=xterm-256color", "PATH=" + os.Getenv("PATH"),
 		},
 		RC:   rc,
-		Note: note + " — the thing gish's p10k theme is a port of",
+		Note: note + " — the thing koi's p10k theme is a port of",
 	}, true
 }
 
@@ -223,8 +223,8 @@ func RealZshConfig() (Config, bool) {
 		// prompt from precmd hooks, so the marker is appended as the
 		// last precmd instead — it prints once the real prompt is ready.
 		RC: "source " + rc + "\n" +
-			"gish_bench_marker() { print -n '" + marker + " ' }\n" +
-			"precmd_functions+=(gish_bench_marker)\n",
+			"koi_bench_marker() { print -n '" + marker + " ' }\n" +
+			"precmd_functions+=(koi_bench_marker)\n",
 		Note: "the measuring user's own " + itoa(lines) + "-line .zshrc (plugin manager, theme, tool hooks)",
 	}, true
 }
@@ -234,7 +234,7 @@ func KeystrokeScenarios() []KeystrokeScenario {
 	return []KeystrokeScenario{
 		{
 			Scenario: "plain insert", Key: 'x',
-			Env:  []string{"NO_COLOR=1", "GISH_LINT=off"},
+			Env:  []string{"NO_COLOR=1", "KOI_LINT=off"},
 			Note: "no highlighting, no suggestions: the editor floor",
 		},
 		{
@@ -245,13 +245,13 @@ func KeystrokeScenarios() []KeystrokeScenario {
 		{
 			Scenario: "insert with highlight + suggestions", Key: 'o',
 			Prefix: "ech",
-			Env:    []string{"GISH_LINT=on"},
+			Env:    []string{"KOI_LINT=on"},
 			Note:   "highlighting, history ghost text, and footgun lint all on",
 		},
 		{
 			Scenario: "insert mid-command with lint", Key: 'p',
 			Prefix: "rm -rf $tm",
-			Env:    []string{"GISH_LINT=on"},
+			Env:    []string{"KOI_LINT=on"},
 			Note:   "the lint path with a real finding to report",
 		},
 		{

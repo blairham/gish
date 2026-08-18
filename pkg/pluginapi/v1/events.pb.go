@@ -13,7 +13,7 @@
 // inherited rather than invented:
 //
 //   - **No exec channel, ever.** A plugin proposes; the shell decides.
-//     This is the #111 line — gish hosts other people's agents rather
+//     This is the #111 line — koi hosts other people's agents rather
 //     than being one — and it is why orchestration cannot move behind
 //     the plugin boundary. Every proposal that leads to running
 //     something goes through the same preview-and-approve surfaces as
@@ -362,7 +362,7 @@ const file_koi_plugin_v1_events_proto_rawDesc = "" +
 	"\x16EVENT_KIND_FILE_CHANGE\x10\x03\x12\x1a\n" +
 	"\x16EVENT_KIND_SESSION_END\x10\x042R\n" +
 	"\vShellEvents\x12C\n" +
-	"\tSubscribe\x12\x19.koi.plugin.v1.ShellEvent\x1a\x17.koi.plugin.v1.Proposal(\x010\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\tSubscribe\x12\x19.koi.plugin.v1.ShellEvent\x1a\x17.koi.plugin.v1.Proposal(\x010\x01B:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
 	file_koi_plugin_v1_events_proto_rawDescOnce sync.Once

@@ -5,7 +5,7 @@
 //	plugins/<user---repo>/    cloned plugin repositories
 //	snippets/<sanitized-url>/ downloaded single-file snippets
 //	completions/              symlinked _* completion files (one fpath entry)
-//	run/                      generated per-object load payloads (sourced by gish)
+//	run/                      generated per-object load payloads (sourced by koi)
 //
 // The layout and $ZI_GO_HOME override are kept identical to standalone
 // zi-go so existing installs carry over unchanged.

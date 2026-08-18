@@ -28,14 +28,14 @@ meaning, for the life of the 1.x line.
 
 | surface | what is frozen |
 | --- | --- |
-| **rc file** | it is bash syntax, run by the same interpreter that runs your scripts. The file locations (`$GISH_RC`, `$XDG_CONFIG_HOME/gish/gishrc`, `~/.gishrc`) and their precedence do not change. |
-| **`GISH_*` variables** | every documented variable keeps its name and its accepted values. New values may be added; existing ones keep meaning what they meant. |
+| **rc file** | it is bash syntax, run by the same interpreter that runs your scripts. The file locations (`$KOI_RC`, `$XDG_CONFIG_HOME/koi/koirc`, `~/.koirc`) and their precedence do not change. |
+| **`KOI_*` variables** | every documented variable keeps its name and its accepted values. New values may be added; existing ones keep meaning what they meant. |
 | **`config` keys** | every key `config` accepts, including the dotted theme keys. |
 | **`plugins.toml`** | the manifest schema: field names, types, and the meaning of `source`, `kind`, `pin`, `lazy`, `enabled`. |
 | **prompt escapes** | the escape set is frozen and zsh-spelled: `%n`/`%u`, `%m`/`%h`, `%~`/`%w`, `%W`, `%d`, `%?`, `%#`, `%p{id}`, `%%`. Unknown escapes pass through, which is what makes adding one safe. |
-| **theme knobs** | `GISH_THEME`, the `GISH_THEME_*` family, and the `POWERLEVEL9K_*` names the p10k engine reads. |
-| **bash's own surface** | `PROMPT_COMMAND`, `PS0`, `PS1`, `trap … DEBUG`, `bind -x`, `complete`/`compgen`, `command_not_found_handle`. These are not gish's to redefine — they are bash's, and the point of implementing them is that the scripts you already have keep working. |
-| **the plugin contract** | `proto/gish/plugin/v1` is frozen-additive: new fields and new RPCs are fine; renames, type changes and removals are not. A breaking change means a `v2` package and a `Handshake.ProtocolVersion` bump, with v1 plugins still loading. |
+| **theme knobs** | `KOI_THEME`, the `KOI_THEME_*` family, and the `POWERLEVEL9K_*` names the p10k engine reads. |
+| **bash's own surface** | `PROMPT_COMMAND`, `PS0`, `PS1`, `trap … DEBUG`, `bind -x`, `complete`/`compgen`, `command_not_found_handle`. These are not koi's to redefine — they are bash's, and the point of implementing them is that the scripts you already have keep working. |
+| **the plugin contract** | `proto/koi/plugin/v1` is frozen-additive: new fields and new RPCs are fine; renames, type changes and removals are not. A breaking change means a `v2` package and a `Handshake.ProtocolVersion` bump, with v1 plugins still loading. |
 
 ## Not covered, stated plainly
 
@@ -55,7 +55,7 @@ meaning, for the life of the 1.x line.
   bash/zsh *shape*, but the exact characters are not a contract.
 - **Performance numbers.** They are measured and published
   ([bench.md](bench.md)), not promised.
-- **Behavior that is a bug.** If gish does something that contradicts
+- **Behavior that is a bug.** If koi does something that contradicts
   its own documentation, fixing it is not a breaking change.
 
 ## How a change happens when one has to
@@ -76,7 +76,7 @@ meaning, for the life of the 1.x line.
 
 ## The version line, and the road to 1.0
 
-gish is pre-1.0 today, and this page is deliberately written as though
+koi is pre-1.0 today, and this page is deliberately written as though
 it were not, because the research finding is specific: **a published
 stability contract matters more than the version number.** The surfaces
 above were designed with freezing in mind — the prompt escape set
@@ -122,7 +122,7 @@ shape of nushell's *"Should we plan on 1.0 at all?"*.
    table above, or explicitly in *Not covered*. Unclassified today and
    in scope for this item: the `config` keys added since the table was
    written (`blocks`, `jump`, `tools`, `highlight`, `editmode`,
-   `ssh.bring`), the vi-mode keymap (#163), and `gish ssh`'s per-host
+   `ssh.bring`), the vi-mode keymap (#163), and `koi ssh`'s per-host
    policy state.
 2. **The bash-suite scoreboard is published** (#211). Freezing a
    compatibility claim without knowing the incumbent's own denominator

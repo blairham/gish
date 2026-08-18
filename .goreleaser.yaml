@@ -1,13 +1,13 @@
 version: 2
 
-# GoReleaser configuration for gish
+# GoReleaser configuration for koi
 # See: https://goreleaser.com
-project_name: gish
+project_name: koi
 
 builds:
-- id: gish
-  binary: gish
-  main: ./cmd/gish
+- id: koi
+  binary: koi
+  main: ./cmd/koi
   env:
   - CGO_ENABLED=0
   goos:
@@ -24,10 +24,10 @@ builds:
   - -X main.date={{.Date}}
 
 # Tier-2 plugins ship alongside the shell; installing is dropping them
-# into $XDG_DATA_HOME/gish/plugins.
-- id: gish-git
-  binary: gish-git
-  main: ./cmd/gish-git
+# into $XDG_DATA_HOME/koi/plugins.
+- id: koi-git
+  binary: koi-git
+  main: ./cmd/koi-git
   env:
   - CGO_ENABLED=0
   goos:
@@ -40,9 +40,9 @@ builds:
   ldflags:
   - -s -w
 
-- id: gish-carapace
-  binary: gish-carapace
-  main: ./cmd/gish-carapace
+- id: koi-carapace
+  binary: koi-carapace
+  main: ./cmd/koi-carapace
   env:
   - CGO_ENABLED=0
   goos:
@@ -75,7 +75,7 @@ notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       ids:
-        - gish
+        - koi
       sign:
         certificate: "{{.Env.MACOS_SIGN_P12}}"
         password: "{{.Env.MACOS_SIGN_PASSWORD}}"
@@ -113,7 +113,7 @@ changelog:
 # Formula/, not Casks/ — cswap, ghorg, pre-commit, stevedore all do this).
 # Formulas don't get Gatekeeper-quarantined, so no xattr hook is needed.
 brews:
-- name: gish
+- name: koi
   # Skip the tap push until HOMEBREW_TAP_TOKEN exists as a repo secret;
   # the GitHub release itself still publishes.
   skip_upload: '{{ if isEnvSet "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
@@ -122,53 +122,53 @@ brews:
     name: homebrew-tap
     token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
   directory: Formula
-  homepage: https://github.com/blairham/gish
+  homepage: https://github.com/blairham/koi-shell
   description: "Interactive shell: zsh ergonomics, bash compatibility, gRPC-native plugins"
   license: MIT
   install: |
-    bin.install "gish"
-    bin.install "gish-git"
-    bin.install "gish-carapace"
+    bin.install "koi"
+    bin.install "koi-git"
+    bin.install "koi-carapace"
   caveats: |
-    To use gish as your login shell:
-      echo "#{opt_bin}/gish" | sudo tee -a /etc/shells
-      chsh -s "#{opt_bin}/gish"
+    To use koi as your login shell:
+      echo "#{opt_bin}/koi" | sudo tee -a /etc/shells
+      chsh -s "#{opt_bin}/koi"
 
     The bundled tier-2 plugins activate once linked into the plugin dir:
-      mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/gish/plugins"
-      ln -sf "#{opt_bin}/gish-git" "#{opt_bin}/gish-carapace" "${XDG_DATA_HOME:-$HOME/.local/share}/gish/plugins/"
+      mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/koi/plugins"
+      ln -sf "#{opt_bin}/koi-git" "#{opt_bin}/koi-carapace" "${XDG_DATA_HOME:-$HOME/.local/share}/koi/plugins/"
   test: |
-    system "#{bin}/gish", "--version"
+    system "#{bin}/koi", "--version"
 
 # Windows distribution (#89). Both mirror the homebrew-tap pattern: the
 # upload is skipped unless its token exists, so a release from a machine
 # without the secrets still publishes the GitHub release itself.
 scoops:
-- name: gish
+- name: koi
   skip_upload: '{{ if isEnvSet "SCOOP_BUCKET_TOKEN" }}false{{ else }}true{{ end }}'
   repository:
     owner: blairham
     name: scoop-bucket
     token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
-  homepage: https://github.com/blairham/gish
+  homepage: https://github.com/blairham/koi-shell
   description: "Interactive shell: zsh ergonomics, bash compatibility, native plugins"
   license: MIT
 
 winget:
-- name: gish
+- name: koi
   publisher: blairham
   short_description: "Interactive shell: zsh ergonomics, bash compatibility, native plugins"
   license: MIT
-  homepage: https://github.com/blairham/gish
+  homepage: https://github.com/blairham/koi-shell
   # winget's manifests are a PR against microsoft/winget-pkgs, so this
   # needs a fork to push the branch to and a token that can open it.
   skip_upload: '{{ if isEnvSet "WINGET_TOKEN" }}false{{ else }}true{{ end }}'
   publisher_url: https://github.com/blairham
-  package_identifier: blairham.gish
+  package_identifier: blairham.koi
   repository:
     owner: blairham
     name: winget-pkgs
-    branch: "gish-{{ .Version }}"
+    branch: "koi-{{ .Version }}"
     token: "{{ .Env.WINGET_TOKEN }}"
     pull_request:
       enabled: true
@@ -188,4 +188,4 @@ release:
   # assets, not 422 on already_exists (bit us on v0.0.0).
   replace_existing_artifacts: true
   footer: |
-    **Full Changelog**: https://github.com/blairham/gish/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/blairham/koi-shell/compare/{{ .PreviousTag }}...{{ .Tag }}

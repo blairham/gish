@@ -8,20 +8,20 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/promptengine"
+	"github.com/blairham/koi-shell/internal/promptengine"
 )
 
 // The p10k theme's front door in the shell.
 //
-// GISH_THEME=p10k renders through internal/promptengine in this process: no
+// KOI_THEME=p10k renders through internal/promptengine in this process: no
 // subprocess, no plugin, no IPC on the prompt path. The engine is shared
-// with cmd/gish-p10k, which serves the same themes to other shells over
+// with cmd/koi-p10k, which serves the same themes to other shells over
 // the tier-2 contract; this path exists because the shell's own prompt
 // should not pay a round trip to render itself.
 //
 // Configuration layers, later winning over earlier:
 //
-//	1. the preset named by GISH_P10K_PRESET (lean by default)
+//	1. the preset named by KOI_P10K_PRESET (lean by default)
 //	2. the native config file, when one exists
 //	3. POWERLEVEL9K_* set in the session
 //
@@ -58,7 +58,7 @@ func p10kTheme(runner *interp.Runner, info promptInfo) (string, string, string) 
 
 // p10kConfigFor assembles the configuration for this prompt.
 func p10kConfigFor(runner *interp.Runner) *promptengine.Config {
-	return p10kConfig(shellVar(runner, "GISH_P10K_PRESET", promptengine.DefaultPreset), sessionOverrides(runner))
+	return p10kConfig(shellVar(runner, "KOI_P10K_PRESET", promptengine.DefaultPreset), sessionOverrides(runner))
 }
 
 // p10kConfigFromEnv is the same assembly for callers that hold a handler
@@ -67,7 +67,7 @@ func p10kConfigFor(runner *interp.Runner) *promptengine.Config {
 // one, so reading os.Environ would report a configuration the prompt is
 // not actually using.
 func p10kConfigFromEnv(env expand.Environ) *promptengine.Config {
-	name := env.Get("GISH_P10K_PRESET").String()
+	name := env.Get("KOI_P10K_PRESET").String()
 	if name == "" {
 		name = promptengine.DefaultPreset
 	}

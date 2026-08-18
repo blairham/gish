@@ -10,13 +10,13 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/builtins"
+	"github.com/blairham/koi-shell/internal/builtins"
 )
 
 // Local fixes for substrate gaps the handler seams cannot reach (#119).
 //
 // The usual route for a construct the interpreter refuses is the
-// CallHandler: rename the call so it arrives somewhere gish controls
+// CallHandler: rename the call so it arrives somewhere koi controls
 // (overrides.go). Two constructs never become a call at all — the
 // *parser* classifies them, and the interpreter rejects them inside its
 // own dispatch — so the only seam left is the tree between parse and
@@ -35,11 +35,11 @@ import (
 // and carries the user's functions across with `declare -F`, so a shell
 // that fails both is one those tools cannot drive at all.
 //
-// Scope, stated rather than discovered later: this rewrites what *gish*
+// Scope, stated rather than discovered later: this rewrites what *koi*
 // parses — an interactive line, `-c`, and a script file. `source` and
 // `eval` re-parse inside the interpreter, so a `>|` in a sourced file is
 // still the substrate's answer. Closing that means fixing it upstream,
-// which is what #119 tracks; this is the part gish can carry meanwhile.
+// which is what #119 tracks; this is the part koi can carry meanwhile.
 
 // clobberEquivalent maps each clobbering redirect to the plain form the
 // interpreter implements. `>|` is the bash spelling and the one that
@@ -141,9 +141,9 @@ func litWord(s string) *syntax.Word {
 }
 
 // declFuncsName is the registry name the rewrite dispatches to; the
-// __gish_ prefix keeps it out of the user-facing builtin listing, like
+// __koi_ prefix keeps it out of the user-facing builtin listing, like
 // every other rewritten name.
-const declFuncsName = "__gish_declare_funcs"
+const declFuncsName = "__koi_declare_funcs"
 
 // declareFuncs answers `declare -F`, reading the session runner's own
 // function table.

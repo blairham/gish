@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // buildFixture compiles the fixture plugin once per test run into a
@@ -25,7 +25,7 @@ var (
 func pluginDir(t *testing.T) string {
 	t.Helper()
 	fixtureOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "gish-fixture")
+		dir, err := os.MkdirTemp("", "koi-fixture")
 		if err != nil {
 			fixtureErr = err
 			return

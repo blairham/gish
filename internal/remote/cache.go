@@ -14,7 +14,7 @@ import (
 // already running, and self-copy is both the fastest path and the one
 // with no way to be out of date.
 //
-// Cross-platform needs a build for the far side, and gish deliberately
+// Cross-platform needs a build for the far side, and koi deliberately
 // does **not** fetch one. #112 settled the scope line — native for the
 // keystroke, prompt, and cd path; delegate everything else — and a
 // release downloader is a package manager's job, with a package
@@ -38,7 +38,7 @@ var (
 	}
 )
 
-// BinCacheDir is where cross-platform gish builds live, one per target.
+// BinCacheDir is where cross-platform koi builds live, one per target.
 func BinCacheDir() string {
 	base := os.Getenv("XDG_CACHE_HOME")
 	if base == "" {
@@ -48,10 +48,10 @@ func BinCacheDir() string {
 		}
 		base = filepath.Join(home, ".cache")
 	}
-	return filepath.Join(base, "gish", "remote-bin")
+	return filepath.Join(base, "koi", "remote-bin")
 }
 
-// BinaryFor returns the path of a gish executable that will run on the
+// BinaryFor returns the path of a koi executable that will run on the
 // probed platform.
 func BinaryFor(p Probe) (string, error) {
 	if p.OS == goos() && p.Arch == goarch() {
@@ -67,9 +67,9 @@ func BinaryFor(p Probe) (string, error) {
 		return "", fmt.Errorf("%w: remote is Windows; WSL2 is the supported story (#110)", errNoBinary)
 	}
 	target := p.OS + "-" + p.Arch
-	path := filepath.Join(BinCacheDir(), target, "gish")
+	path := filepath.Join(BinCacheDir(), target, "koi")
 	if _, err := os.Stat(path); err != nil {
-		return "", fmt.Errorf("%w for %s\n  build one:  GOOS=%s GOARCH=%s CGO_ENABLED=0 go build -ldflags='-s -w' -o %s ./cmd/gish\n  or drop a release binary there yourself",
+		return "", fmt.Errorf("%w for %s\n  build one:  GOOS=%s GOARCH=%s CGO_ENABLED=0 go build -ldflags='-s -w' -o %s ./cmd/koi\n  or drop a release binary there yourself",
 			errNoBinary, target, p.OS, p.Arch, path)
 	}
 	return path, nil
@@ -86,7 +86,7 @@ func StaticCheck() (ok bool, detail string) {
 	// set by the toolchain, so this is a compile-time truth reported at
 	// runtime rather than an inspection of the file.
 	if cgoEnabled {
-		return false, "this gish was built with cgo, so it may not run on a remote with a different libc (Alpine/musl); rebuild with CGO_ENABLED=0"
+		return false, "this koi was built with cgo, so it may not run on a remote with a different libc (Alpine/musl); rebuild with CGO_ENABLED=0"
 	}
 	return true, "pure-Go static build: portable across glibc and musl"
 }

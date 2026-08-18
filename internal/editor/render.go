@@ -13,7 +13,7 @@ import (
 // rewritten. It tracks the cursor's screen row relative to the top of the
 // region, so every frame starts by homing to the region origin.
 //
-// This render pipeline is deliberately gish-owned (#1): plugin ghost
+// This render pipeline is deliberately koi-owned (#1): plugin ghost
 // text, completion menus, and deadline-driven prompt repaints all land
 // here later.
 type renderer struct {

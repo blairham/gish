@@ -9,14 +9,14 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/builtins"
+	"github.com/blairham/koi-shell/internal/builtins"
 )
 
 // runHelpScript runs src through the full RunReader path, which stacks
 // overrideCallHandler and every command handler runHelp rewrites into.
 func runHelpScript(t *testing.T, src string) (stdout, stderr string, err error) {
 	t.Helper()
-	t.Setenv("GISH_RC", filepath.Join(t.TempDir(), "gishrc"))
+	t.Setenv("KOI_RC", filepath.Join(t.TempDir(), "koirc"))
 	var out, errOut strings.Builder
 	err = RunReader(t.Context(), strings.NewReader(src), "test",
 		interp.StdIO(nil, &out, &errOut))
@@ -35,7 +35,7 @@ func TestHelpCoversEveryBuiltin(t *testing.T) {
 	}
 	// The native names registered per-session (jobs/fg/bg, kill, ...) are
 	// not visible from a bare test process, so the full set is spelled
-	// out; nativebuiltins_test.go in cmd/gish keeps this list honest.
+	// out; nativebuiltins_test.go in cmd/koi keeps this list honest.
 	natives := []string{
 		"bg", "builtins", "fc", "fg", "help", "jobs", "kill", "newgrp",
 		"parallel", "plugins", "times", "umask",
@@ -47,7 +47,7 @@ func TestHelpCoversEveryBuiltin(t *testing.T) {
 	}
 	for _, name := range callHandlerCommands {
 		if _, ok := helpTopics[name]; !ok && !slices.Contains(helpRewrites, name) {
-			t.Errorf("gish command %q has neither a help topic nor a rewrite", name)
+			t.Errorf("koi command %q has neither a help topic nor a rewrite", name)
 		}
 	}
 }
@@ -98,7 +98,7 @@ func TestHelpOverviewListsTheGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, group := range []string{"gish commands:", "gish builtins:", "shell builtins:"} {
+	for _, group := range []string{"koi commands:", "koi builtins:", "shell builtins:"} {
 		if !strings.Contains(out, group) {
 			t.Errorf("overview missing %q: %q", group, out)
 		}

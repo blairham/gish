@@ -10,8 +10,8 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/dirjump"
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/dirjump"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // Native z (#94): frecency jumping with the shell as the tracking
@@ -47,7 +47,7 @@ func newJumpManager(store *history.Store) *jumpManager {
 // note records a directory change at prompt time; consecutive prompts
 // in the same directory count once.
 func (j *jumpManager) note(runner *interp.Runner) {
-	if shellVar(runner, "GISH_JUMP", "on") == "off" {
+	if shellVar(runner, "KOI_JUMP", "on") == "off" {
 		return
 	}
 	dir := runner.Dir

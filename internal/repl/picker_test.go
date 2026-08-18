@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 func TestHistoryDetailShowsWhatMattersForChoosing(t *testing.T) {
@@ -69,7 +69,7 @@ func TestHistoryPickFnNilWithoutStore(t *testing.T) {
 func TestPickWithoutTerminalDoesNotHang(t *testing.T) {
 	// The scripted path: `pick` needs a terminal, and must say so and
 	// exit rather than block a pipeline forever.
-	rc := t.TempDir() + "/gishrc"
+	rc := t.TempDir() + "/koirc"
 	_, errOut, err := runConfigScript(t, rc, "printf 'a\\nb\\n' | pick\n")
 	if err == nil {
 		t.Error("pick without a terminal should fail, not succeed silently")
@@ -80,7 +80,7 @@ func TestPickWithoutTerminalDoesNotHang(t *testing.T) {
 }
 
 func TestPickUsageAndBadFlags(t *testing.T) {
-	rc := t.TempDir() + "/gishrc"
+	rc := t.TempDir() + "/koirc"
 	out, _, err := runConfigScript(t, rc, "pick --help\n")
 	if err != nil || !strings.Contains(out, "usage: … | pick") {
 		t.Errorf("help = %q, %v", out, err)

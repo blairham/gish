@@ -3,7 +3,7 @@
 // like a builtin: dispatched by name before PATH lookup, with its I/O
 // streamed over the connection.
 //
-// Precedence rules (decided on #11): interpreter and gish-native builtin
+// Precedence rules (decided on #11): interpreter and koi-native builtin
 // names are reserved — claims on them are rejected. Shell functions
 // shadow plugin commands (the user always wins). Plugin commands shadow
 // PATH binaries, like functions do. Between plugins, the

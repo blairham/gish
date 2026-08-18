@@ -9,7 +9,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/repl"
+	"github.com/blairham/koi-shell/internal/repl"
 )
 
 func TestRunReaderEcho(t *testing.T) {

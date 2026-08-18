@@ -1,4 +1,4 @@
-// Package complete implements gish's core completion providers: command
+// Package complete implements koi's core completion providers: command
 // names and file paths. Per docs/plugins.md's dividing rule these are
 // core (pure-local, keystroke-class); plugin providers merge in behind
 // their latency budget at the repl layer.

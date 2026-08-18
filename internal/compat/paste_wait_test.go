@@ -29,7 +29,7 @@ func TestConsumeThroughKeepsWhatFollowsTheMarker(t *testing.T) {
 	// One read carrying the finished command *and* the next prompt: the
 	// coalescing a loaded machine produces.
 	var buf bytes.Buffer
-	buf.WriteString("first-command\r\n" + dMark + "\x1b\\" + "\x1b]133;A\x1b\\gish% " + bMark + "\x1b\\")
+	buf.WriteString("first-command\r\n" + dMark + "\x1b\\" + "\x1b]133;A\x1b\\koi% " + bMark + "\x1b\\")
 
 	idx := bytes.Index(buf.Bytes(), []byte(dMark))
 	if idx < 0 {
@@ -69,7 +69,7 @@ func TestConsumeThroughHandlesTheWholeBuffer(t *testing.T) {
 
 // The failure, reproduced deterministically.
 //
-// waitPast/waitFor are closures over one buffer inside pasteIntoGish, so
+// waitPast/waitFor are closures over one buffer inside pasteIntoKoi, so
 // this models that pair exactly: wait for the setup command's D mark,
 // then for the next prompt's B mark, with both arriving in ONE read.
 // That coalescing is what a loaded runner produces, and it is the whole
@@ -82,7 +82,7 @@ func TestSetupWaitSurvivesCoalescedMarks(t *testing.T) {
 		bMark = "\x1b]133;B"
 	)
 	// One read: command output, its D mark, and the next prompt's B mark.
-	coalesced := "first-command\r\n" + dMark + "0\x1b\\\x1b]133;A\x1b\\gish% " + bMark + "\x1b\\"
+	coalesced := "first-command\r\n" + dMark + "0\x1b\\\x1b]133;A\x1b\\koi% " + bMark + "\x1b\\"
 
 	for _, tt := range []struct {
 		name    string

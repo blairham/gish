@@ -8,7 +8,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/editor"
+	"github.com/blairham/koi-shell/internal/editor"
 )
 
 // runnerWithVars builds a runner whose session variables are set, which
@@ -56,7 +56,7 @@ func spanFor(t *testing.T, spans []editor.HighlightSpan, start int) editor.Highl
 // The tests below inject a fake known-set to isolate the span logic.
 // This one drives highlightFn's real predicate, because that is where
 // the bug lived (#193): every span test passed for months while the
-// live verdict painted aliases and gish's own commands red.
+// live verdict painted aliases and koi's own commands red.
 func TestHighlightFnUsesTheSessionVocabulary(t *testing.T) {
 	t.Cleanup(sessionAliases.reset)
 	sessionAliases.reset()
@@ -66,7 +66,7 @@ func TestHighlightFnUsesTheSessionVocabulary(t *testing.T) {
 	for word, want := range map[string]string{
 		"ll":       hlGoodCmd, // alias
 		"doctor":   hlGoodCmd, // CallHandler-routed command
-		"builtins": hlGoodCmd, // gish-native builtin
+		"builtins": hlGoodCmd, // koi-native builtin
 		"cd":       hlGoodCmd, // interpreter builtin
 		"zzqqxx":   hlBadCmd,  // nothing anywhere
 	} {
@@ -114,7 +114,7 @@ func TestHighlightStatesAreBothColors(t *testing.T) {
 func TestHighlightPathsAreNeverRed(t *testing.T) {
 	t.Parallel()
 
-	spans := highlightSpans("./build/gish -c x", knownSet())
+	spans := highlightSpans("./build/koi -c x", knownSet())
 	if s := spanFor(t, spans, 0); s.Style == hlBadCmd {
 		t.Errorf("path command marked red: %+v", s)
 	}
@@ -183,8 +183,8 @@ func TestHighlightModes(t *testing.T) {
 		{"nonsense", highlightOn, true}, // a typo in an rc never breaks the prompt
 	}
 	for _, tt := range tests {
-		t.Run("GISH_HIGHLIGHT="+tt.set, func(t *testing.T) {
-			runner := runnerWithVars(t, map[string]string{"GISH_HIGHLIGHT": tt.set})
+		t.Run("KOI_HIGHLIGHT="+tt.set, func(t *testing.T) {
+			runner := runnerWithVars(t, map[string]string{"KOI_HIGHLIGHT": tt.set})
 			if got := highlightMode(runner); got != tt.wantMode {
 				t.Errorf("highlightMode = %q, want %q", got, tt.wantMode)
 			}
@@ -228,8 +228,8 @@ func TestSuggestKnob(t *testing.T) {
 	t.Parallel()
 
 	for set, want := range map[string]bool{"": true, "on": true, "off": false, "OFF": false} {
-		if got := suggestEnabled(runnerWithVars(t, map[string]string{"GISH_SUGGEST": set})); got != want {
-			t.Errorf("GISH_SUGGEST=%q enabled = %v, want %v", set, got, want)
+		if got := suggestEnabled(runnerWithVars(t, map[string]string{"KOI_SUGGEST": set})); got != want {
+			t.Errorf("KOI_SUGGEST=%q enabled = %v, want %v", set, got, want)
 		}
 	}
 }

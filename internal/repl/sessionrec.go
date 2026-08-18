@@ -7,7 +7,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/session"
+	"github.com/blairham/koi-shell/internal/session"
 )
 
 // Recording the live session (#103).
@@ -16,7 +16,7 @@ import (
 // next one is typed — which is both the moment the state is meaningful
 // and the moment the shell is otherwise idle. It is a small file written
 // with the same write-then-rename discipline as every other piece of
-// gish state, so a shell killed mid-write leaves the previous record
+// koi state, so a shell killed mid-write leaves the previous record
 // intact rather than a truncated one.
 //
 // Recording is skipped entirely when nothing has changed, so a session
@@ -59,7 +59,7 @@ func newSessionRecorder(id string, runner *interp.Runner, jobsOf func() []string
 //
 // Both sources are consulted on purpose. runner.Vars holds what the
 // session assigned; runner.Env holds what it inherited and exported.
-// Reading only Vars is the same mistake that made GISH_THEME=p10k a
+// Reading only Vars is the same mistake that made KOI_THEME=p10k a
 // no-op until #45 — a variable can be perfectly set and simply not be
 // in the map you happened to look at.
 func snapshotEnv(runner *interp.Runner) map[string]string {
@@ -189,7 +189,7 @@ func (s *sessionRecorder) close() {
 	s.store.Prune(time.Now())
 }
 
-// restoreOnStart is the `gish --restore ID` path: land in the recorded
+// restoreOnStart is the `koi --restore ID` path: land in the recorded
 // directory before the first prompt, and let the environment be
 // proposed the way `sessions restore` proposes it.
 func restoreOnStart(id string, runner *interp.Runner) (detail string, ok bool) {

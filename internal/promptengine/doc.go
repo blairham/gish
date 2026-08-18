@@ -1,8 +1,8 @@
-// Package promptengine is gish's native prompt engine: the prompt shape
+// Package promptengine is koi's native prompt engine: the prompt shape
 // people came for, rewritten in Go.
 //
 // This is a port of *behavior*, not of code. powerlevel10k is a ~10k
-// line zsh program; gish will not carry a zsh dialect on the prompt
+// line zsh program; koi will not carry a zsh dialect on the prompt
 // path (AGENTS.md), so nothing here interprets zsh, shells out, or
 // reads a .p10k.zsh at render time. The upstream project (MIT,
 // Roman Perepelitsa and contributors, https://github.com/romkatv/powerlevel10k)

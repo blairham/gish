@@ -16,7 +16,7 @@ import (
 // line, because the namespace is already the model and a second
 // vocabulary on top of it would only be something to keep in sync:
 //
-//	# gish p10k configuration
+//	# koi p10k configuration
 //	preset = lean
 //	DIR_FOREGROUND = 31
 //	LEFT_PROMPT_ELEMENTS = dir vcs newline prompt_char
@@ -26,7 +26,7 @@ import (
 // deliberately not TOML or YAML: there is no nesting to express, and a
 // prompt configuration should be greppable and diffable.
 
-// ConfigFileName is the file's name inside the gish config directory.
+// ConfigFileName is the file's name inside the koi config directory.
 const ConfigFileName = "p10k.conf"
 
 // ConfigPath returns where the native configuration lives, honoring
@@ -40,7 +40,7 @@ func ConfigPath() (string, error) {
 		}
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "gish", ConfigFileName), nil
+	return filepath.Join(dir, "koi", ConfigFileName), nil
 }
 
 // LoadNativeConfig reads the native configuration, returning nil when
@@ -118,8 +118,8 @@ func LoadConfigFile(path string) *Config {
 // and every configuration derived from it separate segments by setting
 // LEFT_SUBSEGMENT_SEPARATOR to a single space. Trimming the value on the
 // way in turns that space into the empty string, and the prompt renders
-// with its segments run together — `~/dev/gishmain` instead of
-// `~/dev/gish main`. So surrounding space is stripped only for unquoted
+// with its segments run together — `~/dev/koimain` instead of
+// `~/dev/koi main`. So surrounding space is stripped only for unquoted
 // values; a quoted value keeps exactly what is between the quotes.
 func unquoteValue(raw string) string {
 	v := strings.TrimSpace(raw)
@@ -174,7 +174,7 @@ func SaveNativeConfig(cfg *Config) (string, error) {
 	}
 
 	var b strings.Builder
-	b.WriteString("# gish prompt configuration\n")
+	b.WriteString("# koi prompt configuration\n")
 	b.WriteString("# Written by `prompt configure`. Edit freely: one setting per line.\n\n")
 	for _, key := range cfg.Keys() {
 		if values := cfg.lists[key]; values != nil {

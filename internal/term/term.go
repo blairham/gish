@@ -1,4 +1,4 @@
-// Package term abstracts the platform TTY behind gish's own small
+// Package term abstracts the platform TTY behind koi's own small
 // interface, so the line editor (#2) depends on this contract rather than
 // on any particular terminal library.
 //

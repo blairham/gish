@@ -40,7 +40,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ThemeProviderClient interface {
-	// Themes enumerates the theme names this plugin offers; GISH_THEME
+	// Themes enumerates the theme names this plugin offers; KOI_THEME
 	// selects by name. Called once after Describe.
 	Themes(ctx context.Context, in *ThemesRequest, opts ...grpc.CallOption) (*ThemesResponse, error)
 	// RenderPrompt produces the full prompt set for one read.
@@ -79,7 +79,7 @@ func (c *themeProviderClient) RenderPrompt(ctx context.Context, in *RenderPrompt
 // All implementations must embed UnimplementedThemeProviderServer
 // for forward compatibility.
 type ThemeProviderServer interface {
-	// Themes enumerates the theme names this plugin offers; GISH_THEME
+	// Themes enumerates the theme names this plugin offers; KOI_THEME
 	// selects by name. Called once after Describe.
 	Themes(context.Context, *ThemesRequest) (*ThemesResponse, error)
 	// RenderPrompt produces the full prompt set for one read.

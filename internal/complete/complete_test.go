@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/blairham/gish/internal/complete"
+	"github.com/blairham/koi-shell/internal/complete"
 )
 
 func TestAnalyze(t *testing.T) {

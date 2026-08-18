@@ -52,7 +52,7 @@ func controlPath(host string) string {
 	if dir == "" {
 		dir = os.TempDir()
 	}
-	dir = filepath.Join(dir, "gish")
+	dir = filepath.Join(dir, "koi")
 	_ = os.MkdirAll(dir, 0o700) //nolint:errcheck // ssh reports the real failure
 	sum := sha256.Sum256([]byte(host))
 	return filepath.Join(dir, "ctl-"+hex.EncodeToString(sum[:])[:16])

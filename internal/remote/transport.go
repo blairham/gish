@@ -1,15 +1,15 @@
-// Package remote brings gish to a box you only have ssh to (#98).
+// Package remote brings koi to a box you only have ssh to (#98).
 //
 // The pitch is the 2AM incident host: a single static Go binary is
-// scp-able, but nobody does that by hand. `gish ssh host` probes the
-// remote, drops a content-addressed copy of gish where it is allowed to
+// scp-able, but nobody does that by hand. `koi ssh host` probes the
+// remote, drops a content-addressed copy of koi where it is allowed to
 // run, and execs an interactive session — and falls back to plain ssh
 // the instant anything about that is not true.
 //
 // Two invariants shape every file in this package:
 //
 //   - **Never install.** No chsh, no remote dotfile edits, no daemon.
-//     A ~/.bashrc hook that auto-launches gish is the obvious shortcut
+//     A ~/.bashrc hook that auto-launches koi is the obvious shortcut
 //     and it is forbidden: it breaks rsync and scp the day the remote rc
 //     prints one byte.
 //   - **Every failure lands in plain ssh**, with one line on stderr.

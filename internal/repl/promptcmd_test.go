@@ -18,7 +18,7 @@ import (
 func runP10kScript(t *testing.T, stdin, src string) (stdout, stderr string, dir string) {
 	t.Helper()
 	dir = t.TempDir()
-	t.Setenv("GISH_RC", filepath.Join(dir, "gishrc"))
+	t.Setenv("KOI_RC", filepath.Join(dir, "koirc"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "xterm-256color")
@@ -65,7 +65,7 @@ func TestP10kShowNamesUnimplementedElements(t *testing.T) {
 }
 
 func TestP10kPresetWritesConfigAndActivates(t *testing.T) {
-	out, _, dir := runP10kScript(t, "", "p10k preset rainbow\necho theme=$GISH_THEME\n")
+	out, _, dir := runP10kScript(t, "", "p10k preset rainbow\necho theme=$KOI_THEME\n")
 	if !strings.Contains(out, "saved rainbow") {
 		t.Errorf("no confirmation: %q", out)
 	}
@@ -75,7 +75,7 @@ func TestP10kPresetWritesConfigAndActivates(t *testing.T) {
 		t.Errorf("theme not activated: %q", out)
 	}
 
-	conf := filepath.Join(dir, "config", "gish", "p10k.conf")
+	conf := filepath.Join(dir, "config", "koi", "p10k.conf")
 	data, err := os.ReadFile(conf)
 	if err != nil {
 		t.Fatalf("config not written: %v", err)
@@ -84,8 +84,8 @@ func TestP10kPresetWritesConfigAndActivates(t *testing.T) {
 		t.Errorf("rainbow settings not in the file: %s", data)
 	}
 	// And it persisted, so the next shell agrees.
-	rc, err := os.ReadFile(filepath.Join(dir, "gishrc"))
-	if err != nil || !strings.Contains(string(rc), "GISH_THEME=p10k") {
+	rc, err := os.ReadFile(filepath.Join(dir, "koirc"))
+	if err != nil || !strings.Contains(string(rc), "KOI_THEME=p10k") {
 		t.Errorf("theme not persisted to the rc: %q %v", rc, err)
 	}
 }
@@ -95,7 +95,7 @@ func TestP10kPresetRejectsUnknownName(t *testing.T) {
 	if !strings.Contains(errOut, "no preset") {
 		t.Errorf("no error for an unknown preset: %q %q", out, errOut)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "config", "gish", "p10k.conf")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "config", "koi", "p10k.conf")); err == nil {
 		t.Error("a rejected preset should write nothing")
 	}
 }
@@ -116,7 +116,7 @@ func TestP10kImport(t *testing.T) {
 	// Quote the path: a Windows temp directory is full of backslashes,
 	// and unquoted they are escapes to the parser — the import then gets
 	// a mangled path and quietly does nothing.
-	out, _, dir := runP10kScript(t, "", "p10k import '"+zsh+"'\necho theme=$GISH_THEME\n")
+	out, _, dir := runP10kScript(t, "", "p10k import '"+zsh+"'\necho theme=$KOI_THEME\n")
 	if !strings.Contains(out, "imported") {
 		t.Errorf("no import summary: %q", out)
 	}
@@ -128,7 +128,7 @@ func TestP10kImport(t *testing.T) {
 		t.Errorf("import did not activate the theme: %q", out)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, "config", "gish", "p10k.conf"))
+	data, err := os.ReadFile(filepath.Join(dir, "config", "koi", "p10k.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestP10kConfigureWizard(t *testing.T) {
 		t.Errorf("wizard did not save: %q", out)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, "config", "gish", "p10k.conf"))
+	data, err := os.ReadFile(filepath.Join(dir, "config", "koi", "p10k.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestP10kConfigureAbortSavesNothing(t *testing.T) {
 	if !strings.Contains(out, "nothing saved") {
 		t.Errorf("abort not reported: %q", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "config", "gish", "p10k.conf")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "config", "koi", "p10k.conf")); err == nil {
 		t.Error("declining at the end still wrote a config")
 	}
 }
@@ -212,7 +212,7 @@ func TestP10kConfigureAsciiStripsGlyphs(t *testing.T) {
 	answers := "rainbow\nn\nfalse\noff\noff\ny\n"
 	_, _, dir := runP10kScript(t, answers, "p10k configure\n")
 
-	data, err := os.ReadFile(filepath.Join(dir, "config", "gish", "p10k.conf"))
+	data, err := os.ReadFile(filepath.Join(dir, "config", "koi", "p10k.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}

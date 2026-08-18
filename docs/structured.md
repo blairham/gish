@@ -8,7 +8,7 @@ data killing awk/sed/jq incantations.
 But nushell's adoption ceiling — more stars than fish, roughly a quarter
 of the installs — points at the trick nobody has pulled off: **structured
 data without breaking bash muscle memory or script reuse.** That is the
-gap [#104](https://github.com/blairham/gish/issues/104) asks about, and
+gap [#104](https://github.com/blairham/koi-shell/issues/104) asks about, and
 this document answers its questions before any code is written.
 
 **Status: exploration. Nothing here is committed.** The point of writing
@@ -26,7 +26,7 @@ That example does parse as ordinary commands today. It just doesn't mean
 what it looks like. Run against the current shell:
 
 ```
-$ gish -c 'echo a | where %cpu > 50'
+$ koi -c 'echo a | where %cpu > 50'
 "where": executable file not found in $PATH
 $ ls
 50
@@ -59,7 +59,7 @@ Those operators are already in every shell user's fingers, and they
 parse as ordinary words today — verified:
 
 ```
-$ gish -c 'printf "[%s]" %cpu -gt 50'
+$ koi -c 'printf "[%s]" %cpu -gt 50'
 [%cpu][-gt][50]
 ```
 
@@ -104,7 +104,7 @@ not a limitation the user has to learn.
 ## What this is not
 
 - **Not a new scripting language.** No new grammar, no types in scripts,
-  nothing on a script's critical path. `gish -c` stays POSIX-clean
+  nothing on a script's critical path. `koi -c` stays POSIX-clean
   (docs/compat.md is the contract).
 - **Not a coreutils replacement.** `ls`, `ps`, and `df` keep working
   exactly as they do; `from auto` parses *their* output rather than
@@ -116,7 +116,7 @@ not a limitation the user has to learn.
 1. **`from auto` needs a parser corpus.** The jc project already parses
    ~200 command outputs, and its output is JSON. Making it the
    `from auto` backend via a plugin fits the delegate line (#112) and
-   avoids gish maintaining parsers for `ps` across four platforms. Not
+   avoids koi maintaining parsers for `ps` across four platforms. Not
    yet verified: whether jc's coverage and licensing suit this, and
    whether shelling out per pipeline is fast enough.
 2. **Column naming.** `%cpu` is what `ps` prints; `size` is what `ls`

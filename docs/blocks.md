@@ -3,17 +3,17 @@
 Warp's most-praised feature is blocks — command and output as one
 navigable unit. The recurring request is for that *without* a
 closed-source, login-gated terminal, and the observation that makes it
-gish's to take is that **blocks are a shell feature awkwardly
+koi's to take is that **blocks are a shell feature awkwardly
 implemented in a terminal**: the shell already knows command
 boundaries, exit codes, durations, and cwd. No local-first shell has
-shipped it ([#99](https://github.com/blairham/gish/issues/99)).
+shipped it ([#99](https://github.com/blairham/koi-shell/issues/99)).
 
 This document is the design, and the reason the feature ships in stages
 rather than all at once.
 
 ## What ships today: OSC 133 semantic marks
 
-gish emits the standard semantic prompt sequences on every command:
+koi emits the standard semantic prompt sequences on every command:
 
 | mark | meaning |
 | --- | --- |
@@ -22,8 +22,8 @@ gish emits the standard semantic prompt sequences on every command:
 | `OSC 133;C` | command output starts |
 | `OSC 133;D;N` | command finished with status N |
 
-That is not a consolation prize: a gish user gets block navigation
-*today*, in the terminal they already run, without gish becoming a
+That is not a consolation prize: a koi user gets block navigation
+*today*, in the terminal they already run, without koi becoming a
 terminal. But the affordances differ per terminal, and an earlier draft
 of this page listed five terminals as though they all did the same
 things. Checked against each terminal's own documentation:
@@ -38,13 +38,13 @@ things. Checked against each terminal's own documentation:
 | Alacritty | nothing — **no OSC 133 support at all** | the marks are inert here, which is harmless |
 | Terminal.app | OSC 7 only | |
 
-`doctor` names the terminal and that row. Beside the marks gish also
+`doctor` names the terminal and that row. Beside the marks koi also
 emits **OSC 7** (the working directory, so a new tab or split opens
 where you are) and, opt-in, **OSC 1337 SetUserVar** with the command
 line and its duration — which goes through the same secret rules as
 history, because a terminal may put it in a status bar.
 
-`GISH_SEMANTIC_MARKS` is per-feature: `on` (marks + OSC 7, the
+`KOI_SEMANTIC_MARKS` is per-feature: `on` (marks + OSC 7, the
 default), `off`, or a comma-separated subset of `marks,cwd,uservars`.
 SetUserVar is not in the default set precisely because it is the one
 that hands the command line to something else.
@@ -52,7 +52,7 @@ that hands the command line to something else.
 The protocol went **bidirectional** in 2026: `click_events=1` in the A
 mark means the terminal sends a click in the prompt back as arrow keys,
 handing prompt interaction to the shell because it knows it cannot do
-it over a PTY. gish declares it, and the editor's existing arrow-key
+it over a PTY. koi declares it, and the editor's existing arrow-key
 handling is the rest of the implementation.
 
 Implementation note worth keeping: the A/B marks wrap the *prompt
@@ -69,7 +69,7 @@ plainly, because it decides the whole design.
 Today a foreground child gets the *real terminal file descriptors*, and
 its process group is handed the terminal (`SysProcAttr.Foreground`,
 `Ctty`) so that Ctrl-C, Ctrl-Z, and window-size signals reach it
-correctly. To capture output, gish must sit in the middle. There are
+correctly. To capture output, koi must sit in the middle. There are
 exactly two ways, and both cost something:
 
 **A pipe.** Cheap and simple, and it breaks the world: `isatty` goes
@@ -89,7 +89,7 @@ semantics to satisfy a history feature is a bad trade.
 
 ### What the cost turned out to be — corrected
 
-This document originally predicted that a PTY meant gish "must then own
+This document originally predicted that a PTY meant koi "must then own
 what the terminal owned: forwarding window-size changes, relaying
 signals, and interleaving its copy loop with the existing job-control
 handoff." **That is true of one shape and not the one that shipped**, and
@@ -98,7 +98,7 @@ tractable at all.
 
 That cost is real when the PTY becomes the child's **controlling
 terminal** — what `script(1)` does, and what a terminal emulator does.
-Then signals really do stop arriving from the real terminal and gish
+Then signals really do stop arriving from the real terminal and koi
 has to relay them.
 
 The shipped shape gives the child the PTY for **stdout only**. Its
@@ -116,7 +116,7 @@ terminal to the child's process group. Job control is preserved by
 construction rather than reimplemented. The race-sensitive handoff is
 untouched.
 
-What gish does own is small: keep the PTY's window size in step with the
+What koi does own is small: keep the PTY's window size in step with the
 real terminal (so a program asking its width on stdout gets the truth),
 and copy master → screen while teeing into a size-capped ring.
 
@@ -166,14 +166,14 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
 1. **OSC 133 marks** — *done*. Terminal-native block navigation now.
 2. **PTY capture path** — *done*, behind `config blocks on`
    (`internal/capture`, wired in `internal/jobs`). Foreground commands
-   run through a PTY that gish copies to the real terminal while teeing
+   run through a PTY that koi copies to the real terminal while teeing
    into a size-capped ring that keeps the *tail* — a failed build's error
    is at the end. Window size forwarded on SIGWINCH; job control
    unchanged, by construction (above). `less` and `vim` verified under
    a real pty: both behave as they do uncaptured. `docker build` and
    other long-running progress UIs still want a look under real use.
 3. **Block records** — *done*. A history entry gains a `block`
-   reference; the output lives under `$XDG_DATA_HOME/gish/blocks/`,
+   reference; the output lives under `$XDG_DATA_HOME/koi/blocks/`,
    content-addressed (so running a command twice costs one file, and a
    ref can never escape its directory). Retention is age, then count,
    then total bytes — bytes last, so a size cap never evicts recent
@@ -226,7 +226,7 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
 Stage 1 is free and immediately useful. Stage 2 is the whole risk of
 the feature, so it is isolated and opt-in. Stages 3 and 4 are
 mechanical once capture is trustworthy, and they are also what
-[session restore](https://github.com/blairham/gish/issues/103) and the
+[session restore](https://github.com/blairham/koi-shell/issues/103) and the
 "history should capture output" asks from the atuin threads want.
 
 Shipping stage 1 alone is deliberate: a `blocks` command that listed

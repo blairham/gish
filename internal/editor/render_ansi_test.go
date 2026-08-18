@@ -29,7 +29,7 @@ func TestDisplayWidthIgnoresANSI(t *testing.T) {
 // is arbitrary text rather than numeric parameters.
 //
 // This is a regression test with a visible symptom: the OSC 133;B mark
-// closes every prompt gish renders (#99), and measuring its payload as
+// closes every prompt koi renders (#99), and measuring its payload as
 // five columns put the cursor five cells right of the prompt character
 // on every keystroke. It looked like the theme had a trailing gap.
 func TestDisplayWidthIgnoresStringEscapes(t *testing.T) {

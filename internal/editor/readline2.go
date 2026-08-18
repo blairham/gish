@@ -3,7 +3,7 @@ package editor
 import (
 	"unicode"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // Muscle-memory parity round 2 (#118) and numeric arguments (#116).

@@ -73,8 +73,8 @@ func TestSessionCommandNamesCoversEverySource(t *testing.T) {
 	names := sessionCommandNames(runner)
 	for _, want := range []string{
 		"cd",       // implemented interpreter builtin
-		"builtins", // gish-native builtin on the exec seam
-		"parallel", // gish-native builtin on the exec seam
+		"builtins", // koi-native builtin on the exec seam
+		"parallel", // koi-native builtin on the exec seam
 		"doctor",   // CallHandler-routed command
 		"trust",    // CallHandler-routed command
 		"myfn",     // session function

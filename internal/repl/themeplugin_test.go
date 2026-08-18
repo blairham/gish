@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // fakeThemeClient implements pluginapi.ThemeProviderClient without a
@@ -122,7 +122,7 @@ func TestPromptStringsResolvesPluginTheme(t *testing.T) {
 	t.Cleanup(func() { themePlugins = nil })
 
 	runner := newTestRunner(t)
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=neo`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=neo`)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,11 +140,11 @@ func TestPromptStringsResolvesPluginTheme(t *testing.T) {
 	}
 
 	// Built-in names cannot be hijacked by a plugin.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=plain`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=plain`)); err != nil {
 		t.Fatal(err)
 	}
 	themePlugins = &fakePluginThemes{set: promptSet{prompt: "hijacked> "}, ok: true}
-	if p, _, _ = promptStrings(runner, themeInfo()); p != "blair@mba gish % " {
+	if p, _, _ = promptStrings(runner, themeInfo()); p != "blair@mba koi % " {
 		t.Errorf("built-in name resolved through a plugin: %q", p)
 	}
 }

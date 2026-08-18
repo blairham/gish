@@ -89,12 +89,12 @@ func TestLintFnKnobAndStyle(t *testing.T) {
 		t.Fatalf("plain warnings = %q", warns)
 	}
 
-	// GISH_LINT=off silences everything, live.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_LINT=off`)); err != nil {
+	// KOI_LINT=off silences everything, live.
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_LINT=off`)); err != nil {
 		t.Fatal(err)
 	}
 	if warns = lintFn(runner, true)(`rm $dir`); warns != nil {
-		t.Errorf("GISH_LINT=off warnings = %q", warns)
+		t.Errorf("KOI_LINT=off warnings = %q", warns)
 	}
 }
 

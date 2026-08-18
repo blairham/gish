@@ -14,7 +14,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/jobs"
+	"github.com/blairham/koi-shell/internal/jobs"
 )
 
 // outFile is a real file for the runner's stdout/stderr: the job
@@ -197,7 +197,7 @@ func TestRewriteCall(t *testing.T) {
 	t.Parallel()
 
 	args, err := jobs.RewriteCall(context.Background(), []string{"jobs"})
-	if err != nil || args[0] != "__gish_jobs" {
+	if err != nil || args[0] != "__koi_jobs" {
 		t.Errorf("rewrite = %v, %v", args, err)
 	}
 	args, _ = jobs.RewriteCall(context.Background(), []string{"echo", "fg"})

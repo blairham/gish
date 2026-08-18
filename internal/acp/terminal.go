@@ -18,12 +18,12 @@ import (
 // The spec defines no permission model, no sandboxing and no timeout.
 // That is not a criticism — it is a protocol, and those are policy — but
 // it does mean every ACP client today runs an agent's commands the way
-// `bash -c` would. gish has somewhere better to put them: the same exec
+// `bash -c` would. koi has somewhere better to put them: the same exec
 // path its own commands take, wrapped in a sandbox profile (#21).
 //
 // So the shape here is deliberately narrow. This does not reimplement
 // running a command; it hands the command to a runner supplied by the
-// caller, which in gish's case is the sandboxed exec path. What lives
+// caller, which in koi's case is the sandboxed exec path. What lives
 // here is the protocol's bookkeeping: terminal ids, a capped output
 // buffer, and the exit status the agent polls for.
 
@@ -46,7 +46,7 @@ type Command struct {
 // Runner executes a command on behalf of an agent. It returns a handle
 // the terminal service can poll and kill.
 //
-// This is the seam that keeps policy out of the protocol: gish passes a
+// This is the seam that keeps policy out of the protocol: koi passes a
 // runner that wraps every command in a sandbox profile and refuses the
 // ones its own lint rules call destructive, and a test passes one that
 // records what it was asked to do.
@@ -312,7 +312,7 @@ func (t *Terminals) ReleaseAll() {
 
 // ExecRunner is the plain runner: run the command as given.
 //
-// gish wraps this with its sandbox before handing it over; it is
+// koi wraps this with its sandbox before handing it over; it is
 // exported because a runner is the seam, and the unwrapped one is what
 // a test — or a caller that has its own policy — wants.
 func ExecRunner(ctx context.Context, cmd Command, out *Output) (Process, error) {

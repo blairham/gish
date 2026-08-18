@@ -152,7 +152,7 @@ func (c *Context) clock() time.Time {
 }
 
 // GitStatus is the repository state a prompt needs. It mirrors what the
-// gish-git plugin already computes, so the two agree on vocabulary.
+// koi-git plugin already computes, so the two agree on vocabulary.
 type GitStatus struct {
 	// Dir is the repository root, used to tell "this status is for the
 	// directory I am rendering" from a stale answer for somewhere else.

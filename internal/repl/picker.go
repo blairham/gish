@@ -10,15 +10,15 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/blocks"
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/blocks"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The ctrl-r picker and the `pick` builtin (#100): one selection
 // primitive, two surfaces. fzf's install count says shells are missing
-// this; gish ships it with the metadata the history store already has,
+// this; koi ships it with the metadata the history store already has,
 // so a choice is informed rather than a guess.
 
 // historyPickCount bounds what the picker loads — enough to search

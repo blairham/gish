@@ -1,9 +1,9 @@
-// Package pluginsdk is the front door for writing a gish tier-2 plugin.
+// Package pluginsdk is the front door for writing a koi tier-2 plugin.
 //
-// A plugin is an ordinary executable that gish launches and keeps resident,
+// A plugin is an ordinary executable that koi launches and keeps resident,
 // speaking gRPC over hashicorp/go-plugin. Implement one or more of the
 // services in pkg/pluginapi, hand them to Serve, and drop the binary in
-// $XDG_DATA_HOME/gish/plugins:
+// $XDG_DATA_HOME/koi/plugins:
 //
 //	func main() {
 //		pluginsdk.Serve(pluginsdk.Plugin{
@@ -12,14 +12,14 @@
 //		})
 //	}
 //
-// This package is the *serve* side of the contract and nothing else. How gish
+// This package is the *serve* side of the contract and nothing else. How koi
 // discovers plugins, when it launches them, and how it heals a crashed one are
 // the host's business (internal/pluginhost) — deliberately unpublished, so the
 // lifecycle stays free to change while the contract does not.
 //
-// The contract itself is frozen: proto/gish/plugin/v1 is additive-only and
+// The contract itself is frozen: proto/koi/plugin/v1 is additive-only and
 // internal/pluginhost/abi_test.go fails CI on any change that would break a
-// compiled plugin (#168). A binary built against v1 keeps working across gish
+// compiled plugin (#168). A binary built against v1 keeps working across koi
 // releases without a rebuild — which is the promise this package exists to
 // make usable from outside the repository (#188).
 //
@@ -39,7 +39,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // Handshake gates plugin startup: a binary that doesn't present the magic
@@ -93,7 +93,7 @@ type Plugin struct {
 //
 //	func (i info) Describe(context.Context, *pluginapi.DescribeRequest) (*pluginapi.DescribeResponse, error) {
 //		return &pluginapi.DescribeResponse{
-//			Name:         "gish-example",
+//			Name:         "koi-example",
 //			Version:      version,
 //			Capabilities: pluginsdk.Capabilities(i.plugin),
 //		}, nil
@@ -132,7 +132,7 @@ func Capabilities(p Plugin) []pluginapi.Capability {
 	return caps
 }
 
-// Serve runs p as a gish plugin. It does not return: go-plugin owns the
+// Serve runs p as a koi plugin. It does not return: go-plugin owns the
 // process from here, and the host's shutdown is what ends it.
 func Serve(p Plugin) {
 	plugin.Serve(ServeConfig(p))

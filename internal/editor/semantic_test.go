@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // The OSC 133 semantic marks as internal/repl wraps a prompt in them
@@ -20,7 +20,7 @@ const (
 // TestSemanticMarksCostNothingOnScreen is the regression test for the
 // gap after the prompt character.
 //
-// The marks close every prompt gish renders, and the renderer measured
+// The marks close every prompt koi renders, and the renderer measured
 // the "133;B" payload as five printable columns — so the cursor sat five
 // cells right of the prompt, on every keystroke, in every theme. It read
 // as a theme with a trailing gap, which is why it went unnoticed: the

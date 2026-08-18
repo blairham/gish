@@ -35,7 +35,7 @@ var (
 // sourced, and its actual *behavior* is asserted in a live interactive
 // shell — the prompt renders, the widget binds, the environment
 // changes. "We implement PROMPT_COMMAND" is a claim; "starship's prompt
-// renders in gish" is the thing anyone actually cares about.
+// renders in koi" is the thing anyone actually cares about.
 //
 // The launch claim this exists to support is "your entire existing
 // shell stack, unchanged". A matrix that only ran the tools installed
@@ -69,7 +69,7 @@ var EcosystemCorpus = []EcosystemCase{
 	{
 		Name:       "starship",
 		Binary:     "starship",
-		Provenance: "ships 11 per-shell init scripts; the bash one is what gish has to run",
+		Provenance: "ships 11 per-shell init scripts; the bash one is what koi has to run",
 		Init: `export STARSHIP_CONFIG="$TOOLDIR/starship.toml"
 eval "$(starship init bash)"`,
 		Setup: func(dir string) error {
@@ -122,7 +122,7 @@ eval "$(starship init bash)"`,
 		Init:       `eval "$(zoxide init bash)"`,
 		Type:       "zoxide add /tmp; z tmp; pwd",
 		Want:       "/tmp",
-		Asserts:    "`z` jumps — the user's own zoxide, not gish's native jumper",
+		Asserts:    "`z` jumps — the user's own zoxide, not koi's native jumper",
 	},
 	{
 		Name:       "atuin",
@@ -199,16 +199,16 @@ type EcosystemResult struct {
 	Output  string
 }
 
-// RunEcosystem loads one tool in a live interactive gish and asserts
+// RunEcosystem loads one tool in a live interactive koi and asserts
 // what it does.
-func RunEcosystem(ctx context.Context, gishBin string, c EcosystemCase) EcosystemResult {
+func RunEcosystem(ctx context.Context, koiBin string, c EcosystemCase) EcosystemResult {
 	r := EcosystemResult{EcosystemCase: c}
 	if _, err := exec.LookPath(c.Binary); err != nil {
 		return r
 	}
 	r.Present = true
 
-	dir, err := os.MkdirTemp("", "gish-eco-*")
+	dir, err := os.MkdirTemp("", "koi-eco-*")
 	if err != nil {
 		r.Reason = err.Error()
 		return r
@@ -222,13 +222,13 @@ func RunEcosystem(ctx context.Context, gishBin string, c EcosystemCase) Ecosyste
 		}
 	}
 	rc := strings.ReplaceAll(c.Init, "$TOOLDIR", dir)
-	rcPath := filepath.Join(dir, "gishrc")
+	rcPath := filepath.Join(dir, "koirc")
 	if err := os.WriteFile(rcPath, []byte(rc+"\n"), 0o600); err != nil {
 		r.Reason = err.Error()
 		return r
 	}
 
-	out, err := runInGish(ctx, gishBin, dir, rcPath, c.Type, c.Want)
+	out, err := runInKoi(ctx, koiBin, dir, rcPath, c.Type, c.Want)
 	r.Output = out
 	if err != nil {
 		r.Reason = err.Error()
@@ -242,26 +242,26 @@ func RunEcosystem(ctx context.Context, gishBin string, c EcosystemCase) Ecosyste
 }
 
 // RunEcosystemAll runs the whole matrix.
-func RunEcosystemAll(ctx context.Context, gishBin string) []EcosystemResult {
+func RunEcosystemAll(ctx context.Context, koiBin string) []EcosystemResult {
 	out := make([]EcosystemResult, 0, len(EcosystemCorpus))
 	for _, c := range EcosystemCorpus {
-		out = append(out, RunEcosystem(ctx, gishBin, c))
+		out = append(out, RunEcosystem(ctx, koiBin, c))
 	}
 	return out
 }
 
-// runInGish starts an interactive gish with rcPath as its rc, types
+// runInKoi starts an interactive koi with rcPath as its rc, types
 // line (when there is one), and returns the visible text once want
 // appears.
 //
 // Waiting for the *marker* rather than for a prompt is what makes the
 // matrix honest: a tool that installs a hook which never fires would
 // still reach a prompt, and a test that waited for one would pass.
-func runInGish(ctx context.Context, gishBin, dir, rcPath, line, want string) (string, error) {
+func runInKoi(ctx context.Context, koiBin, dir, rcPath, line, want string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, ecosystemTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, gishBin)
+	cmd := exec.CommandContext(ctx, koiBin)
 	cmd.Dir = dir
 	cmd.Env = []string{
 		"HOME=" + dir,
@@ -271,10 +271,10 @@ func runInGish(ctx context.Context, gishBin, dir, rcPath, line, want string) (st
 		"XDG_CACHE_HOME=" + filepath.Join(dir, "cache"),
 		"TERM=xterm-256color",
 		"PATH=" + pathEnv(),
-		"GISH_RC=" + rcPath,
-		// The tools under test own the prompt; gish's own themes and
+		"KOI_RC=" + rcPath,
+		// The tools under test own the prompt; koi's own themes and
 		// its native jumper must not be what the assertion sees.
-		"GISH_JUMP=off",
+		"KOI_JUMP=off",
 	}
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 200})
 	if err != nil {

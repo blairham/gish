@@ -1,6 +1,6 @@
 // Tier-2 native plugin API — shared types and the discovery service.
 //
-// Gish plugins are resident subprocesses speaking gRPC via
+// Koi plugins are resident subprocesses speaking gRPC via
 // hashicorp/go-plugin. The host launches a plugin lazily on first use,
 // performs the go-plugin handshake (see internal/pluginhost), then calls
 // Describe once to learn which capability services the plugin serves on
