@@ -17,10 +17,10 @@ import (
 //
 // The usual route for a construct the interpreter refuses is the
 // CallHandler: rename the call so it arrives somewhere koi controls
-// (overrides.go). Two constructs never become a call at all — the
-// *parser* classifies them, and the interpreter rejects them inside its
-// own dispatch — so the only seam left is the tree between parse and
-// run:
+// (overrides.go). Some constructs never become a call at all — the
+// *parser* classifies them and the interpreter handles them inside its
+// own dispatch, so no handler ever observes them — and the only seam
+// left is the tree between parse and run:
 //
 //   - `>|` parses as [syntax.RdrClob] and hits the interpreter's
 //     "unhandled redirect op" default. It fails with **no message and
@@ -29,8 +29,15 @@ import (
 //   - `declare -F` / `typeset -F` parse as a *declaration clause*, which
 //     the interpreter implements itself and which no handler observes
 //     (the same wall declcall.go documents from the other side).
+//   - A **quoted** heredoc delimiter is supposed to make the body
+//     entirely literal, and the escape processing happens during
+//     expansion — after the delimiter's quoting is gone — so
+//     `cat > f <<'EOF'` writes a file with backslashes missing from it.
+//     There is no call and no redirect op to rename here: the fix is to
+//     restate the body as the literal it already is.
 //
-// Both are how agent harnesses and init scripts enumerate a shell:
+// The first two are how agent harnesses and init scripts enumerate a
+// shell:
 // Claude Code's shell snapshot opens with `echo … >| "$SNAPSHOT_FILE"`
 // and carries the user's functions across with `declare -F`, so a shell
 // that fails both is one those tools cannot drive at all.
@@ -67,6 +74,7 @@ func rewriteSubstrateGaps(node syntax.Node) {
 			if plain, ok := clobberEquivalent[rd.Op]; ok {
 				rd.Op = plain
 			}
+			literalizeHdoc(rd)
 		}
 		if call, ok := declFuncQuery(stmt.Cmd); ok {
 			stmt.Cmd = call
@@ -205,3 +213,91 @@ func registerSubstrateBuiltins() {
 }
 
 var substrateBuiltinsOnce sync.Once
+
+// literalizeHdoc restates a quoted-delimiter heredoc body as a
+// single-quoted part, so it survives expansion unchanged (#244).
+//
+// POSIX is unambiguous: "if any character in word is quoted, the
+// here-document lines shall not be expanded". The substrate gets the
+// expansion half right — `$HOME`, `$(cmd)`, backquotes and `$((1+1))`
+// all stay literal under `<<'X'` and all expand under `<<X`, matching
+// bash exactly — and gets escapes wrong, because escapes are processed
+// during expansion and by then the delimiter's quoting is gone.
+// expand.Document runs one backslash pass for both forms, stripping the
+// `\` before `\`, `$` and a backquote. That is precisely the *unquoted*
+// heredoc's rule, applied to the quoted one.
+//
+// `cat > file <<'EOF'` is the idiom for writing a file whose content
+// must not be interpreted — the quoted delimiter is the whole reason it
+// is safe — so the damage is a wrong artifact rather than a refusal. A
+// regex spelled `\\d`, a Windows path, a Makefile recipe, a printf
+// format or an escaped `\$` lands on disk with a backslash missing, no
+// message, and exit 0. It is the shape #215 described for `>|`: the
+// silence is the expensive part, except here the file exists and reads
+// as plausible.
+//
+// Restating the body as [syntax.SglQuoted] says what the delimiter's
+// quoting means, and it deliberately is not a re-escaping of the
+// current escape set: doubling every backslash would be an exact
+// inverse of today's pass in expand.go and would become a silent lie
+// the moment that pass changes.
+func literalizeHdoc(rd *syntax.Redirect) {
+	if rd.Hdoc == nil || !hdocDelimQuoted(rd.Word) {
+		return
+	}
+	// The quoted delimiter sends the lexer down its own path, which
+	// yields exactly one literal and no expansion tree to preserve. Any
+	// other shape means the parser did *not* agree the delimiter was
+	// quoted, and rewriting it would turn live expansions into text —
+	// so leave it alone and keep the substrate's answer.
+	if len(rd.Hdoc.Parts) != 1 {
+		return
+	}
+	lit, ok := rd.Hdoc.Parts[0].(*syntax.Lit)
+	if !ok {
+		return
+	}
+	// `<<-'X'` strips leading tabs from every line, and that pass runs in
+	// the interpreter over the *literal* parts — so restating the body as
+	// a quoted part moves it out of reach and the tabs would survive.
+	// Measured, not assumed: the first cut of this fix traded the eaten
+	// backslash for kept tabs, which is how a fix becomes a different
+	// bug. Do the stripping here instead, since after this the body is
+	// final text rather than something left to expand.
+	value := lit.Value
+	if rd.Op == syntax.DashHdoc {
+		lines := strings.Split(value, "\n")
+		for i, line := range lines {
+			lines[i] = strings.TrimLeft(line, "\t")
+		}
+		value = strings.Join(lines, "\n")
+	}
+	rd.Hdoc.Parts[0] = &syntax.SglQuoted{
+		Left:  lit.ValuePos,
+		Right: lit.ValueEnd,
+		Value: value,
+	}
+}
+
+// hdocDelimQuoted reports whether the *parser* treated this heredoc's
+// delimiter as quoted.
+//
+// It matches syntax.Parser.unquotedWordBytes rather than POSIX, quirk
+// included: that function overwrites its verdict per part instead of
+// accumulating it, so only the last part decides and `<<'X'Y` is read as
+// unquoted (#258). Matching is the point rather than an oversight — this
+// decision is what picked the lexer path that built the body, and being
+// more correct than the parser here would mean rewriting a tree that
+// still has real expansions in it.
+func hdocDelimQuoted(w *syntax.Word) bool {
+	if w == nil || len(w.Parts) == 0 {
+		return false
+	}
+	switch part := w.Parts[len(w.Parts)-1].(type) {
+	case *syntax.SglQuoted, *syntax.DblQuoted:
+		return true
+	case *syntax.Lit:
+		return strings.Contains(part.Value, "\\")
+	}
+	return false
+}

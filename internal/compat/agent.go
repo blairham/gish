@@ -204,10 +204,9 @@ var AgentCorpus = []AgentCase{
 	{
 		Name: "quoted heredoc writes the file it was given",
 		Provenance: "`cat > f <<'EOF'` is the idiom for writing a file whose content must not be interpreted, and it is how an agent writes a script. " +
-			"koi processes `\\\\`, `\\$` and backtick escapes anyway, so the file on disk is not the file requested",
-		Argv:      []string{"-c", `cat > "$HOME/w" <<'X'` + "\n" + `re='\\d+' and \$var` + "\nX\n" + `cat "$HOME/w"`},
-		Known:     244,
-		KnownNote: "silently corrupts any heredoc-written file containing a doubled backslash or an escaped $ — scripts, regexes, JSON, Makefiles",
+			"koi used to process `\\\\`, `\\$` and backtick escapes anyway, so the file on disk was not the file requested (#244); " +
+			"this case is what stops that returning",
+		Argv: []string{"-c", `cat > "$HOME/w" <<'X'` + "\n" + `re='\\d+' and \$var` + "\nX\n" + `cat "$HOME/w"`},
 	},
 	{
 		Name:       "strict-mode header takes effect",

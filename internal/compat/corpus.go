@@ -176,6 +176,16 @@ literal $name
 EOF`,
 	},
 	{
+		Name: "quoted heredoc is byte-literal", Category: CatRedirection,
+		Provenance: "#244: the corpus tested that a quoted heredoc does not *expand*, and never that it does not *escape* — " +
+			"so koi ate the backslash before another backslash, a `$` or a backquote for as long as this file has existed",
+		Script: "cat <<'EOF'\n" +
+			"re=\\\\d+ and \\$var and \\`id`\n" +
+			"json {\"nl\": \"\\\\n\", \"tab\": \"\\\\t\"}\n" +
+			"win=c:\\\\users\\\\me\n" +
+			"trailing \\\nEOF",
+	},
+	{
 		Name: "indented heredoc", Category: CatRedirection,
 		Provenance: "heredocs inside indented functions",
 		Script: `f() {

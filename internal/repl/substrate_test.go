@@ -119,3 +119,93 @@ func TestShoptPrintsEveryOptionWithoutNames(t *testing.T) {
 		}
 	}
 }
+
+// A quoted delimiter makes a heredoc body entirely literal. koi stripped
+// the backslash before another backslash, a `$` or a backquote anyway
+// (#244) — the *unquoted* heredoc's rule applied to the quoted form — so
+// `cat > f <<'EOF'` wrote a file that was not the file it was given, with
+// no message and exit 0.
+//
+// Every `want` here is real bash's answer for the same script, taken by
+// running it rather than reasoned about, since that is the only thing
+// that makes these assertions worth anything.
+func TestQuotedHeredocIsLiteral(t *testing.T) {
+	tests := []struct {
+		name, src, want string
+	}{{
+		name: "doubled backslash survives",
+		src:  "cat <<'X'\nre=\\\\d+\nX",
+		want: "re=\\\\d+\n",
+	}, {
+		name: "escaped dollar survives",
+		src:  "cat <<'X'\ncost=\\$5\nX",
+		want: "cost=\\$5\n",
+	}, {
+		name: "escaped backquote survives",
+		src:  "cat <<'X'\ncmd=\\`id`\nX",
+		want: "cmd=\\`id`\n",
+	}, {
+		name: "double-quoted delimiter is literal too",
+		src:  "cat <<\"X\"\nre=\\\\d+\nX",
+		want: "re=\\\\d+\n",
+	}, {
+		name: "backslash-escaped delimiter is literal too",
+		src:  "cat <<\\X\nre=\\\\d+\nX",
+		want: "re=\\\\d+\n",
+	}, {
+		name: "expansions stay literal",
+		src:  "V=live\ncat <<'X'\n$V $(echo sub) $((1+1))\nX",
+		want: "$V $(echo sub) $((1+1))\n",
+	}, {
+		// The other half of the fix: applying the literal rule to the
+		// unquoted form would be the same bug pointing the other way.
+		name: "unquoted heredoc still processes escapes",
+		src:  "cat <<X\nre=\\\\d+ \\$v\nX",
+		want: "re=\\d+ $v\n",
+	}, {
+		name: "unquoted heredoc still expands",
+		src:  "V=live\ncat <<X\n$V $((1+1))\nX",
+		want: "live 2\n",
+	}, {
+		// The tab stripping for `<<-` runs in the interpreter, over the
+		// literal parts of the body — so a fix that restates the body as
+		// a quoted part moves it out of reach. The first cut of #244 did
+		// exactly that and traded the eaten backslash for kept tabs,
+		// which is why this case is here rather than assumed.
+		name: "dash form strips tabs and keeps backslashes",
+		src:  "cat <<-'X'\n\tre=\\\\d+\n\t\tindented\n\tX",
+		want: "re=\\\\d+\nindented\n",
+	}, {
+		name: "dash form strips tabs only, never spaces",
+		src:  "cat <<-'X'\n\t  re=\\\\d+\n\tX",
+		want: "  re=\\\\d+\n",
+	}, {
+		name: "unquoted dash form strips tabs and processes escapes",
+		src:  "cat <<-X\n\tre=\\\\d+\n\tX",
+		want: "re=\\d+\n",
+	}}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runSession(t, tc.src); got != tc.want {
+				t.Errorf("heredoc body = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The symptom rather than the mechanism: `cat > file <<'EOF'` is the
+// idiom for writing a file whose content must not be interpreted, and
+// #244 was found when a script written that way would not parse — the
+// syntax error pointing 30 lines away from the missing backslash.
+func TestQuotedHeredocWritesTheFileItWasGiven(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "probe.sh")
+	body := "esc=${snippet//\\\\/\\\\\\\\}\nre='\\\\d+'\npath='c:\\\\users'\n"
+	runSession(t, "cat > "+path+" <<'SH'\n"+body+"SH")
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the heredoc wrote no file: %v", err)
+	}
+	if string(got) != body {
+		t.Errorf("file on disk = %q,\n              want %q", got, body)
+	}
+}

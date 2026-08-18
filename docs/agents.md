@@ -158,7 +158,7 @@ that starts passing while still marked fails the build:
 
 <!-- BEGIN generated agent gaps -->
 
-**12 of 26 cases agree with bash 5.3.15(1)-release.** 14 open gaps, 0 unfiled failures.
+**13 of 26 cases agree with bash 5.3.15(1)-release.** 13 open gaps, 0 unfiled failures.
 
 Each of these is filed, reproduced, and failing right now. They are suppressed in CI by an issue number in the corpus, and the suppression is itself gated — a case that starts passing while still marked fails the build, so a fix cannot land without updating this table.
 
@@ -168,7 +168,6 @@ Each of these is filed, reproduced, and failing right now. They are suppressed i
 | [#242](https://github.com/blairham/koi-shell/issues/242) | snapshot generator: declare -F survives eval | the #215 fix is invisible to eval, command substitution and sourced files |
 | [#243](https://github.com/blairham/koi-shell/issues/243) | read -d '' consumes NUL-delimited input | the read looks to the caller exactly like a successful read of an empty line, so no caller-side care can detect it |
 | [#243](https://github.com/blairham/koi-shell/issues/243) | read -s does not silently return empty | no message and no status: a prompt reading a confirmation gets an empty string and proceeds |
-| [#244](https://github.com/blairham/koi-shell/issues/244) | quoted heredoc writes the file it was given | silently corrupts any heredoc-written file containing a doubled backslash or an escaped $ — scripts, regexes, JSON, Makefiles |
 | [#245](https://github.com/blairham/koi-shell/issues/245) | noclobber protects an existing file | a script that sets noclobber precisely so it cannot destroy a file destroys it, and reports success |
 | [#245](https://github.com/blairham/koi-shell/issues/245) | strict-mode header takes effect | one unsupported letter voids the whole call, so the script runs unprotected past the failure it was written to stop at |
 | [#246](https://github.com/blairham/koi-shell/issues/246) | file descriptors above 2 carry data | the shell reports success and produces an empty artifact, pointing blame at the program that was meant to write it |
