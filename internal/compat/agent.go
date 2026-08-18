@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -51,6 +53,13 @@ type AgentCase struct {
 	Expect string
 	// Why explains an Expect divergence in the published table.
 	Why string
+	// MinBashMajor, when set, is the oldest bash that can serve as this
+	// case's oracle. A probe *about* a bash version cannot be answered by
+	// a bash that predates it: macOS still ships 3.2.57, where a
+	// `BASH_VERSINFO[0] -ge 4` probe is correctly false, so comparing gish
+	// against it measures the runner's bash rather than gish. Skipped, not
+	// tolerated — the case still runs everywhere bash is new enough.
+	MinBashMajor int
 }
 
 // AgentCorpus is the published gate.
@@ -119,9 +128,10 @@ var AgentCorpus = []AgentCase{
 		Why:        "bash prints its own path; gish is not pretending to be bash, and a harness that needs the difference can see it",
 	},
 	{
-		Name:       "BASH_VERSION answers feature probes",
-		Provenance: "tools branch on BASH_VERSINFO to pick an implementation — fzf picks its Ctrl-T path on `BASH_VERSINFO[0] < 4`, and unset reads as 0 (#120)",
-		Argv:       []string{"-c", `[ -n "$BASH_VERSION" ] && [ "${BASH_VERSINFO[0]}" -ge 4 ] && echo probe-answered`},
+		Name:         "BASH_VERSION answers feature probes",
+		Provenance:   "tools branch on BASH_VERSINFO to pick an implementation — fzf picks its Ctrl-T path on `BASH_VERSINFO[0] < 4`, and unset reads as 0 (#120)",
+		Argv:         []string{"-c", `[ -n "$BASH_VERSION" ] && [ "${BASH_VERSINFO[0]}" -ge 4 ] && echo probe-answered`},
+		MinBashMajor: 4,
 	},
 }
 
@@ -132,6 +142,9 @@ type AgentResult struct {
 	BashCode, GishCode int
 	Pass               bool
 	Reason             string
+	// Skipped marks a case whose oracle is too old to answer it. Not a
+	// pass: it says the gate did not get to run here.
+	Skipped bool
 }
 
 // RunAgentAll runs the whole gate.
@@ -154,6 +167,13 @@ func RunAgent(ctx context.Context, bashBin, gishBin string, c AgentCase) AgentRe
 			r.Reason = "want " + firstLine(strings.TrimSpace(c.Expect))
 		}
 		return r
+	}
+	if c.MinBashMajor > 0 {
+		if major := oracleBashMajor(ctx, bashBin); major > 0 && major < c.MinBashMajor {
+			r.Skipped = true
+			r.Reason = fmt.Sprintf("oracle is bash %d: this case needs bash %d or newer to answer it", major, c.MinBashMajor)
+			return r
+		}
 	}
 	r.BashOut, r.BashCode = runAgentArgv(ctx, bashBin, c)
 	r.BashOut = dropJobControlPreamble(r.BashOut)
@@ -251,11 +271,27 @@ func DetectedAgents() map[string]bool {
 	return found
 }
 
-// AgentFailures returns the failing results, corpus order.
+// oracleBashMajor asks the oracle its own major version. 0 means unknown, which
+// is deliberately treated as "run the case": an unreadable version must
+// not silently disable a gate.
+func oracleBashMajor(ctx context.Context, bashBin string) int {
+	out, err := exec.CommandContext(ctx, bashBin, "-c", "echo ${BASH_VERSINFO[0]}").Output()
+	if err != nil {
+		return 0
+	}
+	major, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0
+	}
+	return major
+}
+
+// AgentFailures returns the failing results, corpus order. A skipped case
+// is not a failure — it is a case the oracle could not answer.
 func AgentFailures(results []AgentResult) []AgentResult {
 	var out []AgentResult
 	for _, r := range results {
-		if !r.Pass {
+		if !r.Pass && !r.Skipped {
 			out = append(out, r)
 		}
 	}
