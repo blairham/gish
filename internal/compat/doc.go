@@ -51,6 +51,16 @@ and tool init hooks) is a deliberate open decision, not a bug:
 	}
 
 	b.WriteString(`
+## The other denominator
+
+This corpus is curated, which is both its strength and its limit: it asks
+whether the things people actually paste work, against a set of cases we
+chose ourselves. The harder number runs **bash's own test suite** — a
+denominator nobody can accuse us of picking — and is published separately
+in [docs/bash-suite.md](bash-suite.md). Expect it to be far lower. Both
+are true and they answer different questions; quote whichever one the
+claim is actually about.
+
 ## Honesty notes
 
 - A pass means *this snippet behaves identically*, not that the feature

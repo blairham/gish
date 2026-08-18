@@ -25,8 +25,14 @@ Keystroke latency, measured end to end from byte-in to repaint-out:
 **p50 0.2 ms, p99 0.3 ms** — with highlighting, suggestions, and the
 footgun linter all running. Full methodology and numbers in
 [docs/bench.md](docs/bench.md); the bash-compatibility scoreboard, gaps
-included, is in [docs/compat.md](docs/compat.md). What happens when you
-*paste* a bash one-liner at the prompt, and when you source nvm, conda
+included, is in [docs/compat.md](docs/compat.md). That corpus is one we
+curated, so there is a second scoreboard with a denominator nobody can
+accuse us of choosing — **bash's own test suite**, run through koi and
+published with its parse gaps in
+[docs/bash-suite.md](docs/bash-suite.md). It is a much lower number, and
+it is meant to be: quote whichever one the claim is actually about.
+
+What happens when you *paste* a bash one-liner at the prompt, and when you source nvm, conda
 or an activate script unmodified, is measured separately in
 [docs/interactive-compat.md](docs/interactive-compat.md) — pasting and
 sourcing is the most-cited reason people go back. The same page carries
