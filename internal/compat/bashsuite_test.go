@@ -82,6 +82,19 @@ func TestBashSuite(t *testing.T) {
 	// a run where nothing parses or bash produced no output means the
 	// helpers or the fetch broke, and that must not read as "koi got
 	// worse".
+	// Report the drift even though nothing here enforces it. docs/bash-suite.md
+	// went eleven commits stale before anyone noticed, because a number that is
+	// published rather than gated is a number nothing ever reads back. This does
+	// not turn the suite into a pass-rate gate — that remains a deliberate no
+	// (#274) — it just makes the delta visible in the log of every run, so
+	// drifting from the published page is something you see rather than
+	// something you discover a month later.
+	if old, rerr := os.ReadFile(bashSuitePath); rerr == nil {
+		if delta := compat.SuiteDelta(compat.ParsePublishedSuite(string(old)), s); delta != "" {
+			t.Logf("VS PUBLISHED: %s — run `make bash-suite` to republish", delta)
+		}
+	}
+
 	if s.BashLines == 0 {
 		t.Fatal("bash produced no output for any file: the suite or its helpers are broken, not koi")
 	}
