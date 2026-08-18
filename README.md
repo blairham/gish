@@ -251,7 +251,7 @@ every existing habit — including "open a normal shell" — keeps working.
 Nothing to undo but two directories under `$XDG_CONFIG_HOME/koi` and
 `$XDG_DATA_HOME/koi`.
 
-The non-interactive contract is POSIX-clean — tools that spawn `$SHELL -c` (editors, IDEs, cron, ssh, scp) get a fast, silent, script-compatible shell with no prompt machinery loaded. That includes the spawn *forms* they use, not just the flags: short options cluster (`$SHELL -lc 'cmd'`), options may follow `-c` because the command string is an operand (`$SHELL -c -l 'cmd'`), `--` ends the options, and `-i` sources your rc file the way bash does. Login invocations (`-l`, or argv[0] beginning with `-`) source `/etc/profile`, then `~/.koi_profile` or `~/.profile`.
+The non-interactive contract is POSIX-clean — tools that spawn `$SHELL -c` (editors, IDEs, cron, ssh, scp) get a fast, silent, script-compatible shell with no prompt machinery loaded. That includes the spawn *forms* they use, not just the flags: short options cluster (`$SHELL -lc 'cmd'`), options may follow `-c` because the command string is an operand (`$SHELL -c -l 'cmd'`), `--` ends the options, `-i` sources your rc file the way bash does, and `-n` parses without running so `sh -n file` works in a lint hook (silent and 0 when it parses, exit 2 and a message when it does not; ignored for an interactive shell, as bash ignores it). Login invocations (`-l`, or argv[0] beginning with `-`) source `/etc/profile`, then `~/.koi_profile` or `~/.profile`.
 
 When you're sure, the login-shell route is the usual one. Both lines
 matter: a login shell that is **not** listed in `/etc/shells` is the
