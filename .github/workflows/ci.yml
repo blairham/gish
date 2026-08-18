@@ -76,6 +76,18 @@ jobs:
     - name: Bash-compat scoreboard
       run: make compat-check
 
+    # bash's own suite is published rather than gated on its pass rate — that
+    # is deliberate, and stays that way (#274). What runs here is the harness
+    # sanity check, which catches the failure that would otherwise read as a
+    # compatibility collapse: a broken fetch or missing helpers make every
+    # file produce nothing, and "koi got worse" is the wrong conclusion to
+    # draw from that. The run also logs its delta against the published page,
+    # so drift is visible without being enforced. Linux only: two shells over
+    # 83 files is a couple of minutes, and one runner answers the question.
+    - name: Bash's own test suite (harness sanity, and the published delta)
+      if: runner.os == 'Linux'
+      run: make bash-suite-check
+
     # The ecosystem matrix (#159) is only meaningful against tools that
     # are actually there, so the runner gets a few of them. Best-effort
     # by design (`|| true`): what is missing is reported as missing

@@ -65,6 +65,7 @@ bash-suite: ## Fetch bash's own tests/ and publish docs/bash-suite.md (#211)
 
 .PHONY: bash-suite-check
 bash-suite-check: ## Run the bash suite without republishing (harness sanity only)
+	./scripts/fetch-bash-tests.sh
 	KOI_GATES=1 go test ./internal/compat/ -run 'TestBashSuite|TestSuiteSummary|TestBashSuiteDoc|TestPublishedSuite' -timeout 30m
 
 .PHONY: paste-gate
