@@ -79,18 +79,42 @@ func runSignalTrap(ctx context.Context, runner *interp.Runner, name string) {
 	runHookSource(ctx, runner, body) //nolint:errcheck // a trap's failure is the trap's problem
 }
 
-// trapCallHandler intercepts the DEBUG trap, which the interpreter does
-// not implement (it answers "invalid signal specification", so every
-// tool that installs one looks broken). Other signals pass through
-// untouched, including in the same command: `trap x DEBUG EXIT` records
-// the DEBUG half here and hands EXIT to the interpreter.
+// trapCallHandler is the *interactive* chain's trap seam: it claims the
+// DEBUG trap so the loop can fire it as the preexec hook, once per
+// command line, with extdebug's cancel semantics (#159). Other signals
+// pass through untouched, including in the same command: `trap x DEBUG
+// EXIT` records the DEBUG half here and hands EXIT to the interpreter.
 func trapCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
+	return trapHandler(next, true)
+}
+
+// scriptTrapCallHandler is the same seam for every non-interactive
+// path — `-c`, a script file, piped stdin — where it does *not* claim
+// DEBUG.
+//
+// It used to, and that was the bug (#268): the trap was recorded in
+// hooks.debugTrap, which only the interactive loop ever reads, so a
+// script's `trap … DEBUG` was accepted, silent, and never fired. Now the
+// interpreter implements DEBUG itself, per command and with BASH_COMMAND
+// set, so the honest thing is to get out of its way.
+//
+// The two paths therefore fire DEBUG at different granularities — per
+// line here, per command there — and that is stated rather than hidden.
+// bash is per-command everywhere; koi's interactive hook is the older
+// shape that preexec consumers (Atuin, iTerm2, Kiro's integration) are
+// wired to and that the ecosystem matrix pins, so it is not changed as a
+// side effect of fixing the silent case.
+func scriptTrapCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
+	return trapHandler(next, false)
+}
+
+func trapHandler(next interp.CallHandlerFunc, ownDebug bool) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
 		if args[0] != "trap" {
 			return next(ctx, args)
 		}
 		args = normalizeSignalNames(args)
-		if !slices.Contains(args, "DEBUG") {
+		if !ownDebug || !slices.Contains(args, "DEBUG") {
 			if rest, handled := recordSignalTraps(args); handled {
 				if rest == nil {
 					return []string{"true"}, nil

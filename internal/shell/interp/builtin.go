@@ -976,10 +976,13 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 	case "trap":
 		fp := flagParser{remaining: args}
 		callback := "-"
+		list, print := false, false
 		for fp.more() {
 			switch flag := fp.flag(); flag {
-			case "-l", "-p":
-				return failf(2, "trap: %q: NOT IMPLEMENTED flag\n", flag)
+			case "-l":
+				list = true
+			case "-p":
+				print = true
 			case "-":
 				// default signal
 			default:
@@ -990,22 +993,25 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}
 		}
 		args := fp.args()
+		if list {
+			r.printSignalNames()
+			break
+		}
+		// `trap -p` and bare `trap` print the same thing; `-p` additionally
+		// takes names to print, which is the form a script uses to save one
+		// handler and restore it later.
+		if print || len(args) == 0 {
+			r.printTraps(args)
+			break
+		}
 		switch len(args) {
-		case 0:
-			// Print non-default signals
-			if r.callbackExit != "" {
-				r.outf("trap -- %q EXIT\n", r.callbackExit)
-			}
-			if r.callbackErr != "" {
-				r.outf("trap -- %q ERR\n", r.callbackErr)
-			}
 		case 1:
 			// assume it's a signal, the default will be restored
 		default:
 			callback = args[0]
 			args = args[1:]
 		}
-		// For now, treat both empty and - the same since ERR and EXIT have no
+		// For now, treat both empty and - the same since these have no
 		// default callback.
 		if callback == "-" {
 			callback = ""
@@ -1013,9 +1019,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		for _, arg := range args {
 			switch arg {
 			case "ERR":
-				r.callbackErr = callback
+				r.callbackErr, r.listed.err = callback, callback
 			case "EXIT":
-				r.callbackExit = callback
+				r.callbackExit, r.listed.exit = callback, callback
+			case "DEBUG":
+				r.callbackDebug, r.listed.debug = callback, callback
 			default:
 				return failf(2, "trap: %s: invalid signal specification\n", arg)
 			}

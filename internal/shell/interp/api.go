@@ -168,8 +168,22 @@ type Runner struct {
 	keepRedirs bool
 
 	// Fake signal callbacks
-	callbackErr  string
-	callbackExit string
+	callbackErr   string
+	callbackExit  string
+	callbackDebug string
+
+	// listed mirrors the callbacks above for `trap -p`'s benefit, and is
+	// inherited by a subshell unconditionally where they are not.
+	//
+	// The two answer different questions. Whether a handler *runs* in a
+	// subshell follows bash's inheritance rules, and getting that wrong
+	// means an EXIT trap firing once per subshell. Whether `trap -p`
+	// *reports* it does not: `saved=$(trap -p EXIT)` is the documented way
+	// to save a handler, it runs in a command substitution, and reporting
+	// the subshell's empty set there hands back an empty string — so the
+	// restore installs nothing and the handler is silently lost, which is
+	// worse than `trap -p` never having worked.
+	listed listedTraps
 
 	// errTrapFired records that the ERR trap has already run for the failure
 	// which the current status describes, so that the compound commands
@@ -1073,6 +1087,13 @@ func (r *Runner) subshell(background bool) *Runner {
 	if r.opts[optErrTrace] {
 		r2.callbackErr = r.callbackErr
 	}
+	// DEBUG is inherited by a subshell only under "functrace", which is the
+	// rule bash applies to it and to RETURN. Measured rather than assumed:
+	// `trap 'echo D' DEBUG; ( echo sub )` prints nothing from the subshell.
+	if r.opts[optFuncTrace] {
+		r2.callbackDebug = r.callbackDebug
+	}
+	r2.listed = r.listed
 	r2.extraFiles = maps.Clone(r.extraFiles)
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
 	// Funcs are copied, since they might be modified.
