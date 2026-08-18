@@ -41,6 +41,11 @@ const (
 	shellReplyVar = "REPLY"
 	// shellFuncNameVar names the call stack variable, innermost function first.
 	shellFuncNameVar = "FUNCNAME"
+	// shellSourceVar and shellLineNoVar are the other two views of the same
+	// stack: the file each frame's code lives in, and the line each frame
+	// was entered from.
+	shellSourceVar = "BASH_SOURCE"
+	shellLineNoVar = "BASH_LINENO"
 	// shellCommandVar, or BASH_COMMAND, holds the command being run, as
 	// written rather than as expanded. Read by a DEBUG trap and, more
 	// often, by an ERR trap saying which command failed.
@@ -447,19 +452,105 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 	r.lastExit = r.exit
 }
 
-// setFuncName publishes the call stack. Note that bash leaves the variable
-// unset rather than empty at the top level, so a script can tell "not in a
-// function" from a function whose name happens to be empty.
-func (r *Runner) setFuncName() {
-	if len(r.funcStack) == 0 {
-		r.delVar(shellFuncNameVar)
-		return
+// callFrame is one execution context: a function call, a `source`, or the
+// script itself. Innermost first, matching the indexing every reader uses.
+//
+// The three variables and the `caller` builtin are four views of this one
+// stack, and the indexing between them is the part that is easy to get
+// subtly wrong, so it is stated once here rather than in each reader:
+//
+//   - FUNCNAME[i] is frame i's name — a function's name, or the literal
+//     "source" or "main" for the other two kinds.
+//   - BASH_SOURCE[i] is the file frame i's *code* lives in. For a function
+//     that is where it was defined, not where it was called.
+//   - BASH_LINENO[i] is the line in frame i+1 that frame i was entered
+//     from, so the two are read together: a helper names its caller with
+//     BASH_SOURCE[1] and BASH_LINENO[0].
+//   - `caller N` prints those three from one frame down: BASH_LINENO[N],
+//     FUNCNAME[N+1], BASH_SOURCE[N+1].
+type callFrame struct {
+	name     string // FUNCNAME
+	source   string // BASH_SOURCE
+	callLine uint   // BASH_LINENO
+	isFunc   bool
+}
+
+const (
+	sourceFrameName = "source"
+	mainFrameName   = "main"
+)
+
+// pushFrame enters a context; the returned function leaves it.
+func (r *Runner) pushFrame(f callFrame) func() {
+	old := r.frames
+	r.frames = append([]callFrame{f}, r.frames...)
+	return func() { r.frames = old }
+}
+
+// inFunction reports whether the innermost context is a function call,
+// which is what decides whether FUNCNAME exists at all.
+func (r *Runner) inFunction() bool {
+	return len(r.frames) > 0 && r.frames[0].isFunc
+}
+
+// baseFrames returns the stack with the script's own frame at the bottom.
+//
+// It is appended on read rather than pushed at startup because the
+// interpreter has no single point where a run begins and ends — Run can be
+// called repeatedly on the same runner — and a bottom frame pushed once
+// would have to be un-pushed by something.
+func (r *Runner) baseFrames() []callFrame {
+	if r.mainScript == "" {
+		return r.frames
 	}
-	r.setVar(shellFuncNameVar, expand.Variable{
-		Set:  true,
-		Kind: expand.Indexed,
-		List: slices.Clone(r.funcStack),
+	return append(slices.Clone(r.frames), callFrame{
+		name:   mainFrameName,
+		source: r.mainScript,
 	})
+}
+
+// funcNameVar answers FUNCNAME. bash leaves it unset rather than empty
+// outside a function, so a script can tell "not in a function" from a
+// function whose name happens to be empty — and every `${FUNCNAME[1]:-…}`
+// helper depends on that distinction.
+func (r *Runner) funcNameVar() expand.Variable {
+	if !r.inFunction() {
+		return expand.Variable{}
+	}
+	frames := r.baseFrames()
+	names := make([]string, len(frames))
+	for i, f := range frames {
+		names[i] = f.name
+	}
+	return expand.Variable{Set: true, Kind: expand.Indexed, List: names}
+}
+
+// sourceVar answers BASH_SOURCE, which unlike FUNCNAME is set whenever
+// there is any context at all — at the top level of a script it holds
+// that script, which is what the `[[ ${BASH_SOURCE[0]} == $0 ]]`
+// sourced-or-executed idiom reads.
+func (r *Runner) sourceVar() expand.Variable {
+	frames := r.baseFrames()
+	if len(frames) == 0 {
+		return expand.Variable{}
+	}
+	files := make([]string, len(frames))
+	for i, f := range frames {
+		files[i] = f.source
+	}
+	return expand.Variable{Set: true, Kind: expand.Indexed, List: files}
+}
+
+func (r *Runner) lineNoVar() expand.Variable {
+	frames := r.baseFrames()
+	if len(frames) == 0 {
+		return expand.Variable{}
+	}
+	lines := make([]string, len(frames))
+	for i, f := range frames {
+		lines[i] = strconv.FormatUint(uint64(f.callLine), 10)
+	}
+	return expand.Variable{Set: true, Kind: expand.Indexed, List: lines}
 }
 
 // shellPipeStatusVar holds the exit status of each stage of the last pipeline.
@@ -1191,7 +1282,7 @@ func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) {
 	// A function body and a sourced file are both traced only under
 	// "functrace" — the same rule, and both measured: bash prints nothing
 	// for the commands inside `. file` until `set -T`.
-	if (len(r.funcStack) > 0 || r.inSource) && !r.opts[optFuncTrace] {
+	if (r.inFunction() || r.inSource) && !r.opts[optFuncTrace] {
 		return
 	}
 	r.trapCallback(ctx, r.callbackDebug, "debug")
@@ -1730,9 +1821,16 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		oldPipeStatusSet, oldPipeStatus := r.pipeStatusSet, r.pipeStatus
 		r.pipeStatusSet, r.pipeStatus = false, nil
 
-		oldFuncStack := r.funcStack
-		r.funcStack = append([]string{name}, r.funcStack...)
-		r.setFuncName()
+		// BASH_SOURCE names where the function was *defined*, so a helper
+		// in a sourced library reports the library rather than whichever
+		// script happened to call it. The line is the call's, in whatever
+		// file the call was written in.
+		popFrame := r.pushFrame(callFrame{
+			name:     name,
+			source:   r.funcSource[name],
+			callLine: pos.Line(),
+			isFunc:   true,
+		})
 
 		// Functions run in a nested scope.
 		// Note that [Runner.exec] below does something similar.
@@ -1745,8 +1843,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 
 		r.errTrapFired, r.errTrapDepth = oldErrTrapFired, oldErrTrapDepth
 		r.pipeStatusSet, r.pipeStatus = oldPipeStatusSet, oldPipeStatus
-		r.funcStack = oldFuncStack
-		r.setFuncName()
+		popFrame()
 		r.Params = oldParams
 		r.inFunc = oldInFunc
 		r.exit.returning = false

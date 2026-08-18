@@ -202,9 +202,27 @@ type Runner struct {
 	// passes them on to the commands it runs.
 	extraFiles map[int]io.ReadWriteCloser
 
-	// funcStack holds the names of the functions we are inside of, innermost
-	// first, which is the order [shellFuncNameVar] uses.
-	funcStack []string
+	// frames is the execution-context stack, innermost first: one entry per
+	// function call, one per `source`, and one for the script itself. It is
+	// what FUNCNAME, BASH_SOURCE, BASH_LINENO and `caller` all read (#266).
+	//
+	// A stack of names was enough for FUNCNAME alone. The other three need
+	// a file and a line per frame, and a frame for `source` as well as for
+	// a call, which is why this replaced it rather than growing beside it.
+	frames []callFrame
+
+	// mainScript is the script file this runner was started on, or empty
+	// for a command string. It decides whether the bottom frame exists at
+	// all: bash gives `-c` no `main` frame, so `bash -c 'f(){ …; }; f'`
+	// reports one context where a script would report two.
+	mainScript string
+
+	// funcSource records the file each function was defined in, which is
+	// what BASH_SOURCE reports for its frame — not the file it is called
+	// from. A function defined in a sourced library and called from the
+	// main script names the library, which is the whole point of the
+	// variable for a logging helper.
+	funcSource map[string]string
 
 	// pipeStatus collects the exit status of each stage of the pipeline being
 	// run, left to right, for [shellPipeStatusVar]. It is nil when the command
@@ -399,6 +417,21 @@ func Dir(path string) RunnerOption {
 func Interactive(enabled bool) RunnerOption {
 	return func(r *Runner) error {
 		r.opts[optExpandAliases] = enabled
+		return nil
+	}
+}
+
+// MainScript declares that this runner is executing the named script file
+// rather than a command string, which is the difference bash reports in
+// FUNCNAME: `bash -c 'f(){ …; }; f'` names one frame where the same code in
+// a file names two, the second being `main` (#266).
+//
+// It is separate from the parse name because that cannot answer the
+// question — koi hands the parser "koi" for a `-c` session, since the parse
+// name is also what $0 reports.
+func MainScript(path string) RunnerOption {
+	return func(r *Runner) error {
+		r.mainScript = path
 		return nil
 	}
 }
@@ -885,6 +918,11 @@ func (r *Runner) Reset() {
 		// emptied below, to reuse the space
 		Vars: r.Vars,
 
+		// Constructor state, not run state: which script this runner was
+		// started on does not change between runs, and a Reset that
+		// forgot it would empty BASH_SOURCE at the top level (#266).
+		mainScript: r.mainScript,
+
 		dirStack: r.dirStack[:0],
 		usedNew:  r.usedNew,
 	}
@@ -1094,6 +1132,13 @@ func (r *Runner) subshell(background bool) *Runner {
 		r2.callbackDebug = r.callbackDebug
 	}
 	r2.listed = r.listed
+	// The frame stack crosses into a subshell, because `$(caller 0)` and
+	// `$(trap -p)` are how a script asks these questions at all — a
+	// command substitution that reported an empty stack would answer
+	// nothing to the only spelling anyone uses.
+	r2.frames = slices.Clone(r.frames)
+	r2.mainScript = r.mainScript
+	r2.funcSource = maps.Clone(r.funcSource)
 	r2.extraFiles = maps.Clone(r.extraFiles)
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
 	// Funcs are copied, since they might be modified.

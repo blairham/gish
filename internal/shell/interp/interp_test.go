@@ -1801,6 +1801,68 @@ var runTests = []runTest{
 		"cat <<'EOF'\nfoo\\\nbar\nEOF",
 		"foo\\\nbar\n",
 	},
+	// The call-frame stack: FUNCNAME, BASH_SOURCE, BASH_LINENO and the
+	// `caller` builtin, which are four views of one thing (#266, #250).
+	//
+	// None of these print a *file*, deliberately: this harness runs bash
+	// with the script on stdin and koi in process with no parse name, so
+	// the two disagree about what to call the input — a divergence about
+	// $0 (#120) rather than about frames. The file is checked end to end
+	// in cmd/koi, where both shells are given a real script.
+	{
+		"g(){ echo \"(${FUNCNAME[@]})\"; }; f(){ g; }; f",
+		"(g f)\n",
+	},
+	{
+		"echo \"[${FUNCNAME[0]-unset}]\"",
+		"[unset]\n",
+	},
+	{
+		// The line the *caller* is on, which is the half of a `die` helper
+		// that says where to look.
+		"g(){ echo \"${BASH_LINENO[0]}\"; }; f(){ g; }; f",
+		"1\n",
+	},
+	{
+		"g(){ echo \"${BASH_LINENO[0]}\"; }\nf(){\n  g\n}\nf",
+		"3\n",
+	},
+	{
+		"g(){ echo \"${#BASH_SOURCE[@]}\"; }; f(){ g; }; f",
+		"2\n",
+	},
+	{
+		// Unset at the top level of a command string, exactly as bash
+		// leaves it — a script file is the case where it is set.
+		"echo \"[${BASH_SOURCE[0]-unset}]\"",
+		"[unset]\n",
+	},
+	{
+		// `caller` answers by status when there is no frame to name, which
+		// is what an error helper branches on.
+		"caller; echo \"rc=$?\"",
+		"rc=1\n",
+	},
+	{
+		"f(){ caller 0; echo \"rc=$?\"; }; f",
+		"rc=1\n",
+	},
+	{
+		// Bare `caller` needs no frame above and prints bash's literal
+		// NULL for a context with no file.
+		"f(){ caller; }; f",
+		"1 NULL\n",
+	},
+	{
+		"g(){ caller 0 | cut -d' ' -f1-2; }; f(){ g; }; f",
+		"1 f\n",
+	},
+	{
+		// The diagnostic itself is koi-shaped (#120), so only the status is
+		// compared — which is what a caller branches on anyway.
+		"f(){ caller zz 2>/dev/null; echo \"rc=$?\"; }; f",
+		"rc=2\n",
+	},
 	// The DEBUG trap, and BASH_COMMAND with it (#268). A DEBUG trap used
 	// to be refused here and intercepted a layer up, which left a script's
 	// `trap … DEBUG` recorded and never fired — accepted, silent, exit 0.

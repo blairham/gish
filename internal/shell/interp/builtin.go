@@ -488,7 +488,27 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		// parameters.
 		r.sourceSetParams = false
 		r.inSource = true // know that we're inside a sourced script.
+		// A `source` is its own frame, so a library's own top level names
+		// itself in BASH_SOURCE and a function it defines carries that
+		// file with it. The line is where the `source` was written, which
+		// is what BASH_LINENO reports for the frame below.
+		// BASH_SOURCE reports the path as it was written, not as it was
+		// resolved: `. ./lib.sh` names `./lib.sh`, which is what bash says
+		// and what a library's own `dirname "${BASH_SOURCE[0]}"` expects.
+		// Only a bare name — the PATH-searched form — reports where it was
+		// actually found, since the name alone would not lead anyone back
+		// to the file.
+		sourceName := args[0]
+		if !strings.ContainsRune(sourceName, filepath.Separator) {
+			sourceName = path
+		}
+		popFrame := r.pushFrame(callFrame{
+			name:     sourceFrameName,
+			source:   sourceName,
+			callLine: pos.Line(),
+		})
 		r.stmts(ctx, file.Stmts)
+		popFrame()
 
 		// If we modified the parameters and the sourced file didn't
 		// explicitly set them, we restore the old ones.
@@ -1140,10 +1160,70 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			exit.code = 1
 		}
 
+	case "caller":
+		// `caller` is the frame stack as a builtin (#250, #266): the same
+		// three fields FUNCNAME, BASH_SOURCE and BASH_LINENO expose, read
+		// one frame down from the argument.
+		//
+		// It answers by *status* when there is no such frame, which is what
+		// callers act on: `caller 0` at the top level of a script is how an
+		// error helper asks "was I called from a function?" and expects a
+		// non-zero answer rather than a diagnostic.
+		frames := r.baseFrames()
+		depth := 0
+		if len(args) > 0 {
+			n, err := strconv.Atoi(args[0])
+			if err != nil || n < 0 {
+				// bash separates these: a negative number is read as an
+				// option, anything else as a bad number. Both exit 2 with
+				// the usage line, which is what a caller sees.
+				what := "invalid number"
+				if strings.HasPrefix(args[0], "-") {
+					what = "invalid option"
+				}
+				r.errf("caller: %s: %s\ncaller: usage: caller [expr]\n", args[0], what)
+				exit.code = 2
+				break
+			}
+			depth = n
+		}
+		// Outside a function there is nothing to report, whatever the
+		// depth: `caller` exists to name the caller of a function.
+		if !r.inFunction() || depth >= len(frames) {
+			exit.code = 1
+			break
+		}
+		if len(args) == 0 {
+			// Bare `caller` prints the line and the file only, and it does
+			// not need a frame above to exist — bash prints its literal
+			// "NULL" for the file instead, which is what `-c` produces.
+			src := ""
+			if depth+1 < len(frames) {
+				src = frames[depth+1].source
+			}
+			r.outf("%d %s\n", frames[depth].callLine, orNull(src))
+			break
+		}
+		// `caller N` names a function, so the frame above has to be there.
+		if depth+1 >= len(frames) {
+			exit.code = 1
+			break
+		}
+		up := frames[depth+1]
+		r.outf("%d %s %s\n", frames[depth].callLine, up.name, orNull(up.source))
+
 	default:
 		return failf(2, "%s: unsupported builtin\n", name)
 	}
 	return exit
+}
+
+// orNull is bash's spelling for a frame whose file is not known.
+func orNull(s string) string {
+	if s == "" {
+		return "NULL"
+	}
+	return s
 }
 
 // mapfileSplit returns a suitable Split function for a [bufio.Scanner];
