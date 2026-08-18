@@ -8,9 +8,10 @@ import (
 	"slices"
 	"strings"
 
-	"mvdan.cc/sh/v3/expand"
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/expand"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Bash's hook surface (#159).

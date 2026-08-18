@@ -1,7 +1,7 @@
 package repl
 
 import (
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 
 	"github.com/blairham/koi-shell/internal/plugmgr"
 	"github.com/blairham/koi-shell/internal/ui"

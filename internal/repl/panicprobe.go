@@ -5,7 +5,7 @@ package repl
 import (
 	"context"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // The panic the guard's end-to-end tests need, on demand.

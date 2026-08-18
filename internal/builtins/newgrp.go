@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // newgrp is deliberately not implemented (#61).

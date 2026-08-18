@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // ziHome points the manager at a temp root and preinstalls a plugin so

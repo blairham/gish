@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // runIn runs one line in a runner and returns its combined output.

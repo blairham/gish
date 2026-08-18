@@ -13,8 +13,9 @@ import (
 	"sync"
 	"testing"
 
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // partool builds the hermetic child binary once per run and returns it

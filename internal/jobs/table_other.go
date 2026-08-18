@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Supported reports whether job control is available on this platform.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/expand"
+	"github.com/blairham/koi-shell/internal/shell/expand"
 )
 
 // The comparison decides whether a user is nagged about nothing, so

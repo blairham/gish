@@ -11,8 +11,8 @@ import (
 	"slices"
 	"sync"
 
-	"mvdan.cc/sh/v3/expand"
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/expand"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 
 	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 	pluginsdk "github.com/blairham/koi-shell/pkg/pluginsdk/v1"

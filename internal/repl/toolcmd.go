@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 
 	"github.com/blairham/koi-shell/internal/tools"
 	"github.com/blairham/koi-shell/internal/ui"

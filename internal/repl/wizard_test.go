@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/expand"
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/expand"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // wizardHC builds a HandlerContext with scripted answers on stdin and

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Ctrl-X Ctrl-E (#96): edit the current line in $EDITOR. The editor

@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // Times is unavailable where getrusage is. Registered anyway, so the

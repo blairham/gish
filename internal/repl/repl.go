@@ -19,8 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 
 	"github.com/blairham/koi-shell/internal/builtins"
 	"github.com/blairham/koi-shell/internal/editor"

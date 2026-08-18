@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"mvdan.cc/sh/v3/interp"
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // PS1 (#159): the prompt the ecosystem writes.
