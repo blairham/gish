@@ -142,11 +142,18 @@ func TestCompgenPathsMatchBash(t *testing.T) {
 }
 
 // The keyword action is the one class that cannot be compared outright:
-// bash has coproc and koi does not implement it (#287), so answering
-// with it would be a lie about this shell. Everything else must match,
-// in both directions — a keyword bash lists and koi does not is the bug
-// the issue reported, and one koi lists and bash does not would mean
-// inventing a keyword.
+// bash 4.0 and later have coproc and koi does not implement it (#287),
+// so answering with it would be a lie about this shell. Everything else
+// must match, in both directions — a keyword bash lists and koi does not
+// is the bug the issue reported, and one koi lists and bash does not
+// would mean inventing a keyword.
+//
+// coproc is allowed to be missing rather than required to be: the oracle
+// here is whichever bash is on PATH, and macOS ships 3.2, whose own list
+// predates coproc. Asserting the difference *is* coproc passed against
+// 5.3 and failed on the macOS runner, where koi matched bash exactly.
+// Subset keeps the claim that matters — a short list still fails, which
+// is the regression this guards.
 func TestCompgenKeywordsMatchBashExceptCoproc(t *testing.T) {
 	t.Parallel()
 	koi, bash := buildKoi(t), bashBin(t)
@@ -155,9 +162,10 @@ func TestCompgenKeywordsMatchBashExceptCoproc(t *testing.T) {
 	got, _ := shellLines(t, koi, dir, "compgen -k")
 	want, _ := shellLines(t, bash, dir, "compgen -k")
 
-	missing := difference(want, got)
-	if strings.Join(missing, " ") != "coproc" {
-		t.Errorf("keywords bash lists and koi does not = %q, want only [coproc]", missing)
+	for _, kw := range difference(want, got) {
+		if kw != "coproc" {
+			t.Errorf("bash lists keyword %q and koi does not", kw)
+		}
 	}
 	if extra := difference(got, want); len(extra) > 0 {
 		t.Errorf("koi lists keywords bash does not: %q", extra)
