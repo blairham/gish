@@ -84,7 +84,7 @@ func TestUlimitMatchesBash(t *testing.T) {
 	}
 }
 
-// The labelled form, which pins the descriptions, the units, the option
+// The labeled form, which pins the descriptions, the units, the option
 // order and the padding all at once — `ulimit -a | grep 'open files'` is
 // a normal way to read this, so the strings are a contract.
 func TestUlimitListingMatchesBash(t *testing.T) {
@@ -209,10 +209,10 @@ func TestUlimitOptionGrammarMatchesBash(t *testing.T) {
 		t.Parallel()
 		for _, script := range []string{
 			"ulimit",         // bare is -f
-			"ulimit -c -s",   // more than one resource takes the labelled form
+			"ulimit -c -s",   // more than one resource takes the labeled form
 			"ulimit -s -c",   // and keeps the order asked
-			"ulimit -HS -c",  // the last of H and S wins
-			"ulimit -SH -c",  //
+			"ulimit -HS -c",  // asking answers soft whenever S is there at all,
+			"ulimit -SH -c",  // in either order — it is not last-one-wins
 			"ulimit -c 1 -s", // a value binds to the letter before it
 			"ulimit -c 1 2",  // and a spare word is ignored
 			"ulimit -a -c",   // -a wins over a resource beside it
