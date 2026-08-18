@@ -114,7 +114,7 @@ func TestConfigPathFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(home, ".config", "gish", ConfigFileName); path != want {
+	if want := filepath.Join(home, ".config", "koi", ConfigFileName); path != want {
 		t.Errorf("ConfigPath = %q, want %q", path, want)
 	}
 
@@ -124,7 +124,7 @@ func TestConfigPathFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(explicit, "gish", ConfigFileName); path != want {
+	if want := filepath.Join(explicit, "koi", ConfigFileName); path != want {
 		t.Errorf("ConfigPath with XDG = %q, want %q", path, want)
 	}
 }

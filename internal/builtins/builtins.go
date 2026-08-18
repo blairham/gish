@@ -1,11 +1,11 @@
-// Package builtins hosts gish-native builtins, layered over the
+// Package builtins hosts koi-native builtins, layered over the
 // interpreter through mvdan's ExecHandler middleware: the handler fires
 // exactly when a command name is not an interpreter builtin, which makes
 // it the natural extension seam. This package is its first occupant; job
 // control's jobs/fg/bg (#5) and plugin-provided commands (M3
 // CommandProvider) build on the same mechanism.
 //
-// Name policy: a gish builtin shadows PATH binaries of the same name
+// Name policy: a koi builtin shadows PATH binaries of the same name
 // (like any shell builtin); pick names accordingly. Constraint: a name
 // the interpreter recognizes (interp.IsBuiltin — the POSIX/bash set,
 // including unimplemented ones like help/jobs/fg/bg) never reaches this
@@ -22,7 +22,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
-// Func is a gish-native builtin. args excludes the command name; output
+// Func is a koi-native builtin. args excludes the command name; output
 // goes to the handler context's stdio, never the process's.
 type Func func(ctx context.Context, hc interp.HandlerContext, args []string) error
 
@@ -39,7 +39,7 @@ func init() {
 	registry["builtins"] = listBuiltins
 }
 
-// ExecHandler is the middleware that dispatches gish-native builtins and
+// ExecHandler is the middleware that dispatches koi-native builtins and
 // passes everything else on (ultimately to the PATH-exec handler).
 func ExecHandler(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
@@ -50,8 +50,8 @@ func ExecHandler(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	}
 }
 
-// Register adds a gish-native builtin; called from startup wiring, before
-// any command runs. Job control registers __gish_jobs/fg/bg here, reached
+// Register adds a koi-native builtin; called from startup wiring, before
+// any command runs. Job control registers __koi_jobs/fg/bg here, reached
 // through the CallHandler rewrite.
 func Register(name string, fn Func) {
 	registry[name] = fn
@@ -63,12 +63,12 @@ func ShellBuiltins() []string {
 	return slices.Clone(interpImplemented)
 }
 
-// Native returns the gish-native builtin names as the user types them:
-// registry-internal __gish_ prefixes are stripped for display.
+// Native returns the koi-native builtin names as the user types them:
+// registry-internal __koi_ prefixes are stripped for display.
 func Native() []string {
 	names := make([]string, 0, len(registry))
 	for name := range registry {
-		names = append(names, strings.TrimPrefix(name, "__gish_"))
+		names = append(names, strings.TrimPrefix(name, "__koi_"))
 	}
 	slices.Sort(names)
 	return names
@@ -96,14 +96,14 @@ var interpUnsupported = []string{
 	"bg", "fc", "fg", "jobs", "kill", "newgrp", "times", "umask",
 }
 
-// Note: fc, kill, times and umask stay listed above even though gish
+// Note: fc, kill, times and umask stay listed above even though koi
 // implements them. listBuiltins supersedes an entry once a native
 // builtin claims the name, so the listing describes the session rather
 // than the build — the same rule jobs/fg/bg follow.
 
 func listBuiltins(_ context.Context, hc interp.HandlerContext, _ []string) error {
 	native := Native()
-	// A registered gish builtin (e.g. jobs/fg/bg under job control)
+	// A registered koi builtin (e.g. jobs/fg/bg under job control)
 	// supersedes its "unsupported" listing.
 	unsupported := make([]string, 0, len(interpUnsupported))
 	for _, name := range interpUnsupported {
@@ -111,7 +111,7 @@ func listBuiltins(_ context.Context, hc interp.HandlerContext, _ []string) error
 			unsupported = append(unsupported, name)
 		}
 	}
-	fmt.Fprintf(hc.Stdout, "gish builtins:\n  %s\n\n", strings.Join(native, " "))
+	fmt.Fprintf(hc.Stdout, "koi builtins:\n  %s\n\n", strings.Join(native, " "))
 	fmt.Fprintf(hc.Stdout, "shell builtins:\n  %s\n\n", strings.Join(interpImplemented, " "))
 	fmt.Fprintf(hc.Stdout, "recognized but not yet supported:\n  %s\n", strings.Join(unsupported, " "))
 	return nil

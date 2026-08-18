@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/manifest"
+	"github.com/blairham/koi-shell/internal/manifest"
 )
 
 func boolp(b bool) *bool { return &b }
@@ -147,7 +147,7 @@ func TestBrowseDetail(t *testing.T) {
 
 // The starter list is a starting point, not a registry, and the code
 // says so. This keeps a future contributor from growing it into an
-// index gish would then be implicitly vouching for.
+// index koi would then be implicitly vouching for.
 func TestStarterListStaysSmall(t *testing.T) {
 	if len(starterPlugins) > 6 {
 		t.Errorf("starter list has %d entries; it is a starting point, not a registry", len(starterPlugins))

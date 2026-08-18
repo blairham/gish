@@ -17,9 +17,9 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/envtrust"
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/envtrust"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // Env diffs (#12): on directory change an EnvProvider plugin proposes
@@ -44,14 +44,14 @@ var envMgr *envManager
 
 // envDenied reports variables no plugin may ever set or unset:
 // process-loader hooks, word-splitting, startup-file redirection, and
-// gish's own knobs. PATH is deliberately settable — but only ever
+// koi's own knobs. PATH is deliberately settable — but only ever
 // through the visible allow flow.
 func envDenied(name string) bool {
 	switch name {
 	case "IFS", "ENV", "BASH_ENV", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT":
 		return true
 	}
-	return strings.HasPrefix(name, "DYLD_") || strings.HasPrefix(name, "GISH_")
+	return strings.HasPrefix(name, "DYLD_") || strings.HasPrefix(name, "KOI_")
 }
 
 // envProposal is one stripped, validated, hashed proposal.
@@ -136,7 +136,7 @@ func (m *envManager) atPrompt(ctx context.Context, runner *interp.Runner) {
 	m.pending = p
 	if key := p.forDir + "\x00" + p.hash; m.notified != key {
 		m.notified = key
-		fmt.Fprintf(m.notices, "gish: env: plugin %q proposes %d change(s) for %s — run `trust` to review\n",
+		fmt.Fprintf(m.notices, "koi: env: plugin %q proposes %d change(s) for %s — run `trust` to review\n",
 			p.plugin, len(p.set)+len(p.unset), p.forDir)
 	}
 }
@@ -212,7 +212,7 @@ func (m *envManager) allowPending(ctx context.Context, runner *interp.Runner) (s
 	// One gesture, both trust models (#137). A plugin wrapping a tool
 	// with its own approval — direnv is the motivating case — gets told
 	// the user said yes, so nobody is asked twice for one action. The
-	// call is best-effort: gish's own record is authoritative for gish,
+	// call is best-effort: koi's own record is authoritative for koi,
 	// so a plugin that cannot record it still gets its diff applied,
 	// with a note, because the alternative is refusing an approval the
 	// user already gave.

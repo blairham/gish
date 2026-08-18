@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // printPluginStatuses renders the plugins listing: a lipgloss table on

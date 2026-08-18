@@ -21,7 +21,7 @@ reason is recorded at the bottom rather than papered over.
 | commits, last 90 days | 81 |
 | releases | v0.4.0 (2026-05-03), v0.3.0 (2025-11-17), v0.2.23 (2025-08-30) |
 
-Its top line is gish's: *run your existing scripts and `.bashrc`
+Its top line is koi's: *run your existing scripts and `.bashrc`
 unchanged, with syntax highlighting and autosuggestions built in*, with
 ~1,700 compatibility tests behind it.
 
@@ -62,7 +62,7 @@ squarely at the completion pillar and asks for nothing in return.
 threatening the product.** The answer is not to out-complete IRIS; it is
 that completion is table stakes and the defensible layer is the one an
 add-on cannot reach. If IRIS ever ships an ACP or plugin surface, the
-right move is to *consume* it, the way gish consumes carapace.
+right move is to *consume* it, the way koi consumes carapace.
 
 ### ble.sh — the unmeasurable one
 

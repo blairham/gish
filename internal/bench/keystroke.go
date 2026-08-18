@@ -62,20 +62,20 @@ type KeystrokeScenario struct {
 	Key byte
 }
 
-// MeasureKeystrokes types into a live gish and records per-keypress
+// MeasureKeystrokes types into a live koi and records per-keypress
 // latency for each scenario.
-func MeasureKeystrokes(gishBin string, scenarios []KeystrokeScenario, samples int) []KeystrokeResult {
+func MeasureKeystrokes(koiBin string, scenarios []KeystrokeScenario, samples int) []KeystrokeResult {
 	out := make([]KeystrokeResult, 0, len(scenarios))
 	for _, sc := range scenarios {
-		out = append(out, measureOne(gishBin, sc, samples))
+		out = append(out, measureOne(koiBin, sc, samples))
 	}
 	return out
 }
 
-func measureOne(gishBin string, sc KeystrokeScenario, samples int) KeystrokeResult {
+func measureOne(koiBin string, sc KeystrokeScenario, samples int) KeystrokeResult {
 	res := KeystrokeResult{Scenario: sc.Scenario, Note: sc.Note}
 
-	home, err := os.MkdirTemp("", "gish-keys")
+	home, err := os.MkdirTemp("", "koi-keys")
 	if err != nil {
 		res.Err = err.Error()
 		return res
@@ -89,10 +89,10 @@ func measureOne(gishBin string, sc KeystrokeScenario, samples int) KeystrokeResu
 		"XDG_STATE_HOME=" + home + "/state",
 		"TERM=xterm-256color",
 		"PATH=" + os.Getenv("PATH"),
-		"GISH_PROMPT=" + marker + " ",
+		"KOI_PROMPT=" + marker + " ",
 	}, sc.Env...)
 
-	cmd := exec.Command(gishBin) //nolint:gosec // our own binary
+	cmd := exec.Command(koiBin) //nolint:gosec // our own binary
 	cmd.Env = env
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
 	if err != nil {

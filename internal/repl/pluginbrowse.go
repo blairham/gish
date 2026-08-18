@@ -7,7 +7,7 @@ import (
 
 	huh "charm.land/huh/v2"
 
-	"github.com/blairham/gish/internal/manifest"
+	"github.com/blairham/koi-shell/internal/manifest"
 )
 
 // `plugin browse` and the interactive `plugin add` (#90).
@@ -26,14 +26,14 @@ import (
 // the form is only a way of filling it in.
 
 // starterPlugins is a short, opinionated list for the empty case:
-// someone who just installed gish and types `plugin browse` has nothing
+// someone who just installed koi and types `plugin browse` has nothing
 // to browse, and a blank screen is a worse answer than four suggestions.
 //
-// It is explicitly **not a registry**. gish does not host, index, or
+// It is explicitly **not a registry**. koi does not host, index, or
 // vouch for plugins, and pretending otherwise would be a promise we
 // have no way to keep. Anything on GitHub works by typing owner/repo.
 var starterPlugins = []struct{ source, what string }{
-	{"zsh-users/zsh-autosuggestions", "history suggestions (gish has this natively — for parity while you switch)"},
+	{"zsh-users/zsh-autosuggestions", "history suggestions (koi has this natively — for parity while you switch)"},
 	{"zsh-users/zsh-syntax-highlighting", "command-line highlighting (also native here)"},
 	{"zsh-users/zsh-completions", "extra completion definitions"},
 	{"ohmyzsh/ohmyzsh", "the plugin pile — lazy-load a path from it"},

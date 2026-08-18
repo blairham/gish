@@ -1,4 +1,4 @@
-// Package migrate imports an existing bash or zsh setup into gish
+// Package migrate imports an existing bash or zsh setup into koi
 // (#160).
 //
 // The research is blunt about why this exists: mise out-installs asdf
@@ -59,7 +59,7 @@ type Skipped struct {
 type PluginManager struct {
 	Name   string
 	Detail string
-	// Native says whether gish has an equivalent the user can adopt.
+	// Native says whether koi has an equivalent the user can adopt.
 	Native bool
 }
 
@@ -71,7 +71,7 @@ type Plan struct {
 	Functions  []string // names, with bodies kept in FunctionSrc
 	Exports    []Export
 	PathAdds   []string
-	Theme      string // the gish theme nearest to what was detected
+	Theme      string // the koi theme nearest to what was detected
 	ThemeWhy   string
 	Managers   []PluginManager
 	Skipped    []Skipped
@@ -111,7 +111,7 @@ func Detect(home string) (*Plan, error) {
 
 // readRC parses one rc file and folds what it understands into the plan.
 //
-// The parse is bash's, which is also gish's; zsh files that use zsh-only
+// The parse is bash's, which is also koi's; zsh files that use zsh-only
 // syntax fail to parse as a whole, and that is exactly when the
 // line-based fallback earns its place — an rc is a list of mostly
 // independent lines, and one zsh-ism should not cost the other ninety.
@@ -150,7 +150,7 @@ func (p *Plan) readStmt(path, src string, stmt *syntax.Stmt) {
 			return // a bare assignment line: already handled above
 		}
 		if !p.readCall(path, src, cmd) {
-			p.note(path, src, stmt, "command not translated — run it in your gish rc if you still need it")
+			p.note(path, src, stmt, "command not translated — run it in your koi rc if you still need it")
 		}
 	case *syntax.DeclClause:
 		// `export FOO=bar` is a declaration clause, not a call — which
@@ -167,7 +167,7 @@ func (p *Plan) readStmt(path, src string, stmt *syntax.Stmt) {
 }
 
 // readCall picks up `alias name=value` and the tool-init lines whose
-// gish equivalent is a setting rather than a command.
+// koi equivalent is a setting rather than a command.
 func (p *Plan) readCall(path, src string, call *syntax.CallExpr) bool {
 	if len(call.Args) == 0 {
 		return true
@@ -195,14 +195,14 @@ func (p *Plan) readCall(path, src string, call *syntax.CallExpr) bool {
 		case strings.Contains(joined, "starship init"):
 			p.setTheme("starship", "your rc runs `starship init`")
 		case strings.Contains(joined, "oh-my-posh"):
-			// Not a gish theme and does not need to be: oh-my-posh's
+			// Not a koi theme and does not need to be: oh-my-posh's
 			// bash init sets PS1 from a PROMPT_COMMAND, which #159
 			// inherits, and the ecosystem matrix asserts it rendering
 			// in a live shell. Telling a switcher to abandon their
 			// prompt for p10k — as this line used to — gave up a
 			// working setup in the one place they are looking for
 			// reasons not to move.
-			p.note(path, src, call, "keep this line unchanged — your oh-my-posh prompt works in gish as-is (docs/interactive-compat.md)")
+			p.note(path, src, call, "keep this line unchanged — your oh-my-posh prompt works in koi as-is (docs/interactive-compat.md)")
 		default:
 			return false
 		}
@@ -215,7 +215,7 @@ func (p *Plan) readCall(path, src string, call *syntax.CallExpr) bool {
 		case strings.Contains(joined, "p10k.zsh"):
 			p.setTheme("p10k", "your rc sources a powerlevel10k config — import it with `prompt import`")
 		case strings.Contains(joined, "zinit") || strings.Contains(joined, "zi.zsh"):
-			p.addManager("zinit/zi", "gish has the engine natively: `zi migrate` imports installed objects", true)
+			p.addManager("zinit/zi", "koi has the engine natively: `zi migrate` imports installed objects", true)
 		case strings.Contains(joined, "antidote"):
 			p.addManager("antidote", "list your bundles in plugins.toml with `plugin add`", false)
 		case strings.Contains(joined, "zplug"):
@@ -248,11 +248,11 @@ func (p *Plan) readAssign(path, src string, a *syntax.Assign) {
 			p.PathAdds = append(p.PathAdds, part)
 		}
 	case strings.HasPrefix(name, "POWERLEVEL9K_"):
-		p.setTheme("p10k", "your rc sets POWERLEVEL9K_* — gish has a native port; `prompt import` takes the whole config")
+		p.setTheme("p10k", "your rc sets POWERLEVEL9K_* — koi has a native port; `prompt import` takes the whole config")
 	case name == "ZSH_THEME":
 		p.setTheme("p10k", "oh-my-zsh theme "+unquote(value)+" has no port; p10k is the closest built-in")
 	case name == "PS1" || name == "PROMPT":
-		p.note(path, src, a, "prompt string kept as-is: gish renders PS1, but the escapes it uses are bash's")
+		p.note(path, src, a, "prompt string kept as-is: koi renders PS1, but the escapes it uses are bash's")
 	case a.Naked, value == "":
 		// A bare name or an empty value carries nothing to import.
 	default:
@@ -493,10 +493,10 @@ func unquote(s string) string {
 	return s
 }
 
-// GishRC renders the plan as a gish rc file.
-func (p *Plan) GishRC() string {
+// KoiRC renders the plan as a koi rc file.
+func (p *Plan) KoiRC() string {
 	var b strings.Builder
-	b.WriteString("# Written by `gish migrate` from:\n")
+	b.WriteString("# Written by `koi migrate` from:\n")
 	for _, s := range p.Sources {
 		fmt.Fprintf(&b, "#   %s (%s)\n", s.Path, s.Shell)
 	}
@@ -504,7 +504,7 @@ func (p *Plan) GishRC() string {
 	b.WriteString("# nothing was dropped silently.\n")
 
 	if p.Theme != "" {
-		fmt.Fprintf(&b, "\n# %s\nGISH_THEME=%s\n", p.ThemeWhy, p.Theme)
+		fmt.Fprintf(&b, "\n# %s\nKOI_THEME=%s\n", p.ThemeWhy, p.Theme)
 	}
 	if len(p.PathAdds) > 0 {
 		b.WriteString("\n# PATH entries from your rc, in the order they appeared.\n")
@@ -549,7 +549,7 @@ func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''
 // Report is the honest half: what was found, and what did not translate.
 func (p *Plan) Report() string {
 	var b strings.Builder
-	b.WriteString("gish migrate — what was found\n\n")
+	b.WriteString("koi migrate — what was found\n\n")
 	if len(p.Sources) == 0 {
 		b.WriteString("  no bash or zsh rc files in your home directory\n")
 		return b.String()

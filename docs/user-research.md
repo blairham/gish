@@ -1,12 +1,12 @@
 # User research: what people hate about their shells
 
 Web sweep, 2026-08-14 — the complaints that drive shell switching, mapped
-against gish. This document exists so the roadmap is driven by real pain,
+against koi. This document exists so the roadmap is driven by real pain,
 not vibes. Issues filed under **M5 — Out-of-box experience**.
 
 ## The complaint → answer map
 
-| # | Complaint (who bleeds users) | Evidence | gish answer | Status |
+| # | Complaint (who bleeds users) | Evidence | koi answer | Status |
 | --- | --- | --- | --- | --- |
 | 1 | **Slow startup** — oh-my-zsh 500ms–5s; the #1 zsh→fish driver | HN threads, fish 4.0 marketing (<100ms) | static binary, lazy plugins, async segments — but make it a *guarantee* | #37: <30ms CI-enforced budget |
 | 2 | **Bad defaults** — zsh needs a manual + plugin manager before it's pleasant; fish wins on out-of-box highlighting/autosuggestions/git prompt | every zsh-vs-fish comparison | theme ✓ prompt ✓ completion ✓ git ✓ — missing the two fish signatures | #38 syntax highlighting, #39 autosuggestions |
@@ -19,7 +19,7 @@ not vibes. Issues filed under **M5 — Out-of-box experience**.
 
 ## The positioning sentence this research supports
 
-> gish: fish's out-of-box experience, bash's compatibility, and a plugin
+> koi: fish's out-of-box experience, bash's compatibility, and a plugin
 > system with an actual contract — without giving up your scripts, your
 > zsh plugins, or your login shell.
 

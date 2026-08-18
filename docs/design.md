@@ -1,4 +1,4 @@
-# gish — architecture
+# koi — architecture
 
 ## Goals
 
@@ -11,7 +11,7 @@
 
 ### Tier 1 — script plugins (migration escape hatch)
 
-*Demoted from "the adoption story" by [#105](https://github.com/blairham/gish/issues/105) — see Decisions.*
+*Demoted from "the adoption story" by [#105](https://github.com/blairham/koi-shell/issues/105) — see Decisions.*
 The adoption story is fish-grade defaults + bash paste-compat + the
 native stack; tier 1 exists so a switcher's handful of
 must-have zsh plugins is not a blocker, not so the .zshrc pile moves in.
@@ -33,7 +33,7 @@ pin, lazy — edited by `plugin add|remove|pin|enable|disable|update`. No
 
 ### Tier 2 — native gRPC plugins (differentiator)
 
-Resident subprocesses over hashicorp/go-plugin, contract in `proto/gish/plugin/v1`:
+Resident subprocesses over hashicorp/go-plugin, contract in `proto/koi/plugin/v1`:
 
 | Service | Purpose | Shape |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ Rules that make this fast enough to live in a keystroke path:
 
 - **Resident, never spawn-per-call.** Lazy launch on first use, alive for the session. (Future: a shared cross-session daemon, gitstatusd-style.)
 - **Deadline on every call.** Prompt segments default to a 50ms budget (self-declarable via `budget_ms`); misses render stale/empty and repaint in place. Completions stream so early candidates show while slow sources work.
-- **Versioned contract.** `gish.plugin.v1` is frozen-additive; breaking changes are a `v2` package plus a go-plugin `ProtocolVersion` bump.
+- **Versioned contract.** `koi.plugin.v1` is frozen-additive; breaking changes are a `v2` package plus a go-plugin `ProtocolVersion` bump.
 - **Filtered environment.** Plugins get an allowlisted env map, not the process environment.
 - **Any language.** gRPC + protobuf means plugins in Go, Rust, Python, whatever — an adoption lever the zsh ecosystem can't offer.
 
@@ -59,7 +59,7 @@ The line editor and prompt engine consume both tiers through one internal interf
 ## Roadmap (milestone sketch)
 
 1. **Skeleton** *(now)* — bash/POSIX exec via mvdan/sh, plain REPL, tier-2 contract designed, stubs generated, host handshake in place.
-2. **Line editor** — raw-mode editor (keymap, kill-ring, undo), history file, incremental search. This is where gish starts feeling like a shell.
+2. **Line editor** — raw-mode editor (keymap, kill-ring, undo), history file, incremental search. This is where koi starts feeling like a shell.
 3. **Tier-2 dispatch** — plugin discovery/config, resident lifecycle, deadlines; first real plugins: git prompt segment, file/carapace-style completion.
 4. **Completion UI** — menu selection, descriptions, multi-provider merge.
 5. **Tier-1 pattern compat** — precmd/preexec, aliases/exports, completion registration; the top plugins' *behaviors*, natively or by pattern.
@@ -69,10 +69,10 @@ The line editor and prompt engine consume both tiers through one internal interf
 ## Decisions
 
 - **ACP on the agent edge, in two places** (2026-08,
-  [#166](https://github.com/blairham/gish/issues/166),
-  [#167](https://github.com/blairham/gish/issues/167), docs/acp.md): the
+  [#166](https://github.com/blairham/koi-shell/issues/166),
+  [#167](https://github.com/blairham/koi-shell/issues/167), docs/acp.md): the
   inbound role (an ACP agent answers `??` and `explain`) is a plugin;
-  the outbound role (an agent's commands execute inside gish) is core,
+  the outbound role (an agent's commands execute inside koi) is core,
   because a plugin may never hold an exec channel (#34).
 
   The spike's load-bearing question — does the terminal capability have
@@ -86,7 +86,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   What makes it worth doing is what ACP omits: no permission model, no
   sandboxing, no timeout. Those are correct omissions for a protocol and
   a real gap for whoever hosts one — every ACP client today runs an
-  agent's commands the way `bash -c` would. gish has sandbox profiles
+  agent's commands the way `bash -c` would. koi has sandbox profiles
   and a deadline on every call already.
 
   Recorded caveat, so it is not re-litigated into a slogan: the
@@ -94,10 +94,10 @@ The line editor and prompt engine consume both tiers through one internal interf
   bash") is **not evidenced** — 2 HN accounts, 0 of 827 in a Reddit
   corpus. Build it for the substrate, not the story (#169).
 
-- **gish claims bash's interface, not bash's identity** (2026-08,
-  [#120](https://github.com/blairham/gish/issues/120)): `BASH_VERSION`
-  and `BASH_VERSINFO` report a modern bash; `$0` stays `gish`, and
-  `GISH_VERSION` says exactly what is running.
+- **koi claims bash's interface, not bash's identity** (2026-08,
+  [#120](https://github.com/blairham/koi-shell/issues/120)): `BASH_VERSION`
+  and `BASH_VERSINFO` report a modern bash; `$0` stays `koi`, and
+  `KOI_VERSION` says exactly what is running.
 
   The issue's own recommendation was the opposite — claim nothing, and
   shim per tool — with one stated condition for revisiting: evidence
@@ -105,14 +105,14 @@ The line editor and prompt engine consume both tiers through one internal interf
   passes. The #159 matrix produced exactly that. fzf chooses between two
   Ctrl-T implementations on `((BASH_VERSINFO[0] < 4))`: a readline
   *macro* built from editing commands including `shell-expand-line`,
-  which gish does not emulate and will not, or `bind -x`, which gish
+  which koi does not emulate and will not, or `bind -x`, which koi
   implements. Unset, that arithmetic reads 0 — so refusing to claim a
-  version handed gish the one path it cannot run, in order to avoid
+  version handed koi the one path it cannot run, in order to avoid
   claiming a capability it has.
 
   The distinction that makes this honest rather than impersonation:
   these variables are used as **feature probes**, and the features they
-  gate are ones gish implements (`PROMPT_COMMAND`, `PS0`, the DEBUG
+  gate are ones koi implements (`PROMPT_COMMAND`, `PS0`, the DEBUG
   trap, `bind -x`, `complete`/`compgen`). The **identity** question is
   answered truthfully — `$0` is what a script re-execs and what a user
   sees, and lying there would be a lie a program could act on. Where the
@@ -120,23 +120,23 @@ The line editor and prompt engine consume both tiers through one internal interf
   by name and `doctor` reports them.
 
 - **One theme engine, two config dialects** (2026-08,
-  [#134](https://github.com/blairham/gish/issues/134)): `p10k` is the
-  engine; the `gish` theme's knobs (`GISH_THEME_SEGMENTS`,
-  `GISH_THEME_COLOR_*`, `_LINES`, `_FRAME`, `_SEP`, `_RPROMPT`) are a
+  [#134](https://github.com/blairham/koi-shell/issues/134)): `p10k` is the
+  engine; the `koi` theme's knobs (`KOI_THEME_SEGMENTS`,
+  `KOI_THEME_COLOR_*`, `_LINES`, `_FRAME`, `_SEP`, `_RPROMPT`) are a
   second, smaller dialect over the same idea, and they stay — they are a
   documented surface and [docs/stability.md](stability.md) says
   documented surfaces do not move.
 
   What does not stay is the pretence that they are two unrelated themes.
   The p10k engine is a strict superset in capability: six presets, ~50
-  segments, a parameter namespace with a real fallback chain. `gish` is
+  segments, a parameter namespace with a real fallback chain. `koi` is
   six segments and five knobs, which is the right size for someone who
-  wants a prompt configured the way the rest of gish is configured, and
+  wants a prompt configured the way the rest of koi is configured, and
   the wrong size for someone arriving with a 1720-line `.p10k.zsh`.
 
   So: `config theme.*` and `prompt configure` both keep working and are
   described as what they are — the small dialect and the compatibility
-  one. The renderer behind `gish` is not deleted, because deleting it
+  one. The renderer behind `koi` is not deleted, because deleting it
   buys one file and costs every rc that sets those knobs a behavior
   change, and "your config will not break" outranks "there is one of
   these". The third option — treating `POWERLEVEL9K_*` as an import
@@ -145,7 +145,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   it is exactly the property an import-only surface destroys.
 
 - **The engine is named for what it does, not for one of its dialects**
-  (2026-08, [#184](https://github.com/blairham/gish/issues/184)): the
+  (2026-08, [#184](https://github.com/blairham/koi-shell/issues/184)): the
   command is `prompt`, the package is `internal/promptengine`, and
   `p10k` stays as a working alias.
 
@@ -154,7 +154,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   those dialects, and of somebody else's project. Harmless while every
   preset was powerlevel10k's own; not harmless once the engine serves a
   gallery from three upstreams
-  ([#186](https://github.com/blairham/gish/issues/186)), where
+  ([#186](https://github.com/blairham/koi-shell/issues/186)), where
   `p10k preset tokyo-night` would claim powerlevel10k ships a look it
   does not, and would set an expectation of fidelity to a project that
   never authored it.
@@ -162,8 +162,8 @@ The line editor and prompt engine consume both tiers through one internal interf
   The alias is not compatibility debt. It is what arrivals type from
   muscle memory, and usage and error messages are spelled with whichever
   name was invoked, so nobody is answered in a vocabulary they did not
-  type. `GISH_THEME=p10k`, `POWERLEVEL9K_*`, `p10k.conf`, `~/.p10k.zsh`
-  and `cmd/gish-p10k` are all unchanged: each one names powerlevel10k
+  type. `KOI_THEME=p10k`, `POWERLEVEL9K_*`, `p10k.conf`, `~/.p10k.zsh`
+  and `cmd/koi-p10k` are all unchanged: each one names powerlevel10k
   compatibility, which is exactly what it is.
 
   The package is `promptengine` rather than the `prompt` the issue
@@ -175,7 +175,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   characters.
 
 - **Structured data uses `test`'s operator vocabulary, or not at all**
-  (2026-08, [#104](https://github.com/blairham/gish/issues/104),
+  (2026-08, [#104](https://github.com/blairham/koi-shell/issues/104),
   docs/structured.md): the exploration turned up that the shape everyone
   writes for this feature — `... | where %cpu > 50` — parses today as
   `where %cpu` with stdout redirected, silently **creating a file named
@@ -193,8 +193,8 @@ The line editor and prompt engine consume both tiers through one internal interf
   that the native eight-tool stack already covers the jq/awk slot.
 
 - **One prompt pipeline; a small, frozen escape set** (2026-08,
-  [#109](https://github.com/blairham/gish/issues/109)): the #6
-  `GISH_PROMPT` expander was explicitly a stopgap until the prompt
+  [#109](https://github.com/blairham/koi-shell/issues/109)): the #6
+  `KOI_PROMPT` expander was explicitly a stopgap until the prompt
   engine existed. It does now, so the manual override became the
   **"literal" theme** — every prompt (plain, p10k, starship, plugin,
   manual) renders through one dispatch, and renderer fixes land once
@@ -204,15 +204,15 @@ The line editor and prompt engine consume both tiers through one internal interf
   it: `%n`/`%u` user, `%m`/`%h` host, `%~`/`%w` cwd, `%W` basename,
   `%d` full cwd, `%?` exit status, `%#` prompt char, `%p{id}` plugin
   segment, `%%` literal. zsh's spellings are first-class aliases — the
-  person writing `GISH_PROMPT` is usually porting a zsh `PROMPT` and
+  person writing `KOI_PROMPT` is usually porting a zsh `PROMPT` and
   their fingers know `%n`/`%m`/`%~` (the #96 lesson). Unknown escapes
-  pass through untouched; gish does not grow zsh's full `PROMPT_SUBST`
+  pass through untouched; koi does not grow zsh's full `PROMPT_SUBST`
   surface by accident.
 
 - **A manifest, not a modifier language** (2026-08,
-  [#108](https://github.com/blairham/gish/issues/108)): plugin
+  [#108](https://github.com/blairham/koi-shell/issues/108)): plugin
   configuration is data — `source`, `kind`, `pin`, `lazy` in
-  `$XDG_CONFIG_HOME/gish/plugins.toml` — not a vocabulary of ice
+  `$XDG_CONFIG_HOME/koi/plugins.toml` — not a vocabulary of ice
   modifiers (`from"gh-r" as"program" pick"bin/fzf" wait"1" lucid`) to
   learn before installing one plugin. The #23 port carried zi's full
   surface in because it was the engine's native idiom; reproducing that
@@ -226,7 +226,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   path.
 
 - **The native/delegate line** (2026-08,
-  [#112](https://github.com/blairham/gish/issues/112)): gish ships
+  [#112](https://github.com/blairham/koi-shell/issues/112)): koi ships
   natively what lives in the **keystroke, prompt, and cd path** —
   highlighting, suggestions, completion, prompt segments, env diffs,
   version *switching*, directory jumping — because those are the places
@@ -240,17 +240,17 @@ The line editor and prompt engine consume both tiers through one internal interf
   platform matrices, "it didn't work on my machine" threads) that mise,
   ubi, and asdf already own. It now prints the equivalent one-liner for
   those tools instead. The `ghr` code stays — plugin installation is
-  gish's own artifact class, which it legitimately owns.
+  koi's own artifact class, which it legitimately owns.
 
   The guardrail matters more than the flag: "ship the eight-tool stack
   natively" is a strategy that needs a stopping rule, and this is it.
 
 - **Host agents; do not be one** (2026-08,
-  [#111](https://github.com/blairham/gish/issues/111)): the `??` compose
+  [#111](https://github.com/blairham/koi-shell/issues/111)): the `??` compose
   and `explain` surfaces match the researched demand for AI in a shell
   point for point; *plan orchestration* was nowhere in that signal, and
   competing with funded agentic CLIs that already run inside the shell
-  is a losing trade. The stronger position is that gish is the best
+  is a losing trade. The stronger position is that koi is the best
   **host** for other people's agents — sandbox profiles on the exec path
   (#21), permission-gated env (#12), secret-free history (#10) — which
   is a claim no agent CLI can make about itself.
@@ -270,12 +270,12 @@ The line editor and prompt engine consume both tiers through one internal interf
   agent" is the Warp-shaped red flag the launch playbook exists to avoid.
 
 - **Tier-1 zsh compat is an escape hatch, not the adoption story**
-  (2026-08, [#105](https://github.com/blairham/gish/issues/105)):
+  (2026-08, [#105](https://github.com/blairham/koi-shell/issues/105)):
   the Aug 2026 research is unambiguous — config fatigue is the #1
   switching trigger (people flee the .zshrc pile, they don't pack it);
   fish built the largest post-zsh user base with zero compat while
   Oils' 8-year maximal-bash-compat effort bought ~272 brew installs a
-  year; and gish already ships the top zsh plugins' behaviors natively
+  year; and koi already ships the top zsh plugins' behaviors natively
   (autosuggestions, highlighting, p10k-class prompt, completions,
   direnv/asdf). Acquisition-critical compat is bash *paste* compat
   (mvdan/sh, proven by the #101 scoreboard). Tier 1 is therefore
@@ -286,28 +286,28 @@ The line editor and prompt engine consume both tiers through one internal interf
   worse than an ecosystem of sourced scripts — it just stops being
   the bet.
 
-- **No `zsh -c` delegation shim** (2026-08, [#107](https://github.com/blairham/gish/issues/107)):
+- **No `zsh -c` delegation shim** (2026-08, [#107](https://github.com/blairham/koi-shell/issues/107)):
   **the compat boundary is honest, not smoothed over with a chimera.**
   The once-planned escape hatch — delegating unparsed zsh constructs to
   an installed zsh — is struck before any code existed. It contradicted
-  every story gish tells: an out-of-process zsh dependency inside a
+  every story koi tells: an out-of-process zsh dependency inside a
   shell that markets "no sourced-script soup"; a latency wildcard on
   deadline-bounded surfaces; a hidden runtime dependency reintroducing
   "works differently on different boxes", which the single static
   binary exists to kill; and a support surface where every delegated
-  plugin bug becomes an unfixable gish bug report. The answer for a
+  plugin bug becomes an unfixable koi bug report. The answer for a
   plugin that pattern-compat cannot run is the truthful one: it keeps
   running in zsh, where the user already had it working. Do not
   re-propose without new facts.
 
-- **TTY input approach** (2026-08, [#1](https://github.com/blairham/gish/issues/1)):
-  **own the editor core; borrow the terminal plumbing.** gish writes the
+- **TTY input approach** (2026-08, [#1](https://github.com/blairham/koi-shell/issues/1)):
+  **own the editor core; borrow the terminal plumbing.** koi writes the
   buffer/cursor model, keymap engine, kill ring, undo, multi-line
   continuation, and the diff-based inline renderer — the render loop is
   where the differentiators (plugin ghost text, streamed completion menus,
   deadline repaints) live, and every serious shell ends up owning its
   editor (fish, elvish `pkg/edit`, nushell/reedline). The plumbing is
-  imported behind `internal/term`, gish's own interface: raw-mode
+  imported behind `internal/term`, koi's own interface: raw-mode
   entry/restore via `golang.org/x/term` now; key/event decoding (ANSI,
   kitty protocol, bracketed paste, Windows ConPTY) via charmbracelet's
   `ultraviolet`/`x/ansi` layer when the editor lands, with a hand-rolled
@@ -318,8 +318,8 @@ The line editor and prompt engine consume both tiers through one internal interf
   or single-maintainer risk at the heart of the shell, with render
   pipelines that can't host plugin hooks).
 
-- **CommandProvider** (2026-08, [#11](https://github.com/blairham/gish/issues/11)):
-  plugins register commands over gRPC. Precedence: interpreter/gish
+- **CommandProvider** (2026-08, [#11](https://github.com/blairham/koi-shell/issues/11)):
+  plugins register commands over gRPC. Precedence: interpreter/koi
   builtin names are reserved (claims rejected with a warning); shell
   functions shadow plugin commands (dispatched before the exec seam);
   plugin commands shadow PATH; contested names go to the
@@ -331,8 +331,8 @@ The line editor and prompt engine consume both tiers through one internal interf
   launching plugins.
 
 - **The ssh story is a pushed binary, not a presence on the box**
-  (2026-08, [#98](https://github.com/blairham/gish/issues/98)):
-  **`gish ssh` copies a binary, execs it for the interactive session,
+  (2026-08, [#98](https://github.com/blairham/koi-shell/issues/98)):
+  **`koi ssh` copies a binary, execs it for the interactive session,
   and leaves nothing else behind.** The remote `$SHELL` is never
   changed and remote dotfiles are never written — the POSIX-clean
   non-interactive contract (#41) exists precisely so `ssh host cmd`,
@@ -349,15 +349,15 @@ The line editor and prompt engine consume both tiers through one internal interf
   commands from a local shell to a remote executor**, which buys a fully
   local UX by reimplementing `cd` persistence, job control, Ctrl-C, and
   every full-screen program over a command channel (a one-shot
-  `gish exec host -- cmd` is fine; a session is not); and
+  `koi exec host -- cmd` is fine; a session is not); and
   **auto-launching from the remote `~/.bashrc`**, the obvious shortcut
-  to "gish on every login", which is the rc-file rule above restated as
+  to "koi on every login", which is the rc-file rule above restated as
   a footgun. Do not re-propose without new facts.
 
 ## Open questions
 
 - Prompt styling vocabulary for tier 2 (`RenderResponse.text`): markup subset vs. structured spans. Raw text until decided.
 - Tier-1 widget shim depth: which zle APIs are worth emulating vs. declaring out of scope.
-- ~~**`EnvProvider`** (direnv-class)~~ — resolved (#12): both mechanisms, layered. Trust is per-(plugin, directory, diff-hash) — nothing applies without an explicit `trust allow`, and a changed diff re-pends (direnv's edit-reprompts semantics). A deny-list (loader hooks, `IFS`, startup-file vars, `GISH_*`) is stripped host-side before a proposal exists; `PATH` is settable but only ever through the visible allow flow. Requests carry the allowlisted env subset. Applied diffs revert when the shell leaves the proposal's subtree.
+- ~~**`EnvProvider`** (direnv-class)~~ — resolved (#12): both mechanisms, layered. Trust is per-(plugin, directory, diff-hash) — nothing applies without an explicit `trust allow`, and a changed diff re-pends (direnv's edit-reprompts semantics). A deny-list (loader hooks, `IFS`, startup-file vars, `KOI_*`) is stripped host-side before a proposal exists; `PATH` is settable but only ever through the visible allow flow. Requests carry the allowlisted env subset. Applied diffs revert when the shell leaves the proposal's subtree.
 
 The plugin roadmap itself — which plugins, in what order, under which latency budgets — lives in [plugins.md](plugins.md).

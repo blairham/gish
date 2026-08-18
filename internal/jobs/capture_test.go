@@ -15,7 +15,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/jobs"
+	"github.com/blairham/koi-shell/internal/jobs"
 )
 
 // The capture wiring end to end through the exec path: enable, run a

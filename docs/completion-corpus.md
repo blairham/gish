@@ -57,9 +57,9 @@ inside an 80 ms budget. It is not a close call.
 
 Adopting (1) is a one-time mechanical translation: parse the TypeScript,
 keep the object literals, drop the functions, emit a declarative form
-gish reads. The generators' *targets* are mostly things gish or a plugin
+koi reads. The generators' *targets* are mostly things koi or a plugin
 can produce natively anyway — branches, containers, contexts — and the
-`gish-git`, `gish-aws` and carapace paths already do exactly that.
+`koi-git`, `koi-aws` and carapace paths already do exactly that.
 
 ## How it would merge with carapace (#9)
 
@@ -105,7 +105,7 @@ precisely why carapace generates instead.
 
 **So: take the data, not the project.** Import once, attribute properly,
 let carapace stay the liveness source, and do not promise the corpus a
-future gish cannot fund.
+future koi cannot fund.
 
 ## Not scheduled
 

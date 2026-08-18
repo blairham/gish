@@ -1,4 +1,4 @@
-// Package bench measures gish against the world (#102): time to first
+// Package bench measures koi against the world (#102): time to first
 // prompt across shells and configurations, and keystroke-to-paint
 // latency percentiles. Numbers are the argument in this market, so the
 // harness is reproducible and the methodology is published beside the
@@ -86,7 +86,7 @@ func MeasureStartup(cfg Config, n int) StartupResult {
 	}
 	res.Available = true
 
-	dir, err := os.MkdirTemp("", "gish-bench")
+	dir, err := os.MkdirTemp("", "koi-bench")
 	if err != nil {
 		res.Err = err.Error()
 		return res

@@ -11,9 +11,9 @@ import (
 	"google.golang.org/grpc"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // fakeComposeStream feeds queued candidates then EOF.
@@ -162,14 +162,14 @@ func TestProviderSelection(t *testing.T) {
 	fake := &fakeAIClient{candidates: []*pluginapi.ComposeCandidate{{Command: "true", Final: true}}}
 	m, runner := aiHarness(t, fake)
 
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_AI_PROVIDER=other`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_AI_PROVIDER=other`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := m.compose(t.Context(), runner, "q"); err == nil ||
 		!strings.Contains(err.Error(), "matches no installed plugin") {
 		t.Errorf("unknown provider not rejected: %v", err)
 	}
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_AI_PROVIDER=fake-ai`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_AI_PROVIDER=fake-ai`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := m.compose(t.Context(), runner, "q"); err != nil {
@@ -189,7 +189,7 @@ func TestComposePrefillSandboxWrapping(t *testing.T) {
 		t.Errorf("cd wrapped: %q", got)
 	}
 	// The knob turns it off.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_AI_SANDBOX=off`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_AI_SANDBOX=off`)); err != nil {
 		t.Fatal(err)
 	}
 	if got := composePrefill(runner, "du -sh *"); got != "du -sh *" {

@@ -8,7 +8,7 @@
 //     diff-hash). Any change to the proposal — a different hash —
 //     re-pends and re-prompts, direnv's edit-reprompts semantics.
 //   - A deny-list of variables no plugin may set (loader hooks like
-//     LD_PRELOAD/DYLD_*, IFS, shell-internal GISH_*) is stripped
+//     LD_PRELOAD/DYLD_*, IFS, shell-internal KOI_*) is stripped
 //     host-side before a diff is even proposed. PATH is settable, but
 //     only ever through the visible allow flow above.
 //   - Requests carry the allowlisted env subset, never the full
@@ -21,7 +21,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/env.proto
+// source: koi/plugin/v1/env.proto
 
 package pluginapi
 
@@ -56,7 +56,7 @@ type EnvDiffRequest struct {
 
 func (x *EnvDiffRequest) Reset() {
 	*x = EnvDiffRequest{}
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -68,7 +68,7 @@ func (x *EnvDiffRequest) String() string {
 func (*EnvDiffRequest) ProtoMessage() {}
 
 func (x *EnvDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -81,7 +81,7 @@ func (x *EnvDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnvDiffRequest.ProtoReflect.Descriptor instead.
 func (*EnvDiffRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_env_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_env_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *EnvDiffRequest) GetCwd() string {
@@ -123,7 +123,7 @@ type EnvDiffResponse struct {
 
 func (x *EnvDiffResponse) Reset() {
 	*x = EnvDiffResponse{}
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -135,7 +135,7 @@ func (x *EnvDiffResponse) String() string {
 func (*EnvDiffResponse) ProtoMessage() {}
 
 func (x *EnvDiffResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -148,7 +148,7 @@ func (x *EnvDiffResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnvDiffResponse.ProtoReflect.Descriptor instead.
 func (*EnvDiffResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_env_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_env_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *EnvDiffResponse) GetForDir() string {
@@ -185,7 +185,7 @@ type AllowRequest struct {
 
 func (x *AllowRequest) Reset() {
 	*x = AllowRequest{}
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -197,7 +197,7 @@ func (x *AllowRequest) String() string {
 func (*AllowRequest) ProtoMessage() {}
 
 func (x *AllowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -210,7 +210,7 @@ func (x *AllowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllowRequest.ProtoReflect.Descriptor instead.
 func (*AllowRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_env_proto_rawDescGZIP(), []int{2}
+	return file_koi_plugin_v1_env_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *AllowRequest) GetForDir() string {
@@ -231,7 +231,7 @@ type AllowResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// False means the plugin could not record the approval (the wrapped
 	// tool failed, or is missing). The host still applies the diff it
-	// showed — gish's own trust record is authoritative for gish — but it
+	// showed — koi's own trust record is authoritative for koi — but it
 	// says so, because the next shell may see the proposal again.
 	Recorded bool `protobuf:"varint,1,opt,name=recorded,proto3" json:"recorded,omitempty"`
 	// Optional one-line explanation for the user when recorded is false.
@@ -242,7 +242,7 @@ type AllowResponse struct {
 
 func (x *AllowResponse) Reset() {
 	*x = AllowResponse{}
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -254,7 +254,7 @@ func (x *AllowResponse) String() string {
 func (*AllowResponse) ProtoMessage() {}
 
 func (x *AllowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_env_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_env_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -267,7 +267,7 @@ func (x *AllowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllowResponse.ProtoReflect.Descriptor instead.
 func (*AllowResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_env_proto_rawDescGZIP(), []int{3}
+	return file_koi_plugin_v1_env_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AllowResponse) GetRecorded() bool {
@@ -284,68 +284,68 @@ func (x *AllowResponse) GetDetail() string {
 	return ""
 }
 
-var File_gish_plugin_v1_env_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_env_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_env_proto_rawDesc = "" +
+const file_koi_plugin_v1_env_proto_rawDesc = "" +
 	"\n" +
-	"\x18gish/plugin/v1/env.proto\x12\x0egish.plugin.v1\"\xb2\x01\n" +
+	"\x17koi/plugin/v1/env.proto\x12\rkoi.plugin.v1\"\xb1\x01\n" +
 	"\x0eEnvDiffRequest\x12\x10\n" +
-	"\x03cwd\x18\x01 \x01(\tR\x03cwd\x129\n" +
-	"\x03env\x18\x02 \x03(\v2'.gish.plugin.v1.EnvDiffRequest.EnvEntryR\x03env\x12\x1b\n" +
+	"\x03cwd\x18\x01 \x01(\tR\x03cwd\x128\n" +
+	"\x03env\x18\x02 \x03(\v2&.koi.plugin.v1.EnvDiffRequest.EnvEntryR\x03env\x12\x1b\n" +
 	"\tevent_seq\x18\x03 \x01(\x04R\beventSeq\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb4\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb3\x01\n" +
 	"\x0fEnvDiffResponse\x12\x17\n" +
-	"\afor_dir\x18\x01 \x01(\tR\x06forDir\x12:\n" +
-	"\x03set\x18\x02 \x03(\v2(.gish.plugin.v1.EnvDiffResponse.SetEntryR\x03set\x12\x14\n" +
+	"\afor_dir\x18\x01 \x01(\tR\x06forDir\x129\n" +
+	"\x03set\x18\x02 \x03(\v2'.koi.plugin.v1.EnvDiffResponse.SetEntryR\x03set\x12\x14\n" +
 	"\x05unset\x18\x03 \x03(\tR\x05unset\x1a6\n" +
 	"\bSetEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x98\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x97\x01\n" +
 	"\fAllowRequest\x12\x17\n" +
-	"\afor_dir\x18\x01 \x01(\tR\x06forDir\x127\n" +
-	"\x03env\x18\x02 \x03(\v2%.gish.plugin.v1.AllowRequest.EnvEntryR\x03env\x1a6\n" +
+	"\afor_dir\x18\x01 \x01(\tR\x06forDir\x126\n" +
+	"\x03env\x18\x02 \x03(\v2$.koi.plugin.v1.AllowRequest.EnvEntryR\x03env\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"C\n" +
 	"\rAllowResponse\x12\x1a\n" +
 	"\brecorded\x18\x01 \x01(\bR\brecorded\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail2\x9f\x01\n" +
-	"\vEnvProvider\x12J\n" +
-	"\aEnvDiff\x12\x1e.gish.plugin.v1.EnvDiffRequest\x1a\x1f.gish.plugin.v1.EnvDiffResponse\x12D\n" +
-	"\x05Allow\x12\x1c.gish.plugin.v1.AllowRequest\x1a\x1d.gish.plugin.v1.AllowResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x06detail\x18\x02 \x01(\tR\x06detail2\x9b\x01\n" +
+	"\vEnvProvider\x12H\n" +
+	"\aEnvDiff\x12\x1d.koi.plugin.v1.EnvDiffRequest\x1a\x1e.koi.plugin.v1.EnvDiffResponse\x12B\n" +
+	"\x05Allow\x12\x1b.koi.plugin.v1.AllowRequest\x1a\x1c.koi.plugin.v1.AllowResponseB:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_env_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_env_proto_rawDescData []byte
+	file_koi_plugin_v1_env_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_env_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_env_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_env_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_env_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_env_proto_rawDesc), len(file_gish_plugin_v1_env_proto_rawDesc)))
+func file_koi_plugin_v1_env_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_env_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_env_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_env_proto_rawDesc), len(file_koi_plugin_v1_env_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_env_proto_rawDescData
+	return file_koi_plugin_v1_env_proto_rawDescData
 }
 
-var file_gish_plugin_v1_env_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_gish_plugin_v1_env_proto_goTypes = []any{
-	(*EnvDiffRequest)(nil),  // 0: gish.plugin.v1.EnvDiffRequest
-	(*EnvDiffResponse)(nil), // 1: gish.plugin.v1.EnvDiffResponse
-	(*AllowRequest)(nil),    // 2: gish.plugin.v1.AllowRequest
-	(*AllowResponse)(nil),   // 3: gish.plugin.v1.AllowResponse
-	nil,                     // 4: gish.plugin.v1.EnvDiffRequest.EnvEntry
-	nil,                     // 5: gish.plugin.v1.EnvDiffResponse.SetEntry
-	nil,                     // 6: gish.plugin.v1.AllowRequest.EnvEntry
+var file_koi_plugin_v1_env_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_koi_plugin_v1_env_proto_goTypes = []any{
+	(*EnvDiffRequest)(nil),  // 0: koi.plugin.v1.EnvDiffRequest
+	(*EnvDiffResponse)(nil), // 1: koi.plugin.v1.EnvDiffResponse
+	(*AllowRequest)(nil),    // 2: koi.plugin.v1.AllowRequest
+	(*AllowResponse)(nil),   // 3: koi.plugin.v1.AllowResponse
+	nil,                     // 4: koi.plugin.v1.EnvDiffRequest.EnvEntry
+	nil,                     // 5: koi.plugin.v1.EnvDiffResponse.SetEntry
+	nil,                     // 6: koi.plugin.v1.AllowRequest.EnvEntry
 }
-var file_gish_plugin_v1_env_proto_depIdxs = []int32{
-	4, // 0: gish.plugin.v1.EnvDiffRequest.env:type_name -> gish.plugin.v1.EnvDiffRequest.EnvEntry
-	5, // 1: gish.plugin.v1.EnvDiffResponse.set:type_name -> gish.plugin.v1.EnvDiffResponse.SetEntry
-	6, // 2: gish.plugin.v1.AllowRequest.env:type_name -> gish.plugin.v1.AllowRequest.EnvEntry
-	0, // 3: gish.plugin.v1.EnvProvider.EnvDiff:input_type -> gish.plugin.v1.EnvDiffRequest
-	2, // 4: gish.plugin.v1.EnvProvider.Allow:input_type -> gish.plugin.v1.AllowRequest
-	1, // 5: gish.plugin.v1.EnvProvider.EnvDiff:output_type -> gish.plugin.v1.EnvDiffResponse
-	3, // 6: gish.plugin.v1.EnvProvider.Allow:output_type -> gish.plugin.v1.AllowResponse
+var file_koi_plugin_v1_env_proto_depIdxs = []int32{
+	4, // 0: koi.plugin.v1.EnvDiffRequest.env:type_name -> koi.plugin.v1.EnvDiffRequest.EnvEntry
+	5, // 1: koi.plugin.v1.EnvDiffResponse.set:type_name -> koi.plugin.v1.EnvDiffResponse.SetEntry
+	6, // 2: koi.plugin.v1.AllowRequest.env:type_name -> koi.plugin.v1.AllowRequest.EnvEntry
+	0, // 3: koi.plugin.v1.EnvProvider.EnvDiff:input_type -> koi.plugin.v1.EnvDiffRequest
+	2, // 4: koi.plugin.v1.EnvProvider.Allow:input_type -> koi.plugin.v1.AllowRequest
+	1, // 5: koi.plugin.v1.EnvProvider.EnvDiff:output_type -> koi.plugin.v1.EnvDiffResponse
+	3, // 6: koi.plugin.v1.EnvProvider.Allow:output_type -> koi.plugin.v1.AllowResponse
 	5, // [5:7] is the sub-list for method output_type
 	3, // [3:5] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -353,26 +353,26 @@ var file_gish_plugin_v1_env_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_env_proto_init() }
-func file_gish_plugin_v1_env_proto_init() {
-	if File_gish_plugin_v1_env_proto != nil {
+func init() { file_koi_plugin_v1_env_proto_init() }
+func file_koi_plugin_v1_env_proto_init() {
+	if File_koi_plugin_v1_env_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_env_proto_rawDesc), len(file_gish_plugin_v1_env_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_env_proto_rawDesc), len(file_koi_plugin_v1_env_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_env_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_env_proto_depIdxs,
-		MessageInfos:      file_gish_plugin_v1_env_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_env_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_env_proto_depIdxs,
+		MessageInfos:      file_koi_plugin_v1_env_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_env_proto = out.File
-	file_gish_plugin_v1_env_proto_goTypes = nil
-	file_gish_plugin_v1_env_proto_depIdxs = nil
+	File_koi_plugin_v1_env_proto = out.File
+	file_koi_plugin_v1_env_proto_goTypes = nil
+	file_koi_plugin_v1_env_proto_depIdxs = nil
 }

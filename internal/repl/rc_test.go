@@ -12,7 +12,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
-// Tests never touch real user state: HOME, XDG_CONFIG_HOME, and GISH_RC
+// Tests never touch real user state: HOME, XDG_CONFIG_HOME, and KOI_RC
 // are all redirected via t.Setenv + t.TempDir (AGENTS.md testing rule).
 
 func writeFile(t *testing.T, path, content string) string {
@@ -31,41 +31,41 @@ func TestRCPathPrecedence(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home) // UserHomeDir reads this on Windows
 	t.Setenv("XDG_CONFIG_HOME", "")
-	t.Setenv("GISH_RC", "")
+	t.Setenv("KOI_RC", "")
 
 	// Nothing exists: no rc.
 	if got := rcPath(); got != "" {
 		t.Errorf("rcPath() = %q, want empty", got)
 	}
 
-	// ~/.gishrc is the fallback.
-	classic := writeFile(t, filepath.Join(home, ".gishrc"), "")
+	// ~/.koirc is the fallback.
+	classic := writeFile(t, filepath.Join(home, ".koirc"), "")
 	if got := rcPath(); got != classic {
 		t.Errorf("rcPath() = %q, want %q", got, classic)
 	}
 
-	// XDG location wins over ~/.gishrc.
+	// XDG location wins over ~/.koirc.
 	xdgDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdgDir)
-	xdg := writeFile(t, filepath.Join(xdgDir, "gish", "gishrc"), "")
+	xdg := writeFile(t, filepath.Join(xdgDir, "koi", "koirc"), "")
 	if got := rcPath(); got != xdg {
 		t.Errorf("rcPath() = %q, want %q", got, xdg)
 	}
 
-	// GISH_RC overrides everything, even when it doesn't exist yet.
-	t.Setenv("GISH_RC", "/explicit/gishrc")
-	if got := rcPath(); got != "/explicit/gishrc" {
+	// KOI_RC overrides everything, even when it doesn't exist yet.
+	t.Setenv("KOI_RC", "/explicit/koirc")
+	if got := rcPath(); got != "/explicit/koirc" {
 		t.Errorf("rcPath() = %q, want explicit override", got)
 	}
 }
 
 func TestLoadRCPersistsState(t *testing.T) {
-	rc := writeFile(t, filepath.Join(t.TempDir(), "gishrc"), `
-GISH_PROMPT='%W %?> '
+	rc := writeFile(t, filepath.Join(t.TempDir(), "koirc"), `
+KOI_PROMPT='%W %?> '
 greeting="from rc"
 greet() { echo "$greeting"; }
 `)
-	t.Setenv("GISH_RC", rc)
+	t.Setenv("KOI_RC", rc)
 
 	var out strings.Builder
 	runner, err := interp.New(interp.StdIO(nil, &out, io.Discard))
@@ -74,8 +74,8 @@ greet() { echo "$greeting"; }
 	}
 	loadRC(context.Background(), runner)
 
-	if got := shellVar(runner, "GISH_PROMPT", "def"); got != "%W %?> " {
-		t.Errorf("GISH_PROMPT = %q", got)
+	if got := shellVar(runner, "KOI_PROMPT", "def"); got != "%W %?> " {
+		t.Errorf("KOI_PROMPT = %q", got)
 	}
 	// Functions and variables from the rc persist into the session.
 	if err := runner.Run(context.Background(), parseLine(t, "greet")); err != nil {
@@ -87,8 +87,8 @@ greet() { echo "$greeting"; }
 }
 
 func TestLoadRCBrokenFileIsNotFatal(t *testing.T) {
-	rc := writeFile(t, filepath.Join(t.TempDir(), "gishrc"), "if then fi (broken")
-	t.Setenv("GISH_RC", rc)
+	rc := writeFile(t, filepath.Join(t.TempDir(), "koirc"), "if then fi (broken")
+	t.Setenv("KOI_RC", rc)
 
 	runner := newTestRunner(t)
 	loadRC(context.Background(), runner) // must not panic or exit
@@ -100,7 +100,7 @@ func TestLoadRCBrokenFileIsNotFatal(t *testing.T) {
 }
 
 func TestLoadRCMissingFileIsSilent(t *testing.T) {
-	t.Setenv("GISH_RC", "")
+	t.Setenv("KOI_RC", "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("USERPROFILE", t.TempDir()) // UserHomeDir reads this on Windows
@@ -113,13 +113,13 @@ func TestShellVarFallback(t *testing.T) {
 	t.Parallel()
 
 	runner := newTestRunner(t)
-	if got := shellVar(runner, "GISH_PROMPT", "fallback"); got != "fallback" {
+	if got := shellVar(runner, "KOI_PROMPT", "fallback"); got != "fallback" {
 		t.Errorf("unset var = %q, want fallback", got)
 	}
-	if err := runner.Run(context.Background(), parseLine(t, `GISH_PROMPT="custom> "`)); err != nil {
+	if err := runner.Run(context.Background(), parseLine(t, `KOI_PROMPT="custom> "`)); err != nil {
 		t.Fatal(err)
 	}
-	if got := shellVar(runner, "GISH_PROMPT", "fallback"); got != "custom> " {
+	if got := shellVar(runner, "KOI_PROMPT", "fallback"); got != "custom> " {
 		t.Errorf("set var = %q", got)
 	}
 }
@@ -131,16 +131,16 @@ func TestExpandPrompt(t *testing.T) {
 		username: "blair",
 		host:     "mba",
 		home:     filepath.FromSlash("/home/blair"),
-		dir:      filepath.FromSlash("/home/blair/dev/gish"),
+		dir:      filepath.FromSlash("/home/blair/dev/koi"),
 		exitCode: 7,
 	}
 	tests := []struct {
 		format, want string
 	}{
-		{"gish$ ", "gish$ "},
+		{"koi$ ", "koi$ "},
 		{"%u@%h ", "blair@mba "},
-		{"%w $ ", filepath.FromSlash("~/dev/gish") + " $ "},
-		{"%W $ ", "gish $ "},
+		{"%w $ ", filepath.FromSlash("~/dev/koi") + " $ "},
+		{"%W $ ", "koi $ "},
 		{"[%?] ", "[7] "},
 		{"100%% ", "100% "},
 		{"%x ", "%x "},   // unknown escape passes through
@@ -191,31 +191,31 @@ func TestExpandPromptSegments(t *testing.T) {
 	}
 }
 
-// TestShellVarReadsEnvironment pins the contract that `GISH_THEME=p10k
-// gish` works: settings come from shell variables first, then the
+// TestShellVarReadsEnvironment pins the contract that `KOI_THEME=p10k
+// koi` works: settings come from shell variables first, then the
 // inherited environment. Before this, only rc assignments were seen —
 // found by the #102 benchmark harness, which could not set a prompt.
 func TestShellVarReadsEnvironment(t *testing.T) {
 	runner, err := interp.New(interp.Env(expand.ListEnviron(
-		"GISH_THEME=p10k", "GISH_EMPTY=", "PATH=/usr/bin")))
+		"KOI_THEME=p10k", "KOI_EMPTY=", "PATH=/usr/bin")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := shellVar(runner, "GISH_THEME", "plain"); got != "p10k" {
+	if got := shellVar(runner, "KOI_THEME", "plain"); got != "p10k" {
 		t.Errorf("env setting ignored: %q", got)
 	}
 	// An empty env value is not a setting; the fallback stands.
-	if got := shellVar(runner, "GISH_EMPTY", "fallback"); got != "fallback" {
+	if got := shellVar(runner, "KOI_EMPTY", "fallback"); got != "fallback" {
 		t.Errorf("empty env value = %q", got)
 	}
-	if got := shellVar(runner, "GISH_UNSET", "fallback"); got != "fallback" {
+	if got := shellVar(runner, "KOI_UNSET", "fallback"); got != "fallback" {
 		t.Errorf("unset = %q", got)
 	}
 	// A shell assignment beats the environment: `config` and rc win.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=starship`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=starship`)); err != nil {
 		t.Fatal(err)
 	}
-	if got := shellVar(runner, "GISH_THEME", "plain"); got != "starship" {
+	if got := shellVar(runner, "KOI_THEME", "plain"); got != "starship" {
 		t.Errorf("shell assignment did not win: %q", got)
 	}
 }

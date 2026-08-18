@@ -11,7 +11,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/prompt.proto
+// source: koi/plugin/v1/prompt.proto
 
 package pluginapi
 
@@ -38,7 +38,7 @@ type SegmentsRequest struct {
 
 func (x *SegmentsRequest) Reset() {
 	*x = SegmentsRequest{}
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -50,7 +50,7 @@ func (x *SegmentsRequest) String() string {
 func (*SegmentsRequest) ProtoMessage() {}
 
 func (x *SegmentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -63,7 +63,7 @@ func (x *SegmentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentsRequest.ProtoReflect.Descriptor instead.
 func (*SegmentsRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_prompt_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_prompt_proto_rawDescGZIP(), []int{0}
 }
 
 type SegmentDescriptor struct {
@@ -85,7 +85,7 @@ type SegmentDescriptor struct {
 
 func (x *SegmentDescriptor) Reset() {
 	*x = SegmentDescriptor{}
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -97,7 +97,7 @@ func (x *SegmentDescriptor) String() string {
 func (*SegmentDescriptor) ProtoMessage() {}
 
 func (x *SegmentDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -110,7 +110,7 @@ func (x *SegmentDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentDescriptor.ProtoReflect.Descriptor instead.
 func (*SegmentDescriptor) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_prompt_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_prompt_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *SegmentDescriptor) GetId() string {
@@ -150,7 +150,7 @@ type SegmentsResponse struct {
 
 func (x *SegmentsResponse) Reset() {
 	*x = SegmentsResponse{}
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -162,7 +162,7 @@ func (x *SegmentsResponse) String() string {
 func (*SegmentsResponse) ProtoMessage() {}
 
 func (x *SegmentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -175,7 +175,7 @@ func (x *SegmentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentsResponse.ProtoReflect.Descriptor instead.
 func (*SegmentsResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_prompt_proto_rawDescGZIP(), []int{2}
+	return file_koi_plugin_v1_prompt_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SegmentsResponse) GetSegments() []*SegmentDescriptor {
@@ -204,7 +204,7 @@ type RenderRequest struct {
 
 func (x *RenderRequest) Reset() {
 	*x = RenderRequest{}
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -216,7 +216,7 @@ func (x *RenderRequest) String() string {
 func (*RenderRequest) ProtoMessage() {}
 
 func (x *RenderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -229,7 +229,7 @@ func (x *RenderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderRequest.ProtoReflect.Descriptor instead.
 func (*RenderRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_prompt_proto_rawDescGZIP(), []int{3}
+	return file_koi_plugin_v1_prompt_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RenderRequest) GetSegmentId() string {
@@ -280,7 +280,7 @@ type RenderResponse struct {
 
 func (x *RenderResponse) Reset() {
 	*x = RenderResponse{}
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -292,7 +292,7 @@ func (x *RenderResponse) String() string {
 func (*RenderResponse) ProtoMessage() {}
 
 func (x *RenderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_prompt_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_prompt_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -305,7 +305,7 @@ func (x *RenderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderResponse.ProtoReflect.Descriptor instead.
 func (*RenderResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_prompt_proto_rawDescGZIP(), []int{4}
+	return file_koi_plugin_v1_prompt_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RenderResponse) GetText() string {
@@ -322,64 +322,64 @@ func (x *RenderResponse) GetTtlMs() uint32 {
 	return 0
 }
 
-var File_gish_plugin_v1_prompt_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_prompt_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_prompt_proto_rawDesc = "" +
+const file_koi_plugin_v1_prompt_proto_rawDesc = "" +
 	"\n" +
-	"\x1bgish/plugin/v1/prompt.proto\x12\x0egish.plugin.v1\"\x11\n" +
+	"\x1akoi/plugin/v1/prompt.proto\x12\rkoi.plugin.v1\"\x11\n" +
 	"\x0fSegmentsRequest\"}\n" +
 	"\x11SegmentDescriptor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1b\n" +
 	"\tbudget_ms\x18\x03 \x01(\rR\bbudgetMs\x12\x19\n" +
-	"\benv_keys\x18\x04 \x03(\tR\aenvKeys\"Q\n" +
-	"\x10SegmentsResponse\x12=\n" +
-	"\bsegments\x18\x01 \x03(\v2!.gish.plugin.v1.SegmentDescriptorR\bsegments\"\xf5\x01\n" +
+	"\benv_keys\x18\x04 \x03(\tR\aenvKeys\"P\n" +
+	"\x10SegmentsResponse\x12<\n" +
+	"\bsegments\x18\x01 \x03(\v2 .koi.plugin.v1.SegmentDescriptorR\bsegments\"\xf4\x01\n" +
 	"\rRenderRequest\x12\x1d\n" +
 	"\n" +
 	"segment_id\x18\x01 \x01(\tR\tsegmentId\x12\x10\n" +
 	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12$\n" +
 	"\x0elast_exit_code\x18\x03 \x01(\x05R\flastExitCode\x12\x1b\n" +
-	"\tevent_seq\x18\x04 \x01(\x04R\beventSeq\x128\n" +
-	"\x03env\x18\x05 \x03(\v2&.gish.plugin.v1.RenderRequest.EnvEntryR\x03env\x1a6\n" +
+	"\tevent_seq\x18\x04 \x01(\x04R\beventSeq\x127\n" +
+	"\x03env\x18\x05 \x03(\v2%.koi.plugin.v1.RenderRequest.EnvEntryR\x03env\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\";\n" +
 	"\x0eRenderResponse\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x15\n" +
-	"\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs2\xaf\x01\n" +
-	"\x15PromptSegmentProvider\x12M\n" +
-	"\bSegments\x12\x1f.gish.plugin.v1.SegmentsRequest\x1a .gish.plugin.v1.SegmentsResponse\x12G\n" +
-	"\x06Render\x12\x1d.gish.plugin.v1.RenderRequest\x1a\x1e.gish.plugin.v1.RenderResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\x06ttl_ms\x18\x02 \x01(\rR\x05ttlMs2\xab\x01\n" +
+	"\x15PromptSegmentProvider\x12K\n" +
+	"\bSegments\x12\x1e.koi.plugin.v1.SegmentsRequest\x1a\x1f.koi.plugin.v1.SegmentsResponse\x12E\n" +
+	"\x06Render\x12\x1c.koi.plugin.v1.RenderRequest\x1a\x1d.koi.plugin.v1.RenderResponseB:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_prompt_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_prompt_proto_rawDescData []byte
+	file_koi_plugin_v1_prompt_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_prompt_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_prompt_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_prompt_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_prompt_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_prompt_proto_rawDesc), len(file_gish_plugin_v1_prompt_proto_rawDesc)))
+func file_koi_plugin_v1_prompt_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_prompt_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_prompt_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_prompt_proto_rawDesc), len(file_koi_plugin_v1_prompt_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_prompt_proto_rawDescData
+	return file_koi_plugin_v1_prompt_proto_rawDescData
 }
 
-var file_gish_plugin_v1_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
-var file_gish_plugin_v1_prompt_proto_goTypes = []any{
-	(*SegmentsRequest)(nil),   // 0: gish.plugin.v1.SegmentsRequest
-	(*SegmentDescriptor)(nil), // 1: gish.plugin.v1.SegmentDescriptor
-	(*SegmentsResponse)(nil),  // 2: gish.plugin.v1.SegmentsResponse
-	(*RenderRequest)(nil),     // 3: gish.plugin.v1.RenderRequest
-	(*RenderResponse)(nil),    // 4: gish.plugin.v1.RenderResponse
-	nil,                       // 5: gish.plugin.v1.RenderRequest.EnvEntry
+var file_koi_plugin_v1_prompt_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_koi_plugin_v1_prompt_proto_goTypes = []any{
+	(*SegmentsRequest)(nil),   // 0: koi.plugin.v1.SegmentsRequest
+	(*SegmentDescriptor)(nil), // 1: koi.plugin.v1.SegmentDescriptor
+	(*SegmentsResponse)(nil),  // 2: koi.plugin.v1.SegmentsResponse
+	(*RenderRequest)(nil),     // 3: koi.plugin.v1.RenderRequest
+	(*RenderResponse)(nil),    // 4: koi.plugin.v1.RenderResponse
+	nil,                       // 5: koi.plugin.v1.RenderRequest.EnvEntry
 }
-var file_gish_plugin_v1_prompt_proto_depIdxs = []int32{
-	1, // 0: gish.plugin.v1.SegmentsResponse.segments:type_name -> gish.plugin.v1.SegmentDescriptor
-	5, // 1: gish.plugin.v1.RenderRequest.env:type_name -> gish.plugin.v1.RenderRequest.EnvEntry
-	0, // 2: gish.plugin.v1.PromptSegmentProvider.Segments:input_type -> gish.plugin.v1.SegmentsRequest
-	3, // 3: gish.plugin.v1.PromptSegmentProvider.Render:input_type -> gish.plugin.v1.RenderRequest
-	2, // 4: gish.plugin.v1.PromptSegmentProvider.Segments:output_type -> gish.plugin.v1.SegmentsResponse
-	4, // 5: gish.plugin.v1.PromptSegmentProvider.Render:output_type -> gish.plugin.v1.RenderResponse
+var file_koi_plugin_v1_prompt_proto_depIdxs = []int32{
+	1, // 0: koi.plugin.v1.SegmentsResponse.segments:type_name -> koi.plugin.v1.SegmentDescriptor
+	5, // 1: koi.plugin.v1.RenderRequest.env:type_name -> koi.plugin.v1.RenderRequest.EnvEntry
+	0, // 2: koi.plugin.v1.PromptSegmentProvider.Segments:input_type -> koi.plugin.v1.SegmentsRequest
+	3, // 3: koi.plugin.v1.PromptSegmentProvider.Render:input_type -> koi.plugin.v1.RenderRequest
+	2, // 4: koi.plugin.v1.PromptSegmentProvider.Segments:output_type -> koi.plugin.v1.SegmentsResponse
+	4, // 5: koi.plugin.v1.PromptSegmentProvider.Render:output_type -> koi.plugin.v1.RenderResponse
 	4, // [4:6] is the sub-list for method output_type
 	2, // [2:4] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -387,26 +387,26 @@ var file_gish_plugin_v1_prompt_proto_depIdxs = []int32{
 	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_prompt_proto_init() }
-func file_gish_plugin_v1_prompt_proto_init() {
-	if File_gish_plugin_v1_prompt_proto != nil {
+func init() { file_koi_plugin_v1_prompt_proto_init() }
+func file_koi_plugin_v1_prompt_proto_init() {
+	if File_koi_plugin_v1_prompt_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_prompt_proto_rawDesc), len(file_gish_plugin_v1_prompt_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_prompt_proto_rawDesc), len(file_koi_plugin_v1_prompt_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_prompt_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_prompt_proto_depIdxs,
-		MessageInfos:      file_gish_plugin_v1_prompt_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_prompt_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_prompt_proto_depIdxs,
+		MessageInfos:      file_koi_plugin_v1_prompt_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_prompt_proto = out.File
-	file_gish_plugin_v1_prompt_proto_goTypes = nil
-	file_gish_plugin_v1_prompt_proto_depIdxs = nil
+	File_koi_plugin_v1_prompt_proto = out.File
+	file_koi_plugin_v1_prompt_proto_goTypes = nil
+	file_koi_plugin_v1_prompt_proto_depIdxs = nil
 }

@@ -1,0 +1,118 @@
+// ShellEvents — event-triggered automations (#83).
+//
+// The host streams session events to subscribed plugins, which may
+// respond with *proposals*. The contract is defined here before any
+// host wiring exists, which is the same order the rest of this package
+// was built in: the shape of a plugin contract is much harder to change
+// after plugins exist than before.
+//
+// **Status: contract only. The host does not serve this yet.** A plugin
+// implementing it today will simply never be subscribed.
+//
+// Three rules, none of which are negotiable, and all of which are
+// inherited rather than invented:
+//
+//   - **No exec channel, ever.** A plugin proposes; the shell decides.
+//     This is the #111 line — koi hosts other people's agents rather
+//     than being one — and it is why orchestration cannot move behind
+//     the plugin boundary. Every proposal that leads to running
+//     something goes through the same preview-and-approve surfaces as
+//     #20 and #34: it lands in the editor buffer, or it is gated, and it
+//     never runs on its own.
+//   - **The host never blocks on a subscriber.** Events are
+//     fire-and-forget into a bounded buffer, drop-oldest. A plugin that
+//     stops reading loses events; it does not slow the prompt down. The
+//     same deadline posture as every other call in this package.
+//   - **Events carry allowlisted, scrub-safe data only.** A command name
+//     and its exit status, not the full command line; the allowlisted
+//     env subset, not the environment. The #10/#12/#20 posture applies
+//     unchanged — an event stream is a new place for a secret to leak,
+//     so it is designed not to carry one.
+syntax = "proto3";
+
+package koi.plugin.v1;
+
+option go_package = "github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapi";
+
+service ShellEvents {
+  // Subscribe opens the event stream.
+  //
+  // Bidirectional on purpose. In go-plugin the *host* is the gRPC
+  // client and the plugin is the server, so a host→plugin push needs
+  // the host sending on a stream; and a plugin's proposal arrives
+  // whenever it is ready rather than as a reply to one event, so the
+  // return side is a stream too. A request/response RPC per event would
+  // make the host wait on a plugin, which the second rule above forbids.
+  rpc Subscribe(stream ShellEvent) returns (stream Proposal);
+}
+
+// EventKind is what happened. Additive: an unknown kind must be ignored
+// by plugins rather than treated as an error, so the host can add kinds
+// without breaking anything already in the wild.
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED = 0;
+  // The shell changed directory.
+  EVENT_KIND_DIR_CHANGE = 1;
+  // A command finished. Carries the command *name* and status, never
+  // the full line — see the scrub-safety rule.
+  EVENT_KIND_COMMAND_DONE = 2;
+  // A watched file changed. Only paths a plugin asked to watch.
+  EVENT_KIND_FILE_CHANGE = 3;
+  // The session is ending; a last chance to flush state.
+  EVENT_KIND_SESSION_END = 4;
+}
+
+message ShellEvent {
+  EventKind kind = 1;
+  // Monotonic per-session sequence number. Same discipline as every
+  // other request here: a subscriber that falls behind can tell, and a
+  // proposal answering a superseded event can be dropped by the host.
+  uint64 event_seq = 2;
+  // Current working directory.
+  string cwd = 3;
+  // Wall-clock, milliseconds since the Unix epoch (host-stamped).
+  int64 unix_ms = 4;
+  // Allowlisted environment subset. Never the full environment.
+  map<string, string> env = 5;
+
+  // COMMAND_DONE only: the command's first word — `git`, not
+  // `git push --force origin main`. The argument list is where secrets
+  // and paths live, and a plugin reacting to "a git command failed"
+  // does not need them.
+  string command_name = 6;
+  // COMMAND_DONE only: its exit status.
+  int32 exit_code = 7;
+  // COMMAND_DONE only: how long it ran.
+  int64 duration_ms = 8;
+
+  // FILE_CHANGE only: the path that changed.
+  string path = 9;
+}
+
+// Proposal is what a plugin may send back. Every field is something the
+// user sees before anything happens; there is deliberately no field
+// that causes execution.
+message Proposal {
+  // The event this responds to, so the host can drop a proposal that
+  // answers a superseded event (a suggestion for the directory you just
+  // left is worse than no suggestion).
+  uint64 event_seq = 1;
+
+  // A one-line notice to show. Advisory, never blocking.
+  string notice = 2;
+
+  // A command to *offer*. It lands in the editor buffer for the user to
+  // read, edit, and run — the #20 posture — and never executes on its
+  // own. The host owns quoting; this is data, not buffer text.
+  string suggested_command = 3;
+
+  // Why the plugin is suggesting it. A suggestion the user cannot
+  // evaluate is one they will either blindly accept or permanently
+  // ignore, and both are bad outcomes.
+  string rationale = 4;
+
+  // Paths the plugin wants FILE_CHANGE events for, relative to cwd or
+  // absolute. Declared here rather than in a separate RPC so a plugin
+  // can adjust what it watches as it learns where it is.
+  repeated string watch_paths = 5;
+}

@@ -14,8 +14,8 @@ import (
 // the rc file redirected to a temp path.
 func wizardHC(t *testing.T, answers string, env []string, out *strings.Builder) (interp.HandlerContext, string) {
 	t.Helper()
-	rc := filepath.Join(t.TempDir(), "gishrc")
-	t.Setenv("GISH_RC", rc)
+	rc := filepath.Join(t.TempDir(), "koirc")
+	t.Setenv("KOI_RC", rc)
 	return interp.HandlerContext{
 		Env:    expand.ListEnviron(env...),
 		Stdin:  strings.NewReader(answers),
@@ -34,8 +34,8 @@ func TestWizardFullWalkthrough(t *testing.T) {
 		t.Fatalf("wizard result = %v, want an eval", got)
 	}
 	for _, assign := range []string{
-		"GISH_THEME=p10k", "GISH_THEME_SEP=powerline",
-		"GISH_THEME_LINES=1", "GISH_THEME_SEGMENTS='dir git exit'",
+		"KOI_THEME=p10k", "KOI_THEME_SEP=powerline",
+		"KOI_THEME_LINES=1", "KOI_THEME_SEGMENTS='dir git exit'",
 	} {
 		if !strings.Contains(got[1], assign) {
 			t.Errorf("live assignments missing %q: %q", assign, got[1])
@@ -46,8 +46,8 @@ func TestWizardFullWalkthrough(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, line := range []string{
-		"GISH_THEME=p10k\n", "GISH_THEME_SEP=powerline\n",
-		"GISH_THEME_LINES=1\n", "GISH_THEME_SEGMENTS='dir git exit'\n",
+		"KOI_THEME=p10k\n", "KOI_THEME_SEP=powerline\n",
+		"KOI_THEME_LINES=1\n", "KOI_THEME_SEGMENTS='dir git exit'\n",
 	} {
 		if !strings.Contains(string(data), line) {
 			t.Errorf("rc missing %q:\n%s", line, data)
@@ -62,8 +62,8 @@ func TestWizardFullWalkthrough(t *testing.T) {
 func TestWizardEnterKeepsCurrent(t *testing.T) {
 	var out strings.Builder
 	env := []string{
-		"GISH_THEME=p10k", "GISH_THEME_SEP=plain", "GISH_THEME_LINES=2",
-		"GISH_THEME_FRAME=on", "GISH_THEME_SEGMENTS=dir git",
+		"KOI_THEME=p10k", "KOI_THEME_SEP=plain", "KOI_THEME_LINES=2",
+		"KOI_THEME_FRAME=on", "KOI_THEME_SEGMENTS=dir git",
 	}
 	hc, rc := wizardHC(t, "\n\n\n\n\n\n", env, &out)
 
@@ -131,12 +131,12 @@ func TestWizardReasksOnInvalidAnswers(t *testing.T) {
 func TestConfigThemeShowsWhenStdinNotTTY(t *testing.T) {
 	// Through the full RunReader path stdin is not a terminal, so
 	// `config theme` stays the plain show — scripts never hang.
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc, "config theme\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `theme = "" (GISH_THEME)`) {
+	if !strings.Contains(out, `theme = "" (KOI_THEME)`) {
 		t.Errorf("piped `config theme` should show, not launch the wizard: %q", out)
 	}
 }

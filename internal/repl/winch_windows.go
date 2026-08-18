@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // watchResize on Windows: there is no SIGWINCH, so the size is polled

@@ -1,0 +1,82 @@
+// ThemeProvider — whole-prompt themes from a resident plugin (#30).
+//
+// The third replacement tier for the prompt: where PromptSegmentProvider
+// contributes one segment to the built-in layout, a ThemeProvider renders
+// the *entire* prompt set (prompt, continuation, right prompt) per read.
+// starship is the reference external implementation of this shape; this
+// service is its native gRPC flavor.
+//
+// Contract: RenderPrompt is budget-bounded exactly like segments — the
+// host derives a deadline from the theme's declared budget (default
+// 50ms) and on a miss reuses the theme's previous prompt set or falls
+// back to the built-in theme. The prompt never waits.
+syntax = "proto3";
+
+package koi.plugin.v1;
+
+option go_package = "github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapi";
+
+service ThemeProvider {
+  // Themes enumerates the theme names this plugin offers; KOI_THEME
+  // selects by name. Called once after Describe.
+  rpc Themes(ThemesRequest) returns (ThemesResponse);
+  // RenderPrompt produces the full prompt set for one read.
+  rpc RenderPrompt(RenderPromptRequest) returns (RenderPromptResponse);
+}
+
+message ThemesRequest {}
+
+message ThemeDescriptor {
+  // Theme name, unique within the plugin (e.g. "tokyo-night"). Built-in
+  // names (plain, p10k, starship) cannot be claimed; the built-ins win.
+  string name = 1;
+  string description = 2;
+  // Soft latency budget in milliseconds; the host derives RenderPrompt
+  // deadlines from it. 0 means "use the host default" (currently 50ms).
+  uint32 budget_ms = 3;
+}
+
+message ThemesResponse {
+  repeated ThemeDescriptor themes = 1;
+}
+
+// PromptContext is everything the shell knows at prompt time. Plugins
+// must treat absent fields as unknown, not zero-meaningful.
+message PromptContext {
+  string cwd = 1;
+  // The user's home directory, for ~ abbreviation.
+  string home = 2;
+  // Exit code of the last foreground pipeline.
+  int32 last_exit_code = 3;
+  // Wall time of the last foreground pipeline.
+  uint64 duration_ms = 4;
+  // Filed jobs (running or stopped).
+  uint32 jobs = 5;
+  string username = 6;
+  string hostname = 7;
+  // Whether the session arrived over SSH.
+  bool ssh = 8;
+  // Terminal width in columns (0 = unknown).
+  uint32 width = 9;
+  // Whether the terminal takes ANSI color. When false the response must
+  // be plain text; the host degrades to the naked prompt otherwise.
+  bool color = 10;
+  // Monotonic per-session sequence number; lets plugins drop stale
+  // requests that were superseded before they were served.
+  uint64 event_seq = 11;
+}
+
+message RenderPromptRequest {
+  // Which of the plugin's themes to render (a plugin may serve several).
+  string theme = 1;
+  PromptContext context = 2;
+}
+
+message RenderPromptResponse {
+  // The first-line prompt; may span multiple lines (banner + edit line).
+  string prompt = 1;
+  // Continuation prompt for multi-line edits.
+  string cont_prompt = 2;
+  // Right-side prompt for the first edit line; empty for none.
+  string rprompt = 3;
+}

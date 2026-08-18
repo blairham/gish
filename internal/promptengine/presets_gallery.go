@@ -41,7 +41,7 @@ package promptengine
 // The recurring gap is the same one AGENTS.md already records: the
 // `*_version` family. starship runs `node --version`, `go version`,
 // `rustc --version` and friends on the prompt path; no segment in this
-// package forks, ever, which is where the speed comes from. gish's
+// package forks, ever, which is where the speed comes from. koi's
 // nearest equivalents (nodenv, pyenv, goenv, asdf…) read a pin *file*,
 // which answers a different question — "what is this project pinned to"
 // rather than "what is on PATH right now" — so they are not substituted
@@ -50,7 +50,7 @@ package promptengine
 // galleryUnsupported records upstream modules a preset shows and this
 // engine does not, in the vocabulary of the upstream they came from —
 // someone comparing against a screenshot needs the name they would
-// search for, not gish's name for the nearest thing.
+// search for, not koi's name for the nearest thing.
 func galleryUnsupported(cfg *Config, upstream string, modules ...string) {
 	for _, m := range modules {
 		cfg.Unsupported = append(cfg.Unsupported, upstream+" "+m+" (needs a subprocess; no segment here forks)")
@@ -148,7 +148,7 @@ func presetTokyoNight() *Config {
 // Two of agnoster's blocks are deliberately absent rather than faked:
 // its virtualenv block and its root/background-jobs status glyphs sit in
 // a different place in the ribbon than this engine's equivalents, and
-// putting gish's versions in agnoster's colors would produce something
+// putting koi's versions in agnoster's colors would produce something
 // that is neither.
 func presetAgnoster() *Config {
 	c := baseConfig()

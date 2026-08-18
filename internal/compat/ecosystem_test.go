@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/compat"
+	"github.com/blairham/koi-shell/internal/compat"
 )
 
 // The fzf case has two ways in, and a developer laptop only ever
@@ -22,7 +22,7 @@ import (
 // wherever the tests run, rather than only on the runner that happens
 // to have the old one.
 func TestFzfIntegrationFallsBackToThePackagedFile(t *testing.T) {
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
@@ -36,7 +36,7 @@ func TestFzfIntegrationFallsBackToThePackagedFile(t *testing.T) {
 	}
 	// The key-bindings file Debian and Ubuntu package, reduced to the
 	// branch that matters: bash 4+ gets `bind -x`, which is the binding
-	// gish implements.
+	// koi implements.
 	keys := filepath.Join(dir, "key-bindings.bash")
 	body := `if [[ $- =~ i ]]; then
   fzf-file-widget() { echo widget; }
@@ -67,7 +67,7 @@ fi
 		"/usr/share/doc/fzf/examples/key-bindings.bash", keys, 1)
 
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	r := compat.RunEcosystem(context.Background(), gishBin, fzfCase)
+	r := compat.RunEcosystem(context.Background(), koiBin, fzfCase)
 	if !r.Present {
 		t.Fatal("the fixture fzf was not found on PATH")
 	}

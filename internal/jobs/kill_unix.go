@@ -25,7 +25,7 @@ import (
 // jobs/fg/bg read, and signaling a *job* means signaling its process
 // group, not one pid. Plain pids work too, which is what scripts use.
 //
-// Registered as __gish_kill and reached through the CallHandler rewrite,
+// Registered as __koi_kill and reached through the CallHandler rewrite,
 // exactly like jobs/fg/bg.
 
 // killSignals maps the names kill accepts to their numbers. Only the

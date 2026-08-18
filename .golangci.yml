@@ -1,4 +1,4 @@
-# golangci-lint v2 configuration for gish
+# golangci-lint v2 configuration for koi
 # See: https://golangci-lint.run/usage/configuration/
 
 version: "2"
@@ -114,7 +114,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-      - github.com/blairham/gish
+      - github.com/blairham/koi-shell
 
   exclusions:
     paths:

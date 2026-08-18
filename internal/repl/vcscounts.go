@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blairham/gish/internal/gitstatus"
-	"github.com/blairham/gish/internal/promptengine"
+	"github.com/blairham/koi-shell/internal/gitstatus"
+	"github.com/blairham/koi-shell/internal/promptengine"
 )
 
 // The working-tree counts behind the p10k vcs segment (#52).

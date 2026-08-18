@@ -35,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // Record is one session's restorable state.
@@ -94,7 +94,7 @@ const (
 var secretish = regexp.MustCompile(`(?i)(secret|token|passw|credential|api[_-]?key|access[_-]?key|private|session[_-]?key)`)
 
 // denied names never belong in a restored environment: process-loader
-// hooks, word splitting, startup-file redirection, and gish's own
+// hooks, word splitting, startup-file redirection, and koi's own
 // knobs. Restoring any of these would let a session file change how the
 // next shell loads code.
 func denied(name string) bool {
@@ -102,7 +102,7 @@ func denied(name string) bool {
 	case "IFS", "ENV", "BASH_ENV", "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT":
 		return true
 	}
-	return strings.HasPrefix(name, "DYLD_") || strings.HasPrefix(name, "GISH_")
+	return strings.HasPrefix(name, "DYLD_") || strings.HasPrefix(name, "KOI_")
 }
 
 // FilterEnv drops what must never be persisted, returning the survivors
@@ -128,7 +128,7 @@ func FilterEnv(env map[string]string) (kept map[string]string, removed []string)
 // Store is a directory of session records.
 type Store struct{ dir string }
 
-// DefaultDir is $XDG_STATE_HOME/gish/sessions. State, not data: these
+// DefaultDir is $XDG_STATE_HOME/koi/sessions. State, not data: these
 // records describe a moment in a process's life, and losing them costs
 // nothing permanent — unlike history, which is the user's own record.
 func DefaultDir() (string, error) {
@@ -140,7 +140,7 @@ func DefaultDir() (string, error) {
 		}
 		base = filepath.Join(home, ".local", "state")
 	}
-	return filepath.Join(base, "gish", "sessions"), nil
+	return filepath.Join(base, "koi", "sessions"), nil
 }
 
 // Open returns a store over dir. The directory is created by the first
@@ -183,7 +183,7 @@ func safeID(id string) string {
 
 // Save writes a record, filtering its environment first.
 //
-// Write-then-rename, the same discipline every other piece of gish state
+// Write-then-rename, the same discipline every other piece of koi state
 // uses: a shell killed mid-write must never leave a half-written record
 // that the next `sessions` call chokes on.
 func (s *Store) Save(r Record) error {

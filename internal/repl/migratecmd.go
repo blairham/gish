@@ -11,8 +11,8 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/migrate"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/migrate"
 )
 
 // The `migrate` command (#160): import an existing bash or zsh setup.
@@ -27,9 +27,9 @@ import (
 const migrateUsage = `usage: migrate [--apply] [--history] [--force]
 
   migrate             read your bash/zsh setup and print what would be imported
-  migrate --apply     write the gish rc file (refuses to clobber an existing one)
+  migrate --apply     write the koi rc file (refuses to clobber an existing one)
   migrate --history   also import your shell history (secrets are dropped)
-  migrate --force     overwrite an existing gish rc file
+  migrate --force     overwrite an existing koi rc file
 
 Nothing is executed: your rc files are parsed, and anything that does
 not translate is listed with the reason.`
@@ -48,9 +48,9 @@ func migrateCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	}
 }
 
-// RunMigrate is the whole command, exported so `gish migrate` reaches
+// RunMigrate is the whole command, exported so `koi migrate` reaches
 // it without a shell session — the case where someone is evaluating
-// gish before they have started using it, which is exactly when this
+// koi before they have started using it, which is exactly when this
 // command matters most.
 func RunMigrate(out, errOut io.Writer, args []string) error {
 	apply, importHistory, force := false, false, false
@@ -96,7 +96,7 @@ func RunMigrate(out, errOut io.Writer, args []string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(plan.GishRC()), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(plan.KoiRC()), 0o600); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "\nwrote %s\n", path)
@@ -120,9 +120,9 @@ func historyHint(plan *migrate.Plan, importHistory bool) string {
 }
 
 // migrateRCPath is where an imported config goes: the XDG rc, which is
-// the one gish creates for `config` too.
+// the one koi creates for `config` too.
 func migrateRCPath() (string, error) {
-	if p := os.Getenv("GISH_RC"); p != "" {
+	if p := os.Getenv("KOI_RC"); p != "" {
 		return p, nil
 	}
 	confHome := os.Getenv("XDG_CONFIG_HOME")
@@ -133,10 +133,10 @@ func migrateRCPath() (string, error) {
 		}
 		confHome = filepath.Join(home, ".config")
 	}
-	return filepath.Join(confHome, "gish", "gishrc"), nil
+	return filepath.Join(confHome, "koi", "koirc"), nil
 }
 
-// importShellHistory copies the old shell's history into gish's store.
+// importShellHistory copies the old shell's history into koi's store.
 //
 // It goes through Store.Append rather than writing JSONL directly, so
 // the #10 secret rules apply to imported commands exactly as they do to

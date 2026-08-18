@@ -15,14 +15,14 @@ import (
 //
 // starship's bash init sets PS1 from a PROMPT_COMMAND; so do oh-my-posh,
 // liquidprompt, powerline-shell, and every hand-written prompt anyone
-// has carried for twenty years. gish has its own prompt pipeline and
+// has carried for twenty years. koi has its own prompt pipeline and
 // was ignoring PS1 outright, which meant the tool ran, produced a
 // prompt, and the prompt went nowhere — the most confusing possible
 // outcome, because everything *looked* like it worked.
 //
 // Precedence is the same principle the rest of the theme engine uses:
 // an explicit choice by the user beats an inherited one. A manual
-// GISH_PROMPT wins; a GISH_THEME the user selected wins; otherwise, if
+// KOI_PROMPT wins; a KOI_THEME the user selected wins; otherwise, if
 // something in the session set PS1, that is what renders. The default
 // naked prompt is what you get when nobody asked for anything.
 
@@ -71,7 +71,7 @@ func expandBashPrompt(runner *interp.Runner, ps string, info promptInfo) string 
 // expandPromptEscapes translates bash's prompt escapes.
 //
 // \[ and \] are dropped rather than kept: they mark non-printing runs
-// so readline can count columns, and gish's renderer measures escape
+// so readline can count columns, and koi's renderer measures escape
 // sequences as zero-width already (#157). Passing them through would
 // put two stray bytes into every colored prompt in the world.
 func expandPromptEscapes(ps string, info promptInfo) string {
@@ -95,7 +95,7 @@ func expandPromptEscapes(ps string, info promptInfo) string {
 		case 'W':
 			b.WriteString(baseName(info.dir))
 		case 's':
-			b.WriteString("gish")
+			b.WriteString("koi")
 		case 'v', 'V':
 			b.WriteString(claimedBashVersion)
 		case '$':

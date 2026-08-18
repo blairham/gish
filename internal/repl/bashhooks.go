@@ -15,7 +15,7 @@ import (
 
 // Bash's hook surface (#159).
 //
-// This is the structural advantage gish has over every previous new
+// This is the structural advantage koi has over every previous new
 // shell, and it is the one thing that has to be *right* rather than
 // merely present. Every add-on in the ecosystem ships per-shell init
 // scripts — starship carries eleven, zoxide nine, atuin seven — and a
@@ -23,7 +23,7 @@ import (
 // downgrade. nushell has more stars than fish and a quarter of the
 // installs, and its own users describe booting zsh inside it.
 //
-// gish does not need to be adopted if it can run what those tools
+// koi does not need to be adopted if it can run what those tools
 // already emit for bash. That means the hook surface itself:
 // PROMPT_COMMAND, PS0, and the DEBUG trap. Between them they carry
 // starship, zoxide, atuin, direnv, mise and bash-preexec — which is in
@@ -171,7 +171,7 @@ func recordSignalTraps(args []string) ([]string, bool) {
 	return append([]string{"trap", action}, theirs...), true
 }
 
-// knownSignal reports whether the name is a signal gish is willing to
+// knownSignal reports whether the name is a signal koi is willing to
 // record. The list is bash's, minus the ones that cannot be caught.
 func knownSignal(name string) bool {
 	switch name {
@@ -244,9 +244,9 @@ func doubleQuoteLiteral(s string) string {
 // but that init scripts set unconditionally. extdebug is the one that
 // matters: bash-preexec and friends set it, and an error message in the
 // middle of a tool's init is what makes a shell look unfinished.
-// ignorableShopts are bash options gish does not implement and does not
+// ignorableShopts are bash options koi does not implement and does not
 // need to: they configure a history file format, a redraw, or a
-// completion cosmetic that gish handles its own way. Accepting them
+// completion cosmetic that koi handles its own way. Accepting them
 // silently is deliberate — an init script sets a handful in a row and
 // checks none of them, and an error in the middle of that is what makes
 // a shell look unfinished.
@@ -429,7 +429,7 @@ func runPS0(ctx context.Context, runner *interp.Runner, out io.Writer) {
 	if ps0 == "" {
 		return
 	}
-	// PS0 goes through prompt expansion, which for gish means the same
+	// PS0 goes through prompt expansion, which for koi means the same
 	// escape set every other prompt uses. Command substitution inside it
 	// is the common case (`$(date +%s)`), so it is expanded as shell
 	// text rather than printed literally.
@@ -496,7 +496,7 @@ func runDebugTrap(ctx context.Context, runner *interp.Runner, line string) bool 
 func runHookSource(ctx context.Context, runner *interp.Runner, src string) error {
 	file, err := syntax.NewParser().Parse(strings.NewReader(src), "hook")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gish: hook:", err)
+		fmt.Fprintln(os.Stderr, "koi: hook:", err)
 		return err
 	}
 	return runner.Run(ctx, file)
@@ -538,7 +538,7 @@ func runPendingSignalTraps(ctx context.Context, runner *interp.Runner) {
 // used by fzf and by bash-completion constantly — cannot be intercepted
 // here at all: the parser turns `declare` into a declaration clause
 // before any handler sees it, so it never arrives as a call. It is a
-// substrate gap rather than a gish one, recorded in the compat corpus
+// substrate gap rather than a koi one, recorded in the compat corpus
 // and tracked in #119; the visible cost is that init scripts which
 // probe for their own functions that way take their "not defined"
 // branch.

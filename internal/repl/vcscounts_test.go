@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/promptengine"
+	"github.com/blairham/koi-shell/internal/promptengine"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/plugmgr/ice"
-	"github.com/blairham/gish/internal/plugmgr/spec"
+	"github.com/blairham/koi-shell/internal/plugmgr/ice"
+	"github.com/blairham/koi-shell/internal/plugmgr/spec"
 )
 
 func mkfiles(t *testing.T, dir string, names ...string) {

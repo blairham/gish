@@ -1,6 +1,6 @@
 # announcement playbook
 
-The launch plan for gish (#106), derived from how shell announcements
+The launch plan for koi (#106), derived from how shell announcements
 actually land: fish, nushell, and ShellGPT threads that worked; murex's
 2-point silence; Warp's trust backlash. Every rule below is someone
 else's scar tissue.
@@ -23,10 +23,11 @@ crash-isolated, deadline-bounded — they can never block a keystroke or
 take down your shell.* Keep `docs/bench.md`'s p50/p99 in the body, ready
 before anyone asks.
 
-*The backronym is retired* (#169). The name rhymes with fish; that is
-the whole story now, and it is more on-message than the expansion ever
-was. There is no naming tension to defend because the plugin
-architecture is no longer the claim — see docs/strategy.md.
+*The backronym is retired* (#169), and so is the name that carried it.
+A koi is a fish, which says the positioning without a sentence of
+explanation: fish's out-of-box experience is the thing being chased.
+There is no naming tension to defend because the plugin architecture is
+no longer the claim — see docs/strategy.md.
 
 **State the trust stance up front, in bold.** Open source. Local-first.
 No account. No telemetry. AI is opt-in (`??` only), bring-your-own
@@ -41,7 +42,7 @@ path. Reversibility is what makes people willing to *recommend* it —
 **Market the rollback as loudly as the install** (#212). Exit cost is
 the forgotten half of every fast-adoption story: uv's skeptics never
 blocked adoption because rollback was free, and ripgrep could refuse
-grep compatibility outright because quitting cost nothing. gish says
+grep compatibility outright because quitting cost nothing. koi says
 this itself now — the first interactive run prints one dim line stating
 that nothing was changed and naming the uninstall command — and the
 `chsh` instructions lead with `/etc/shells` and carry the `chsh -s
@@ -57,7 +58,7 @@ open-sourcing scored 3 points on HN because the audience had already
 left. Trust decays irreversibly (docs/adoption.md), so this paragraph
 ships *before* launch rather than being conceded after.
 
-**Concede the ssh objection, then flip it.** Yes, gish isn't on the
+**Concede the ssh objection, then flip it.** Yes, koi isn't on the
 remote box. It's a local daily driver whose bash compatibility means
 zero context-switch when you land on a server. #98 is the real answer,
 and saying "not yet, here's the plan" beats deflecting.
@@ -67,7 +68,7 @@ and saying "not yet, here's the plan" beats deflecting.
 `agent` builtin exists but is experimental and frozen (#111) and stays
 out of the pitch entirely: "shell with a built-in AI agent" is the
 Warp-shaped red flag. The *strong* AI claim is the inverse — run your
-coding agent under `gish --sandbox workspace` and the shell confines what
+coding agent under `koi --sandbox workspace` and the shell confines what
 it can touch. That is a claim no agent CLI can make about itself.
 
 **No "future of the terminal" tone.** Warp poisoned that well. Say what
@@ -115,7 +116,7 @@ The three demos, when someone records them:
   documented in someone else's tracker (`anthropics/claude-code#11475`,
   `#7490`, `#13144`, `#19983`) and their current workaround is the
   dual-shell split — fish for humans, zsh for agents — which is the
-  partition gish collapses. Point at `docs/agents.md`: the recipe is one
+  partition koi collapses. Point at `docs/agents.md`: the recipe is one
   symlink, the contract is CI-gated, and it found two real bugs on its
   first run. Do not overstate it — several agents ignore `$SHELL`
   entirely, the recipe works around that rather than fixing it, and
@@ -141,7 +142,7 @@ records why it and two other numbers were dropped (#169).
 - Not "Windows support" — the native interactive port is sequenced to
   v1.x (#110), and WSL2 is the documented story until then.
 - Not "your zsh plugins all work" — tier-1 is a scoped escape hatch
-  (#105), and the honest line is that gish ships the top plugins'
+  (#105), and the honest line is that koi ships the top plugins'
   *behaviors* natively.
 - Not a bash-compat percentage without the corpus behind it —
   `docs/compat.md` states its own ceiling, and the number moves when the

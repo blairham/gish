@@ -6,7 +6,7 @@ import (
 )
 
 // Color handling. Upstream accepts three spellings for every color
-// setting and gish accepts the same three, because presets in the wild
+// setting and koi accepts the same three, because presets in the wild
 // use all of them:
 //
 //	4          an xterm-256 index (0-255)

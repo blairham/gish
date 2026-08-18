@@ -9,8 +9,8 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/session"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/session"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The `sessions` builtin and the restore path (#103).
@@ -34,7 +34,7 @@ const sessionsUsage = `usage: sessions [list|show ID|restore ID|forget ID]
   sessions forget 3f2a    drop the record
 
 Sessions are recorded continuously at each prompt and live in
-$XDG_STATE_HOME/gish/sessions. Restoring changes your directory
+$XDG_STATE_HOME/koi/sessions. Restoring changes your directory
 immediately; the environment is offered through the same trust prompt an
 env plugin gets, never applied silently. Secrets are never recorded —
 credential-shaped variable names are filtered before anything is

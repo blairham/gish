@@ -17,8 +17,8 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
-	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/koi-shell/pkg/pluginsdk/v1"
 )
 
 // Deadline defaults, from the latency table in docs/plugins.md. Every
@@ -70,14 +70,14 @@ const defaultDescribeTimeout = 2 * time.Second
 var DescribeTimeout = describeTimeoutFromEnv()
 
 func describeTimeoutFromEnv() time.Duration {
-	if d, err := time.ParseDuration(os.Getenv("GISH_PLUGIN_DESCRIBE_TIMEOUT")); err == nil && d > 0 {
+	if d, err := time.ParseDuration(os.Getenv("KOI_PLUGIN_DESCRIBE_TIMEOUT")); err == nil && d > 0 {
 		return d
 	}
 	return defaultDescribeTimeout
 }
 
 // DefaultDir returns the plugin discovery directory: every executable in
-// $XDG_DATA_HOME/gish/plugins is a tier-2 plugin.
+// $XDG_DATA_HOME/koi/plugins is a tier-2 plugin.
 func DefaultDir() (string, error) {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome == "" {
@@ -87,7 +87,7 @@ func DefaultDir() (string, error) {
 		}
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dataHome, "gish", "plugins"), nil
+	return filepath.Join(dataHome, "koi", "plugins"), nil
 }
 
 // Host manages tier-2 plugins: discovery, lazy resident lifecycle,

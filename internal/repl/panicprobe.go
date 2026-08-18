@@ -1,4 +1,4 @@
-//go:build gishpanicprobe
+//go:build koipanicprobe
 
 package repl
 
@@ -18,7 +18,7 @@ import (
 // someone does the right thing.
 //
 // So the trigger is ours now, and it is compiled only under the
-// `gishpanicprobe` tag that cmd/gish's test build passes. A released
+// `koipanicprobe` tag that cmd/koi's test build passes. A released
 // binary does not contain this file, and `probeCommand` is not a name
 // anybody types by accident.
 //
@@ -27,9 +27,9 @@ import (
 // the guard's job is to survive a panic raised *under* interp.Run,
 // wherever it comes from.
 // probeCommand is spelled to be unmistakable in a stack trace and
-// impossible to type by accident. cmd/gish/spawn_test.go uses the same
+// impossible to type by accident. cmd/koi/spawn_test.go uses the same
 // literal; it cannot import an unexported name across packages.
-const probeCommand = "__gish_panic_probe"
+const probeCommand = "__koi_panic_probe"
 
 func panicProbeCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {

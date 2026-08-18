@@ -11,7 +11,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/editor"
+	"github.com/blairham/koi-shell/internal/editor"
 )
 
 // The `bind` builtin (#159).
@@ -154,7 +154,7 @@ func isKeyCommand(args []string) bool { return slices.Contains(args, "-x") }
 func modeApplies(mode string) bool {
 	switch mode {
 	case "vi", "vi-command", "vi-move", "vi-insert":
-		return false // gish's vi mode has its own bindings (#163)
+		return false // koi's vi mode has its own bindings (#163)
 	default:
 		return true
 	}

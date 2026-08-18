@@ -13,7 +13,7 @@ import (
 // configCallHandler) with the rc file redirected to a temp path.
 func runConfigScript(t *testing.T, rc, src string) (stdout, stderr string, err error) {
 	t.Helper()
-	t.Setenv("GISH_RC", rc)
+	t.Setenv("KOI_RC", rc)
 	var out, errOut strings.Builder
 	err = RunReader(t.Context(), strings.NewReader(src), "test",
 		interp.StdIO(nil, &out, &errOut))
@@ -21,8 +21,8 @@ func runConfigScript(t *testing.T, rc, src string) (stdout, stderr string, err e
 }
 
 func TestConfigSetPersistsAndGoesLive(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
-	out, _, err := runConfigScript(t, rc, "config theme starship\necho live=$GISH_THEME\n")
+	rc := filepath.Join(t.TempDir(), "koirc")
+	out, _, err := runConfigScript(t, rc, "config theme starship\necho live=$KOI_THEME\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,14 +36,14 @@ func TestConfigSetPersistsAndGoesLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); got != "GISH_THEME=starship\n" {
+	if got := string(data); got != "KOI_THEME=starship\n" {
 		t.Errorf("rc = %q", got)
 	}
 }
 
 func TestConfigRewritesExistingAssignment(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
-	orig := "# my rc\nexport GISH_THEME=p10k\nalias ll='ls -l'\n"
+	rc := filepath.Join(t.TempDir(), "koirc")
+	orig := "# my rc\nexport KOI_THEME=p10k\nalias ll='ls -l'\n"
 	if err := os.WriteFile(rc, []byte(orig), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -54,15 +54,15 @@ func TestConfigRewritesExistingAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "# my rc\nexport GISH_THEME=plain\nalias ll='ls -l'\n"
+	want := "# my rc\nexport KOI_THEME=plain\nalias ll='ls -l'\n"
 	if string(data) != want {
 		t.Errorf("rc = %q, want %q", data, want)
 	}
 }
 
 func TestConfigQuotesValues(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
-	out, _, err := runConfigScript(t, rc, "config prompt '%W $ '\necho live=[$GISH_PROMPT]\n")
+	rc := filepath.Join(t.TempDir(), "koirc")
+	out, _, err := runConfigScript(t, rc, "config prompt '%W $ '\necho live=[$KOI_PROMPT]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,13 +73,13 @@ func TestConfigQuotesValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); got != "GISH_PROMPT='%W $ '\n" {
+	if got := string(data); got != "KOI_PROMPT='%W $ '\n" {
 		t.Errorf("rc = %q", got)
 	}
 }
 
 func TestConfigRejectsBadValues(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	_, errOut, _ := runConfigScript(t, rc, "config theme rainbow\n")
 	if !strings.Contains(errOut, "must be one of") {
 		t.Errorf("stderr = %q", errOut)
@@ -95,12 +95,12 @@ func TestConfigRejectsBadValues(t *testing.T) {
 }
 
 func TestConfigShow(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc, "config theme p10k\nconfig theme\nconfig\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `theme = "p10k" (GISH_THEME)`) {
+	if !strings.Contains(out, `theme = "p10k" (KOI_THEME)`) {
 		t.Errorf("single show missing: %q", out)
 	}
 	if !strings.Contains(out, "lint") || !strings.Contains(out, "prompt") {
@@ -109,10 +109,10 @@ func TestConfigShow(t *testing.T) {
 }
 
 func TestConfigThemeSegmentToggle(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc,
-		"config theme.git off\necho off=[$GISH_THEME_SEGMENTS]\n"+
-			"config theme.git on\necho on=[$GISH_THEME_SEGMENTS]\n")
+		"config theme.git off\necho off=[$KOI_THEME_SEGMENTS]\n"+
+			"config theme.git on\necho on=[$KOI_THEME_SEGMENTS]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,14 +127,14 @@ func TestConfigThemeSegmentToggle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); got != "GISH_THEME_SEGMENTS='dir git pins jobs duration exit'\n" {
+	if got := string(data); got != "KOI_THEME_SEGMENTS='dir git pins jobs duration exit'\n" {
 		t.Errorf("rc = %q", got)
 	}
 }
 
 func TestConfigThemePluginSegmentAppends(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
-	out, _, err := runConfigScript(t, rc, "config theme.k8s on\necho live=[$GISH_THEME_SEGMENTS]\n")
+	rc := filepath.Join(t.TempDir(), "koirc")
+	out, _, err := runConfigScript(t, rc, "config theme.k8s on\necho live=[$KOI_THEME_SEGMENTS]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,20 +144,20 @@ func TestConfigThemePluginSegmentAppends(t *testing.T) {
 }
 
 func TestConfigThemeSegments(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc,
-		"config theme.segments 'exit dir'\necho live=[$GISH_THEME_SEGMENTS]\nconfig theme.segments\n")
+		"config theme.segments 'exit dir'\necho live=[$KOI_THEME_SEGMENTS]\nconfig theme.segments\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "live=[exit dir]") {
 		t.Errorf("segments not live: %q", out)
 	}
-	if !strings.Contains(out, `theme.segments = "exit dir" (GISH_THEME_SEGMENTS)`) {
+	if !strings.Contains(out, `theme.segments = "exit dir" (KOI_THEME_SEGMENTS)`) {
 		t.Errorf("show missing: %q", out)
 	}
 
-	_, errOut, _ := runConfigScript(t, filepath.Join(t.TempDir(), "gishrc"),
+	_, errOut, _ := runConfigScript(t, filepath.Join(t.TempDir(), "koirc"),
 		"config theme.segments 'dir;rm'\n")
 	if !strings.Contains(errOut, "bad segment id") {
 		t.Errorf("stderr = %q", errOut)
@@ -165,8 +165,8 @@ func TestConfigThemeSegments(t *testing.T) {
 }
 
 func TestConfigThemeColor(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
-	out, _, err := runConfigScript(t, rc, "config theme.color.dir cyan\necho live=[$GISH_THEME_COLOR_DIR]\n")
+	rc := filepath.Join(t.TempDir(), "koirc")
+	out, _, err := runConfigScript(t, rc, "config theme.color.dir cyan\necho live=[$KOI_THEME_COLOR_DIR]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestConfigThemeColor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); got != "GISH_THEME_COLOR_DIR=cyan\n" {
+	if got := string(data); got != "KOI_THEME_COLOR_DIR=cyan\n" {
 		t.Errorf("rc = %q", got)
 	}
 
@@ -188,10 +188,10 @@ func TestConfigThemeColor(t *testing.T) {
 }
 
 func TestConfigThemeLayout(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc,
 		"config theme.lines 1\nconfig theme.sep powerline\n"+
-			"echo live=[$GISH_THEME_LINES $GISH_THEME_SEP]\nconfig theme.lines\nconfig theme.sep\n")
+			"echo live=[$KOI_THEME_LINES $KOI_THEME_SEP]\nconfig theme.lines\nconfig theme.sep\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestConfigThemeLayout(t *testing.T) {
 }
 
 func TestConfigThemeGuardsLastSegment(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	_, errOut, _ := runConfigScript(t, rc, "config theme.segments dir\nconfig theme.dir off\n")
 	if !strings.Contains(errOut, "last segment") {
 		t.Errorf("stderr = %q", errOut)
@@ -222,7 +222,7 @@ func TestConfigThemeGuardsLastSegment(t *testing.T) {
 
 func TestConfigCreatesXDGRCWhenNoneExists(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("GISH_RC", "")
+	t.Setenv("KOI_RC", "")
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
 	t.Setenv("HOME", base)
 	t.Setenv("USERPROFILE", base) // UserHomeDir reads this on Windows
@@ -233,31 +233,31 @@ func TestConfigCreatesXDGRCWhenNoneExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(base, "config", "gish", "gishrc"))
+	data, err := os.ReadFile(filepath.Join(base, "config", "koi", "koirc"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); got != "GISH_LINT=native\n" {
+	if got := string(data); got != "KOI_LINT=native\n" {
 		t.Errorf("rc = %q", got)
 	}
 }
 
 func TestConfigThemeRPrompt(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc,
-		"config theme.rprompt 'time exit'\necho live=[$GISH_THEME_RPROMPT]\nconfig theme.rprompt\n")
+		"config theme.rprompt 'time exit'\necho live=[$KOI_THEME_RPROMPT]\nconfig theme.rprompt\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "live=[time exit]") {
 		t.Errorf("rprompt not live: %q", out)
 	}
-	if !strings.Contains(out, `theme.rprompt = "time exit" (GISH_THEME_RPROMPT)`) {
+	if !strings.Contains(out, `theme.rprompt = "time exit" (KOI_THEME_RPROMPT)`) {
 		t.Errorf("show missing: %q", out)
 	}
 
 	// Empty clears it; bad ids rejected.
-	out, _, err = runConfigScript(t, rc, "config theme.rprompt ''\necho live=[$GISH_THEME_RPROMPT]\n")
+	out, _, err = runConfigScript(t, rc, "config theme.rprompt ''\necho live=[$KOI_THEME_RPROMPT]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,8 +271,8 @@ func TestConfigThemeRPrompt(t *testing.T) {
 }
 
 func TestConfigThemeFrame(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
-	out, _, err := runConfigScript(t, rc, "config theme.frame off\necho live=[$GISH_THEME_FRAME]\nconfig theme.frame\n")
+	rc := filepath.Join(t.TempDir(), "koirc")
+	out, _, err := runConfigScript(t, rc, "config theme.frame off\necho live=[$KOI_THEME_FRAME]\nconfig theme.frame\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,9 +289,9 @@ func TestConfigThemeFrame(t *testing.T) {
 }
 
 func TestConfigThemePreset(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc,
-		"config theme.preset spaceship\necho live=[$GISH_THEME $GISH_THEME_FRAME $GISH_THEME_COLOR_GIT]\n")
+		"config theme.preset spaceship\necho live=[$KOI_THEME $KOI_THEME_FRAME $KOI_THEME_COLOR_GIT]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestConfigThemePreset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"GISH_THEME_FRAME=off\n", "GISH_THEME_COLOR_DIR=cyan\n"} {
+	for _, line := range []string{"KOI_THEME_FRAME=off\n", "KOI_THEME_COLOR_DIR=cyan\n"} {
 		if !strings.Contains(string(data), line) {
 			t.Errorf("rc missing %q:\n%s", line, data)
 		}
@@ -311,7 +311,7 @@ func TestConfigThemePreset(t *testing.T) {
 	// Switching back to p10k resets every knob spaceship touched.
 	out, _, err = runConfigScript(t, rc,
 		"config theme.preset spaceship\nconfig theme.preset p10k\n"+
-			"echo live=[$GISH_THEME $GISH_THEME_FRAME $GISH_THEME_COLOR_GIT]\n")
+			"echo live=[$KOI_THEME $KOI_THEME_FRAME $KOI_THEME_COLOR_GIT]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestConfigThemePreset(t *testing.T) {
 // pipes, scripts, CI — login or not), every styled surface emits plain
 // bytes. One escape character in piped output is a regression.
 func TestHeadlessSurfacesEmitNoEscapes(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	// `plugin browse` and `config theme` are the two surfaces that open a
 	// form on a terminal (#90); headless they must print, not hang, and
 	// not style. They are in this list rather than only in their own

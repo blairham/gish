@@ -3,8 +3,8 @@ package repl
 import (
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/plugmgr"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/plugmgr"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // ziUpdate routes `zi update` through the live board (#90) when the

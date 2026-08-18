@@ -10,8 +10,8 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/manifest"
-	"github.com/blairham/gish/internal/plugmgr"
+	"github.com/blairham/koi-shell/internal/manifest"
+	"github.com/blairham/koi-shell/internal/plugmgr"
 )
 
 // The plugin surface (#108): the declarative manifest replaces zi's
@@ -116,7 +116,7 @@ func lazyCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 		}
 		payload, err := pluginMgr.install(entry)
 		if err != nil {
-			fmt.Fprintf(interp.HandlerCtx(ctx).Stderr, "gish: plugin %s: %v\n", entry.Name(), err)
+			fmt.Fprintf(interp.HandlerCtx(ctx).Stderr, "koi: plugin %s: %v\n", entry.Name(), err)
 			return next(ctx, args)
 		}
 		if payload == "" {
@@ -173,7 +173,7 @@ const pluginUsage = `usage: plugin [add|remove|pin|enable|disable|update] …
   plugin update [name]            refresh installs
 
 Four knobs, no modifier language: source, kind (plugin|release|snippet),
-pin, lazy (command:NAME). The file is $XDG_CONFIG_HOME/gish/plugins.toml
+pin, lazy (command:NAME). The file is $XDG_CONFIG_HOME/koi/plugins.toml
 and hand edits are equally fine.`
 
 // pluginCallHandler intercepts `plugin`, config-style.
@@ -192,7 +192,7 @@ func runPlugin(ctx context.Context, hc interp.HandlerContext, args []string) []s
 		return []string{"false"}
 	}
 	if pluginMgr == nil {
-		// Non-interactive sessions manage plugins too (scripts, `gish -c`
+		// Non-interactive sessions manage plugins too (scripts, `koi -c`
 		// in a dotfiles bootstrap); only *loading* is interactive.
 		mgr, err := plugmgr.NewZi(hc.Stderr)
 		if err != nil {

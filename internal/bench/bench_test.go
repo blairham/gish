@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blairham/gish/internal/bench"
+	"github.com/blairham/koi-shell/internal/bench"
 )
 
 // -update regenerates docs/bench.md from a live run. Without it the
 // package's tests only check that the harness works, because timing
 // numbers must never be a CI gate — a loaded runner would fail an
-// honest shell (#37's budget gate is the gish-vs-gish guard).
+// honest shell (#37's budget gate is the koi-vs-koi guard).
 var update = flag.Bool("update", false, "regenerate docs/bench.md")
 
 const (
@@ -28,9 +28,9 @@ func TestBenchmarkReport(t *testing.T) {
 	if !*update {
 		t.Skip("timing runs are opt-in: `make bench` regenerates docs/bench.md")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 
-	configs := bench.StartupConfigs(gishBin)
+	configs := bench.StartupConfigs(koiBin)
 	// The head-to-head for the native p10k port. Reported as missing
 	// rather than omitted when upstream is not installed, so a reader
 	// can tell "we lost that row" from "we never ran it".
@@ -54,7 +54,7 @@ func TestBenchmarkReport(t *testing.T) {
 		startups = append(startups, r)
 	}
 
-	keystrokes := bench.MeasureKeystrokes(gishBin, bench.KeystrokeScenarios(), keystrokeCount)
+	keystrokes := bench.MeasureKeystrokes(koiBin, bench.KeystrokeScenarios(), keystrokeCount)
 	for _, k := range keystrokes {
 		if k.Err != "" {
 			t.Logf("%s: %s", k.Scenario, k.Err)
@@ -80,18 +80,18 @@ func TestBenchmarkReport(t *testing.T) {
 }
 
 // TestHarnessMeasuresSomething keeps the harness itself honest in
-// normal CI: one gish launch must be measurable, and a missing shell
+// normal CI: one koi launch must be measurable, and a missing shell
 // must be reported rather than silently dropped.
 func TestHarnessMeasuresSomething(t *testing.T) {
-	gishBin := buildGish(t)
-	configs := bench.StartupConfigs(gishBin)
+	koiBin := buildKoi(t)
+	configs := bench.StartupConfigs(koiBin)
 	if len(configs) == 0 {
 		t.Fatal("no configs built")
 	}
 
 	r := bench.MeasureStartup(configs[0], 1)
 	if !r.Available || r.Err != "" {
-		t.Fatalf("gish startup unmeasurable: %+v", r)
+		t.Fatalf("koi startup unmeasurable: %+v", r)
 	}
 	if r.Median() <= 0 {
 		t.Errorf("median = %v", r.Median())
@@ -103,12 +103,12 @@ func TestHarnessMeasuresSomething(t *testing.T) {
 	}
 }
 
-func buildGish(t *testing.T) string {
+func buildKoi(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "gish")
-	cmd := exec.Command("go", "build", "-o", bin, "../../cmd/gish")
+	bin := filepath.Join(t.TempDir(), "koi")
+	cmd := exec.Command("go", "build", "-o", bin, "../../cmd/koi")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build gish: %v\n%s", err, out)
+		t.Fatalf("build koi: %v\n%s", err, out)
 	}
 	return bin
 }

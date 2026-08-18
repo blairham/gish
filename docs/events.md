@@ -1,11 +1,11 @@
 # ShellEvents: event-triggered automations
 
-Split out of [#34](https://github.com/blairham/gish/issues/34) as its own
+Split out of [#34](https://github.com/blairham/koi-shell/issues/34) as its own
 idea: plugins that react to what happens in a session — `cd` into a repo
 and get the toolchain setup suggested, a lockfile changes and the install
 command is offered, a command fails twice and `explain` is proposed.
 
-**Status: contract defined, host not wired.** `proto/gish/plugin/v1/events.proto`
+**Status: contract defined, host not wired.** `proto/koi/plugin/v1/events.proto`
 exists and `CAPABILITY_EVENTS` is allocated; nothing subscribes yet. That
 ordering is deliberate and matches how the rest of this package was
 built — the shape of a plugin contract is far harder to change once
@@ -22,7 +22,7 @@ when, and a plugin that misbehaves costs its own feature.
 ShellEvents inverts that: the plugin is *told* things and gets to speak
 unprompted. That is what makes it useful, and it is exactly why the
 constraints below are not negotiable. A hook system is how shells
-historically became slow and unpredictable — the reason gish notices
+historically became slow and unpredictable — the reason koi notices
 directory changes natively instead of asking users to `eval "$(... hook
 bash)"` is that hooks bolted onto a prompt are a performance and
 correctness hazard.
@@ -32,8 +32,8 @@ correctness hazard.
 ### 1. No exec channel, ever
 
 A plugin proposes; the shell decides. This is the same line
-[#111](https://github.com/blairham/gish/issues/111) drew for the agent
-builtin — **gish hosts other people's agents rather than being one** —
+[#111](https://github.com/blairham/koi-shell/issues/111) drew for the agent
+builtin — **koi hosts other people's agents rather than being one** —
 and it is precisely why orchestration cannot move behind the plugin
 boundary without weakening the invariant.
 
@@ -90,7 +90,7 @@ full command lines cannot be told later that it can't have them.
    as it learns where it is. Whether *event kinds* should also be
    declared that way, or in `DescribeResponse`, is open. Describe is
    simpler; in-stream is more flexible; doing both would be worst.
-2. **File watching is the expensive part.** `gish-git` already runs an
+2. **File watching is the expensive part.** `koi-git` already runs an
    fsnotify watcher, so the machinery exists — but a per-plugin watch
    set, with plugins coming and going, is a different problem from one
    watcher for one repo. This is the piece to prototype before
@@ -111,7 +111,7 @@ full command lines cannot be told later that it can't have them.
   which rule 2 enforces structurally rather than by asking politely.
 - **direnv's hook**: a good feature whose install step (`eval "$(direnv
   hook bash)"`) is a permanent tax on every shell start and a source of
-  ordering bugs. gish notices `cd` natively; that is the whole point of
+  ordering bugs. koi notices `cd` natively; that is the whole point of
   #12, and ShellEvents should never reintroduce a hook install.
 - **PowerShell's event subsystem**: rich, and almost nobody uses it —
   a caution that the vocabulary should stay small enough to learn in one

@@ -1,7 +1,7 @@
-// Package ui is the shared charm styling for gish's discrete surfaces
+// Package ui is the shared charm styling for koi's discrete surfaces
 // (#90): doctor, the plugins/tool listings, the zi update board. The
 // keystroke path (editor, completion menu, prompt) never goes through
-// this package — decision #1 stands, the render loop stays gish-owned.
+// this package — decision #1 stands, the render loop stays koi-owned.
 //
 // Degradation is explicit, not sniffed: callers gate on Enabled(w),
 // which is true only for a real terminal without NO_COLOR/dumb. A
@@ -16,7 +16,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // Enabled reports whether w is an interactive, color-willing terminal.

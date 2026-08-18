@@ -8,13 +8,13 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/sandbox"
+	"github.com/blairham/koi-shell/internal/sandbox"
 )
 
 // The sandbox surface (#21). Two shapes, one policy schema:
 //
 //	sandbox --profile readonly -- make test    one command under a profile
-//	gish --sandbox readonly                    the whole session under one
+//	koi --sandbox readonly                    the whole session under one
 //
 // Both are argv rewrites to the re-exec child (internal/sandbox), so
 // job control, terminal handoff, and signals see an ordinary process.
@@ -27,7 +27,7 @@ import (
 var sessionSandboxProfile string
 
 // SetSessionSandbox validates and installs the session-wide profile
-// (the gish --sandbox flag).
+// (the koi --sandbox flag).
 func SetSessionSandbox(profile string) error {
 	if _, err := sandbox.Resolve(profile, ""); err != nil {
 		return err
@@ -47,7 +47,7 @@ func sandboxExecMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 		}
 		wrapped, err := wrapInSandbox(sessionSandboxProfile, interp.HandlerCtx(ctx).Dir, args)
 		if err != nil {
-			fmt.Fprintln(interp.HandlerCtx(ctx).Stderr, "gish: sandbox:", err)
+			fmt.Fprintln(interp.HandlerCtx(ctx).Stderr, "koi: sandbox:", err)
 			return interp.ExitStatus(126)
 		}
 		return next(ctx, wrapped)

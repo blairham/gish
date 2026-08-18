@@ -1,7 +1,7 @@
 // Package emit generates the shell payload that loads an object. Upstream
-// zi-go emitted zsh for a shim to eval; in gish the shell itself runs the
+// zi-go emitted zsh for a shim to eval; in koi the shell itself runs the
 // payload (the zi builtin becomes `source <payload>` via the CallHandler),
-// so the dialect is gish's bash-level interpreter — zsh-isms are rewritten:
+// so the dialect is koi's bash-level interpreter — zsh-isms are rewritten:
 // path=(…) → PATH=, ${+commands[x]} → command -v, print -P → printf. fpath
 // is still recorded (as a plain array) for the future completion engine.
 package emit
@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blairham/gish/internal/plugmgr/ice"
-	"github.com/blairham/gish/internal/plugmgr/spec"
+	"github.com/blairham/koi-shell/internal/plugmgr/ice"
+	"github.com/blairham/koi-shell/internal/plugmgr/spec"
 )
 
 // sourceCandidates is Zi's file-resolution order from lib/zsh/side.zsh:

@@ -3,8 +3,8 @@
 // so sandbox enforcement is one more step on it — policy resolution →
 // platform enforcement → spawn. No wrapper binary on PATH, no shims.
 //
-// Mechanism: a sandboxed command is rewritten to re-exec gish itself in
-// a private mode (`gish __sandbox-exec <policy-json> -- cmd …`). The
+// Mechanism: a sandboxed command is rewritten to re-exec koi itself in
+// a private mode (`koi __sandbox-exec <policy-json> -- cmd …`). The
 // child filters its environment per policy, applies the platform
 // enforcement — macOS Seatbelt via /usr/bin/sandbox-exec, Linux
 // Landlock — and execs the real command. One wrapper, both platforms,
@@ -85,7 +85,7 @@ func Resolve(name, cwd string) (Policy, error) {
 }
 
 // WrapArgv rewrites a command's argv to run under policy via the
-// re-exec child. self is the gish binary (os.Executable()).
+// re-exec child. self is the koi binary (os.Executable()).
 func WrapArgv(self string, p Policy, argv []string) ([]string, error) {
 	blob, err := json.Marshal(p)
 	if err != nil {

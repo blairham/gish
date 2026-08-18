@@ -13,7 +13,7 @@ import (
 
 // Color-friendly defaults (#54).
 //
-// gish shipped none, so `ls` was bare and man pages were monochrome for
+// koi shipped none, so `ls` was bare and man pages were monochrome for
 // anyone who had not written the incantations themselves. That is the
 // gap between "the shell works" and "the shell is pleasant on the first
 // run", and #105 puts fish-grade defaults on the adoption path rather
@@ -34,7 +34,7 @@ import (
 //
 // Nothing here defeats NO_COLOR. Both mechanisms are tty-aware by
 // construction — CLICOLOR and --color=auto each check isatty, so `ls |
-// cat` stays plain without gish arranging it — and when color is
+// cat` stays plain without koi arranging it — and when color is
 // unwanted outright, none of it is set at all.
 
 // lessTermcap is the man-page palette, applied through less's termcap
@@ -91,25 +91,25 @@ func applyColorDefaults(ctx context.Context, runner *interp.Runner) {
 	}
 
 	src := strings.Join(assign, "\n")
-	file, err := syntax.NewParser().Parse(strings.NewReader(src), "gish")
+	file, err := syntax.NewParser().Parse(strings.NewReader(src), "koi")
 	if err != nil {
 		return
 	}
 	if err := runner.Run(ctx, file); err != nil {
 		// Defaults are a courtesy; a shell that cannot set them still
 		// has to start.
-		fmt.Fprintf(os.Stderr, "gish: color defaults: %v\n", err)
+		fmt.Fprintf(os.Stderr, "koi: color defaults: %v\n", err)
 	}
 }
 
 // wantColorDefaults reports whether to apply them at all.
 //
 // NO_COLOR and a dumb terminal are the same refusal the prompt and every
-// styled surface already honor, and GISH_COLOR_DEFAULTS=off is the
-// escape hatch for someone who wants gish's other defaults but not
-// these — the same shape as GISH_TOOLS and GISH_JUMP.
+// styled surface already honor, and KOI_COLOR_DEFAULTS=off is the
+// escape hatch for someone who wants koi's other defaults but not
+// these — the same shape as KOI_TOOLS and KOI_JUMP.
 func wantColorDefaults(runner *interp.Runner) bool {
-	if shellVar(runner, "GISH_COLOR_DEFAULTS", "on") == "off" {
+	if shellVar(runner, "KOI_COLOR_DEFAULTS", "on") == "off" {
 		return false
 	}
 	if os.Getenv("NO_COLOR") != "" {

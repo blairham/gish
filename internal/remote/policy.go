@@ -17,10 +17,10 @@ import (
 // rather than caution theater. Auto-hijacking `ssh` would drop
 // executables on servers people do not own — that trips file-integrity
 // monitoring (Tripwire, Wazuh) and violates change control at plenty of
-// shops. So `gish ssh` is explicit, `ssh` is never shadowed by default,
+// shops. So `koi ssh` is explicit, `ssh` is never shadowed by default,
 // and the first visit to a host asks.
 
-// Bring modes, the values of GISH_SSH_BRING.
+// Bring modes, the values of KOI_SSH_BRING.
 const (
 	BringAsk    = "ask"
 	BringAlways = "always"
@@ -44,7 +44,7 @@ func DecisionsPath() string {
 		}
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, "gish", "ssh-hosts.json")
+	return filepath.Join(base, "koi", "ssh-hosts.json")
 }
 
 func loadDecisions() hostDecisions {
@@ -75,7 +75,7 @@ func saveDecisions(d hostDecisions) error {
 	if err != nil {
 		return err
 	}
-	// Write-then-rename, as everywhere else gish persists state.
+	// Write-then-rename, as everywhere else koi persists state.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
@@ -83,10 +83,10 @@ func saveDecisions(d hostDecisions) error {
 	return os.Rename(tmp, path)
 }
 
-// Decide answers whether to bring gish to host. mode is GISH_SSH_BRING;
+// Decide answers whether to bring koi to host. mode is KOI_SSH_BRING;
 // ask consults the remembered answer first and only then the user, via
 // prompt (which a test supplies). A non-terminal session never asks —
-// an unattended `gish ssh` in a script must not block on a question.
+// an unattended `koi ssh` in a script must not block on a question.
 func Decide(host, mode string, interactive bool, prompt func(string) (bool, error)) (bring, remembered bool, err error) {
 	switch mode {
 	case BringNever:
@@ -127,11 +127,11 @@ func Forget(host string) error {
 }
 
 // AskOnTerminal is the default prompt: one question, default no. The
-// default matters — someone typing `gish ssh prod` while half awake
+// default matters — someone typing `koi ssh prod` while half awake
 // should not drop a binary on prod by hitting Enter.
 func AskOnTerminal(in io.Reader, out io.Writer) func(string) (bool, error) {
 	return func(host string) (bool, error) {
-		fmt.Fprintf(out, "gish: bring gish to %s? It copies one file to a cache dir\n", host)
+		fmt.Fprintf(out, "koi: bring koi to %s? It copies one file to a cache dir\n", host)
 		fmt.Fprintf(out, "      under your home there and nothing else. [y/N/never] ")
 		line, err := bufio.NewReader(in).ReadString('\n')
 		if err != nil && line == "" {

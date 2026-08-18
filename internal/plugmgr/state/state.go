@@ -10,8 +10,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/blairham/gish/internal/plugmgr/ice"
-	"github.com/blairham/gish/internal/plugmgr/spec"
+	"github.com/blairham/koi-shell/internal/plugmgr/ice"
+	"github.com/blairham/koi-shell/internal/plugmgr/spec"
 )
 
 const manifestName = ".zi-go.json"

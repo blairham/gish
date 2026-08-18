@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // blockIndex is the parse between what a user reads off the listing and

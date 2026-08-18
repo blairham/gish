@@ -24,9 +24,9 @@ import (
 // The product was right and the fixture was unix-only.
 var (
 	fixtureHome = filepath.Join(string(filepath.Separator), "fixture", "you")
-	fixtureCwd  = filepath.Join(fixtureHome, "dev", "gish")
+	fixtureCwd  = filepath.Join(fixtureHome, "dev", "koi")
 	// The abbreviated form the prompt should show, in the same spelling.
-	fixtureTilde = "~" + string(filepath.Separator) + filepath.Join("dev", "gish")
+	fixtureTilde = "~" + string(filepath.Separator) + filepath.Join("dev", "koi")
 )
 
 func sampleContext() *Context {
@@ -142,7 +142,7 @@ func TestRenderEveryPresetProducesAPrompt(t *testing.T) {
 			if strings.TrimSpace(plain(got.Prompt)) == "" {
 				t.Fatal("preset rendered an empty prompt")
 			}
-			if !strings.Contains(plain(got.Prompt), "gish") {
+			if !strings.Contains(plain(got.Prompt), "koi") {
 				t.Errorf("preset does not show the directory: %q", plain(got.Prompt))
 			}
 			// No preset may run past the terminal edge on any line.
@@ -168,7 +168,7 @@ func TestRenderUnknownSegmentIsSkipped(t *testing.T) {
 	cfg := Preset("lean")
 	cfg.SetList("LEFT_PROMPT_ELEMENTS", []string{"dir", "not_a_segment", elementNewline, "prompt_char"})
 	got := plain(Render(cfg, sampleContext()).Prompt)
-	if !strings.Contains(got, "gish") {
+	if !strings.Contains(got, "koi") {
 		t.Errorf("an unknown element should vanish, not break the prompt: %q", got)
 	}
 }

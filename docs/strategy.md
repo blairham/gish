@@ -1,7 +1,7 @@
 # strategy
 
 What the research actually supports, what it does not, and what that
-means for what gish claims. This page exists because three numbers we
+means for what koi claims. This page exists because three numbers we
 were repeating are wrong and one positioning premise was overturned
 (#169) — and because the corrections are more useful than the claims
 were.
@@ -58,7 +58,7 @@ Everything else is table stakes we happen to have.
 The lifecycle evidence behind this section — the composite law, the
 churn funnel stage by stage, and the growth mechanics ranked by whether
 they transfer — is recorded in [docs/adoption.md](adoption.md) (#207).
-This page says what gish should *claim*; that one says what determines
+This page says what koi should *claim*; that one says what determines
 whether anyone ever runs it.
 
 **Distribution, not merit.** zsh's rise was caused by Apple making it
@@ -78,9 +78,9 @@ licensing.** fish is GPLv2, and Apple still ships GPLv2 bash 3.2.57
 today. Compatibility was the gate.
 
 **The risk is the csh ending.** tcsh won on interactive merit, and then
-bash absorbed its features onto a compatible base. The threat to gish is
+bash absorbed its features onto a compatible base. The threat to koi is
 not nushell; it is **zsh or fish absorbing bash-paste compatibility
-before gish has users**, or an add-on (ble.sh, IRIS) delivering the UX
+before koi has users**, or an add-on (ble.sh, IRIS) delivering the UX
 into the shell people already run.
 
 **The realistic ceiling is fish-sized, over about ten years.** Every
@@ -96,11 +96,15 @@ without one.
   and it is not why anyone would switch. docs/announcement.md already
   says never headline gRPC; the reason is now recorded rather than
   defensive.
-- **Retire the backronym.** The name stays — it rhymes with fish, which
-  is more on-message than the expansion ever was, and the availability
-  sweep found every alternative taken. But "gRPC Interactive SHell" is
-  no longer the story, so the "naming tension" paragraph that existed to
-  defend it is unnecessary.
+- **Retire the backronym, and then the name.** "gRPC Interactive SHell"
+  went first: it is no longer the story, so the "naming tension"
+  paragraph that existed to defend it is unnecessary. `gish` followed,
+  because with the expansion gone it meant nothing and carried three
+  costs a mainstream name cannot: "Gish gallop" is a Merriam-Webster
+  and Wikipedia entry, `gi-` has no settled pronunciation (the GIF
+  problem), and several other `gish` CLIs already rank for it — three of
+  them git shells. `koi` is a fish, which states the lineage rather than
+  defending it.
 - **Measure, publish, and let the numbers be unflattering.**
   docs/compat.md, docs/bench.md and docs/interactive-compat.md are the
   model: a corpus that grows can lower a percentage, and that is the
@@ -125,7 +129,7 @@ slowed" was reading a slow release schedule as a slow project.
 atuin + fzf + direnv and want one coherent thing — or do they actively
 prefer the modular stack?**
 
-That is the central strategic question for gish, and it is
+That is the central strategic question for koi, and it is
 **unanswered from the user side**. The churn half of the Reddit corpus
 is done (827 comments); the demand half was never gathered. #171 carries
 the method, including the two access notes that matter: reddit.com

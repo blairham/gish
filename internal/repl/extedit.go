@@ -23,19 +23,19 @@ func externalEditFn(runner *interp.Runner) func(string) (string, bool) {
 			os.Getenv("VISUAL"), os.Getenv("EDITOR"),
 		)
 		if editor == "" {
-			fmt.Fprintln(os.Stderr, "gish: set $EDITOR to edit the command line")
+			fmt.Fprintln(os.Stderr, "koi: set $EDITOR to edit the command line")
 			return "", false
 		}
-		f, err := os.CreateTemp("", "gish-edit-*.sh")
+		f, err := os.CreateTemp("", "koi-edit-*.sh")
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "gish:", err)
+			fmt.Fprintln(os.Stderr, "koi:", err)
 			return "", false
 		}
 		path := f.Name()
 		defer os.Remove(path) //nolint:errcheck // temp file
 		if _, err := f.WriteString(text); err != nil {
 			f.Close()
-			fmt.Fprintln(os.Stderr, "gish:", err)
+			fmt.Fprintln(os.Stderr, "koi:", err)
 			return "", false
 		}
 		f.Close()
@@ -46,12 +46,12 @@ func externalEditFn(runner *interp.Runner) func(string) (string, bool) {
 		cmd.Dir = runner.Dir
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "gish: %s: %v\n", filepath.Base(fields[0]), err)
+			fmt.Fprintf(os.Stderr, "koi: %s: %v\n", filepath.Base(fields[0]), err)
 			return "", false
 		}
 		edited, err := os.ReadFile(path) //nolint:gosec // our own temp file
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "gish:", err)
+			fmt.Fprintln(os.Stderr, "koi:", err)
 			return "", false
 		}
 		return strings.TrimRight(string(edited), "\n"), true

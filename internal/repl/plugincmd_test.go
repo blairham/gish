@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/manifest"
+	"github.com/blairham/koi-shell/internal/manifest"
 )
 
 // pluginEnv points the manifest at a temp config home and installs a
@@ -35,7 +35,7 @@ func pluginEnv(t *testing.T) (*fakePlugmgr, string) {
 
 func TestPluginAddWritesManifest(t *testing.T) {
 	_, path := pluginEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 
 	out, _, err := runConfigScript(t, rc,
 		"plugin add zsh-users/zsh-autosuggestions\n"+
@@ -65,7 +65,7 @@ func TestPluginAddWritesManifest(t *testing.T) {
 
 func TestPluginPinDisableRemove(t *testing.T) {
 	_, path := pluginEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 
 	out, _, err := runConfigScript(t, rc,
 		"plugin add a/one\nplugin pin one 2.0\nplugin disable one\nplugin\n")
@@ -91,7 +91,7 @@ func TestPluginPinDisableRemove(t *testing.T) {
 
 func TestPluginRejectsUnknownFlagsAndNames(t *testing.T) {
 	pluginEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 
 	for script, want := range map[string]string{
 		"plugin add a/b --kind wat\n":     "unknown kind",

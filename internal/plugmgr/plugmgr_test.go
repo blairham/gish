@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/blairham/gish/internal/plugmgr/ice"
-	"github.com/blairham/gish/internal/plugmgr/spec"
-	"github.com/blairham/gish/internal/plugmgr/state"
+	"github.com/blairham/koi-shell/internal/plugmgr/ice"
+	"github.com/blairham/koi-shell/internal/plugmgr/spec"
+	"github.com/blairham/koi-shell/internal/plugmgr/state"
 )
 
 // fakeHome builds a ZI_GO_HOME with n manifest-only plugin objects:

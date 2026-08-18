@@ -12,7 +12,7 @@ func isolateConfig(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	return filepath.Join(dir, "gish", ConfigFileName)
+	return filepath.Join(dir, "koi", ConfigFileName)
 }
 
 // TestConfigRoundTripPreservesWhitespace is the regression this file
@@ -21,7 +21,7 @@ func isolateConfig(t *testing.T) string {
 // Every lean-derived configuration separates segments by setting
 // LEFT_SUBSEGMENT_SEPARATOR to a single space. Trimming values on read
 // turned that space into "", and the prompt rendered with its segments
-// run together — `~/dev/gishmain` rather than `~/dev/gish main`. Both
+// run together — `~/dev/koimain` rather than `~/dev/koi main`. Both
 // halves looked correct in isolation; only the round trip showed it.
 func TestConfigRoundTripPreservesWhitespace(t *testing.T) {
 	isolateConfig(t)

@@ -6,7 +6,7 @@ attrition, adjacent-tool playbooks — so the roadmap argues from evidence
 rather than memory, the way docs/strategy.md and docs/user-research.md
 already do.
 
-docs/strategy.md answers *what gish should claim*. This page answers
+docs/strategy.md answers *what koi should claim*. This page answers
 *what determines whether anyone ever runs it*, and the two disagree
 about nothing: distribution beats merit in both.
 
@@ -37,7 +37,7 @@ excellence in the other five compensated.
 | **Warp / Fig** | distribution, delight, maintainers, stability | **trust** — Fig acqui-killed ~6 months after acquisition; Warp required a login until Nov 2024 | Warp's 2026 open-sourcing scored **3 points** on HN: the audience had already left |
 | **powerlevel10k** | everything a prompt can have — 55k stars | **maintainer count** | on life support at peak popularity |
 
-Two consequences for gish:
+Two consequences for koi:
 
 1. **Our zero is maintainer count.** It is the scarcest resource here
    and it is the factor that killed a 55k-star project. Every decision
@@ -56,14 +56,14 @@ Where switchers actually leave, in the order they hit it. Each stage is
 a documented first-person pattern from the attrition corpus, not an
 inferred one.
 
-| stage | what breaks | gish's answer | state |
+| stage | what breaks | koi's answer | state |
 | --- | --- | --- | --- |
 | **minutes** | keybindings that don't answer; the `chsh` ask turning a trial into a commitment (fish's lockout stories: login shell absent from /etc/shells, distros requiring a Bourne-compatible login shell that reads /etc/profile) | readline parity (#96, #118, #116); never require chsh — terminal-profile launch is the happy path | parity **shipped**; exit-cost surfaces **open** (#212) |
 | **week 1** | source-based tooling: nvm, rbenv, pyenv, conda, rvm, venv, virtualenvwrapper, direnv. A shell that cannot source them is unusable on day two, and it fails silently | the #161 source gate loads all of them unmodified, published in docs/interactive-compat.md and CI-enforced | **shipped** |
-| **month 1** | the bash monoculture: the lookup tax on every pasted answer, ssh fleets where your shell isn't installed, and pairing — the coworker driving your terminal | bash-paste compat (docs/compat.md), `gish ssh` (#98), `gish migrate` (#160) | **shipped**; team-shareable config **open** (#209) |
+| **month 1** | the bash monoculture: the lookup tax on every pasted answer, ssh fleets where your shell isn't installed, and pairing — the coworker driving your terminal | bash-paste compat (docs/compat.md), `koi ssh` (#98), `koi migrate` (#160) | **shipped**; team-shareable config **open** (#209) |
 | **months+** | update breakage and trust shocks — the nushell treadmill, the Warp login | published stability contract (#162), version-independent plugin ABI with CI enforcement (#168), frozen-additive protos | substance **shipped**; the version number does not yet say so (#213) |
 
-The funnel's shape is the argument for #213. gish has already paid for
+The funnel's shape is the argument for #213. koi has already paid for
 the months+ stage and gets no credit for it, because `0.0.x` reads as
 "your investment may be taxed at any release" regardless of what the
 contract says.
@@ -89,7 +89,7 @@ contract says.
 4. **Retention loops** — only two exist in the entire history of this
    ecosystem: Oh My Zsh's auto-updater (shipped ~3 weeks in; Robby
    Russell's retrospective calls it the turning point) and atuin's sync
-   accounts. gish currently has neither; a `v0.0.x` install just ages.
+   accounts. koi currently has neither; a `v0.0.x` install just ages.
    #210, under the no-telemetry constraint.
 5. **Exit-cost engineering** — uv's skeptics never blocked adoption
    because rollback was free and forkability was the standing answer;

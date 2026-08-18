@@ -18,13 +18,13 @@ import (
 // implemented, which is the point: an entry here is a promise to either
 // do it or say why.
 var unimplementedSettings = map[string]string{
-	"SHORTEN_STRATEGY=truncate_to_unique": "lists every parent's siblings on each prompt; gish shortens to first characters instead, with no I/O",
+	"SHORTEN_STRATEGY=truncate_to_unique": "lists every parent's siblings on each prompt; koi shortens to first characters instead, with no I/O",
 	"DIR_ANCHOR_FROM_MARKER":              "not implemented",
-	"TRANSIENT_PROMPT=same-dir":           "gish trims before the command runs, so the comparison is inverted (see docs/p10k.md)",
+	"TRANSIENT_PROMPT=same-dir":           "koi trims before the command runs, so the comparison is inverted (see docs/p10k.md)",
 	"INSTANT_PROMPT":                      instantPromptReason,
 }
 
-const instantPromptReason = "not needed: gish resolves a full p10k prompt in ~7ms, so there is nothing to cache ahead of it"
+const instantPromptReason = "not needed: koi resolves a full p10k prompt in ~7ms, so there is nothing to cache ahead of it"
 
 // UnhonouredSettings reports the settings this config sets that the
 // engine does not act on, so `prompt show` can name them.

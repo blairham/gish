@@ -10,7 +10,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/history.proto
+// source: koi/plugin/v1/history.proto
 
 package pluginapi
 
@@ -45,7 +45,7 @@ type HistoryEntry struct {
 
 func (x *HistoryEntry) Reset() {
 	*x = HistoryEntry{}
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -57,7 +57,7 @@ func (x *HistoryEntry) String() string {
 func (*HistoryEntry) ProtoMessage() {}
 
 func (x *HistoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -70,7 +70,7 @@ func (x *HistoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistoryEntry.ProtoReflect.Descriptor instead.
 func (*HistoryEntry) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_history_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_history_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *HistoryEntry) GetCommand() string {
@@ -124,7 +124,7 @@ type AppendRequest struct {
 
 func (x *AppendRequest) Reset() {
 	*x = AppendRequest{}
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -136,7 +136,7 @@ func (x *AppendRequest) String() string {
 func (*AppendRequest) ProtoMessage() {}
 
 func (x *AppendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -149,7 +149,7 @@ func (x *AppendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppendRequest.ProtoReflect.Descriptor instead.
 func (*AppendRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_history_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_history_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *AppendRequest) GetEntry() *HistoryEntry {
@@ -170,7 +170,7 @@ type AppendResponse struct {
 
 func (x *AppendResponse) Reset() {
 	*x = AppendResponse{}
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -182,7 +182,7 @@ func (x *AppendResponse) String() string {
 func (*AppendResponse) ProtoMessage() {}
 
 func (x *AppendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -195,7 +195,7 @@ func (x *AppendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppendResponse.ProtoReflect.Descriptor instead.
 func (*AppendResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_history_proto_rawDescGZIP(), []int{2}
+	return file_koi_plugin_v1_history_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *AppendResponse) GetStored() bool {
@@ -220,7 +220,7 @@ type SearchRequest struct {
 
 func (x *SearchRequest) Reset() {
 	*x = SearchRequest{}
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -232,7 +232,7 @@ func (x *SearchRequest) String() string {
 func (*SearchRequest) ProtoMessage() {}
 
 func (x *SearchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -245,7 +245,7 @@ func (x *SearchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchRequest.ProtoReflect.Descriptor instead.
 func (*SearchRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_history_proto_rawDescGZIP(), []int{3}
+	return file_koi_plugin_v1_history_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SearchRequest) GetQuery() string {
@@ -286,7 +286,7 @@ type SearchBatch struct {
 
 func (x *SearchBatch) Reset() {
 	*x = SearchBatch{}
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -298,7 +298,7 @@ func (x *SearchBatch) String() string {
 func (*SearchBatch) ProtoMessage() {}
 
 func (x *SearchBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_history_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_history_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -311,7 +311,7 @@ func (x *SearchBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchBatch.ProtoReflect.Descriptor instead.
 func (*SearchBatch) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_history_proto_rawDescGZIP(), []int{4}
+	return file_koi_plugin_v1_history_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SearchBatch) GetEntries() []*HistoryEntry {
@@ -328,11 +328,11 @@ func (x *SearchBatch) GetFinal() bool {
 	return false
 }
 
-var File_gish_plugin_v1_history_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_history_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_history_proto_rawDesc = "" +
+const file_koi_plugin_v1_history_proto_rawDesc = "" +
 	"\n" +
-	"\x1cgish/plugin/v1/history.proto\x12\x0egish.plugin.v1\"\xbf\x01\n" +
+	"\x1bkoi/plugin/v1/history.proto\x12\rkoi.plugin.v1\"\xbf\x01\n" +
 	"\fHistoryEntry\x12\x18\n" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12&\n" +
 	"\x0fstarted_unix_ms\x18\x02 \x01(\x03R\rstartedUnixMs\x12\x1f\n" +
@@ -341,9 +341,9 @@ const file_gish_plugin_v1_history_proto_rawDesc = "" +
 	"\texit_code\x18\x04 \x01(\x05R\bexitCode\x12\x10\n" +
 	"\x03cwd\x18\x05 \x01(\tR\x03cwd\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x06 \x01(\tR\tsessionId\"C\n" +
-	"\rAppendRequest\x122\n" +
-	"\x05entry\x18\x01 \x01(\v2\x1c.gish.plugin.v1.HistoryEntryR\x05entry\"(\n" +
+	"session_id\x18\x06 \x01(\tR\tsessionId\"B\n" +
+	"\rAppendRequest\x121\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1b.koi.plugin.v1.HistoryEntryR\x05entry\"(\n" +
 	"\x0eAppendResponse\x12\x16\n" +
 	"\x06stored\x18\x01 \x01(\bR\x06stored\"n\n" +
 	"\rSearchRequest\x12\x14\n" +
@@ -351,41 +351,41 @@ const file_gish_plugin_v1_history_proto_rawDesc = "" +
 	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\rR\x05limit\x12\x1f\n" +
 	"\vprefix_only\x18\x04 \x01(\bR\n" +
-	"prefixOnly\"[\n" +
-	"\vSearchBatch\x126\n" +
-	"\aentries\x18\x01 \x03(\v2\x1c.gish.plugin.v1.HistoryEntryR\aentries\x12\x14\n" +
-	"\x05final\x18\x02 \x01(\bR\x05final2\xa1\x01\n" +
-	"\x0eHistoryBackend\x12G\n" +
-	"\x06Append\x12\x1d.gish.plugin.v1.AppendRequest\x1a\x1e.gish.plugin.v1.AppendResponse\x12F\n" +
-	"\x06Search\x12\x1d.gish.plugin.v1.SearchRequest\x1a\x1b.gish.plugin.v1.SearchBatch0\x01B5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"prefixOnly\"Z\n" +
+	"\vSearchBatch\x125\n" +
+	"\aentries\x18\x01 \x03(\v2\x1b.koi.plugin.v1.HistoryEntryR\aentries\x12\x14\n" +
+	"\x05final\x18\x02 \x01(\bR\x05final2\x9d\x01\n" +
+	"\x0eHistoryBackend\x12E\n" +
+	"\x06Append\x12\x1c.koi.plugin.v1.AppendRequest\x1a\x1d.koi.plugin.v1.AppendResponse\x12D\n" +
+	"\x06Search\x12\x1c.koi.plugin.v1.SearchRequest\x1a\x1a.koi.plugin.v1.SearchBatch0\x01B:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_history_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_history_proto_rawDescData []byte
+	file_koi_plugin_v1_history_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_history_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_history_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_history_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_history_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_history_proto_rawDesc), len(file_gish_plugin_v1_history_proto_rawDesc)))
+func file_koi_plugin_v1_history_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_history_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_history_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_history_proto_rawDesc), len(file_koi_plugin_v1_history_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_history_proto_rawDescData
+	return file_koi_plugin_v1_history_proto_rawDescData
 }
 
-var file_gish_plugin_v1_history_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
-var file_gish_plugin_v1_history_proto_goTypes = []any{
-	(*HistoryEntry)(nil),   // 0: gish.plugin.v1.HistoryEntry
-	(*AppendRequest)(nil),  // 1: gish.plugin.v1.AppendRequest
-	(*AppendResponse)(nil), // 2: gish.plugin.v1.AppendResponse
-	(*SearchRequest)(nil),  // 3: gish.plugin.v1.SearchRequest
-	(*SearchBatch)(nil),    // 4: gish.plugin.v1.SearchBatch
+var file_koi_plugin_v1_history_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_koi_plugin_v1_history_proto_goTypes = []any{
+	(*HistoryEntry)(nil),   // 0: koi.plugin.v1.HistoryEntry
+	(*AppendRequest)(nil),  // 1: koi.plugin.v1.AppendRequest
+	(*AppendResponse)(nil), // 2: koi.plugin.v1.AppendResponse
+	(*SearchRequest)(nil),  // 3: koi.plugin.v1.SearchRequest
+	(*SearchBatch)(nil),    // 4: koi.plugin.v1.SearchBatch
 }
-var file_gish_plugin_v1_history_proto_depIdxs = []int32{
-	0, // 0: gish.plugin.v1.AppendRequest.entry:type_name -> gish.plugin.v1.HistoryEntry
-	0, // 1: gish.plugin.v1.SearchBatch.entries:type_name -> gish.plugin.v1.HistoryEntry
-	1, // 2: gish.plugin.v1.HistoryBackend.Append:input_type -> gish.plugin.v1.AppendRequest
-	3, // 3: gish.plugin.v1.HistoryBackend.Search:input_type -> gish.plugin.v1.SearchRequest
-	2, // 4: gish.plugin.v1.HistoryBackend.Append:output_type -> gish.plugin.v1.AppendResponse
-	4, // 5: gish.plugin.v1.HistoryBackend.Search:output_type -> gish.plugin.v1.SearchBatch
+var file_koi_plugin_v1_history_proto_depIdxs = []int32{
+	0, // 0: koi.plugin.v1.AppendRequest.entry:type_name -> koi.plugin.v1.HistoryEntry
+	0, // 1: koi.plugin.v1.SearchBatch.entries:type_name -> koi.plugin.v1.HistoryEntry
+	1, // 2: koi.plugin.v1.HistoryBackend.Append:input_type -> koi.plugin.v1.AppendRequest
+	3, // 3: koi.plugin.v1.HistoryBackend.Search:input_type -> koi.plugin.v1.SearchRequest
+	2, // 4: koi.plugin.v1.HistoryBackend.Append:output_type -> koi.plugin.v1.AppendResponse
+	4, // 5: koi.plugin.v1.HistoryBackend.Search:output_type -> koi.plugin.v1.SearchBatch
 	4, // [4:6] is the sub-list for method output_type
 	2, // [2:4] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -393,26 +393,26 @@ var file_gish_plugin_v1_history_proto_depIdxs = []int32{
 	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_history_proto_init() }
-func file_gish_plugin_v1_history_proto_init() {
-	if File_gish_plugin_v1_history_proto != nil {
+func init() { file_koi_plugin_v1_history_proto_init() }
+func file_koi_plugin_v1_history_proto_init() {
+	if File_koi_plugin_v1_history_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_history_proto_rawDesc), len(file_gish_plugin_v1_history_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_history_proto_rawDesc), len(file_koi_plugin_v1_history_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_history_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_history_proto_depIdxs,
-		MessageInfos:      file_gish_plugin_v1_history_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_history_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_history_proto_depIdxs,
+		MessageInfos:      file_koi_plugin_v1_history_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_history_proto = out.File
-	file_gish_plugin_v1_history_proto_goTypes = nil
-	file_gish_plugin_v1_history_proto_depIdxs = nil
+	File_koi_plugin_v1_history_proto = out.File
+	file_koi_plugin_v1_history_proto_goTypes = nil
+	file_koi_plugin_v1_history_proto_depIdxs = nil
 }

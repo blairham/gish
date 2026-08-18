@@ -9,7 +9,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // The `clip` builtin (#140): one clipboard command that works the same

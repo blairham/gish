@@ -387,7 +387,7 @@ func quotedChar(s string) (int64, bool) {
 // It is written out rather than delegated to strconv.ParseInt with base
 // 0 because Go's base-0 grammar is Go's, not C's: it accepts `0b101`
 // and digit separators like `1_000`, both of which bash rejects. Using
-// it would make gish quietly compute a different number than bash for
+// it would make koi quietly compute a different number than bash for
 // the same script, which is worse than the missing diagnostic this
 // function exists to add.
 //

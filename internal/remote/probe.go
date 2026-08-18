@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// The probe: everything gish needs to know about the far side, in one
+// The probe: everything koi needs to know about the far side, in one
 // round trip, bounded by a timeout. If it cannot answer in time the
 // caller falls back to plain ssh — the pitch is the 2AM incident box, so
 // being slower to get a shell than not having the feature is the one
@@ -35,17 +35,17 @@ type Probe struct {
 
 // candidateDirs is the fallback chain, in preference order: a real
 // cache dir first, then the places that exist when $HOME is read-only or
-// full. Each entry is a shell word, expanded on the remote — gish does
+// full. Each entry is a shell word, expanded on the remote — koi does
 // not know the remote's $HOME or uid, and asking would cost a round
 // trip.
 //
 // A var rather than a const so tests can point the chain at a temp
 // directory instead of writing to the real /tmp and /dev/shm.
 var candidateDirs = []string{
-	`"${HOME:-}/.cache/gish"`,
-	`"${XDG_RUNTIME_DIR:-}/gish"`,
-	`"/dev/shm/gish-$uid"`,
-	`"/tmp/gish-$uid"`,
+	`"${HOME:-}/.cache/koi"`,
+	`"${XDG_RUNTIME_DIR:-}/koi"`,
+	`"/dev/shm/koi-$uid"`,
+	`"/tmp/koi-$uid"`,
 }
 
 // probeScript asks all four questions at once. Written to the POSIX
@@ -73,10 +73,10 @@ echo "hashcmd=$hash_cmd"
 uid=$(id -u 2>/dev/null || echo 0)
 dir=
 for cand in %[4]s; do
-	case "$cand" in /gish|/gish/*) continue ;; esac
+	case "$cand" in /koi|/koi/*) continue ;; esac
 	mkdir -p "$cand" 2>/dev/null || continue
 	chmod 700 "$cand" 2>/dev/null || true
-	probe="$cand/.gish-exectest"
+	probe="$cand/.koi-exectest"
 	printf '#!/bin/sh\nexit 7\n' > "$probe" 2>/dev/null || continue
 	chmod 700 "$probe" 2>/dev/null || { rm -f "$probe"; continue; }
 	code=0

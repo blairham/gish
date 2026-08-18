@@ -3,7 +3,7 @@ package editor
 import (
 	"fmt"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // History is the editor's view of command history. n counts distinct

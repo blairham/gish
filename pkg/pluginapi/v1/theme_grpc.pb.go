@@ -15,7 +15,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/theme.proto
+// source: koi/plugin/v1/theme.proto
 
 package pluginapi
 
@@ -32,15 +32,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ThemeProvider_Themes_FullMethodName       = "/gish.plugin.v1.ThemeProvider/Themes"
-	ThemeProvider_RenderPrompt_FullMethodName = "/gish.plugin.v1.ThemeProvider/RenderPrompt"
+	ThemeProvider_Themes_FullMethodName       = "/koi.plugin.v1.ThemeProvider/Themes"
+	ThemeProvider_RenderPrompt_FullMethodName = "/koi.plugin.v1.ThemeProvider/RenderPrompt"
 )
 
 // ThemeProviderClient is the client API for ThemeProvider service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ThemeProviderClient interface {
-	// Themes enumerates the theme names this plugin offers; GISH_THEME
+	// Themes enumerates the theme names this plugin offers; KOI_THEME
 	// selects by name. Called once after Describe.
 	Themes(ctx context.Context, in *ThemesRequest, opts ...grpc.CallOption) (*ThemesResponse, error)
 	// RenderPrompt produces the full prompt set for one read.
@@ -79,7 +79,7 @@ func (c *themeProviderClient) RenderPrompt(ctx context.Context, in *RenderPrompt
 // All implementations must embed UnimplementedThemeProviderServer
 // for forward compatibility.
 type ThemeProviderServer interface {
-	// Themes enumerates the theme names this plugin offers; GISH_THEME
+	// Themes enumerates the theme names this plugin offers; KOI_THEME
 	// selects by name. Called once after Describe.
 	Themes(context.Context, *ThemesRequest) (*ThemesResponse, error)
 	// RenderPrompt produces the full prompt set for one read.
@@ -161,7 +161,7 @@ func _ThemeProvider_RenderPrompt_Handler(srv interface{}, ctx context.Context, d
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ThemeProvider_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.ThemeProvider",
+	ServiceName: "koi.plugin.v1.ThemeProvider",
 	HandlerType: (*ThemeProviderServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -174,5 +174,5 @@ var ThemeProvider_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "gish/plugin/v1/theme.proto",
+	Metadata: "koi/plugin/v1/theme.proto",
 }

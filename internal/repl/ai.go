@@ -11,10 +11,10 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/pluginhost"
-	"github.com/blairham/gish/internal/sandbox"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	"github.com/blairham/koi-shell/internal/sandbox"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // AI-native integration (#20): the shell owns the hooks, an AIProvider
@@ -60,7 +60,7 @@ func newAIManager(host *pluginhost.Host, store *history.Store) *aiManager {
 // note records the last command's exit code for context assembly.
 func (m *aiManager) note(exit int) { m.lastExit = exit }
 
-// provider picks the model plugin: GISH_AI_PROVIDER selects by plugin
+// provider picks the model plugin: KOI_AI_PROVIDER selects by plugin
 // name, otherwise the first discovered provider wins.
 func (m *aiManager) provider(ctx context.Context, runner *interp.Runner) (pluginapi.AIProviderClient, string, error) {
 	select {
@@ -71,13 +71,13 @@ func (m *aiManager) provider(ctx context.Context, runner *interp.Runner) (plugin
 	if len(m.providers) == 0 {
 		return nil, "", errors.New("no AI provider plugin installed (see docs/plugins.md)")
 	}
-	if want := shellVar(runner, "GISH_AI_PROVIDER", ""); want != "" {
+	if want := shellVar(runner, "KOI_AI_PROVIDER", ""); want != "" {
 		for _, p := range m.providers {
 			if p.Plugin == want {
 				return p.Client, p.Plugin, nil
 			}
 		}
-		return nil, "", fmt.Errorf("GISH_AI_PROVIDER=%q matches no installed plugin", want)
+		return nil, "", fmt.Errorf("KOI_AI_PROVIDER=%q matches no installed plugin", want)
 	}
 	return m.providers[0].Client, m.providers[0].Plugin, nil
 }
@@ -162,8 +162,8 @@ var noSandboxWrap = []string{"cd", "export", "unset", "alias", "unalias", "sourc
 
 // sandboxWrap wraps an AI-proposed command in a visible sandbox
 // invocation (#21's safe-by-construction pairing) the user can see and
-// remove. profileVar names the knob (GISH_AI_SANDBOX for compose,
-// GISH_AGENT_SANDBOX for agent steps); "off" disables. Shell-state
+// remove. profileVar names the knob (KOI_AI_SANDBOX for compose,
+// KOI_AGENT_SANDBOX for agent steps); "off" disables. Shell-state
 // commands and already-sandboxed sessions pass through unwrapped.
 func sandboxWrap(runner *interp.Runner, command, profileVar string) string {
 	profile := shellVar(runner, profileVar, "workspace")
@@ -181,14 +181,14 @@ func sandboxWrap(runner *interp.Runner, command, profileVar string) string {
 
 // composePrefill is the ?? flavor of sandboxWrap.
 func composePrefill(runner *interp.Runner, command string) string {
-	return sandboxWrap(runner, command, "GISH_AI_SANDBOX")
+	return sandboxWrap(runner, command, "KOI_AI_SANDBOX")
 }
 
 // handleCompose is the ?? path: query the provider, preload the editor
 // buffer with the (sandbox-wrapped) candidate for review.
 func handleCompose(ctx context.Context, runner *interp.Runner, query string, preload func(string), out io.Writer) {
 	if aiMgr == nil {
-		fmt.Fprintln(out, "gish: ai: no plugin host in this session")
+		fmt.Fprintln(out, "koi: ai: no plugin host in this session")
 		return
 	}
 	if query == "" {
@@ -197,7 +197,7 @@ func handleCompose(ctx context.Context, runner *interp.Runner, query string, pre
 	}
 	command, explanation, err := aiMgr.compose(ctx, runner, query)
 	if err != nil {
-		fmt.Fprintln(out, "gish: ai:", err)
+		fmt.Fprintln(out, "koi: ai:", err)
 		return
 	}
 	if explanation != "" {

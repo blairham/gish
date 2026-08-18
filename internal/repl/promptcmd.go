@@ -11,8 +11,8 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/promptengine"
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/promptengine"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // The prompt command: the configuration surface for the theme engine.
@@ -133,7 +133,7 @@ func reportPresetGaps(hc interp.HandlerContext, name string, cfg *promptengine.C
 // showPrompt reports what is in effect and where each layer came from.
 func showPrompt(hc interp.HandlerContext) {
 	cfg := p10kConfigFromEnv(hc.Env)
-	fmt.Fprintf(hc.Stdout, "theme      %s\n", hc.Env.Get("GISH_THEME").String())
+	fmt.Fprintf(hc.Stdout, "theme      %s\n", hc.Env.Get("KOI_THEME").String())
 	fmt.Fprintf(hc.Stdout, "preset     %s\n", p10kPresetName(hc))
 	if path, err := promptengine.ConfigPath(); err == nil {
 		state := "not written yet"
@@ -142,12 +142,12 @@ func showPrompt(hc interp.HandlerContext) {
 		}
 		fmt.Fprintf(hc.Stdout, "config     %s (%s)\n", displayPath(path), state)
 	}
-	// Which icon set is actually serving (#131). A MODE gish does not
+	// Which icon set is actually serving (#131). A MODE koi does not
 	// carry is served by nerdfont-v3 and says so here: silently
 	// substituting a glyph set is how a prompt ends up full of boxes
 	// with no explanation.
 	if mode := cfg.ResolveIconMode(); mode.Fallback() {
-		fmt.Fprintf(hc.Stdout, "icons      %s (asked for %s, which gish does not carry)\n", mode.Serving, mode.Requested)
+		fmt.Fprintf(hc.Stdout, "icons      %s (asked for %s, which koi does not carry)\n", mode.Serving, mode.Requested)
 	} else {
 		fmt.Fprintf(hc.Stdout, "icons      %s\n", mode.Serving)
 	}
@@ -181,7 +181,7 @@ func showPrompt(hc interp.HandlerContext) {
 }
 
 func p10kPresetName(hc interp.HandlerContext) string {
-	if v := hc.Env.Get("GISH_P10K_PRESET").String(); v != "" {
+	if v := hc.Env.Get("KOI_P10K_PRESET").String(); v != "" {
 		return v
 	}
 	return promptengine.DefaultPreset
@@ -241,13 +241,13 @@ func importP10k(hc interp.HandlerContext, name string, args []string) []string {
 
 // promptActivate turns the theme on for this session and persists it, so
 // configuring the prompt is one step rather than "now also set a
-// variable". GISH_THEME stays spelled "p10k": #184 renamed the command,
+// variable". KOI_THEME stays spelled "p10k": #184 renamed the command,
 // not the theme value, and #134 keeps the dialect names honest.
 func promptActivate(hc interp.HandlerContext) []string {
-	if hc.Env.Get("GISH_THEME").String() == "p10k" {
+	if hc.Env.Get("KOI_THEME").String() == "p10k" {
 		return []string{"true"}
 	}
-	assigns, ok := persistPairs(hc, [][2]string{{"GISH_THEME", "p10k"}})
+	assigns, ok := persistPairs(hc, [][2]string{{"KOI_THEME", "p10k"}})
 	if !ok {
 		return []string{"false"}
 	}
@@ -271,7 +271,7 @@ func configurePrompt(hc interp.HandlerContext, name string) []string {
 		return []string{"false"}
 	}
 
-	fmt.Fprintln(hc.Stdout, "gish prompt configuration — Ctrl-C aborts, nothing is saved until the end.")
+	fmt.Fprintln(hc.Stdout, "koi prompt configuration — Ctrl-C aborts, nothing is saved until the end.")
 
 	preset, ok := choose("Which look?", presetOptions())
 	if !ok {
@@ -358,9 +358,9 @@ func p10kQuestions() []p10kQuestion {
 //
 // Upstream's instant prompt paints a cached prompt at startup because
 // the real one is not ready for tens of milliseconds — zsh has to load
-// the framework before it can render anything. gish measures 7ms from
+// the framework before it can render anything. koi measures 7ms from
 // exec to a fully resolved p10k prompt, which is the same number it
-// measures for the naked one (cmd/gish/startup_p10k_test.go). There is
+// measures for the naked one (cmd/koi/startup_p10k_test.go). There is
 // nothing to hide behind a cache.
 //
 // So the setting is accepted and ignored rather than implemented. A
@@ -370,7 +370,7 @@ func p10kQuestions() []p10kQuestion {
 // startup. Carrying that to solve a problem this shell does not have
 // would be the wrong kind of faithful.
 const instantPromptNote = "INSTANT_PROMPT is accepted but not needed: " +
-	"gish resolves the real prompt in ~7ms at startup, so there is nothing to cache ahead of it"
+	"koi resolves the real prompt in ~7ms at startup, so there is nothing to cache ahead of it"
 
 // asciiOnly strips everything that needs a patched font, so the prompt
 // is plain text end to end.
@@ -419,7 +419,7 @@ func presetOptions() []chooseOption {
 func p10kPreviewContext() *promptengine.Context {
 	home, _ := os.UserHomeDir()
 	return &promptengine.Context{
-		Cwd:      home + "/dev/gish",
+		Cwd:      home + "/dev/koi",
 		Home:     home,
 		Username: "you",
 		Hostname: "host",
@@ -429,7 +429,7 @@ func p10kPreviewContext() *promptengine.Context {
 		Width:    previewWidth(),
 		Now:      time.Now(),
 		Git: &promptengine.GitStatus{
-			Dir: home + "/dev/gish", Branch: "main",
+			Dir: home + "/dev/koi", Branch: "main",
 			Ahead: 2, Modified: 3, Untracked: 1,
 		},
 		Getenv: func(string) string { return "" },

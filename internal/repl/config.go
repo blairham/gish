@@ -18,7 +18,7 @@ import (
 // The config command: first-run ergonomics for a shell that starts
 // naked. `config theme starship` flips the setting live in the session
 // AND persists it to the rc file, so nobody has to know which file
-// GISH_THEME lives in. Groundwork for the #28 configure wizard.
+// KOI_THEME lives in. Groundwork for the #28 configure wizard.
 //
 // Implemented as a CallHandler rewrite (the zi pattern): validation and
 // rc persistence happen here in the handler, and the live effect is the
@@ -36,17 +36,17 @@ type configSetting struct {
 
 // configSettings is ordered for display.
 var configSettings = []configSetting{
-	{"theme", "GISH_THEME", []string{"plain", "p10k", "gish", "starship"}, "prompt theme — plain is the naked default"},
-	{"lint", "GISH_LINT", []string{"on", "native", "off"}, "footgun diagnostics — native skips shellcheck"},
-	{"prompt", "GISH_PROMPT", nil, "manual prompt escapes — beats any theme"},
-	{"tools", "GISH_TOOLS", []string{"on", "off"}, "native .tool-versions switching (#77)"},
-	{"jump", "GISH_JUMP", []string{"on", "off"}, "native z directory tracking (#94)"},
-	{"ssh.bring", "GISH_SSH_BRING", []string{"ask", "always", "never"}, "copy gish to hosts on `gish ssh` (#98)"},
-	{"blocks", "GISH_BLOCKS", []string{"on", "off"}, "capture command output for blocks (#99) — off by default"},
-	{"highlight", "GISH_HIGHLIGHT", []string{"on", "quiet", "off"}, "syntax highlighting — quiet drops the unknown-command color"},
-	{"suggest", "GISH_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
-	{"editmode", "GISH_EDIT_MODE", []string{"emacs", "vi"}, "line editor dialect — `set -o vi` sets it too"},
-	{"welcome", "GISH_WELCOME", []string{"on", "off"}, "the first-run notice that says how to uninstall (#212)"},
+	{"theme", "KOI_THEME", []string{"plain", "p10k", "koi", "starship"}, "prompt theme — plain is the naked default"},
+	{"lint", "KOI_LINT", []string{"on", "native", "off"}, "footgun diagnostics — native skips shellcheck"},
+	{"prompt", "KOI_PROMPT", nil, "manual prompt escapes — beats any theme"},
+	{"tools", "KOI_TOOLS", []string{"on", "off"}, "native .tool-versions switching (#77)"},
+	{"jump", "KOI_JUMP", []string{"on", "off"}, "native z directory tracking (#94)"},
+	{"ssh.bring", "KOI_SSH_BRING", []string{"ask", "always", "never"}, "copy koi to hosts on `koi ssh` (#98)"},
+	{"blocks", "KOI_BLOCKS", []string{"on", "off"}, "capture command output for blocks (#99) — off by default"},
+	{"highlight", "KOI_HIGHLIGHT", []string{"on", "quiet", "off"}, "syntax highlighting — quiet drops the unknown-command color"},
+	{"suggest", "KOI_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
+	{"editmode", "KOI_EDIT_MODE", []string{"emacs", "vi"}, "line editor dialect — `set -o vi` sets it too"},
+	{"welcome", "KOI_WELCOME", []string{"on", "off"}, "the first-run notice that says how to uninstall (#212)"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -69,28 +69,28 @@ themes (one engine, two dialects — see docs/design.md#decisions):
   p10k      the powerlevel10k engine: 6 presets, ~50 segments,
             POWERLEVEL9K_* / p10k.conf, configured by "prompt configure"
             ("p10k" is the same command, kept for muscle memory)
-  gish      the small dialect: 6 segments and the theme.* keys below,
+  koi      the small dialect: 6 segments and the theme.* keys below,
             configured by "config theme"
   starship  your starship binary renders it
   plain     the naked default
   bash      whatever the session set PS1 to
 
 settings:
-  theme   plain | p10k | gish | starship  (GISH_THEME)
-  lint    on | native | off        (GISH_LINT)
-  prompt  escape string            (GISH_PROMPT)
-  tools   on | off                 (GISH_TOOLS)
-  jump    on | off                 (GISH_JUMP)
-  ssh.bring  ask | always | never  (GISH_SSH_BRING)
-  blocks     on | off               (GISH_BLOCKS)
-  highlight  on | quiet | off       (GISH_HIGHLIGHT)
-  suggest    on | off               (GISH_SUGGEST)
-  editmode   emacs | vi             (GISH_EDIT_MODE)
-  welcome    on | off               (GISH_WELCOME)
+  theme   plain | p10k | koi | starship  (KOI_THEME)
+  lint    on | native | off        (KOI_LINT)
+  prompt  escape string            (KOI_PROMPT)
+  tools   on | off                 (KOI_TOOLS)
+  jump    on | off                 (KOI_JUMP)
+  ssh.bring  ask | always | never  (KOI_SSH_BRING)
+  blocks     on | off               (KOI_BLOCKS)
+  highlight  on | quiet | off       (KOI_HIGHLIGHT)
+  suggest    on | off               (KOI_SUGGEST)
+  editmode   emacs | vi             (KOI_EDIT_MODE)
+  welcome    on | off               (KOI_WELCOME)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
-                    exit, plus any plugin segment id  (GISH_THEME_SEGMENTS)
+                    exit, plus any plugin segment id  (KOI_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default
-                    (GISH_THEME_COLOR_<ID>)`
+                    (KOI_THEME_COLOR_<ID>)`
 
 // configCallHandler intercepts `config` before execution, zi-style.
 func configCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
@@ -176,29 +176,29 @@ var segmentIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 var themePresets = map[string][][2]string{
 	// The native default look: framed two-line, default colors.
 	"p10k": {
-		{"GISH_THEME", "p10k"},
-		{"GISH_THEME_SEGMENTS", ""},
-		{"GISH_THEME_RPROMPT", ""},
-		{"GISH_THEME_LINES", "2"},
-		{"GISH_THEME_SEP", "plain"},
-		{"GISH_THEME_FRAME", "on"},
-		{"GISH_THEME_COLOR_DIR", ""},
-		{"GISH_THEME_COLOR_GIT", ""},
-		{"GISH_THEME_COLOR_DURATION", ""},
-		{"GISH_THEME_COLOR_EXIT", ""},
+		{"KOI_THEME", "p10k"},
+		{"KOI_THEME_SEGMENTS", ""},
+		{"KOI_THEME_RPROMPT", ""},
+		{"KOI_THEME_LINES", "2"},
+		{"KOI_THEME_SEP", "plain"},
+		{"KOI_THEME_FRAME", "on"},
+		{"KOI_THEME_COLOR_DIR", ""},
+		{"KOI_THEME_COLOR_GIT", ""},
+		{"KOI_THEME_COLOR_DURATION", ""},
+		{"KOI_THEME_COLOR_EXIT", ""},
 	},
 	// The spaceship look: open two-line (no corners), section colors.
 	"spaceship": {
-		{"GISH_THEME", "p10k"},
-		{"GISH_THEME_SEGMENTS", ""},
-		{"GISH_THEME_RPROMPT", ""},
-		{"GISH_THEME_LINES", "2"},
-		{"GISH_THEME_SEP", "plain"},
-		{"GISH_THEME_FRAME", "off"},
-		{"GISH_THEME_COLOR_DIR", "cyan"},
-		{"GISH_THEME_COLOR_GIT", "magenta"},
-		{"GISH_THEME_COLOR_DURATION", "yellow"},
-		{"GISH_THEME_COLOR_EXIT", "red"},
+		{"KOI_THEME", "p10k"},
+		{"KOI_THEME_SEGMENTS", ""},
+		{"KOI_THEME_RPROMPT", ""},
+		{"KOI_THEME_LINES", "2"},
+		{"KOI_THEME_SEP", "plain"},
+		{"KOI_THEME_FRAME", "off"},
+		{"KOI_THEME_COLOR_DIR", "cyan"},
+		{"KOI_THEME_COLOR_GIT", "magenta"},
+		{"KOI_THEME_COLOR_DURATION", "yellow"},
+		{"KOI_THEME_COLOR_EXIT", "red"},
 	},
 }
 
@@ -253,7 +253,7 @@ func runThemeConfig(hc interp.HandlerContext, fail func(error) []string, args []
 				return fail(fmt.Errorf("bad segment id %q", id))
 			}
 		}
-		return persistConfig(hc, fail, args[0], "GISH_THEME_SEGMENTS", strings.Join(ids, " "))
+		return persistConfig(hc, fail, args[0], "KOI_THEME_SEGMENTS", strings.Join(ids, " "))
 
 	case key == "rprompt":
 		ids := strings.Fields(value)
@@ -263,19 +263,19 @@ func runThemeConfig(hc interp.HandlerContext, fail func(error) []string, args []
 			}
 		}
 		// Unlike theme.segments, empty is meaningful: no right prompt.
-		return persistConfig(hc, fail, args[0], "GISH_THEME_RPROMPT", strings.Join(ids, " "))
+		return persistConfig(hc, fail, args[0], "KOI_THEME_RPROMPT", strings.Join(ids, " "))
 
 	case key == "lines":
 		if value != "1" && value != "2" {
 			return fail(errors.New("theme.lines must be 1 or 2"))
 		}
-		return persistConfig(hc, fail, args[0], "GISH_THEME_LINES", value)
+		return persistConfig(hc, fail, args[0], "KOI_THEME_LINES", value)
 
 	case key == "frame":
 		if value != "on" && value != "off" {
 			return fail(errors.New("theme.frame must be on or off"))
 		}
-		return persistConfig(hc, fail, args[0], "GISH_THEME_FRAME", value)
+		return persistConfig(hc, fail, args[0], "KOI_THEME_FRAME", value)
 
 	case key == "preset":
 		pairs, ok := themePresets[value]
@@ -295,7 +295,7 @@ func runThemeConfig(hc interp.HandlerContext, fail func(error) []string, args []
 		if value != "plain" && value != "powerline" {
 			return fail(errors.New("theme.sep must be plain or powerline (needs a nerd font)"))
 		}
-		return persistConfig(hc, fail, args[0], "GISH_THEME_SEP", value)
+		return persistConfig(hc, fail, args[0], "KOI_THEME_SEP", value)
 
 	case strings.HasPrefix(key, "color."):
 		id := strings.TrimPrefix(key, "color.")
@@ -322,14 +322,14 @@ func runThemeConfig(hc interp.HandlerContext, fail func(error) []string, args []
 		if err != nil {
 			return fail(err)
 		}
-		return persistConfig(hc, fail, args[0], "GISH_THEME_SEGMENTS", strings.Join(next, " "))
+		return persistConfig(hc, fail, args[0], "KOI_THEME_SEGMENTS", strings.Join(next, " "))
 	}
 }
 
 // currentSegments is the session's effective segment list: the variable
 // when set, the built-in default order otherwise.
 func currentSegments(hc interp.HandlerContext) []string {
-	if segments := strings.Fields(hc.Env.Get("GISH_THEME_SEGMENTS").String()); len(segments) > 0 {
+	if segments := strings.Fields(hc.Env.Get("KOI_THEME_SEGMENTS").String()); len(segments) > 0 {
 		return segments
 	}
 	return defaultSegmentIDs()
@@ -368,31 +368,31 @@ func toggleSegment(segments []string, id string, on bool) ([]string, error) {
 func showThemeKey(hc interp.HandlerContext, key string) []string {
 	switch {
 	case key == "segments":
-		fmt.Fprintf(hc.Stdout, "theme.segments = %q (GISH_THEME_SEGMENTS)\n",
+		fmt.Fprintf(hc.Stdout, "theme.segments = %q (KOI_THEME_SEGMENTS)\n",
 			strings.Join(currentSegments(hc), " "))
 	case key == "rprompt":
-		fmt.Fprintf(hc.Stdout, "theme.rprompt = %q (GISH_THEME_RPROMPT)\n",
-			hc.Env.Get("GISH_THEME_RPROMPT").String())
+		fmt.Fprintf(hc.Stdout, "theme.rprompt = %q (KOI_THEME_RPROMPT)\n",
+			hc.Env.Get("KOI_THEME_RPROMPT").String())
 	case key == "preset":
 		fmt.Fprintf(hc.Stdout, "theme.preset: %s\n", strings.Join(presetNames(), " | "))
 	case key == "frame":
-		frame := hc.Env.Get("GISH_THEME_FRAME").String()
+		frame := hc.Env.Get("KOI_THEME_FRAME").String()
 		if frame == "" {
 			frame = "on"
 		}
-		fmt.Fprintf(hc.Stdout, "theme.frame = %s (GISH_THEME_FRAME)\n", frame)
+		fmt.Fprintf(hc.Stdout, "theme.frame = %s (KOI_THEME_FRAME)\n", frame)
 	case key == "lines":
-		lines := hc.Env.Get("GISH_THEME_LINES").String()
+		lines := hc.Env.Get("KOI_THEME_LINES").String()
 		if lines == "" {
 			lines = "2"
 		}
-		fmt.Fprintf(hc.Stdout, "theme.lines = %s (GISH_THEME_LINES)\n", lines)
+		fmt.Fprintf(hc.Stdout, "theme.lines = %s (KOI_THEME_LINES)\n", lines)
 	case key == "sep":
-		sep := hc.Env.Get("GISH_THEME_SEP").String()
+		sep := hc.Env.Get("KOI_THEME_SEP").String()
 		if sep == "" {
 			sep = "plain"
 		}
-		fmt.Fprintf(hc.Stdout, "theme.sep = %s (GISH_THEME_SEP)\n", sep)
+		fmt.Fprintf(hc.Stdout, "theme.sep = %s (KOI_THEME_SEP)\n", sep)
 	case strings.HasPrefix(key, "color."):
 		varName := themeColorVar(strings.TrimPrefix(key, "color."))
 		fmt.Fprintf(hc.Stdout, "theme.%s = %q (%s)\n", key, hc.Env.Get(varName).String(), varName)
@@ -401,15 +401,15 @@ func showThemeKey(hc interp.HandlerContext, key string) []string {
 		if slices.Contains(currentSegments(hc), key) {
 			state = "on"
 		}
-		fmt.Fprintf(hc.Stdout, "theme.%s = %s (GISH_THEME_SEGMENTS)\n", key, state)
+		fmt.Fprintf(hc.Stdout, "theme.%s = %s (KOI_THEME_SEGMENTS)\n", key, state)
 	}
 	return []string{"true"}
 }
 
-// rcWritePath is where config persists: $GISH_RC when set, else the
+// rcWritePath is where config persists: $KOI_RC when set, else the
 // first existing rc file, else the XDG location (created on write).
 func rcWritePath() (string, error) {
-	if p := os.Getenv("GISH_RC"); p != "" {
+	if p := os.Getenv("KOI_RC"); p != "" {
 		return p, nil
 	}
 	if p := rcPath(); p != "" {
@@ -423,7 +423,7 @@ func rcWritePath() (string, error) {
 		}
 		confHome = filepath.Join(home, ".config")
 	}
-	return filepath.Join(confHome, "gish", "gishrc"), nil
+	return filepath.Join(confHome, "koi", "koirc"), nil
 }
 
 // writeRCSetting rewrites every top-level assignment of varName in the

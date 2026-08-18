@@ -8,7 +8,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/jobs"
+	"github.com/blairham/koi-shell/internal/jobs"
 )
 
 // `$-`, the shell's option flags (#159).
@@ -27,7 +27,7 @@ import (
 // which nothing in the world expects to see.
 
 // shellFlags reports the option letters for this session, in bash's
-// order. Only the ones gish can honestly claim appear.
+// order. Only the ones koi can honestly claim appear.
 func shellFlags(interactive bool) string {
 	flags := "B" // brace expansion, always on
 	if interactive {
@@ -74,19 +74,19 @@ func sessionEnv(interactive bool) expand.Environ {
 // as questions about who they are talking to. fzf is the clearest case:
 // `((BASH_VERSINFO[0] < 4))` chooses between binding Ctrl-T to a
 // readline *macro* — a string of editing commands including
-// shell-expand-line, which gish deliberately does not emulate — and
-// binding it with `bind -x`, which gish implements. With the variable
-// unset the arithmetic reads 0, so gish was handed the legacy path it
+// shell-expand-line, which koi deliberately does not emulate — and
+// binding it with `bind -x`, which koi implements. With the variable
+// unset the arithmetic reads 0, so koi was handed the legacy path it
 // cannot run, in order to avoid claiming a capability it has.
 //
-// So: gish answers the feature probe with a modern bash, because the
+// So: koi answers the feature probe with a modern bash, because the
 // features those probes gate are ones it implements. It does not answer
-// the *identity* question that way — $0 stays `gish`, since that is
+// the *identity* question that way — $0 stays `koi`, since that is
 // what a script re-execs and what a user sees, and lying there would be
-// a lie a program could act on. GISH_VERSION is set alongside, so
+// a lie a program could act on. KOI_VERSION is set alongside, so
 // anything that wants to know exactly what it is talking to can ask.
 //
-// The honest summary, which docs/porting.md carries: gish claims bash's
+// The honest summary, which docs/porting.md carries: koi claims bash's
 // interface, not bash's identity.
 const (
 	claimedBashVersion  = "5.2.21(1)-release"
@@ -95,7 +95,7 @@ const (
 	claimedBashPatch    = "21"
 	claimedBashBuild    = "1"
 	claimedBashRelease  = "release"
-	claimedBashMachType = "gish"
+	claimedBashMachType = "koi"
 )
 
 // shellIdentitySource is the assignment set run into a fresh session.
@@ -112,12 +112,12 @@ func shellIdentitySource(version string) string {
 			claimedBashMajor, claimedBashMinor, claimedBashPatch,
 			claimedBashBuild, claimedBashRelease, singleQuote(claimedBashMachType),
 		}, " ") + ")",
-		"GISH_VERSION=" + singleQuote(version),
+		"KOI_VERSION=" + singleQuote(version),
 	}, "\n")
 }
 
-// Version is gish's own version, stamped by main at build time and
-// reported to the session as GISH_VERSION.
+// Version is koi's own version, stamped by main at build time and
+// reported to the session as KOI_VERSION.
 var Version = "dev"
 
 // declareShellIdentity runs the identity assignments in a session.

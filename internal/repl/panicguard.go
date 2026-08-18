@@ -15,12 +15,12 @@ import (
 // they were working in — or, when the panic comes from a profile file,
 // stops them from getting a shell at all. That is not hypothetical:
 //
-//	$ gish -c 'x="  hi  "; echo "${x%%[![:space:]]*}"'
+//	$ koi -c 'x="  hi  "; echo "${x%%[![:space:]]*}"'
 //	panic: regexp: Compile(`((?s)[^[:space:]\].*)$`): missing closing ]
 //
 // A negated POSIX class in a pattern-removal expansion makes the
 // substrate's pattern→regexp translation emit an invalid regexp, which
-// it compiles with MustCompile. It reached gish through ~/.profile —
+// it compiles with MustCompile. It reached koi through ~/.profile —
 // which `-l` sources — by way of a vendor's shell-integration block, so
 // every login invocation died, which is exactly how a terminal emulator
 // profile and a VS Code profile are configured to launch a shell.
@@ -45,20 +45,20 @@ func guard(what string, err *error) {
 	if r == nil {
 		return
 	}
-	msg := fmt.Sprintf("internal error %s: %v (this is a gish bug: %s)", what, r, issueURL)
+	msg := fmt.Sprintf("internal error %s: %v (this is a koi bug: %s)", what, r, issueURL)
 	// The stack is what a bug report needs and what an interactive
-	// prompt least wants scrolled past it, so it is opt-in. GISH_DEBUG
+	// prompt least wants scrolled past it, so it is opt-in. KOI_DEBUG
 	// is read from the process environment rather than the session's:
 	// whatever just panicked is not a runner to go asking questions of.
-	if os.Getenv("GISH_DEBUG") != "" {
+	if os.Getenv("KOI_DEBUG") != "" {
 		msg += "\n" + indentStack(debug.Stack())
 	} else {
-		msg += "\nrun with GISH_DEBUG=1 to include the stack"
+		msg += "\nrun with KOI_DEBUG=1 to include the stack"
 	}
 	*err = fmt.Errorf("%s", msg)
 }
 
-const issueURL = "https://github.com/blairham/gish/issues"
+const issueURL = "https://github.com/blairham/koi-shell/issues"
 
 // indentStack keeps a stack trace visibly subordinate to the message.
 func indentStack(stack []byte) string {

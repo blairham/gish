@@ -13,9 +13,9 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/envtrust"
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/envtrust"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // fakeEnvClient proposes whatever resp holds, for any cwd under forDir.
@@ -206,7 +206,7 @@ func TestEnvDiffRejectsNonAncestorForDir(t *testing.T) {
 
 func TestEnvDiffDenyListOnlyProposalIsDropped(t *testing.T) {
 	h := newEnvHarness(t)
-	h.propose(map[string]string{"DYLD_INSERT_LIBRARIES": "/evil.dylib", "GISH_THEME": "evil"})
+	h.propose(map[string]string{"DYLD_INSERT_LIBRARIES": "/evil.dylib", "KOI_THEME": "evil"})
 	h.cd(t, h.proj)
 	if h.m.pending != nil || h.notices.Len() != 0 {
 		t.Errorf("fully deny-listed proposal should vanish: %+v %q", h.m.pending, h.notices.String())
@@ -236,7 +236,7 @@ func TestEnvDiffRevoke(t *testing.T) {
 }
 
 func TestTrustBuiltinUnavailableWithoutHost(t *testing.T) {
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	_, errOut, _ := runConfigScript(t, rc, "trust\n")
 	if !strings.Contains(errOut, "not available") {
 		t.Errorf("stderr = %q", errOut)
@@ -267,7 +267,7 @@ export KUBECONFIG=/tmp/kc`
 	}
 }
 
-// The one-gesture trust flow (#137): approving in gish must also tell a
+// The one-gesture trust flow (#137): approving in koi must also tell a
 // plugin that wraps a tool with its own approval model, or the user is
 // asked twice for one action.
 func TestAllowNotifiesThePlugin(t *testing.T) {
@@ -283,8 +283,8 @@ func TestAllowNotifiesThePlugin(t *testing.T) {
 	}
 }
 
-// A plugin that cannot record the approval must not block it: gish's
-// own trust record is authoritative for gish, so the diff still
+// A plugin that cannot record the approval must not block it: koi's
+// own trust record is authoritative for koi, so the diff still
 // applies — but the user is told, because the next shell may see the
 // proposal again.
 func TestAllowAppliesEvenWhenThePluginCannotRecord(t *testing.T) {

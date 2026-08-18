@@ -8,16 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/compat"
+	"github.com/blairham/koi-shell/internal/compat"
 )
 
 // The agent gate (#208). The claim being defended is specific: an agent
-// pointed at gish gets the user's real environment — functions, aliases,
+// pointed at koi gets the user's real environment — functions, aliases,
 // PATH — with no syntax-error preamble, through the invocation shapes
 // harnesses actually write.
 //
 // This is a gate, not a report: a regression here is the difference
-// between "my coding agent works" and the dual-shell split gish exists
+// between "my coding agent works" and the dual-shell split koi exists
 // to collapse, and it fails silently in the wild, which is why it has to
 // fail loudly here.
 func TestAgentGate(t *testing.T) {
@@ -25,9 +25,9 @@ func TestAgentGate(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash on PATH; the oracle is required")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 
-	results := compat.RunAgentAll(context.Background(), bashBin, gishBin)
+	results := compat.RunAgentAll(context.Background(), bashBin, koiBin)
 	if len(results) != len(compat.AgentCorpus) {
 		t.Fatalf("ran %d cases, corpus has %d", len(results), len(compat.AgentCorpus))
 	}
@@ -42,8 +42,8 @@ func TestAgentGate(t *testing.T) {
 			t.Logf("%s: skipped — %s", r.Name, r.Reason)
 			continue
 		}
-		t.Errorf("%s: %s\n  provenance: %s\n  argv: %q\n  bash(%d): %q\n  gish(%d): %q",
-			r.Name, r.Reason, r.Provenance, r.Argv, r.BashCode, r.BashOut, r.GishCode, r.GishOut)
+		t.Errorf("%s: %s\n  provenance: %s\n  argv: %q\n  bash(%d): %q\n  koi(%d): %q",
+			r.Name, r.Reason, r.Provenance, r.Argv, r.BashCode, r.BashOut, r.KoiCode, r.KoiOut)
 	}
 }
 
@@ -55,7 +55,7 @@ func TestAgentGateKeepsShellIdentityDistinct(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash on PATH")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 
 	var found bool
 	for _, c := range compat.AgentCorpus {
@@ -66,9 +66,9 @@ func TestAgentGateKeepsShellIdentityDistinct(t *testing.T) {
 		if c.Why == "" {
 			t.Errorf("%s: a deliberate divergence with no stated reason is indistinguishable from a bug", c.Name)
 		}
-		r := compat.RunAgent(context.Background(), bashBin, gishBin, c)
+		r := compat.RunAgent(context.Background(), bashBin, koiBin, c)
 		if !r.Pass {
-			t.Errorf("%s: gish printed %q, want %q", c.Name, r.GishOut, c.Expect)
+			t.Errorf("%s: koi printed %q, want %q", c.Name, r.KoiOut, c.Expect)
 		}
 	}
 	if !found {
@@ -103,9 +103,9 @@ func TestAgentHardcodedBashStillWorks(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash on PATH")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 
-	// An agent that ignores $SHELL entirely gets real bash, and gish
+	// An agent that ignores $SHELL entirely gets real bash, and koi
 	// running the same thing must agree with it. If this ever diverges,
 	// "it still works, that's the point" stops being true.
 	c := compat.AgentCase{
@@ -113,8 +113,8 @@ func TestAgentHardcodedBashStillWorks(t *testing.T) {
 		Provenance: "anthropics/claude-code#11475 — agents ignore the user's default shell",
 		Argv:       []string{"-c", `set -e; x=1; for i in 1 2 3; do x=$((x*2)); done; echo "$x"`},
 	}
-	if r := compat.RunAgent(context.Background(), bashBin, gishBin, c); !r.Pass {
-		t.Errorf("%s: %s\n  bash(%d): %q\n  gish(%d): %q",
-			c.Name, r.Reason, r.BashCode, r.BashOut, r.GishCode, r.GishOut)
+	if r := compat.RunAgent(context.Background(), bashBin, koiBin, c); !r.Pass {
+		t.Errorf("%s: %s\n  bash(%d): %q\n  koi(%d): %q",
+			c.Name, r.Reason, r.BashCode, r.BashOut, r.KoiCode, r.KoiOut)
 	}
 }

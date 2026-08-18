@@ -110,16 +110,16 @@ func TestToolsPreserveUserPathEdits(t *testing.T) {
 
 func TestToolsDisabledByConfig(t *testing.T) {
 	h := newToolsHarness(t)
-	if err := runEnvScript(t.Context(), h.runner, "GISH_TOOLS=off\n"); err != nil {
+	if err := runEnvScript(t.Context(), h.runner, "KOI_TOOLS=off\n"); err != nil {
 		t.Fatal(err)
 	}
 	h.cd(t, h.pinned)
 	if h.path() != h.basePath {
-		t.Fatalf("GISH_TOOLS=off still touched PATH: %q", h.path())
+		t.Fatalf("KOI_TOOLS=off still touched PATH: %q", h.path())
 	}
 
 	// Toggling back on re-resolves the same directory.
-	if err := runEnvScript(t.Context(), h.runner, "GISH_TOOLS=on\n"); err != nil {
+	if err := runEnvScript(t.Context(), h.runner, "KOI_TOOLS=on\n"); err != nil {
 		t.Fatal(err)
 	}
 	h.mgr.atPrompt(t.Context(), h.runner)

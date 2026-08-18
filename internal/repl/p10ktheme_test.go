@@ -9,7 +9,7 @@ import (
 
 // isolateP10kConfig points the native config at a temp directory. Every
 // test in this file needs it: without it the engine would read the
-// developer's own ~/.config/gish/p10k.conf and the suite would pass or
+// developer's own ~/.config/koi/p10k.conf and the suite would pass or
 // fail depending on whose machine it ran on.
 func isolateP10kConfig(t *testing.T) string {
 	t.Helper()
@@ -23,7 +23,7 @@ func isolateP10kConfig(t *testing.T) string {
 func TestP10kThemeRenders(t *testing.T) {
 	isolateP10kConfig(t)
 	runner := newTestRunner(t)
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -46,7 +46,7 @@ func TestP10kPresetSelection(t *testing.T) {
 
 	// robbyrussell is single-line and starts with its arrow: a shape
 	// distinct enough that the preset is provably in effect.
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; GISH_P10K_PRESET=robbyrussell`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k; KOI_P10K_PRESET=robbyrussell`)); err != nil {
 		t.Fatal(err)
 	}
 	p, _, _ := promptStrings(runner, themeInfo())
@@ -61,7 +61,7 @@ func TestP10kPresetSelection(t *testing.T) {
 func TestP10kUnknownPresetDegrades(t *testing.T) {
 	isolateP10kConfig(t)
 	runner := newTestRunner(t)
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; GISH_P10K_PRESET=nonsense`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k; KOI_P10K_PRESET=nonsense`)); err != nil {
 		t.Fatal(err)
 	}
 	// A typo costs you the preset you asked for, never the prompt.
@@ -74,7 +74,7 @@ func TestP10kSessionOverride(t *testing.T) {
 	isolateP10kConfig(t)
 	runner := newTestRunner(t)
 	// The settings someone already knows how to type, read as data.
-	script := `GISH_THEME=p10k; POWERLEVEL9K_LEFT_PROMPT_ELEMENTS='dir'; POWERLEVEL9K_PROMPT_ADD_NEWLINE=false`
+	script := `KOI_THEME=p10k; POWERLEVEL9K_LEFT_PROMPT_ELEMENTS='dir'; POWERLEVEL9K_PROMPT_ADD_NEWLINE=false`
 	if err := runner.Run(t.Context(), parseLine(t, script)); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestP10kSessionOverride(t *testing.T) {
 
 func TestP10kNativeConfigFileApplies(t *testing.T) {
 	dir := isolateP10kConfig(t)
-	path := filepath.Join(dir, "gish", "p10k.conf")
+	path := filepath.Join(dir, "koi", "p10k.conf")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestP10kNativeConfigFileApplies(t *testing.T) {
 	}
 
 	runner := newTestRunner(t)
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
 	p, _, _ := promptStrings(runner, themeInfo())
@@ -113,7 +113,7 @@ func TestP10kNativeConfigFileApplies(t *testing.T) {
 
 func TestP10kSessionBeatsConfigFile(t *testing.T) {
 	dir := isolateP10kConfig(t)
-	path := filepath.Join(dir, "gish", "p10k.conf")
+	path := filepath.Join(dir, "koi", "p10k.conf")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestP10kSessionBeatsConfigFile(t *testing.T) {
 	}
 
 	runner := newTestRunner(t)
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k; POWERLEVEL9K_DIR_FOREGROUND=202`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k; POWERLEVEL9K_DIR_FOREGROUND=202`)); err != nil {
 		t.Fatal(err)
 	}
 	p, _, _ := promptStrings(runner, themeInfo())
@@ -135,11 +135,11 @@ func TestP10kNoColorStillNaked(t *testing.T) {
 	isolateP10kConfig(t)
 	t.Setenv("NO_COLOR", "1")
 	runner := newTestRunner(t)
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_THEME=p10k`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_THEME=p10k`)); err != nil {
 		t.Fatal(err)
 	}
 	// The degradation rule outranks the theme, exactly as before.
-	if p, _, _ := promptStrings(runner, themeInfo()); p != "blair@mba gish % " {
+	if p, _, _ := promptStrings(runner, themeInfo()); p != "blair@mba koi % " {
 		t.Errorf("NO_COLOR prompt = %q, want naked", p)
 	}
 }

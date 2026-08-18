@@ -8,7 +8,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/builtins"
+	"github.com/blairham/koi-shell/internal/builtins"
 )
 
 // The help builtin (#196): bash's most-typed discovery command, and until
@@ -18,11 +18,11 @@ import (
 //
 // It lives on the CallHandler seam rather than in nativeOverrides because
 // the rewrite case needs to dispatch back into the handler chain:
-// `help config` becomes `config help`, so every gish command's usage
+// `help config` becomes `config help`, so every koi command's usage
 // screen stays single-sourced. doctor and explain take no subcommand and
 // get topics below instead.
 
-// helpRewrites are the gish commands whose full usage lives behind their
+// helpRewrites are the koi commands whose full usage lives behind their
 // own `<name> help` screen. A name here must be in callHandlerCommands
 // and must actually answer `help` — helpcmd_test.go holds both.
 var helpRewrites = []string{
@@ -36,8 +36,8 @@ type helpTopic struct {
 	desc string
 }
 
-// helpTopics covers every implemented shell builtin, every gish-native
-// builtin, and the gish commands with no help subcommand of their own.
+// helpTopics covers every implemented shell builtin, every koi-native
+// builtin, and the koi commands with no help subcommand of their own.
 // helpcmd_test.go fails when a builtin ships without an entry here.
 var helpTopics = map[string]helpTopic{
 	// Shell builtins — the interpreter's implemented set.
@@ -80,12 +80,12 @@ var helpTopics = map[string]helpTopic{
 	"unset":     {"unset [-fv] name ...", "unset variables or functions"},
 	"wait":      {"wait [id ...]", "wait for background jobs to finish"},
 
-	// gish-native builtins.
+	// koi-native builtins.
 	"bg":       {"bg [%job]", "resume a stopped job in the background"},
 	"builtins": {"builtins", "list every builtin this session answers, grouped by origin"},
 	"fc":       {"fc -l [first [last]]", "list command history; the editing forms are not implemented"},
 	"fg":       {"fg [%job]", "resume a job in the foreground"},
-	"help":     {"help [name]", "explain a builtin; gish commands also answer `<name> help`"},
+	"help":     {"help [name]", "explain a builtin; koi commands also answer `<name> help`"},
 	"jobs":     {"jobs", "list background and stopped jobs"},
 	"kill":     {"kill [-signal] pid|%job ...", "send a signal to processes or jobs"},
 	"newgrp":   {"newgrp", "not provided — it changes the real group id; use /usr/bin/newgrp"},
@@ -94,7 +94,7 @@ var helpTopics = map[string]helpTopic{
 	"times":    {"times", "print user and system times for the shell and its children"},
 	"umask":    {"umask [mode]", "set or print the file-creation mask"},
 
-	// gish commands with no help subcommand of their own.
+	// koi commands with no help subcommand of their own.
 	"doctor":  {"doctor", "check the shell's moving parts and print the exact fix for each finding"},
 	"explain": {"explain", "ask the configured AI provider why the last command failed"},
 }
@@ -137,8 +137,8 @@ func runHelp(ctx context.Context, next interp.CallHandlerFunc, args []string) ([
 
 func printHelpOverview(hc interp.HandlerContext) {
 	fmt.Fprintln(hc.Stdout, "help: help [name]")
-	fmt.Fprintln(hc.Stdout, "    `help cd` explains a builtin; gish commands also answer `<name> help`.")
-	fmt.Fprintf(hc.Stdout, "\ngish commands:\n  %s\n", strings.Join(callHandlerCommands, " "))
-	fmt.Fprintf(hc.Stdout, "\ngish builtins:\n  %s\n", strings.Join(builtins.Native(), " "))
+	fmt.Fprintln(hc.Stdout, "    `help cd` explains a builtin; koi commands also answer `<name> help`.")
+	fmt.Fprintf(hc.Stdout, "\nkoi commands:\n  %s\n", strings.Join(callHandlerCommands, " "))
+	fmt.Fprintf(hc.Stdout, "\nkoi builtins:\n  %s\n", strings.Join(builtins.Native(), " "))
 	fmt.Fprintf(hc.Stdout, "\nshell builtins:\n  %s\n", strings.Join(builtins.ShellBuiltins(), " "))
 }

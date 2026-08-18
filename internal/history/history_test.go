@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 func open(t *testing.T, path string) *history.Store {
@@ -28,7 +28,7 @@ func appendCmd(t *testing.T, s *history.Store, cmd string) {
 func TestAppendAndReload(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "gish", "history.jsonl")
+	path := filepath.Join(t.TempDir(), "koi", "history.jsonl")
 	s := open(t, path)
 	appendCmd(t, s, "echo one")
 	appendCmd(t, s, "echo two")
@@ -135,7 +135,7 @@ func TestDefaultPathUsesXDG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != filepath.Join("/custom/data", "gish", "history.jsonl") {
+	if got != filepath.Join("/custom/data", "koi", "history.jsonl") {
 		t.Errorf("DefaultPath() = %q", got)
 	}
 
@@ -152,7 +152,7 @@ func TestDefaultPathUsesXDG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != filepath.Join(home, ".local", "share", "gish", "history.jsonl") {
+	if got != filepath.Join(home, ".local", "share", "koi", "history.jsonl") {
 		t.Errorf("DefaultPath() = %q", got)
 	}
 }

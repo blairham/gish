@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // jumpEnv installs a jumpManager over temp state with two known dirs.
@@ -15,7 +15,7 @@ func jumpEnv(t *testing.T) (work, api string) {
 	t.Helper()
 	base := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
-	work = filepath.Join(base, "projects", "gish")
+	work = filepath.Join(base, "projects", "koi")
 	api = filepath.Join(base, "services", "api")
 	for _, d := range []string{work, api} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -35,7 +35,7 @@ func jumpEnv(t *testing.T) (work, api string) {
 
 func TestZJumpsToBestMatch(t *testing.T) {
 	_, api := jumpEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc, "z api\npwd\n")
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestZJumpsToBestMatch(t *testing.T) {
 
 func TestZListAndNoMatch(t *testing.T) {
 	work, api := jumpEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc, "z -l\n")
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +64,7 @@ func TestZListAndNoMatch(t *testing.T) {
 
 func TestZBarePickerDegradesToList(t *testing.T) {
 	work, _ := jumpEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	// Headless: the picker degrades to the ranked list, nothing moves.
 	out, _, err := runConfigScript(t, rc, "z\npwd\n")
 	if err != nil {
@@ -108,14 +108,14 @@ func TestJumpNoteRespectsOptOut(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	mgr := newJumpManager(nil)
 	runner := newTestRunner(t)
-	if err := runEnvScript(t.Context(), runner, "GISH_JUMP=off\n"); err != nil {
+	if err := runEnvScript(t.Context(), runner, "KOI_JUMP=off\n"); err != nil {
 		t.Fatal(err)
 	}
 	mgr.note(runner)
 	if !mgr.store.Empty() {
-		t.Error("GISH_JUMP=off still recorded a visit")
+		t.Error("KOI_JUMP=off still recorded a visit")
 	}
-	if err := runEnvScript(t.Context(), runner, "GISH_JUMP=on\n"); err != nil {
+	if err := runEnvScript(t.Context(), runner, "KOI_JUMP=on\n"); err != nil {
 		t.Fatal(err)
 	}
 	mgr.note(runner)

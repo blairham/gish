@@ -6,8 +6,8 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/editor"
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // Highlight styles (#38). Kept minimal and legible: the signature
@@ -53,7 +53,7 @@ const (
 // the editor. Unknown values mean the default: a typo in an rc must
 // never be why the shell looks broken.
 func highlightMode(runner *interp.Runner) string {
-	switch strings.ToLower(shellVar(runner, "GISH_HIGHLIGHT", highlightOn)) {
+	switch strings.ToLower(shellVar(runner, "KOI_HIGHLIGHT", highlightOn)) {
 	case highlightOff:
 		return highlightOff
 	case highlightQuiet:
@@ -68,7 +68,7 @@ func highlightMode(runner *interp.Runner) string {
 // divisive affordance, and "turn the whole shell monochrome" is not an
 // acceptable way to switch one feature off.
 func suggestEnabled(runner *interp.Runner) bool {
-	return !strings.EqualFold(shellVar(runner, "GISH_SUGGEST", "on"), "off")
+	return !strings.EqualFold(shellVar(runner, "KOI_SUGGEST", "on"), "off")
 }
 
 // suggestFn builds the editor's ghost-text hook: the newest history
@@ -103,9 +103,9 @@ func highlightFn(runner *interp.Runner) func(string) []editor.HighlightSpan {
 			return nil
 		}
 		// The verdict draws on the shared session vocabulary (#193):
-		// aliases, gish's CallHandler-routed commands, native builtins,
+		// aliases, koi's CallHandler-routed commands, native builtins,
 		// functions, plugin commands, and PATH. A private list here is
-		// how every alias and most of gish's own commands spent months
+		// how every alias and most of koi's own commands spent months
 		// rendering red — valid, and painted as typos.
 		known := func(name string) bool { return knownCommand(runner, name) }
 		if mode == highlightQuiet {
@@ -251,13 +251,13 @@ func normalizeSpans(spans []editor.HighlightSpan) []editor.HighlightSpan {
 //
 // vi mode is a documented abandonment cause in both directions: its
 // absence drove people back to zsh, and NO_COLOR-style all-or-nothing
-// switches are not how anyone expects to reach it. GISH_EDIT_MODE is
+// switches are not how anyone expects to reach it. KOI_EDIT_MODE is
 // the knob, `config editmode vi` sets it, and `set -o vi` in an rc is
 // honored too — that line is in a great many inherited rc files, and
 // silently ignoring it would be the same class of trap the `alias`
 // no-op was.
 func editModeOf(runner *interp.Runner) editor.EditMode {
-	if strings.EqualFold(shellVar(runner, "GISH_EDIT_MODE", "emacs"), "vi") {
+	if strings.EqualFold(shellVar(runner, "KOI_EDIT_MODE", "emacs"), "vi") {
 		return editor.ModeVi
 	}
 	return editor.ModeEmacs

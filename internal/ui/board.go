@@ -9,7 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // The live task board (#90): rows appear queued, spin while running,

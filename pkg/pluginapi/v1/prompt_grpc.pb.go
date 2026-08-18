@@ -11,7 +11,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/prompt.proto
+// source: koi/plugin/v1/prompt.proto
 
 package pluginapi
 
@@ -28,8 +28,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PromptSegmentProvider_Segments_FullMethodName = "/gish.plugin.v1.PromptSegmentProvider/Segments"
-	PromptSegmentProvider_Render_FullMethodName   = "/gish.plugin.v1.PromptSegmentProvider/Render"
+	PromptSegmentProvider_Segments_FullMethodName = "/koi.plugin.v1.PromptSegmentProvider/Segments"
+	PromptSegmentProvider_Render_FullMethodName   = "/koi.plugin.v1.PromptSegmentProvider/Render"
 )
 
 // PromptSegmentProviderClient is the client API for PromptSegmentProvider service.
@@ -157,7 +157,7 @@ func _PromptSegmentProvider_Render_Handler(srv interface{}, ctx context.Context,
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var PromptSegmentProvider_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.PromptSegmentProvider",
+	ServiceName: "koi.plugin.v1.PromptSegmentProvider",
 	HandlerType: (*PromptSegmentProviderServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -170,5 +170,5 @@ var PromptSegmentProvider_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "gish/plugin/v1/prompt.proto",
+	Metadata: "koi/plugin/v1/prompt.proto",
 }

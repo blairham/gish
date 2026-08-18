@@ -8,7 +8,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/plugmgr"
+	"github.com/blairham/koi-shell/internal/plugmgr"
 )
 
 // ziCallHandler intercepts `zi` commands before execution and replaces

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/compat"
+	"github.com/blairham/koi-shell/internal/compat"
 )
 
 // -update regenerates docs/compat.md from a live run; without it the
@@ -28,7 +28,7 @@ var recordedRe = regexp.MustCompile(`\*\*(\d+) of (\d+) cases pass`)
 // recordedBashRe pulls the oracle version the scoreboard was generated
 // against. The pass count is only comparable against the same bash
 // major: macOS ships bash 3.2 (2007), where *bash itself* rejects
-// `${s,,}` and `declare -A` and gish is ahead of the oracle.
+// `${s,,}` and `declare -A` and koi is ahead of the oracle.
 var recordedBashRe = regexp.MustCompile(`against bash (\d+)\.`)
 
 func TestCompatScoreboard(t *testing.T) {
@@ -36,9 +36,9 @@ func TestCompatScoreboard(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash on this machine: the differential oracle is unavailable")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 
-	results := compat.RunAll(context.Background(), bashBin, gishBin)
+	results := compat.RunAll(context.Background(), bashBin, koiBin)
 	summary := compat.Summarize(results)
 
 	if *update {
@@ -94,12 +94,12 @@ func TestCorpusIsWellFormed(t *testing.T) {
 	}
 }
 
-func buildGish(t *testing.T) string {
+func buildKoi(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "gish")
-	cmd := exec.Command("go", "build", "-o", bin, "../../cmd/gish")
+	bin := filepath.Join(t.TempDir(), "koi")
+	cmd := exec.Command("go", "build", "-o", bin, "../../cmd/koi")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build gish: %v\n%s", err, out)
+		t.Fatalf("build koi: %v\n%s", err, out)
 	}
 	return bin
 }

@@ -1,4 +1,4 @@
-module github.com/blairham/gish
+module github.com/blairham/koi-shell
 
 go 1.26.6
 

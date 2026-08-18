@@ -3,7 +3,7 @@ package editor
 import (
 	"strings"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // `bind -x` (#159): a key sequence bound to a shell command.

@@ -65,13 +65,13 @@ func TestLoaderHooksAreNeverWritten(t *testing.T) {
 		"DYLD_INSERT_LIBRARIES": "/evil.dylib",
 		"IFS":                   ":",
 		"BASH_ENV":              "/tmp/x",
-		"GISH_THEME":            "p10k",
+		"KOI_THEME":             "p10k",
 		"EDITOR":                "vim",
 	})
 	if len(kept) != 1 || kept["EDITOR"] != "vim" {
 		t.Errorf("kept = %+v, want just EDITOR", kept)
 	}
-	for _, want := range []string{"LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "IFS", "BASH_ENV", "GISH_THEME"} {
+	for _, want := range []string{"LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "IFS", "BASH_ENV", "KOI_THEME"} {
 		found := false
 		for _, r := range removed {
 			if r == want {

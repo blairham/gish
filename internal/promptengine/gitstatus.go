@@ -18,7 +18,7 @@ import (
 // gets from a *separate process* for exactly that reason.
 //
 // So: HeadStatus reads the cheap half natively and synchronously, and
-// the counts arrive from whoever owns the scan (the gish-git plugin, a
+// the counts arrive from whoever owns the scan (the koi-git plugin, a
 // background refresh) and are merged in. A prompt with no scanner still
 // shows the branch; it just shows no counts. It never waits for either.
 

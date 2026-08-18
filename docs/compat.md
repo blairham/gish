@@ -5,7 +5,7 @@
 **41 of 46 cases pass (89%)** against bash 5.3.15(1)-release.
 
 Every case runs the same script through real bash and through
-`gish -c`, comparing combined output *and* exit status. bash on the
+`koi -c`, comparing combined output *and* exit status. bash on the
 running machine is the oracle — nothing here encodes what we think bash
 ought to do. Cases are curated around what people actually paste into a
 new shell (tool init hooks, install one-liners, parameter expansion,
@@ -30,18 +30,18 @@ contents; each carries its provenance in the corpus.
 
 | case | category | difference |
 | --- | --- | --- |
-| single quote escaped inside an assignment | tool init hooks | bash: [a'b]… · gish: [a\'b]… |
-| shell detection via $0 and BASH_VERSION | tool init hooks | bash: bash-ish… · gish: bash-ish… |
-| pattern substitution | parameter expansion | bash: a+b-c a+b+c A-b-c a-b-C · gish: a+b-c a+b+c a-b-c a-b-c |
-| associative arrays | arrays | bash: value thing 2 · gish: value thing 1 |
-| fd redirection and merging | redirection & heredocs | bash: TO-STDOUT… · gish: TO-STDOUT… |
+| single quote escaped inside an assignment | tool init hooks | bash: [a'b]… · koi: [a\'b]… |
+| shell detection via $0 and BASH_VERSION | tool init hooks | bash: bash-ish… · koi: bash-ish… |
+| pattern substitution | parameter expansion | bash: a+b-c a+b+c A-b-c a-b-C · koi: a+b-c a+b+c a-b-c a-b-c |
+| associative arrays | arrays | bash: value thing 2 · koi: value thing 1 |
+| fd redirection and merging | redirection & heredocs | bash: TO-STDOUT… · koi: TO-STDOUT… |
 
 Gaps in the substrate belong upstream at [mvdan/sh](https://github.com/mvdan/sh) —
-fixing them there improves every consumer, not just gish. The current
-set is tracked in [#119](https://github.com/blairham/gish/issues/119)
+fixing them there improves every consumer, not just koi. The current
+set is tracked in [#119](https://github.com/blairham/koi-shell/issues/119)
 with minimal reproductions. Shell-identity behavior (`BASH_VERSION`
 and tool init hooks) is a deliberate open decision, not a bug:
-[#120](https://github.com/blairham/gish/issues/120).
+[#120](https://github.com/blairham/koi-shell/issues/120).
 
 ## Honesty notes
 
@@ -57,7 +57,7 @@ and tool init hooks) is a deliberate open decision, not a bug:
   scope here; this measures the scripting substrate only.
 - **Which bash you compare against changes the answer.** macOS still
   ships bash 3.2 (2007, the last GPLv2 release), where *bash itself*
-  rejects `${s,,}` and `declare -A` — against that oracle gish is
+  rejects `${s,,}` and `declare -A` — against that oracle koi is
   *ahead* on those cases, and the differential dutifully reports a
   difference. The number above is against the bash named in the
   headline; CI enforces the regression gate only when the runner's

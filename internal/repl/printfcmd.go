@@ -10,7 +10,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/builtins"
+	"github.com/blairham/koi-shell/internal/builtins"
 )
 
 // printf goes through the CallHandler rather than the ExecHandler
@@ -73,7 +73,7 @@ type printfOpts struct {
 // Options stop at the format, which is why `printf "%s" -v x` prints
 // "-vx" rather than assigning: -v is an option only before the format.
 // An unrecognized dash-argument is therefore treated as the format,
-// which is both what bash's callers rely on and what gish did before
+// which is both what bash's callers rely on and what koi did before
 // there was any option parsing here at all.
 func parsePrintfArgs(args []string) (printfOpts, bool) {
 	var o printfOpts

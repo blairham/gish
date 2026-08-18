@@ -1,6 +1,6 @@
 // Package compat is the bash-compatibility scoreboard (#101): a corpus
 // of real-world bash snippets, run differentially against bash and
-// gish, scored honestly and published.
+// koi, scored honestly and published.
 //
 // The corpus is curated around what people actually paste into a new
 // shell within an hour of an announcement — tool init hooks, install
@@ -25,7 +25,7 @@ const (
 	CatOneLiners   Category = "install one-liners"
 )
 
-// Case is one snippet: run under bash and gish, compare stdout and
+// Case is one snippet: run under bash and koi, compare stdout and
 // exit status. Provenance says where the pattern comes from — the
 // scoreboard is only credible if each row can be traced.
 type Case struct {

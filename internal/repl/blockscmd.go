@@ -10,9 +10,9 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/blocks"
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/blocks"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The `blocks` builtin (#99 stage 4): a command and its output as one
@@ -54,7 +54,7 @@ func runBlocks(hc interp.HandlerContext, args []string) []string {
 	defer store.Close() //nolint:errcheck // read-only
 
 	bs := blockStore
-	if bs == nil { // `gish -c blocks` runs without the session's store
+	if bs == nil { // `koi -c blocks` runs without the session's store
 		var err error
 		if bs, err = blocks.OpenDefault(); err != nil {
 			fmt.Fprintln(hc.Stderr, "blocks:", err)
@@ -92,7 +92,7 @@ func runBlocks(hc interp.HandlerContext, args []string) []string {
 // rerunBlock puts a block's command back on the next prompt.
 //
 // It loads the line rather than running it, which is the same posture as
-// every other place gish hands a command back (#20's preview rule): the
+// every other place koi hands a command back (#20's preview rule): the
 // user reads it, edits it if they want, and presses Enter. A block is
 // history, and history is exactly where a command that should not run
 // twice unchanged comes from — `git push --force`, `rm -rf ./build`.

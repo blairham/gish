@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // Vi mode (#163).

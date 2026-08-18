@@ -1,4 +1,4 @@
-// Package editor implements gish's raw-mode inline line editor: the
+// Package editor implements koi's raw-mode inline line editor: the
 // zle-equivalent. It owns the buffer, keymap, kill ring, undo, and the
 // diff-based renderer (#1 decision); terminal I/O goes through
 // internal/term exclusively.
@@ -11,7 +11,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // ErrInterrupted reports that the user canceled the line with Ctrl-C.

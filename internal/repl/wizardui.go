@@ -9,7 +9,7 @@ import (
 
 	huh "charm.land/huh/v2"
 
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The wizard's question seam (#90). `config theme` on a real terminal

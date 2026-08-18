@@ -11,7 +11,7 @@ import (
 // Unit coverage for the parts of printf that a differential test cannot
 // reach quickly, plus the benchmark.
 //
-// The bash-differential suite (cmd/gish/printf_test.go) is the oracle
+// The bash-differential suite (cmd/koi/printf_test.go) is the oracle
 // for *what* the output should be. These are here for the cases that are
 // awkward to spell in a shell script, and because a formatting bug found
 // in 40µs is cheaper than one found by launching two shells.

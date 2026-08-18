@@ -16,7 +16,7 @@ import (
 // so the notice can say something the user could act on.
 var (
 	errNoExecDir  = errors.New("no directory on the remote is both writable and executable")
-	errNoBinary   = errors.New("no gish binary available for the remote platform")
+	errNoBinary   = errors.New("no koi binary available for the remote platform")
 	errVerifyFail = errors.New("pushed binary failed verification")
 )
 
@@ -27,18 +27,18 @@ var (
 // co-tenant on a shared box cannot swap the file under us without
 // changing the name we exec.
 type Payload struct {
-	Name string // e.g. gish-3f2a…  (content-addressed)
+	Name string // e.g. koi-3f2a…  (content-addressed)
 	Sum  string // sha256, hex
 	Size int64
 	Mode string // octal, as chmod takes it
 	open func() (io.ReadCloser, error)
 }
 
-// LocalBinary describes the gish executable to send. When the remote
+// LocalBinary describes the koi executable to send. When the remote
 // platform matches this process's, that is this very binary — the
 // self-copy case, which needs no cache and no download.
 func LocalBinary(path string) (Payload, error) {
-	f, err := os.Open(path) //nolint:gosec // the path is gish's own executable or the user's cache
+	f, err := os.Open(path) //nolint:gosec // the path is koi's own executable or the user's cache
 	if err != nil {
 		return Payload{}, err
 	}
@@ -54,7 +54,7 @@ func LocalBinary(path string) (Payload, error) {
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
 	return Payload{
-		Name: "gish-" + sum[:16],
+		Name: "koi-" + sum[:16],
 		Sum:  sum,
 		Size: info.Size(),
 		Mode: "0700",
@@ -86,7 +86,7 @@ func ConfigPayload(prefix string, content []byte) Payload {
 // Nothing is base64'd — that is 33% bloat and a line-length problem on a
 // channel that is already binary-clean.
 //
-// Write-to-.partial-then-rename is the same discipline the rest of gish
+// Write-to-.partial-then-rename is the same discipline the rest of koi
 // uses for state files: a dropped connection must leave no file that a
 // later run would happily exec.
 func Push(ctx context.Context, t Transport, dir string, p Payload, hashCmd string) error {

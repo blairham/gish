@@ -6,7 +6,7 @@ import (
 
 	huh "charm.land/huh/v2"
 
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The shared approval seam (#90): agent gates and the trust review ask

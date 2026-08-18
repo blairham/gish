@@ -14,11 +14,11 @@ import (
 )
 
 // Footgun diagnostics (#46). bash inherits its quoting and
-// word-splitting semantics on purpose (compatibility > purity), but gish
+// word-splitting semantics on purpose (compatibility > purity), but koi
 // holds something bash never did: a real parse tree of the line before
 // it runs. These checks walk that tree on every keystroke and surface
 // dim caution lines below the edit line — the same surface as completion
-// candidates. Warnings never block execution; GISH_LINT is the knob:
+// candidates. Warnings never block execution; KOI_LINT is the knob:
 //
 //	on      (default) native checks + shellcheck on Enter for multi-line
 //	native  native checks only, never spawn shellcheck
@@ -39,7 +39,7 @@ const (
 )
 
 // lintFn builds the editor's Diagnose hook. The knob is read per call so
-// GISH_LINT=off set interactively takes effect on the next keystroke.
+// KOI_LINT=off set interactively takes effect on the next keystroke.
 func lintFn(runner *interp.Runner, color bool) func(string) []string {
 	return func(text string) []string {
 		if lintMode(runner) == "off" {
@@ -57,9 +57,9 @@ func lintFn(runner *interp.Runner, color bool) func(string) []string {
 	}
 }
 
-// lintMode resolves GISH_LINT to one of on|native|off.
+// lintMode resolves KOI_LINT to one of on|native|off.
 func lintMode(runner *interp.Runner) string {
-	switch m := shellVar(runner, "GISH_LINT", "on"); m {
+	switch m := shellVar(runner, "KOI_LINT", "on"); m {
 	case "off", "native":
 		return m
 	default:
@@ -280,7 +280,7 @@ func shellcheckWarnings(ctx context.Context, src string) []string {
 		if f.Level != "warning" && f.Level != "error" {
 			continue // severity model v1: info/style stay quiet
 		}
-		warns = append(warns, fmt.Sprintf("gish: shellcheck SC%d at %d:%d: %s", f.Code, f.Line, f.Column, f.Message))
+		warns = append(warns, fmt.Sprintf("koi: shellcheck SC%d at %d:%d: %s", f.Code, f.Line, f.Column, f.Message))
 		if len(warns) == maxShellcheckWarnings {
 			break
 		}

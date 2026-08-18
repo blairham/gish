@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/plugmgr"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/plugmgr"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // ziList renders installed objects: a lipgloss table on an interactive

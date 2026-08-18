@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
 // Plugin themes (#30): a tier-2 ThemeProvider renders the entire prompt

@@ -16,7 +16,7 @@ import (
 // human's end decodes it and sets their clipboard — so there is no X11
 // forwarding, no reverse tunnel to pbcopy, no tmux buffer gymnastics,
 // and nothing to install on the far side. The bytes ride the ssh
-// channel gish is already using, which is why #98 split this out as
+// channel koi is already using, which is why #98 split this out as
 // "independent and nearly free".
 //
 // It lives in internal/term because that is the only package allowed to
@@ -51,7 +51,7 @@ func ClipboardWritable(w io.Writer) bool {
 // SetClipboard writes text to the terminal's clipboard selection.
 //
 // **Set only, never query.** OSC 52 also defines a read form, where the
-// terminal replies with the clipboard's current contents. gish will not
+// terminal replies with the clipboard's current contents. koi will not
 // use it: a shell that can read your clipboard can exfiltrate whatever
 // you last copied — a password, a recovery code — and that is exactly
 // the capability terminals disable OSC 52 by default to prevent. There

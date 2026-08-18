@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/blairham/gish/internal/compat"
+	"github.com/blairham/koi-shell/internal/compat"
 )
 
 // The interactive gates (#161): pasted lines and sourced init scripts,
@@ -40,7 +40,7 @@ var pasteRecordedRe = regexp.MustCompile(`\*\*Paste gate: (\d+) of (\d+) cases p
 // two-core runner under -race, a shell missed its own first prompt
 // inside a minute. The dedicated CI step is the enforcement point, and
 // running them twice per push bought nothing but the flake.
-const gatesEnv = "GISH_GATES"
+const gatesEnv = "KOI_GATES"
 
 func TestInteractiveGates(t *testing.T) {
 	if os.Getenv(gatesEnv) == "" {
@@ -50,12 +50,12 @@ func TestInteractiveGates(t *testing.T) {
 	if err != nil {
 		t.Skip("no bash on this machine: the differential oracle is unavailable")
 	}
-	gishBin := buildGish(t)
+	koiBin := buildKoi(t)
 	ctx := context.Background()
 
-	pasteResults := compat.RunPasteAll(ctx, bashBin, gishBin)
-	sourceResults := compat.RunSourceAll(ctx, bashBin, gishBin, t.TempDir())
-	ecoResults := compat.RunEcosystemAll(ctx, gishBin)
+	pasteResults := compat.RunPasteAll(ctx, bashBin, koiBin)
+	sourceResults := compat.RunSourceAll(ctx, bashBin, koiBin, t.TempDir())
+	ecoResults := compat.RunEcosystemAll(ctx, koiBin)
 
 	pastePassed, pasteSkipped := 0, 0
 	for _, r := range pasteResults {
@@ -68,8 +68,8 @@ func TestInteractiveGates(t *testing.T) {
 			pasteSkipped++
 			t.Logf("PASTE SKIP %s: %s", r.Name, r.Reason)
 		case !r.Pass:
-			t.Logf("PASTE FAIL %s: %s\n  bash=%q (%d)\n  gish=%q (%d)",
-				r.Name, r.Reason, r.BashOut, r.BashCode, r.GishOut, r.GishCode)
+			t.Logf("PASTE FAIL %s: %s\n  bash=%q (%d)\n  koi=%q (%d)",
+				r.Name, r.Reason, r.BashOut, r.BashCode, r.KoiOut, r.KoiCode)
 		default:
 			pastePassed++
 		}
@@ -81,13 +81,13 @@ func TestInteractiveGates(t *testing.T) {
 			t.Logf("SOURCE SKIP %s: not installed on this machine", r.Name)
 		case r.Unstable:
 			// The oracle misbehaved (a helper program dying of SIGPIPE
-			// as the script exits). Not gish's failure, and not a pass
+			// as the script exits). Not koi's failure, and not a pass
 			// either: it is a case that could not be judged.
 			t.Logf("SOURCE UNJUDGED %s: %s\n  bash=%q (%d)", r.Name, r.Reason, r.BashOut, r.BashCode)
 		case !r.Pass:
 			sourceRan++
-			t.Logf("SOURCE FAIL %s: %s\n  bash=%q (%d)\n  gish=%q (%d)",
-				r.Name, r.Reason, r.BashOut, r.BashCode, r.GishOut, r.GishCode)
+			t.Logf("SOURCE FAIL %s: %s\n  bash=%q (%d)\n  koi=%q (%d)",
+				r.Name, r.Reason, r.BashOut, r.BashCode, r.KoiOut, r.KoiCode)
 		default:
 			sourceRan++
 			sourcePassed++
@@ -119,7 +119,7 @@ func TestInteractiveGates(t *testing.T) {
 	}
 
 	// The paste gate is hermetic — it depends on nothing but bash and
-	// gish — so it is enforced as an absolute count.
+	// koi — so it is enforced as an absolute count.
 	recordedPaste, recordedPasteTotal := readInteractiveRecorded(t, pasteRecordedRe)
 	// Skipped cases are subtracted from what the doc recorded, so a
 	// machine with an older oracle still enforces every case it *could*

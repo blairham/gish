@@ -12,7 +12,7 @@
 //
 // # Why this does not have to reimplement job control
 //
-// docs/blocks.md anticipated that gish would have to take over what the
+// docs/blocks.md anticipated that koi would have to take over what the
 // terminal owned — relaying signals, forwarding window-size changes,
 // interleaving a copy loop with a race-sensitive foreground handoff.
 // That is true of the shape where the PTY becomes the child's

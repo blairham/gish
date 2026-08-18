@@ -27,7 +27,7 @@ import (
 // v1 semantics (the pragmatic answers to the issue's design questions):
 //   - Tasks are processes, exec'd directly — no shell interpretation of
 //     the template, so no quoting hell. Shell syntax inside a task is an
-//     explicit `gish -c '…'` template. Shell functions as tasks wait for
+//     explicit `koi -c '…'` template. Shell functions as tasks wait for
 //     interp sub-runners (Runner is not concurrent-safe).
 //   - {} in any template token is replaced by the input; a template with
 //     no {} gets the input appended as a final argument.

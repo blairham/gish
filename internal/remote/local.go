@@ -16,7 +16,7 @@ import (
 // with no ssh, no network, and no remote host, per the AGENTS.md rule
 // that tests never touch real user state.
 //
-// It is a test seam, not a user-facing "run gish on localhost" feature.
+// It is a test seam, not a user-facing "run koi on localhost" feature.
 type Local struct {
 	// Env overrides the environment the scripts see. Setting HOME and
 	// XDG_RUNTIME_DIR here is how a test steers the candidate-directory
@@ -52,7 +52,7 @@ func (l *Local) Run(ctx context.Context, script string, stdin io.Reader) ([]byte
 }
 
 // Interactive records rather than executes: a test wants to assert on
-// the exec line gish would have run, not hand a pty to a real shell.
+// the exec line koi would have run, not hand a pty to a real shell.
 func (l *Local) Interactive(_ context.Context, command string) error {
 	l.Interacted = append(l.Interacted, command)
 	return nil

@@ -17,9 +17,9 @@ func gitEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
 	t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(t.TempDir(), "gitconfig-system"))
-	t.Setenv("GIT_AUTHOR_NAME", "gish test")
+	t.Setenv("GIT_AUTHOR_NAME", "koi test")
 	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.invalid")
-	t.Setenv("GIT_COMMITTER_NAME", "gish test")
+	t.Setenv("GIT_COMMITTER_NAME", "koi test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.invalid")
 	t.Setenv("GIT_TERMINAL_PROMPT", "0")
 }
@@ -101,7 +101,7 @@ func TestCloneCheckoutAndLog(t *testing.T) {
 		// file:// rather than a bare path: git ignores --depth for local
 		// path clones (it hardlinks the object store instead), so a plain
 		// path would fetch everything and the assertion would be about
-		// git's local optimization rather than about the flag gish built.
+		// git's local optimization rather than about the flag koi built.
 		dest := filepath.Join(t.TempDir(), "clone")
 		if err := Clone("file://"+origin, dest, "", 1); err != nil {
 			t.Fatal(err)

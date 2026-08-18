@@ -31,7 +31,7 @@ func TestTransientAlways(t *testing.T) {
 	if !strings.HasSuffix(plain(got), "❯ ") {
 		t.Errorf("transient prompt = %q, want a trailing space", plain(got))
 	}
-	for _, gone := range []string{"gish", "main", "14:05"} {
+	for _, gone := range []string{"koi", "main", "14:05"} {
 		if strings.Contains(plain(got), gone) {
 			t.Errorf("transient prompt still carries %q: %q", gone, plain(got))
 		}

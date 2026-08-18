@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
-	pluginsdk "github.com/blairham/gish/pkg/pluginsdk/v1"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
+	pluginsdk "github.com/blairham/koi-shell/pkg/pluginsdk/v1"
 )
 
 type info struct {

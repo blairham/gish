@@ -14,19 +14,19 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/promptengine"
-	"github.com/blairham/gish/internal/tools"
+	"github.com/blairham/koi-shell/internal/promptengine"
+	"github.com/blairham/koi-shell/internal/tools"
 )
 
-// Themes. gish starts naked: the out-of-box prompt is the familiar
+// Themes. koi starts naked: the out-of-box prompt is the familiar
 // zsh/bash shape (user@host dir %) with no color and no branding —
 // switching shells shouldn't change how the terminal greets you until
 // you ask it to. The p10k-class two-line prompt (#26, built natively on
 // the segment engine — async plugin segments, budget deadlines,
 // stale-serve) and starship (#45) are explicit opt-ins.
 //
-// Precedence: a user-set GISH_PROMPT always wins (the bare-metal escape
-// hatch); otherwise GISH_THEME selects "p10k", "starship", or the naked
+// Precedence: a user-set KOI_PROMPT always wins (the bare-metal escape
+// hatch); otherwise KOI_THEME selects "p10k", "starship", or the naked
 // default. Dumb terminals and NO_COLOR get the naked prompt regardless.
 
 const (
@@ -51,16 +51,16 @@ var builtinThemes = map[string]func(*interp.Runner, promptInfo) (string, string,
 	// p10k is the native powerlevel10k engine (internal/promptengine): the
 	// presets, the segment set and the layout, rendered in-process.
 	"p10k": p10kTheme,
-	// gish is this shell's own segment-knob theme — the one GISH_THEME_*
+	// koi is this shell's own segment-knob theme — the one KOI_THEME_*
 	// configures. It predates the p10k engine and stays because those
 	// knobs are a documented surface, and because it is the fallback
 	// when a named theme cannot render.
-	"gish": nativeTheme,
-	// literal: the GISH_PROMPT override, rendered as a theme so there is
+	"koi": nativeTheme,
+	// literal: the KOI_PROMPT override, rendered as a theme so there is
 	// exactly one prompt pipeline (#109).
 	"literal": func(runner *interp.Runner, info promptInfo) (string, string, string) {
-		return expandPrompt(shellVar(runner, "GISH_PROMPT", ""), info),
-			expandPrompt(shellVar(runner, "GISH_PROMPT_CONT", contPrompt), info), ""
+		return expandPrompt(shellVar(runner, "KOI_PROMPT", ""), info),
+			expandPrompt(shellVar(runner, "KOI_PROMPT_CONT", contPrompt), info), ""
 	},
 	// bash: whatever the session set PS1 to (#159). Not a look of its
 	// own — it is how starship, oh-my-posh and a hand-written PS1 get
@@ -84,7 +84,7 @@ func nativeTheme(runner *interp.Runner, info promptInfo) (string, string, string
 }
 
 // promptStrings resolves the full prompt set for the next read.
-// Precedence: manual GISH_PROMPT > GISH_THEME — a built-in name, else a
+// Precedence: manual KOI_PROMPT > KOI_THEME — a built-in name, else a
 // discovered plugin theme claiming it (budget-bounded, stale on miss),
 // else the native theme > plain when nothing was asked for. NO_COLOR
 // and dumb terminals degrade to naked regardless of source.
@@ -118,23 +118,23 @@ func transientPrompt(runner *interp.Runner, info promptInfo) string {
 }
 
 // themeName resolves which theme renders the next prompt. Precedence:
-// a manual GISH_PROMPT (the "literal" theme) wins; colorless terminals
-// force plain; otherwise GISH_THEME names a built-in or a plugin theme.
+// a manual KOI_PROMPT (the "literal" theme) wins; colorless terminals
+// force plain; otherwise KOI_THEME names a built-in or a plugin theme.
 func themeName(runner *interp.Runner) string {
-	if shellVar(runner, "GISH_PROMPT", "") != "" {
+	if shellVar(runner, "KOI_PROMPT", "") != "" {
 		return "literal"
 	}
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return "plain"
 	}
-	if name := shellVar(runner, "GISH_THEME", ""); name != "" {
+	if name := shellVar(runner, "KOI_THEME", ""); name != "" {
 		return name
 	}
 	// Nothing chosen here, but something in the session set PS1 — a
 	// tool's init, or an rc the user carried over. That is a request,
 	// and honoring it is what makes starship and every hand-written
-	// prompt work without a gish-specific setting (#159). An explicit
-	// GISH_THEME above still wins: a choice the user made in gish's own
+	// prompt work without a koi-specific setting (#159). An explicit
+	// KOI_THEME above still wins: a choice the user made in koi's own
 	// vocabulary beats one inherited from somewhere else.
 	if sessionPS1(runner) != "" {
 		return "bash"
@@ -149,7 +149,7 @@ func nakedPrompt(info promptInfo) (string, string) {
 }
 
 // themeSegment is one slot in the themed first line: an id addressable
-// from GISH_THEME_SEGMENTS, its default color, and a renderer that
+// from KOI_THEME_SEGMENTS, its default color, and a renderer that
 // returns empty when the segment has nothing to say.
 type themeSegment struct {
 	id     string
@@ -204,30 +204,30 @@ func defaultSegmentIDs() []string {
 // segments render, in what order, color overrides, and layout.
 type themeConfig struct {
 	segments  []string
-	rprompt   []string          // GISH_THEME_RPROMPT: right-side segment ids
+	rprompt   []string          // KOI_THEME_RPROMPT: right-side segment ids
 	colors    map[string]string // segment id → SGR escape
-	oneLine   bool              // GISH_THEME_LINES=1: no frame, arrow inline
-	noFrame   bool              // GISH_THEME_FRAME=off: two lines, no corners
-	powerline bool              // GISH_THEME_SEP=powerline: chevron separators
+	oneLine   bool              // KOI_THEME_LINES=1: no frame, arrow inline
+	noFrame   bool              // KOI_THEME_FRAME=off: two lines, no corners
+	powerline bool              // KOI_THEME_SEP=powerline: chevron separators
 }
 
 func defaultThemeConfig() themeConfig {
 	return themeConfig{segments: defaultSegmentIDs()}
 }
 
-// themeConfigFrom reads GISH_THEME_SEGMENTS (ordered ids; unknown ids
-// address plugin segments) and GISH_THEME_COLOR_<ID> overrides. Invalid
+// themeConfigFrom reads KOI_THEME_SEGMENTS (ordered ids; unknown ids
+// address plugin segments) and KOI_THEME_COLOR_<ID> overrides. Invalid
 // or empty values fall back to the defaults — a bad rc line degrades,
 // it never breaks the prompt.
 func themeConfigFrom(runner *interp.Runner) themeConfig {
 	cfg := defaultThemeConfig()
-	if v := shellVar(runner, "GISH_THEME_SEGMENTS", ""); strings.TrimSpace(v) != "" {
+	if v := shellVar(runner, "KOI_THEME_SEGMENTS", ""); strings.TrimSpace(v) != "" {
 		cfg.segments = strings.Fields(v)
 	}
-	cfg.rprompt = strings.Fields(shellVar(runner, "GISH_THEME_RPROMPT", ""))
-	cfg.oneLine = shellVar(runner, "GISH_THEME_LINES", "2") == "1"
-	cfg.noFrame = shellVar(runner, "GISH_THEME_FRAME", "on") == "off"
-	cfg.powerline = shellVar(runner, "GISH_THEME_SEP", "plain") == "powerline"
+	cfg.rprompt = strings.Fields(shellVar(runner, "KOI_THEME_RPROMPT", ""))
+	cfg.oneLine = shellVar(runner, "KOI_THEME_LINES", "2") == "1"
+	cfg.noFrame = shellVar(runner, "KOI_THEME_FRAME", "on") == "off"
+	cfg.powerline = shellVar(runner, "KOI_THEME_SEP", "plain") == "powerline"
 	for _, id := range slices.Concat(cfg.segments, cfg.rprompt) {
 		if sgr, ok := colorSGR(shellVar(runner, themeColorVar(id), "")); ok {
 			if cfg.colors == nil {
@@ -240,12 +240,12 @@ func themeConfigFrom(runner *interp.Runner) themeConfig {
 }
 
 // themeColorVar maps a segment id to its color override variable:
-// dir → GISH_THEME_COLOR_DIR.
+// dir → KOI_THEME_COLOR_DIR.
 func themeColorVar(id string) string {
-	return "GISH_THEME_COLOR_" + strings.ToUpper(strings.ReplaceAll(id, "-", "_"))
+	return "KOI_THEME_COLOR_" + strings.ToUpper(strings.ReplaceAll(id, "-", "_"))
 }
 
-// themeColors is the named palette accepted by GISH_THEME_COLOR_* and
+// themeColors is the named palette accepted by KOI_THEME_COLOR_* and
 // `config theme.color.<id>`; raw SGR parameter strings ("38;5;208")
 // pass through untranslated.
 var themeColors = map[string]string{
@@ -281,12 +281,12 @@ func themeSep(cfg themeConfig) string {
 
 // themedPrompt renders the p10k-style layout — two-line by default:
 //
-//	╭─ ~/d/gish  main !2 ?1  go 1.26.1  ⚙1  2.3s  ✘ 7
+//	╭─ ~/d/koi  main !2 ?1  go 1.26.1  ⚙1  2.3s  ✘ 7
 //	╰─❯
 //
-// or, with GISH_THEME_LINES=1, everything inline:
+// or, with KOI_THEME_LINES=1, everything inline:
 //
-//	~/d/gish  main !2 ?1  ✘ 7 ❯
+//	~/d/koi  main !2 ?1  ✘ 7 ❯
 func themedPrompt(info promptInfo, cfg themeConfig) (string, string) {
 	sep := themeSep(cfg)
 
@@ -352,11 +352,11 @@ func themedRPrompt(info promptInfo, cfg themeConfig) string {
 
 // The manual prompt surface: a free-form string with escapes, rendered
 // through the theme engine like everything else (#109). Overriding the
-// prompt with a literal string is table stakes, so GISH_PROMPT stays —
+// prompt with a literal string is table stakes, so KOI_PROMPT stays —
 // but it is now the "literal" theme rather than a second pipeline.
 //
 // The escape set is deliberately small and deliberately *zsh-spelled*
-// where zsh has a spelling, because the person writing GISH_PROMPT is
+// where zsh has a spelling, because the person writing KOI_PROMPT is
 // usually porting a zsh PROMPT and their fingers know %n/%m/%~ (#96):
 //
 //	%n %u  username        %~ %w  cwd, ~-abbreviated
@@ -367,7 +367,7 @@ func themedRPrompt(info promptInfo, cfg themeConfig) string {
 //	%%     a literal %
 //
 // Anything else passes through untouched. That list is the contract:
-// gish does not accrete zsh's full PROMPT_SUBST surface by accident.
+// koi does not accrete zsh's full PROMPT_SUBST surface by accident.
 func expandPrompt(format string, info promptInfo) string {
 	var b strings.Builder
 	runes := []rune(format)

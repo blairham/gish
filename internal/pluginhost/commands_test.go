@@ -12,7 +12,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/pluginhost"
+	"github.com/blairham/koi-shell/internal/pluginhost"
 )
 
 // newIndex builds a command index over the fixture, waiting for the
@@ -129,7 +129,7 @@ func TestIndexCacheWarmStart(t *testing.T) {
 
 	// The cache file exists and a fresh index serves names immediately,
 	// without waiting for interrogation.
-	cachePath := filepath.Join(stateDir, "gish", "command-index.json")
+	cachePath := filepath.Join(stateDir, "koi", "command-index.json")
 	deadline = time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(cachePath); err == nil {

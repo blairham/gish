@@ -3,19 +3,19 @@
 // detection, and the jobs/fg/bg builtins. Design notes live on issue #5.
 //
 // The interpreter recognizes jobs/fg/bg as builtins and would reject
-// them before gish's builtin seam, so a CallHandler rewrites those names
+// them before koi's builtin seam, so a CallHandler rewrites those names
 // to registry-internal ones first (the #18 finding).
 package jobs
 
 import "context"
 
-// Builtin names as the user types them → the gish builtin registry names
+// Builtin names as the user types them → the koi builtin registry names
 // they are rewritten to. The dunder names fall through the interpreter's
 // builtin dispatch into the ExecHandler seam.
 var rewrites = map[string]string{
-	"jobs": "__gish_jobs",
-	"fg":   "__gish_fg",
-	"bg":   "__gish_bg",
+	"jobs": "__koi_jobs",
+	"fg":   "__koi_fg",
+	"bg":   "__koi_bg",
 }
 
 // RewriteCall is the interp.CallHandlerFunc that reroutes job-control

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blairham/gish/internal/acp"
+	"github.com/blairham/koi-shell/internal/acp"
 )
 
 // The ACP round trip (#167), against a real agent process.
@@ -90,7 +90,7 @@ func TestAgentRunsCommandsThroughTheClient(t *testing.T) {
 	defer cancel()
 
 	// The runner records what it was asked to run, which is how a
-	// caller with a policy — gish's sandbox — proves the command went
+	// caller with a policy — koi's sandbox — proves the command went
 	// through it rather than around it.
 	var mu sync.Mutex
 	var ran []string

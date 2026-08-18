@@ -10,15 +10,15 @@ import (
 func TestMarkPromptWrapsWithoutDisturbingContent(t *testing.T) {
 	t.Parallel()
 
-	got := markPrompt("gish$ ", true)
+	got := markPrompt("koi$ ", true)
 	if !strings.HasPrefix(got, "\x1b]133;A") || !strings.HasSuffix(got, "\x1b]133;B\x1b\\") {
 		t.Errorf("marks missing: %q", got)
 	}
-	if !strings.Contains(got, "gish$ ") {
+	if !strings.Contains(got, "koi$ ") {
 		t.Errorf("prompt content lost: %q", got)
 	}
 	// Off means byte-identical: a terminal that hates OSC gets nothing.
-	if got := markPrompt("gish$ ", false); got != "gish$ " {
+	if got := markPrompt("koi$ ", false); got != "koi$ " {
 		t.Errorf("disabled marks still wrote: %q", got)
 	}
 }
@@ -50,7 +50,7 @@ func TestSemanticMarksOptOut(t *testing.T) {
 	if !semanticMarksOn(runner) {
 		t.Error("marks should default on: they are inert where unsupported")
 	}
-	if err := runner.Run(t.Context(), parseLine(t, `GISH_SEMANTIC_MARKS=off`)); err != nil {
+	if err := runner.Run(t.Context(), parseLine(t, `KOI_SEMANTIC_MARKS=off`)); err != nil {
 		t.Fatal(err)
 	}
 	if semanticMarksOn(runner) {
@@ -119,17 +119,17 @@ func TestUserVarsRespectTheSecretRules(t *testing.T) {
 	if strings.Contains(got, "wJalrXUtnFEMIK") {
 		t.Errorf("a secret was published to the terminal: %q", got)
 	}
-	decoded := decodeUserVar(t, got, "gish_command")
+	decoded := decodeUserVar(t, got, "koi_command")
 	if decoded != "export" {
 		t.Errorf("published command = %q, want just the first word", decoded)
 	}
 
 	b.Reset()
 	markUserVars(&b, true, "make build", 1500*time.Millisecond)
-	if got := decodeUserVar(t, b.String(), "gish_command"); got != "make build" {
+	if got := decodeUserVar(t, b.String(), "koi_command"); got != "make build" {
 		t.Errorf("ordinary command = %q", got)
 	}
-	if got := decodeUserVar(t, b.String(), "gish_duration_ms"); got != "1500" {
+	if got := decodeUserVar(t, b.String(), "koi_duration_ms"); got != "1500" {
 		t.Errorf("duration = %q, want 1500", got)
 	}
 }
@@ -152,7 +152,7 @@ func decodeUserVar(t *testing.T, out, name string) string {
 	return ""
 }
 
-// The knob is per-feature, because the three things gish emits carry
+// The knob is per-feature, because the three things koi emits carry
 // different risks: marks are inert, OSC 7 is a path, and SetUserVar is
 // the command line.
 func TestSemanticFeatureSelection(t *testing.T) {
@@ -168,9 +168,9 @@ func TestSemanticFeatureSelection(t *testing.T) {
 		"nonsense":     {},
 	}
 	for setting, want := range tests {
-		got := semanticFeatures(runnerWithVars(t, map[string]string{"GISH_SEMANTIC_MARKS": setting}))
+		got := semanticFeatures(runnerWithVars(t, map[string]string{"KOI_SEMANTIC_MARKS": setting}))
 		if got != want {
-			t.Errorf("GISH_SEMANTIC_MARKS=%q gave %+v, want %+v", setting, got, want)
+			t.Errorf("KOI_SEMANTIC_MARKS=%q gave %+v, want %+v", setting, got, want)
 		}
 	}
 }

@@ -3,13 +3,13 @@
 One command:
 
 ```sh
-gish migrate            # read your setup, show what would be imported
-gish migrate --apply    # write the gish rc
-gish migrate --apply --history   # and bring your history across
+koi migrate            # read your setup, show what would be imported
+koi migrate --apply    # write the koi rc
+koi migrate --apply --history   # and bring your history across
 ```
 
 It reads `.zshrc`, `.bashrc`, `.bash_profile`, `.bash_aliases`,
-`.zprofile`, `.zshenv` and `.profile`, and writes a gish rc with your
+`.zprofile`, `.zshenv` and `.profile`, and writes a koi rc with your
 aliases, functions, exports, `PATH` entries and the nearest theme.
 
 **Nothing is executed.** Your rc files are parsed, never sourced —
@@ -23,21 +23,21 @@ original.
 
 ## What comes across
 
-| from your rc | into gish |
+| from your rc | into koi |
 | --- | --- |
-| `alias ll='ls -alF'` | the same alias — gish expands aliases interactively, as bash does |
+| `alias ll='ls -alF'` | the same alias — koi expands aliases interactively, as bash does |
 | `mkcd() { … }` | copied verbatim |
 | `export EDITOR=nvim` | the same export |
 | `PATH=$HOME/bin:$PATH` | the same prepend, in order |
-| `eval "$(starship init …)"` | `GISH_THEME=starship` — your starship prompt, rendered by starship |
-| `eval "$(oh-my-posh init bash …)"` | the same line, unchanged — its init sets `PS1` and gish honors it |
-| `POWERLEVEL9K_*` / `source ~/.p10k.zsh` | `GISH_THEME=p10k`; `prompt import` takes the whole config, all 300-odd settings |
+| `eval "$(starship init …)"` | `KOI_THEME=starship` — your starship prompt, rendered by starship |
+| `eval "$(oh-my-posh init bash …)"` | the same line, unchanged — its init sets `PS1` and koi honors it |
+| `POWERLEVEL9K_*` / `source ~/.p10k.zsh` | `KOI_THEME=p10k`; `prompt import` takes the whole config, all 300-odd settings |
 | `ZSH_THEME="agnoster"` | the closest built-in, named in the report |
-| zinit / zi | `zi migrate` — gish has that engine natively |
+| zinit / zi | `zi migrate` — koi has that engine natively |
 | `.zsh_history` / `.bash_history` | the JSONL store, with timestamps and durations kept |
 
 History import goes through the same secret rules as a typed command
-([#10](https://github.com/blairham/gish/issues/10)): a history file is
+([#10](https://github.com/blairham/koi-shell/issues/10)): a history file is
 the single most likely place for a token to be sitting, and the importer
 does not put one back on disk.
 
@@ -50,21 +50,21 @@ does not put one back on disk.
 - **zsh-only syntax** — `setopt`, `zstyle`, `autoload -Uz`, `${(f)…}`.
   A file that uses it is read line by line instead, so the ninety lines
   that do translate still do; the rest is listed.
-- **oh-my-zsh plugins and themes.** They are zsh scripts, and gish does
+- **oh-my-zsh plugins and themes.** They are zsh scripts, and koi does
   not run zsh. Plugins that are shell-agnostic can be listed in
   `plugins.toml` with `plugin add`; themes have no port.
-- **Your prompt string**, if you wrote one by hand. gish renders `PS1`,
+- **Your prompt string**, if you wrote one by hand. koi renders `PS1`,
   including bash's escapes, so it usually just works — but it is
   reported rather than assumed, because a `PROMPT` written in zsh's
   escape vocabulary is a different language.
 
 ## After the import
 
-Your existing tools do not need converting at all. gish implements
+Your existing tools do not need converting at all. koi implements
 bash's hook surface, so `eval "$(direnv hook bash)"`,
 `eval "$(fzf --bash)"`, `eval "$(zoxide init bash)"` and the rest work
 as they are — see [porting.md](porting.md#your-existing-tools) and the
 measured matrix in [interactive-compat.md](interactive-compat.md).
 
-Try it without commitment: run `gish` in one tab. No `chsh`, nothing to
+Try it without commitment: run `koi` in one tab. No `chsh`, nothing to
 undo but two directories.

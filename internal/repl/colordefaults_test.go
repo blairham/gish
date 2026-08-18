@@ -92,17 +92,17 @@ func TestColorDefaultsCanBeTurnedOff(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 
 	r, _ := colorRunner(t)
-	runLine(t, r, `export GISH_COLOR_DEFAULTS=off`)
+	runLine(t, r, `export KOI_COLOR_DEFAULTS=off`)
 	applyColorDefaults(context.Background(), r)
 	if got := runLine(t, r, `printf '%s' "$LESS_TERMCAP_md"`); got != "" {
-		t.Errorf("LESS_TERMCAP_md = %q with GISH_COLOR_DEFAULTS=off", got)
+		t.Errorf("LESS_TERMCAP_md = %q with KOI_COLOR_DEFAULTS=off", got)
 	}
 }
 
 // ls is colored by whichever mechanism the platform's ls actually reads:
 // BSD ls takes CLICOLOR from the environment, GNU ls needs --color=auto
 // on the command line. Both are tty-aware themselves, so `ls | cat`
-// stays plain without gish arranging anything.
+// stays plain without koi arranging anything.
 func TestColorDefaultsColorLsPerPlatform(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("NO_COLOR", "")

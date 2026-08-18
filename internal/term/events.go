@@ -234,7 +234,7 @@ func appendPasted(paste *strings.Builder, ev uv.Event) {
 	}
 }
 
-// specialKeys maps ultraviolet key codes to gish keys. Anything not here
+// specialKeys maps ultraviolet key codes to koi keys. Anything not here
 // and not printable is dropped — the editor only binds what it knows.
 var specialKeys = map[rune]Key{
 	uv.KeyEnter:     KeyEnter,

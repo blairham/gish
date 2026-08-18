@@ -13,12 +13,12 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/pluginhost"
-	pluginapi "github.com/blairham/gish/pkg/pluginapi/v1"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/pluginhost"
+	pluginapi "github.com/blairham/koi-shell/pkg/pluginapi/v1"
 )
 
-// EXPERIMENTAL, FROZEN (#111). gish's position is that it hosts other
+// EXPERIMENTAL, FROZEN (#111). koi's position is that it hosts other
 // people's agents rather than being one: the researched demand for AI in
 // a shell is `??` and `explain`, and sandbox profiles plus gated env are
 // what a shell uniquely contributes to agents that already run inside
@@ -112,7 +112,7 @@ func stepDestructive(command string) bool {
 // handleAgent drives one task end to end.
 func handleAgent(ctx context.Context, deps agentDeps, task string) {
 	if aiMgr == nil {
-		fmt.Fprintln(deps.out, "gish: agent: no plugin host in this session")
+		fmt.Fprintln(deps.out, "koi: agent: no plugin host in this session")
 		return
 	}
 	task = unquoteTask(task)
@@ -123,7 +123,7 @@ func handleAgent(ctx context.Context, deps agentDeps, task string) {
 
 	plan, err := aiMgr.plan(ctx, deps.runner, task)
 	if err != nil {
-		fmt.Fprintln(deps.out, "gish: agent:", err)
+		fmt.Fprintln(deps.out, "koi: agent:", err)
 		return
 	}
 
@@ -159,7 +159,7 @@ func handleAgent(ctx context.Context, deps agentDeps, task string) {
 
 	for i, step := range plan.GetSteps() {
 		fmt.Fprintf(deps.out, "\nstep %d/%d: %s\n  $ %s\n", i+1, len(plan.GetSteps()), step.GetTitle(), step.GetCommand())
-		line := sandboxWrap(deps.runner, step.GetCommand(), "GISH_AGENT_SANDBOX")
+		line := sandboxWrap(deps.runner, step.GetCommand(), "KOI_AGENT_SANDBOX")
 		if mode == "s" || gated[i] {
 			warn := ""
 			if gated[i] {
@@ -237,7 +237,7 @@ func savePlanArtifact(task string, plan *pluginapi.PlanResponse) string {
 		}
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	dir := filepath.Join(dataHome, "gish", "agent")
+	dir := filepath.Join(dataHome, "koi", "agent")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return ""
 	}

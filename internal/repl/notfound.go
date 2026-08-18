@@ -8,7 +8,7 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/complete"
+	"github.com/blairham/koi-shell/internal/complete"
 )
 
 // notFoundMiddleware improves the shell's worst error message (#42):
@@ -38,7 +38,7 @@ func notFoundMiddleware(getRunner func() *interp.Runner) func(interp.ExecHandler
 					return runNotFoundHandler(ctx, runner, name, args)
 				}
 			}
-			fmt.Fprintf(hc.Stderr, "gish: command not found: %s", args[0])
+			fmt.Fprintf(hc.Stderr, "koi: command not found: %s", args[0])
 			if runner != nil {
 				if s := suggestCommand(args[0], runner); s != "" {
 					// Suggest the line, not the word: the user typed

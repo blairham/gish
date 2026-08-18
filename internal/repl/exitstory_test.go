@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blairham/gish/internal/history"
+	"github.com/blairham/koi-shell/internal/history"
 )
 
 // The notice belongs to the window where its own claim is true, and must
-// stop once gish has left a trace — otherwise it is both nagging and, by
+// stop once koi has left a trace — otherwise it is both nagging and, by
 // then, lying.
 func TestExitStoryOnlyWhileNothingHasBeenLeftBehind(t *testing.T) {
 	var first bytes.Buffer
@@ -23,7 +23,7 @@ func TestExitStoryOnlyWhileNothingHasBeenLeftBehind(t *testing.T) {
 	var later bytes.Buffer
 	writeExitStory(&later, false)
 	if later.Len() != 0 {
-		t.Errorf("printed after gish had left state behind: %q", later.String())
+		t.Errorf("printed after koi had left state behind: %q", later.String())
 	}
 }
 
@@ -34,7 +34,7 @@ func TestUntouchedSeesTheFirstCommandAndCreatesNothing(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "cfg"))
-	t.Setenv("GISH_RC", filepath.Join(home, "cfg", "gish", "gishrc"))
+	t.Setenv("KOI_RC", filepath.Join(home, "cfg", "koi", "koirc"))
 
 	if !untouched() {
 		t.Fatal("a fresh home did not read as untouched")
@@ -63,22 +63,22 @@ func TestUntouchedSeesTheFirstCommandAndCreatesNothing(t *testing.T) {
 }
 
 // The state directory counts too — session records and the command index
-// land there, and either means gish has run here before.
+// land there, and either means koi has run here before.
 func TestUntouchedSeesTheStateDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
-	t.Setenv("GISH_RC", filepath.Join(home, "gishrc"))
+	t.Setenv("KOI_RC", filepath.Join(home, "koirc"))
 
 	if !untouched() {
 		t.Fatal("a fresh home did not read as untouched")
 	}
-	if err := os.MkdirAll(filepath.Join(home, "state", "gish"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, "state", "koi"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if untouched() {
-		t.Error("still untouched with a gish state directory present")
+		t.Error("still untouched with a koi state directory present")
 	}
 }
 
@@ -89,9 +89,9 @@ func TestUntouchedRespectsAnExistingRC(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
-	rc := filepath.Join(home, "gishrc")
-	t.Setenv("GISH_RC", rc)
-	if err := os.WriteFile(rc, []byte("GISH_THEME=p10k\n"), 0o600); err != nil {
+	rc := filepath.Join(home, "koirc")
+	t.Setenv("KOI_RC", rc)
+	if err := os.WriteFile(rc, []byte("KOI_THEME=p10k\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if untouched() {
@@ -121,18 +121,18 @@ func TestExitStorySaysNothingWasChangedAndHowToUndo(t *testing.T) {
 // "uninstall it somehow" is not an exit story.
 func TestRevertCommandNamesSomethingRunnable(t *testing.T) {
 	got := revertCommand()
-	if !strings.Contains(got, "brew uninstall gish") && !strings.Contains(got, "deleting ") {
+	if !strings.Contains(got, "brew uninstall koi") && !strings.Contains(got, "deleting ") {
 		t.Errorf("revert command names no concrete action: %q", got)
 	}
 }
 
-// checkLoginShell's happy path is the reversibility claim itself: if gish
+// checkLoginShell's happy path is the reversibility claim itself: if koi
 // is not $SHELL, doctor must say there is nothing to undo.
 func TestDoctorLoginShellReportsNothingToRevert(t *testing.T) {
 	t.Setenv("SHELL", "/bin/zsh")
 	got := checkLoginShell()
 	if got.status != checkOK {
-		t.Fatalf("status = %v, want OK when gish is not the login shell (detail: %q)", got.status, got.detail)
+		t.Fatalf("status = %v, want OK when koi is not the login shell (detail: %q)", got.status, got.detail)
 	}
 	if !strings.Contains(got.detail, "nothing to revert") {
 		t.Errorf("detail does not state the reversibility claim: %q", got.detail)
@@ -151,11 +151,11 @@ func TestFallbackShellPrefersAListedConventionalShell(t *testing.T) {
 
 func TestSameFileFollowsSymlinks(t *testing.T) {
 	dir := t.TempDir()
-	real := filepath.Join(dir, "gish")
+	real := filepath.Join(dir, "koi")
 	if err := os.WriteFile(real, []byte("#!/bin/sh\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(dir, "gish-link")
+	link := filepath.Join(dir, "koi-link")
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("no symlink support: %v", err)
 	}

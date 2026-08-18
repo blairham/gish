@@ -6,9 +6,9 @@ by a person and which have only been compiled.
 
 Today: **WSL2 is the supported story.** Native Windows builds, passes
 its test suite on a real windows runner, and packages
-([#89](https://github.com/blairham/gish/issues/89)); what has not
-happened is someone typing into gish on Windows Terminal
-([#87](https://github.com/blairham/gish/issues/87)).
+([#89](https://github.com/blairham/koi-shell/issues/89)); what has not
+happened is someone typing into koi on Windows Terminal
+([#87](https://github.com/blairham/koi-shell/issues/87)).
 
 ## What CI proves on every PR
 
@@ -54,7 +54,7 @@ and none of it is asserted anywhere until someone has run it:
 - [ ] **Grapheme width**: emoji and CJK in the prompt and the buffer.
 - [ ] **Ctrl-C / Ctrl-Break**: they arrive as console control events
       rather than signals. The posture from
-      [#3](https://github.com/blairham/gish/issues/3) has to hold — the
+      [#3](https://github.com/blairham/koi-shell/issues/3) has to hold — the
       foreground command dies, the shell never does — which needs
       `CREATE_NEW_PROCESS_GROUP` on the child and
       `GenerateConsoleCtrlEvent` to reach it.
@@ -71,12 +71,12 @@ cannot do it yet.
 ## Installing
 
 Once a release is tagged with
-[#89](https://github.com/blairham/gish/issues/89)'s configuration:
+[#89](https://github.com/blairham/koi-shell/issues/89)'s configuration:
 
 ```powershell
-winget install blairham.gish
+winget install blairham.koi
 # or
-scoop install gish
+scoop install koi
 ```
 
 Both are wired through GoReleaser alongside the Homebrew tap, and both

@@ -27,7 +27,7 @@ func toolEnv(t *testing.T) (workDir string) {
 
 func TestToolPinAndOverview(t *testing.T) {
 	work := toolEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, _, err := runConfigScript(t, rc,
 		"cd "+quoteArg(t, work)+"\ntool pin golang 1.26.6\ntool pin nodejs 22.0.0\ntool\ntool list golang\n")
 	if err != nil {
@@ -57,7 +57,7 @@ func TestToolPinAndOverview(t *testing.T) {
 
 func TestToolGlobalWritesHomeFile(t *testing.T) {
 	work := toolEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	if _, _, err := runConfigScript(t, rc, "cd "+quoteArg(t, work)+"\ntool global golang 1.26.6\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -74,19 +74,19 @@ func TestToolGlobalWritesHomeFile(t *testing.T) {
 func TestToolInstallWithoutAsdf(t *testing.T) {
 	toolEnv(t)
 	t.Setenv("PATH", t.TempDir()) // no asdf here
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	_, errOut, _ := runConfigScript(t, rc, "tool install golang 1.26.6\n")
 	if !strings.Contains(errOut, "asdf is not installed") || !strings.Contains(errOut, "--from") {
 		t.Errorf("stderr = %q", errOut)
 	}
 }
 
-// TestToolInstallFromDelegates pins the #112 scope line: gish switches
+// TestToolInstallFromDelegates pins the #112 scope line: koi switches
 // versions and names the tool that installs them, rather than shipping
 // a downloader of its own.
 func TestToolInstallFromDelegates(t *testing.T) {
 	toolEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	out, errOut, err := runConfigScript(t, rc,
 		"tool install shellcheck v0.10.0 --from koalaman/shellcheck\n")
 	if err == nil {
@@ -109,7 +109,7 @@ func TestToolInstallFromDelegates(t *testing.T) {
 
 func TestToolUnknownArgs(t *testing.T) {
 	toolEnv(t)
-	rc := filepath.Join(t.TempDir(), "gishrc")
+	rc := filepath.Join(t.TempDir(), "koirc")
 	_, errOut, _ := runConfigScript(t, rc, "tool frobnicate\n")
 	if !strings.Contains(errOut, "unknown arguments") {
 		t.Errorf("stderr = %q", errOut)

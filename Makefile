@@ -1,4 +1,4 @@
-BINARY_NAME := gish
+BINARY_NAME := koi
 BUILD_DIR := build
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --verify --quiet HEAD 2>/dev/null || echo "none")
@@ -11,10 +11,10 @@ all: build
 
 build:
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/gish
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/koi
 
 install:
-	go install $(LDFLAGS) ./cmd/gish
+	go install $(LDFLAGS) ./cmd/koi
 
 clean:
 	rm -rf $(BUILD_DIR) coverage.out coverage.html
@@ -42,16 +42,16 @@ tidy:
 check: fmt vet test
 
 # Startup latency: prints exec-to-first-prompt timings (#37). The CI
-# regression gate lives in cmd/gish/startup_test.go.
+# regression gate lives in cmd/koi/startup_test.go.
 bench-startup:
-	go test -run TestStartupBudget -v ./cmd/gish/ | grep 'startup runs'
+	go test -run TestStartupBudget -v ./cmd/koi/ | grep 'startup runs'
 
 .PHONY: bench
 bench: ## Regenerate docs/bench.md: startup table + keystroke p50/p99 (#102)
 	go test ./internal/bench/ -run TestBenchmarkReport -update -v
 
 .PHONY: compat
-compat: ## Regenerate docs/compat.md from a live bash-vs-gish run (#101)
+compat: ## Regenerate docs/compat.md from a live bash-vs-koi run (#101)
 	go test ./internal/compat/ -run TestCompatScoreboard -update -v
 
 .PHONY: compat-check
@@ -60,19 +60,19 @@ compat-check: ## Fail if the corpus passes fewer cases than published
 
 .PHONY: paste-gate
 paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161) and the ecosystem matrix (#159)
-	GISH_GATES=1 go test ./internal/compat/ -run TestInteractiveGates -update -v
+	KOI_GATES=1 go test ./internal/compat/ -run TestInteractiveGates -update -v
 
 .PHONY: paste-gate-check
 paste-gate-check: ## Fail if a pasted construct, an init script, or an installed tool regressed
-	GISH_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
+	KOI_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
 
-# Regenerate pkg/pluginapi/v1 from proto/gish/plugin/v1. Needs protoc plus
+# Regenerate pkg/pluginapi/v1 from proto/koi/plugin/v1. Needs protoc plus
 # protoc-gen-go and protoc-gen-go-grpc on PATH.
 proto:
 	protoc --proto_path=proto \
-		--go_out=. --go_opt=module=github.com/blairham/gish \
-		--go-grpc_out=. --go-grpc_opt=module=github.com/blairham/gish \
-		proto/gish/plugin/v1/*.proto
+		--go_out=. --go_opt=module=github.com/blairham/koi-shell \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/blairham/koi-shell \
+		proto/koi/plugin/v1/*.proto
 
 # Toolchain pin invariant. The check itself lives in blairham/pre-commit-hooks
 # and is wired up in .pre-commit-config.yaml — there is no local copy.

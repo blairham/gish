@@ -8,12 +8,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // The selection primitive (#100). fzf's install count is the evidence
 // that shells are missing this, not that fzf is unusually good — so
-// gish ships one picker and every surface reuses it: ctrl-r history,
+// koi ships one picker and every surface reuses it: ctrl-r history,
 // the `pick` builtin, and later completion menus and blocks.
 //
 // It runs like any full-screen program: the caller hands over the

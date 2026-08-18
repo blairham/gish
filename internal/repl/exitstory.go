@@ -9,9 +9,9 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/history"
-	"github.com/blairham/gish/internal/term"
-	"github.com/blairham/gish/internal/ui"
+	"github.com/blairham/koi-shell/internal/history"
+	"github.com/blairham/koi-shell/internal/term"
+	"github.com/blairham/koi-shell/internal/ui"
 )
 
 // The exit story (#212). The forgotten half of every fast-adoption story
@@ -21,7 +21,7 @@ import (
 // churn stage — the documented fish lockout stories are all people who
 // ran chsh and then could not get back.
 //
-// gish already makes the claim true: startup creates nothing (#163), the
+// koi already makes the claim true: startup creates nothing (#163), the
 // login shell is never touched, and no dotfile is rewritten. What was
 // missing is *saying* it, once, where a trial user is standing.
 //
@@ -32,7 +32,7 @@ import (
 // moment it is printed. #163's rule is not in tension with this feature;
 // it *is* this feature.
 //
-// So nothing is recorded. The notice is shown while gish has left no
+// So nothing is recorded. The notice is shown while koi has left no
 // trace yet, which is exactly the window where the claim is true and the
 // reader has invested nothing. Running one command creates history, and
 // the notice never appears again. Someone who opens three tabs and types
@@ -44,7 +44,7 @@ import (
 // session — the one that matters when a new machine is bootstrapped from
 // dotfiles.
 func exitStory(runner *interp.Runner) {
-	if shellVar(runner, "GISH_WELCOME", "") == "off" {
+	if shellVar(runner, "KOI_WELCOME", "") == "off" {
 		return
 	}
 	// A trial user is at a terminal. Piped or scripted invocations get
@@ -55,18 +55,18 @@ func exitStory(runner *interp.Runner) {
 	writeExitStory(os.Stderr, untouched())
 }
 
-// untouched reports whether gish has left anything on this machine yet.
+// untouched reports whether koi has left anything on this machine yet.
 // It only ever stats; it never creates, which is what lets the notice it
 // gates stay true.
 //
-// The signal is the gish *directories*, not the history file
+// The signal is the koi *directories*, not the history file
 // specifically. Keying on history.jsonl was tried and was wrong: a
 // session can leave the directory containing z's dirs.json without ever
 // flushing a history entry, so a user who had plainly used the shell
-// still read as a first look. Anything under these roots means gish has
+// still read as a first look. Anything under these roots means koi has
 // been here.
 func untouched() bool {
-	for _, dir := range gishStateRoots() {
+	for _, dir := range koiStateRoots() {
 		if dir == "" {
 			continue
 		}
@@ -84,17 +84,17 @@ func untouched() bool {
 	return true
 }
 
-// gishStateRoots are the per-user directories gish writes into, derived
+// koiStateRoots are the per-user directories koi writes into, derived
 // from the same paths the writers use rather than rebuilt by hand.
-func gishStateRoots() []string {
+func koiStateRoots() []string {
 	var roots []string
 	if path, err := history.DefaultPath(); err == nil && path != "" {
-		roots = append(roots, filepath.Dir(path)) // $XDG_DATA_HOME/gish
+		roots = append(roots, filepath.Dir(path)) // $XDG_DATA_HOME/koi
 	}
 	if stateHome := os.Getenv("XDG_STATE_HOME"); stateHome != "" {
-		roots = append(roots, filepath.Join(stateHome, "gish"))
+		roots = append(roots, filepath.Join(stateHome, "koi"))
 	} else if home, err := os.UserHomeDir(); err == nil {
-		roots = append(roots, filepath.Join(home, ".local", "state", "gish"))
+		roots = append(roots, filepath.Join(home, ".local", "state", "koi"))
 	}
 	return roots
 }
@@ -109,7 +109,7 @@ func writeExitStory(w io.Writer, firstLook bool) {
 	}
 	style := ui.Styles(ui.Enabled(w))
 	fmt.Fprintln(w, style.Dim.Render(
-		"gish: nothing on this machine was changed — not your login shell, no dotfiles rewritten. "+
+		"koi: nothing on this machine was changed — not your login shell, no dotfiles rewritten. "+
 			revertCommand()))
 	fmt.Fprintln(w, style.Dim.Render(
 		"      `config welcome off` skips this on machines you set up from dotfiles."))
@@ -122,7 +122,7 @@ func writeExitStory(w io.Writer, firstLook bool) {
 func revertCommand() string {
 	self, err := os.Executable()
 	if err != nil {
-		return "Uninstalling removes it completely; gish leaves nothing else behind."
+		return "Uninstalling removes it completely; koi leaves nothing else behind."
 	}
 	if resolved, rerr := filepath.EvalSymlinks(self); rerr == nil {
 		self = resolved
@@ -131,7 +131,7 @@ func revertCommand() string {
 		// Cellar is the real install root; the bin entry is a symlink into
 		// it, which is why the path is resolved first.
 		if strings.HasPrefix(self, filepath.Join(prefix, "Cellar")+string(filepath.Separator)) {
-			return "Undo the whole thing with `brew uninstall gish`."
+			return "Undo the whole thing with `brew uninstall koi`."
 		}
 	}
 	return fmt.Sprintf("Undo the whole thing by deleting %s.", self)

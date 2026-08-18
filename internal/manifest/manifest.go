@@ -1,4 +1,4 @@
-// Package manifest is gish's declarative plugin configuration (#108):
+// Package manifest is koi's declarative plugin configuration (#108):
 // four concepts, no modifier language to memorize.
 //
 // The design goal, from docs/design.md: "declarative manifest, lazy
@@ -17,7 +17,7 @@
 //	lazy   = "command:fzf"      # load on first use of this command
 //
 // The zi engine still does the work underneath; this is the surface
-// gish documents and the one `plugin add` writes.
+// koi documents and the one `plugin add` writes.
 package manifest
 
 import (
@@ -96,7 +96,7 @@ type Manifest struct {
 	Plugins []Plugin `toml:"plugin"`
 }
 
-// DefaultPath is $XDG_CONFIG_HOME/gish/plugins.toml.
+// DefaultPath is $XDG_CONFIG_HOME/koi/plugins.toml.
 func DefaultPath() (string, error) {
 	confHome := os.Getenv("XDG_CONFIG_HOME")
 	if confHome == "" {
@@ -106,7 +106,7 @@ func DefaultPath() (string, error) {
 		}
 		confHome = filepath.Join(home, ".config")
 	}
-	return filepath.Join(confHome, "gish", "plugins.toml"), nil
+	return filepath.Join(confHome, "koi", "plugins.toml"), nil
 }
 
 // Load reads the manifest; a missing file is an empty manifest, not an
@@ -170,7 +170,7 @@ func (m *Manifest) Save(path string) error {
 		return err
 	}
 	var b strings.Builder
-	b.WriteString("# gish plugins — `plugin add|remove|pin|enable|disable` edit this file,\n")
+	b.WriteString("# koi plugins — `plugin add|remove|pin|enable|disable` edit this file,\n")
 	b.WriteString("# and hand edits are equally fine. Four knobs: source, kind, pin, lazy.\n")
 	enc := toml.NewEncoder(&b)
 	if err := enc.Encode(m); err != nil {

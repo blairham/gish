@@ -8,11 +8,11 @@
 // plugin may never hold an exec channel (#34), and that invariant is
 // worth more than the convenience.
 //
-// What ACP deliberately omits is what gish already has. The spec
+// What ACP deliberately omits is what koi already has. The spec
 // defines no permission model, no sandboxing, and no timeout — it tells
 // agents to race a timer against `wait_for_exit` and call
 // `terminal/kill`. Sandbox profiles (#21) and a deadline on every call
-// are invariants here already, so hosting an agent through gish means
+// are invariants here already, so hosting an agent through koi means
 // its commands run under both without the agent doing anything.
 //
 // Wire version 1. v2 is a published draft as of July 2026 and its own

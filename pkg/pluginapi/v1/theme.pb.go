@@ -15,7 +15,7 @@
 // versions:
 // 	protoc-gen-go v1.36.12
 // 	protoc        v7.35.1
-// source: gish/plugin/v1/theme.proto
+// source: koi/plugin/v1/theme.proto
 
 package pluginapi
 
@@ -42,7 +42,7 @@ type ThemesRequest struct {
 
 func (x *ThemesRequest) Reset() {
 	*x = ThemesRequest{}
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -54,7 +54,7 @@ func (x *ThemesRequest) String() string {
 func (*ThemesRequest) ProtoMessage() {}
 
 func (x *ThemesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[0]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -67,7 +67,7 @@ func (x *ThemesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThemesRequest.ProtoReflect.Descriptor instead.
 func (*ThemesRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_theme_proto_rawDescGZIP(), []int{0}
+	return file_koi_plugin_v1_theme_proto_rawDescGZIP(), []int{0}
 }
 
 type ThemeDescriptor struct {
@@ -85,7 +85,7 @@ type ThemeDescriptor struct {
 
 func (x *ThemeDescriptor) Reset() {
 	*x = ThemeDescriptor{}
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -97,7 +97,7 @@ func (x *ThemeDescriptor) String() string {
 func (*ThemeDescriptor) ProtoMessage() {}
 
 func (x *ThemeDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[1]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -110,7 +110,7 @@ func (x *ThemeDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThemeDescriptor.ProtoReflect.Descriptor instead.
 func (*ThemeDescriptor) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_theme_proto_rawDescGZIP(), []int{1}
+	return file_koi_plugin_v1_theme_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ThemeDescriptor) GetName() string {
@@ -143,7 +143,7 @@ type ThemesResponse struct {
 
 func (x *ThemesResponse) Reset() {
 	*x = ThemesResponse{}
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -155,7 +155,7 @@ func (x *ThemesResponse) String() string {
 func (*ThemesResponse) ProtoMessage() {}
 
 func (x *ThemesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[2]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -168,7 +168,7 @@ func (x *ThemesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThemesResponse.ProtoReflect.Descriptor instead.
 func (*ThemesResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_theme_proto_rawDescGZIP(), []int{2}
+	return file_koi_plugin_v1_theme_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ThemesResponse) GetThemes() []*ThemeDescriptor {
@@ -209,7 +209,7 @@ type PromptContext struct {
 
 func (x *PromptContext) Reset() {
 	*x = PromptContext{}
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -221,7 +221,7 @@ func (x *PromptContext) String() string {
 func (*PromptContext) ProtoMessage() {}
 
 func (x *PromptContext) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[3]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -234,7 +234,7 @@ func (x *PromptContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptContext.ProtoReflect.Descriptor instead.
 func (*PromptContext) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_theme_proto_rawDescGZIP(), []int{3}
+	return file_koi_plugin_v1_theme_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *PromptContext) GetCwd() string {
@@ -325,7 +325,7 @@ type RenderPromptRequest struct {
 
 func (x *RenderPromptRequest) Reset() {
 	*x = RenderPromptRequest{}
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -337,7 +337,7 @@ func (x *RenderPromptRequest) String() string {
 func (*RenderPromptRequest) ProtoMessage() {}
 
 func (x *RenderPromptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[4]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -350,7 +350,7 @@ func (x *RenderPromptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderPromptRequest.ProtoReflect.Descriptor instead.
 func (*RenderPromptRequest) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_theme_proto_rawDescGZIP(), []int{4}
+	return file_koi_plugin_v1_theme_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RenderPromptRequest) GetTheme() string {
@@ -381,7 +381,7 @@ type RenderPromptResponse struct {
 
 func (x *RenderPromptResponse) Reset() {
 	*x = RenderPromptResponse{}
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[5]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -393,7 +393,7 @@ func (x *RenderPromptResponse) String() string {
 func (*RenderPromptResponse) ProtoMessage() {}
 
 func (x *RenderPromptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gish_plugin_v1_theme_proto_msgTypes[5]
+	mi := &file_koi_plugin_v1_theme_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -406,7 +406,7 @@ func (x *RenderPromptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderPromptResponse.ProtoReflect.Descriptor instead.
 func (*RenderPromptResponse) Descriptor() ([]byte, []int) {
-	return file_gish_plugin_v1_theme_proto_rawDescGZIP(), []int{5}
+	return file_koi_plugin_v1_theme_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RenderPromptResponse) GetPrompt() string {
@@ -430,18 +430,18 @@ func (x *RenderPromptResponse) GetRprompt() string {
 	return ""
 }
 
-var File_gish_plugin_v1_theme_proto protoreflect.FileDescriptor
+var File_koi_plugin_v1_theme_proto protoreflect.FileDescriptor
 
-const file_gish_plugin_v1_theme_proto_rawDesc = "" +
+const file_koi_plugin_v1_theme_proto_rawDesc = "" +
 	"\n" +
-	"\x1agish/plugin/v1/theme.proto\x12\x0egish.plugin.v1\"\x0f\n" +
+	"\x19koi/plugin/v1/theme.proto\x12\rkoi.plugin.v1\"\x0f\n" +
 	"\rThemesRequest\"d\n" +
 	"\x0fThemeDescriptor\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1b\n" +
-	"\tbudget_ms\x18\x03 \x01(\rR\bbudgetMs\"I\n" +
-	"\x0eThemesResponse\x127\n" +
-	"\x06themes\x18\x01 \x03(\v2\x1f.gish.plugin.v1.ThemeDescriptorR\x06themes\"\xa3\x02\n" +
+	"\tbudget_ms\x18\x03 \x01(\rR\bbudgetMs\"H\n" +
+	"\x0eThemesResponse\x126\n" +
+	"\x06themes\x18\x01 \x03(\v2\x1e.koi.plugin.v1.ThemeDescriptorR\x06themes\"\xa3\x02\n" +
 	"\rPromptContext\x12\x10\n" +
 	"\x03cwd\x18\x01 \x01(\tR\x03cwd\x12\x12\n" +
 	"\x04home\x18\x02 \x01(\tR\x04home\x12$\n" +
@@ -455,47 +455,47 @@ const file_gish_plugin_v1_theme_proto_rawDesc = "" +
 	"\x05width\x18\t \x01(\rR\x05width\x12\x14\n" +
 	"\x05color\x18\n" +
 	" \x01(\bR\x05color\x12\x1b\n" +
-	"\tevent_seq\x18\v \x01(\x04R\beventSeq\"d\n" +
+	"\tevent_seq\x18\v \x01(\x04R\beventSeq\"c\n" +
 	"\x13RenderPromptRequest\x12\x14\n" +
-	"\x05theme\x18\x01 \x01(\tR\x05theme\x127\n" +
-	"\acontext\x18\x02 \x01(\v2\x1d.gish.plugin.v1.PromptContextR\acontext\"i\n" +
+	"\x05theme\x18\x01 \x01(\tR\x05theme\x126\n" +
+	"\acontext\x18\x02 \x01(\v2\x1c.koi.plugin.v1.PromptContextR\acontext\"i\n" +
 	"\x14RenderPromptResponse\x12\x16\n" +
 	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12\x1f\n" +
 	"\vcont_prompt\x18\x02 \x01(\tR\n" +
 	"contPrompt\x12\x18\n" +
-	"\arprompt\x18\x03 \x01(\tR\arprompt2\xb3\x01\n" +
-	"\rThemeProvider\x12G\n" +
-	"\x06Themes\x12\x1d.gish.plugin.v1.ThemesRequest\x1a\x1e.gish.plugin.v1.ThemesResponse\x12Y\n" +
-	"\fRenderPrompt\x12#.gish.plugin.v1.RenderPromptRequest\x1a$.gish.plugin.v1.RenderPromptResponseB5Z3github.com/blairham/gish/pkg/pluginapi/v1;pluginapib\x06proto3"
+	"\arprompt\x18\x03 \x01(\tR\arprompt2\xaf\x01\n" +
+	"\rThemeProvider\x12E\n" +
+	"\x06Themes\x12\x1c.koi.plugin.v1.ThemesRequest\x1a\x1d.koi.plugin.v1.ThemesResponse\x12W\n" +
+	"\fRenderPrompt\x12\".koi.plugin.v1.RenderPromptRequest\x1a#.koi.plugin.v1.RenderPromptResponseB:Z8github.com/blairham/koi-shell/pkg/pluginapi/v1;pluginapib\x06proto3"
 
 var (
-	file_gish_plugin_v1_theme_proto_rawDescOnce sync.Once
-	file_gish_plugin_v1_theme_proto_rawDescData []byte
+	file_koi_plugin_v1_theme_proto_rawDescOnce sync.Once
+	file_koi_plugin_v1_theme_proto_rawDescData []byte
 )
 
-func file_gish_plugin_v1_theme_proto_rawDescGZIP() []byte {
-	file_gish_plugin_v1_theme_proto_rawDescOnce.Do(func() {
-		file_gish_plugin_v1_theme_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_theme_proto_rawDesc), len(file_gish_plugin_v1_theme_proto_rawDesc)))
+func file_koi_plugin_v1_theme_proto_rawDescGZIP() []byte {
+	file_koi_plugin_v1_theme_proto_rawDescOnce.Do(func() {
+		file_koi_plugin_v1_theme_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_theme_proto_rawDesc), len(file_koi_plugin_v1_theme_proto_rawDesc)))
 	})
-	return file_gish_plugin_v1_theme_proto_rawDescData
+	return file_koi_plugin_v1_theme_proto_rawDescData
 }
 
-var file_gish_plugin_v1_theme_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
-var file_gish_plugin_v1_theme_proto_goTypes = []any{
-	(*ThemesRequest)(nil),        // 0: gish.plugin.v1.ThemesRequest
-	(*ThemeDescriptor)(nil),      // 1: gish.plugin.v1.ThemeDescriptor
-	(*ThemesResponse)(nil),       // 2: gish.plugin.v1.ThemesResponse
-	(*PromptContext)(nil),        // 3: gish.plugin.v1.PromptContext
-	(*RenderPromptRequest)(nil),  // 4: gish.plugin.v1.RenderPromptRequest
-	(*RenderPromptResponse)(nil), // 5: gish.plugin.v1.RenderPromptResponse
+var file_koi_plugin_v1_theme_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_koi_plugin_v1_theme_proto_goTypes = []any{
+	(*ThemesRequest)(nil),        // 0: koi.plugin.v1.ThemesRequest
+	(*ThemeDescriptor)(nil),      // 1: koi.plugin.v1.ThemeDescriptor
+	(*ThemesResponse)(nil),       // 2: koi.plugin.v1.ThemesResponse
+	(*PromptContext)(nil),        // 3: koi.plugin.v1.PromptContext
+	(*RenderPromptRequest)(nil),  // 4: koi.plugin.v1.RenderPromptRequest
+	(*RenderPromptResponse)(nil), // 5: koi.plugin.v1.RenderPromptResponse
 }
-var file_gish_plugin_v1_theme_proto_depIdxs = []int32{
-	1, // 0: gish.plugin.v1.ThemesResponse.themes:type_name -> gish.plugin.v1.ThemeDescriptor
-	3, // 1: gish.plugin.v1.RenderPromptRequest.context:type_name -> gish.plugin.v1.PromptContext
-	0, // 2: gish.plugin.v1.ThemeProvider.Themes:input_type -> gish.plugin.v1.ThemesRequest
-	4, // 3: gish.plugin.v1.ThemeProvider.RenderPrompt:input_type -> gish.plugin.v1.RenderPromptRequest
-	2, // 4: gish.plugin.v1.ThemeProvider.Themes:output_type -> gish.plugin.v1.ThemesResponse
-	5, // 5: gish.plugin.v1.ThemeProvider.RenderPrompt:output_type -> gish.plugin.v1.RenderPromptResponse
+var file_koi_plugin_v1_theme_proto_depIdxs = []int32{
+	1, // 0: koi.plugin.v1.ThemesResponse.themes:type_name -> koi.plugin.v1.ThemeDescriptor
+	3, // 1: koi.plugin.v1.RenderPromptRequest.context:type_name -> koi.plugin.v1.PromptContext
+	0, // 2: koi.plugin.v1.ThemeProvider.Themes:input_type -> koi.plugin.v1.ThemesRequest
+	4, // 3: koi.plugin.v1.ThemeProvider.RenderPrompt:input_type -> koi.plugin.v1.RenderPromptRequest
+	2, // 4: koi.plugin.v1.ThemeProvider.Themes:output_type -> koi.plugin.v1.ThemesResponse
+	5, // 5: koi.plugin.v1.ThemeProvider.RenderPrompt:output_type -> koi.plugin.v1.RenderPromptResponse
 	4, // [4:6] is the sub-list for method output_type
 	2, // [2:4] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -503,26 +503,26 @@ var file_gish_plugin_v1_theme_proto_depIdxs = []int32{
 	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_gish_plugin_v1_theme_proto_init() }
-func file_gish_plugin_v1_theme_proto_init() {
-	if File_gish_plugin_v1_theme_proto != nil {
+func init() { file_koi_plugin_v1_theme_proto_init() }
+func file_koi_plugin_v1_theme_proto_init() {
+	if File_koi_plugin_v1_theme_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gish_plugin_v1_theme_proto_rawDesc), len(file_gish_plugin_v1_theme_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_koi_plugin_v1_theme_proto_rawDesc), len(file_koi_plugin_v1_theme_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gish_plugin_v1_theme_proto_goTypes,
-		DependencyIndexes: file_gish_plugin_v1_theme_proto_depIdxs,
-		MessageInfos:      file_gish_plugin_v1_theme_proto_msgTypes,
+		GoTypes:           file_koi_plugin_v1_theme_proto_goTypes,
+		DependencyIndexes: file_koi_plugin_v1_theme_proto_depIdxs,
+		MessageInfos:      file_koi_plugin_v1_theme_proto_msgTypes,
 	}.Build()
-	File_gish_plugin_v1_theme_proto = out.File
-	file_gish_plugin_v1_theme_proto_goTypes = nil
-	file_gish_plugin_v1_theme_proto_depIdxs = nil
+	File_koi_plugin_v1_theme_proto = out.File
+	file_koi_plugin_v1_theme_proto_goTypes = nil
+	file_koi_plugin_v1_theme_proto_depIdxs = nil
 }

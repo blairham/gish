@@ -17,14 +17,14 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 
-	"github.com/blairham/gish/internal/builtins"
-	"github.com/blairham/gish/internal/complete"
-	"github.com/blairham/gish/internal/editor"
+	"github.com/blairham/koi-shell/internal/builtins"
+	"github.com/blairham/koi-shell/internal/complete"
+	"github.com/blairham/koi-shell/internal/editor"
 )
 
 // `complete` and `compgen` (#159): programmable completion, bash's own.
 //
-// This is the largest single piece of the ecosystem gish inherits by
+// This is the largest single piece of the ecosystem koi inherits by
 // speaking bash. bash-completion ships completions for hundreds of
 // commands, and kubectl, docker, gh, terraform, aws and the rest each
 // emit a `complete -F` registration from `<tool> completion bash`. All
@@ -561,7 +561,7 @@ func completionScriptDirs() []string {
 // This is bash-completion's own dynamic loader, reimplemented: the
 // corpus is one file per command precisely so that a shell can load
 // them on demand, and sourcing all of them at startup would cost more
-// than every other part of gish's startup put together.
+// than every other part of koi's startup put together.
 func loadCompletionFor(runner *interp.Runner, cmd string) bool {
 	if cmd == "" || strings.ContainsAny(cmd, "/\\") {
 		return false

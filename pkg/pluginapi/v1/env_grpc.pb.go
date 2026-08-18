@@ -8,7 +8,7 @@
 //     diff-hash). Any change to the proposal — a different hash —
 //     re-pends and re-prompts, direnv's edit-reprompts semantics.
 //   - A deny-list of variables no plugin may set (loader hooks like
-//     LD_PRELOAD/DYLD_*, IFS, shell-internal GISH_*) is stripped
+//     LD_PRELOAD/DYLD_*, IFS, shell-internal KOI_*) is stripped
 //     host-side before a diff is even proposed. PATH is settable, but
 //     only ever through the visible allow flow above.
 //   - Requests carry the allowlisted env subset, never the full
@@ -21,7 +21,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/env.proto
+// source: koi/plugin/v1/env.proto
 
 package pluginapi
 
@@ -38,8 +38,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EnvProvider_EnvDiff_FullMethodName = "/gish.plugin.v1.EnvProvider/EnvDiff"
-	EnvProvider_Allow_FullMethodName   = "/gish.plugin.v1.EnvProvider/Allow"
+	EnvProvider_EnvDiff_FullMethodName = "/koi.plugin.v1.EnvProvider/EnvDiff"
+	EnvProvider_Allow_FullMethodName   = "/koi.plugin.v1.EnvProvider/Allow"
 )
 
 // EnvProviderClient is the client API for EnvProvider service.
@@ -53,9 +53,9 @@ type EnvProviderClient interface {
 	// plugin wrapping a tool with its *own* approval model can satisfy it
 	// in the same gesture (#137).
 	//
-	// The motivating case is direnv: it has `direnv allow`, and gish has
+	// The motivating case is direnv: it has `direnv allow`, and koi has
 	// the trust flow above. Prompting twice for one action is
-	// unacceptable, and letting the wrapped tool's prompt replace gish's
+	// unacceptable, and letting the wrapped tool's prompt replace koi's
 	// would give up the host-enforced guarantees. So `trust allow` calls
 	// this first, then re-asks for the diff.
 	//
@@ -105,9 +105,9 @@ type EnvProviderServer interface {
 	// plugin wrapping a tool with its *own* approval model can satisfy it
 	// in the same gesture (#137).
 	//
-	// The motivating case is direnv: it has `direnv allow`, and gish has
+	// The motivating case is direnv: it has `direnv allow`, and koi has
 	// the trust flow above. Prompting twice for one action is
-	// unacceptable, and letting the wrapped tool's prompt replace gish's
+	// unacceptable, and letting the wrapped tool's prompt replace koi's
 	// would give up the host-enforced guarantees. So `trust allow` calls
 	// this first, then re-asks for the diff.
 	//
@@ -193,7 +193,7 @@ func _EnvProvider_Allow_Handler(srv interface{}, ctx context.Context, dec func(i
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var EnvProvider_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.EnvProvider",
+	ServiceName: "koi.plugin.v1.EnvProvider",
 	HandlerType: (*EnvProviderServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -206,5 +206,5 @@ var EnvProvider_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "gish/plugin/v1/env.proto",
+	Metadata: "koi/plugin/v1/env.proto",
 }

@@ -3,7 +3,7 @@
 // like a builtin: dispatched by name before PATH lookup, with its I/O
 // streamed over the connection.
 //
-// Precedence rules (decided on #11): interpreter and gish-native builtin
+// Precedence rules (decided on #11): interpreter and koi-native builtin
 // names are reserved — claims on them are rejected. Shell functions
 // shadow plugin commands (the user always wins). Plugin commands shadow
 // PATH binaries, like functions do. Between plugins, the
@@ -18,7 +18,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/command.proto
+// source: koi/plugin/v1/command.proto
 
 package pluginapi
 
@@ -35,8 +35,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CommandProvider_Commands_FullMethodName = "/gish.plugin.v1.CommandProvider/Commands"
-	CommandProvider_Run_FullMethodName      = "/gish.plugin.v1.CommandProvider/Run"
+	CommandProvider_Commands_FullMethodName = "/koi.plugin.v1.CommandProvider/Commands"
+	CommandProvider_Run_FullMethodName      = "/koi.plugin.v1.CommandProvider/Run"
 )
 
 // CommandProviderClient is the client API for CommandProvider service.
@@ -162,7 +162,7 @@ type CommandProvider_RunServer = grpc.BidiStreamingServer[RunInput, RunOutput]
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var CommandProvider_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.CommandProvider",
+	ServiceName: "koi.plugin.v1.CommandProvider",
 	HandlerType: (*CommandProviderServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -178,5 +178,5 @@ var CommandProvider_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "gish/plugin/v1/command.proto",
+	Metadata: "koi/plugin/v1/command.proto",
 }

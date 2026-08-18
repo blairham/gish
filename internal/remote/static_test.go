@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// `gish ssh` rests on one premise: the binary it copies is a pure-Go
+// `koi ssh` rests on one premise: the binary it copies is a pure-Go
 // static build. `uname -sm` reports "linux x86_64" and says nothing
 // about glibc versus musl, so a cgo-linked binary lands on Alpine and
 // fails with an error that *looks like the file is missing* — a support
@@ -37,7 +37,7 @@ func TestReleaseBuildsAreStatic(t *testing.T) {
 	}
 	for _, b := range cfg.Builds {
 		if !slices.Contains(b.Env, "CGO_ENABLED=0") {
-			t.Errorf("build %q does not set CGO_ENABLED=0; `gish ssh` copies these binaries to hosts whose libc we cannot know", b.ID)
+			t.Errorf("build %q does not set CGO_ENABLED=0; `koi ssh` copies these binaries to hosts whose libc we cannot know", b.ID)
 		}
 	}
 }

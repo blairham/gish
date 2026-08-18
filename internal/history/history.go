@@ -1,6 +1,6 @@
-// Package history is gish's local command history: a JSONL file of
+// Package history is koi's local command history: a JSONL file of
 // metadata-rich entries whose shape mirrors the tier-2 plugin contract's
-// HistoryEntry (proto/gish/plugin/v1/history.proto), so a HistoryBackend
+// HistoryEntry (proto/koi/plugin/v1/history.proto), so a HistoryBackend
 // plugin observes exactly what the file records. The local file is
 // authoritative and works with zero plugins installed.
 package history
@@ -34,7 +34,7 @@ type Entry struct {
 	Block string `json:"block,omitempty"`
 }
 
-// DefaultPath returns the history file location: $XDG_DATA_HOME/gish/
+// DefaultPath returns the history file location: $XDG_DATA_HOME/koi/
 // history.jsonl, defaulting XDG_DATA_HOME to ~/.local/share.
 func DefaultPath() (string, error) {
 	dataHome := os.Getenv("XDG_DATA_HOME")
@@ -45,12 +45,12 @@ func DefaultPath() (string, error) {
 		}
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dataHome, "gish", "history.jsonl"), nil
+	return filepath.Join(dataHome, "koi", "history.jsonl"), nil
 }
 
 // Store is an append-mostly history file with an in-memory index.
 // Appends are single JSONL lines on an O_APPEND handle, so concurrent
-// gish sessions interleave whole entries. Safe for concurrent use.
+// koi sessions interleave whole entries. Safe for concurrent use.
 //
 // Live cross-session history (#40): lookups reload the file tail first,
 // so commands from concurrent sessions appear here as they happen. One

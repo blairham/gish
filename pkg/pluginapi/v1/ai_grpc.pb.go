@@ -21,7 +21,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: gish/plugin/v1/ai.proto
+// source: koi/plugin/v1/ai.proto
 
 package pluginapi
 
@@ -38,9 +38,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AIProvider_Compose_FullMethodName = "/gish.plugin.v1.AIProvider/Compose"
-	AIProvider_Explain_FullMethodName = "/gish.plugin.v1.AIProvider/Explain"
-	AIProvider_Plan_FullMethodName    = "/gish.plugin.v1.AIProvider/Plan"
+	AIProvider_Compose_FullMethodName = "/koi.plugin.v1.AIProvider/Compose"
+	AIProvider_Explain_FullMethodName = "/koi.plugin.v1.AIProvider/Explain"
+	AIProvider_Plan_FullMethodName    = "/koi.plugin.v1.AIProvider/Plan"
 )
 
 // AIProviderClient is the client API for AIProvider service.
@@ -215,7 +215,7 @@ func _AIProvider_Plan_Handler(srv interface{}, ctx context.Context, dec func(int
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var AIProvider_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "gish.plugin.v1.AIProvider",
+	ServiceName: "koi.plugin.v1.AIProvider",
 	HandlerType: (*AIProviderServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -234,5 +234,5 @@ var AIProvider_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "gish/plugin/v1/ai.proto",
+	Metadata: "koi/plugin/v1/ai.proto",
 }

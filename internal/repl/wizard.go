@@ -11,7 +11,7 @@ import (
 
 	"mvdan.cc/sh/v3/interp"
 
-	"github.com/blairham/gish/internal/term"
+	"github.com/blairham/koi-shell/internal/term"
 )
 
 // The theme wizard (#28): `config theme` on a terminal walks through
@@ -88,45 +88,45 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 		return []string{"true"}
 	}
 
-	w.note("gish theme configurator — Enter keeps the current value, Ctrl-C aborts.")
+	w.note("koi theme configurator — Enter keeps the current value, Ctrl-C aborts.")
 	answers := wizardAnswers{}
 
 	theme, ok := w.selectOne("theme", "plain is the naked default; p10k is the native two-line theme",
-		get("GISH_THEME", "plain"), []string{"plain", "p10k", "starship"})
+		get("KOI_THEME", "plain"), []string{"plain", "p10k", "starship"})
 	if !ok {
 		return abort()
 	}
-	answers["GISH_THEME"] = theme
+	answers["KOI_THEME"] = theme
 
-	cfg := themeConfig{segments: strings.Fields(get("GISH_THEME_SEGMENTS", strings.Join(defaultSegmentIDs(), " ")))}
+	cfg := themeConfig{segments: strings.Fields(get("KOI_THEME_SEGMENTS", strings.Join(defaultSegmentIDs(), " ")))}
 	if theme == "p10k" {
 		// Ask, don't detect: whether the chevron renders is a property of
 		// the user's font, p10k-style — only the human can see it.
 		w.note(fmt.Sprintf("\nseparator preview   plain:  dir  main !2   powerline:  dir %s\ue0b1%s main !2",
 			cDim, cReset))
 		sepAnswer, sok := w.selectOne("separators", "did the powerline chevron above render?",
-			get("GISH_THEME_SEP", "plain"), []string{"plain", "powerline"})
+			get("KOI_THEME_SEP", "plain"), []string{"plain", "powerline"})
 		if !sok {
 			return abort()
 		}
-		answers["GISH_THEME_SEP"] = sepAnswer
+		answers["KOI_THEME_SEP"] = sepAnswer
 		cfg.powerline = sepAnswer == "powerline"
 
 		lines, lok := w.selectOne("layout", "2 = framed two-line, 1 = inline arrow",
-			get("GISH_THEME_LINES", "2"), []string{"2", "1"})
+			get("KOI_THEME_LINES", "2"), []string{"2", "1"})
 		if !lok {
 			return abort()
 		}
-		answers["GISH_THEME_LINES"] = lines
+		answers["KOI_THEME_LINES"] = lines
 		cfg.oneLine = lines == "1"
 
 		if lines == "2" {
 			frame, fok := w.selectOne("frame", "on = ╭─/╰─ corners, off = open like spaceship",
-				get("GISH_THEME_FRAME", "on"), []string{"on", "off"})
+				get("KOI_THEME_FRAME", "on"), []string{"on", "off"})
 			if !fok {
 				return abort()
 			}
-			answers["GISH_THEME_FRAME"] = frame
+			answers["KOI_THEME_FRAME"] = frame
 			cfg.noFrame = frame == "off"
 		}
 
@@ -137,7 +137,7 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 			return abort()
 		}
 		cfg.segments = strings.Fields(list)
-		answers["GISH_THEME_SEGMENTS"] = list
+		answers["KOI_THEME_SEGMENTS"] = list
 
 		preview, _ := themedPrompt(wizardSampleInfo(), cfg)
 		w.note("\npreview:")
@@ -154,7 +154,7 @@ func runThemeWizard(hc interp.HandlerContext) []string {
 	// hand the interpreter one eval with all the live assignments.
 	var pairs [][2]string
 	for _, varName := range []string{
-		"GISH_THEME", "GISH_THEME_SEP", "GISH_THEME_LINES", "GISH_THEME_FRAME", "GISH_THEME_SEGMENTS",
+		"KOI_THEME", "KOI_THEME_SEP", "KOI_THEME_LINES", "KOI_THEME_FRAME", "KOI_THEME_SEGMENTS",
 	} {
 		if value, chosen := answers[varName]; chosen && value != hc.Env.Get(varName).String() {
 			pairs = append(pairs, [2]string{varName, value})
@@ -182,7 +182,7 @@ func wizardSampleInfo() promptInfo {
 		username: "you",
 		host:     "host",
 		home:     home,
-		dir:      home + "/dev/gish",
+		dir:      home + "/dev/koi",
 		duration: 4 * time.Second,
 		segment: func(id string) string {
 			if id == "git" {

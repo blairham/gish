@@ -17,7 +17,7 @@ func Scoreboard(results []Result, bashVersion string) string {
 	fmt.Fprintf(&b, "**%d of %d cases pass (%d%%)** against %s.\n\n",
 		s.Passed, s.Total, s.Rate(), bashVersion)
 	b.WriteString(`Every case runs the same script through real bash and through
-` + "`gish -c`" + `, comparing combined output *and* exit status. bash on the
+` + "`koi -c`" + `, comparing combined output *and* exit status. bash on the
 running machine is the oracle — nothing here encodes what we think bash
 ought to do. Cases are curated around what people actually paste into a
 new shell (tool init hooks, install one-liners, parameter expansion,
@@ -42,11 +42,11 @@ contents; each carries its provenance in the corpus.
 		}
 		b.WriteString(`
 Gaps in the substrate belong upstream at [mvdan/sh](https://github.com/mvdan/sh) —
-fixing them there improves every consumer, not just gish. The current
-set is tracked in [#119](https://github.com/blairham/gish/issues/119)
+fixing them there improves every consumer, not just koi. The current
+set is tracked in [#119](https://github.com/blairham/koi-shell/issues/119)
 with minimal reproductions. Shell-identity behavior (` + "`BASH_VERSION`" + `
 and tool init hooks) is a deliberate open decision, not a bug:
-[#120](https://github.com/blairham/gish/issues/120).
+[#120](https://github.com/blairham/koi-shell/issues/120).
 `)
 	}
 
@@ -65,7 +65,7 @@ and tool init hooks) is a deliberate open decision, not a bug:
   scope here; this measures the scripting substrate only.
 - **Which bash you compare against changes the answer.** macOS still
   ships bash 3.2 (2007, the last GPLv2 release), where *bash itself*
-  rejects ` + "`${s,,}`" + ` and ` + "`declare -A`" + ` — against that oracle gish is
+  rejects ` + "`${s,,}`" + ` and ` + "`declare -A`" + ` — against that oracle koi is
   *ahead* on those cases, and the differential dutifully reports a
   difference. The number above is against the bash named in the
   headline; CI enforces the regression gate only when the runner's

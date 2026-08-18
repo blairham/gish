@@ -1,6 +1,6 @@
 # The prompt engine
 
-gish ships a native port of [powerlevel10k][p10k]: the same prompt
+koi ships a native port of [powerlevel10k][p10k]: the same prompt
 shape, the same presets, the same configuration vocabulary, written in
 Go and rendered in the shell's own process.
 
@@ -13,14 +13,14 @@ prompt import         # bring your ~/.p10k.zsh across
 `p10k` is the same command as `prompt`, kept because it is what people
 arriving from powerlevel10k type without thinking. The engine is named
 for what it does rather than for one of the dialects that configure it
-([#184](https://github.com/blairham/gish/issues/184)) — it renders
+([#184](https://github.com/blairham/koi-shell/issues/184)) — it renders
 presets from more than one upstream, and naming the whole thing after
 powerlevel10k would claim looks that project never shipped.
 
-What did **not** change: `GISH_THEME=p10k`, `POWERLEVEL9K_*`,
+What did **not** change: `KOI_THEME=p10k`, `POWERLEVEL9K_*`,
 `p10k.conf` and `~/.p10k.zsh`. Those name powerlevel10k compatibility,
 which is exactly what they are, and
-[#134](https://github.com/blairham/gish/issues/134) settled that
+[#134](https://github.com/blairham/koi-shell/issues/134) settled that
 pasting a line from an old config has to keep working.
 
 [p10k]: https://github.com/romkatv/powerlevel10k
@@ -28,8 +28,8 @@ pasting a line from an old config has to keep working.
 ## Why port it rather than run it
 
 powerlevel10k is the best prompt in the zsh world and the main reason
-people say they cannot leave zsh. gish cannot run it — it is ~10,000
-lines of zsh, and gish has no zsh interpreter and is not getting one
+people say they cannot leave zsh. koi cannot run it — it is ~10,000
+lines of zsh, and koi has no zsh interpreter and is not getting one
 (`AGENTS.md`: no zsh dialect on the prompt path). So the prompt shape
 had to be rebuilt.
 
@@ -38,12 +38,12 @@ Rebuilding it turned out to be worth doing on its own terms:
 | | time to first prompt |
 | --- | --- |
 | zsh + powerlevel10k, real config | 86.3 ms |
-| gish, p10k theme, every segment resolved | 6.1 ms |
+| koi, p10k theme, every segment resolved | 6.1 ms |
 
 Same prompt, measured the same way, on the same machine — see
 [bench.md](bench.md) for the methodology and the rest of the table. The
 gap is not cleverness. It is that a prompt segment here reads a file
-where a shell prompt runs a command, and that gish is already running
+where a shell prompt runs a command, and that koi is already running
 when the prompt is asked for.
 
 ## Presets
@@ -77,7 +77,7 @@ The two starship presets are transcribed from starship's own preset
 TOMLs, colour for colour. **`agnoster` is not a transcription** — an
 oh-my-zsh `.zsh-theme` is a zsh program, not a config file, so there is
 nothing to import and no converter that could produce one (see
-[#185](https://github.com/blairham/gish/issues/185)). It rebuilds the
+[#185](https://github.com/blairham/koi-shell/issues/185)). It rebuilds the
 published look.
 
 Every one of these drops something, and `prompt preset <name>` says what
@@ -85,7 +85,7 @@ as it applies:
 
 ```console
 $ prompt preset tokyo-night
-saved tokyo-night to ~/.config/gish/p10k.conf
+saved tokyo-night to ~/.config/koi/p10k.conf
 
 tokyo-night does not reproduce everything its upstream shows:
   starship $nodejs (needs a subprocess; no segment here forks)
@@ -95,7 +95,7 @@ tokyo-night does not reproduce everything its upstream shows:
 
 The recurring gap is always the same one: starship runs `node --version`
 and friends on the prompt path, and no segment in this engine forks —
-that rule is where the speed comes from. gish's `nodenv` / `pyenv` /
+that rule is where the speed comes from. koi's `nodenv` / `pyenv` /
 `asdf` segments are *not* substituted in silently, because reading a pin
 file answers a different question than running the tool: what the
 project is pinned to, rather than what is on `PATH` right now.
@@ -108,14 +108,14 @@ to know what the preset chose not to carry.
 
 Settings layer, later winning over earlier:
 
-1. the preset (`GISH_P10K_PRESET`, default `lean`)
-2. `$XDG_CONFIG_HOME/gish/p10k.conf`
+1. the preset (`KOI_P10K_PRESET`, default `lean`)
+2. `$XDG_CONFIG_HOME/koi/p10k.conf`
 3. `POWERLEVEL9K_*` variables set in the session
 
 The file is the parameter namespace written down, one setting per line:
 
 ```
-# gish p10k configuration
+# koi p10k configuration
 LEFT_PROMPT_ELEMENTS = dir vcs newline prompt_char
 DIR_FOREGROUND = 31
 TRANSIENT_PROMPT = always
@@ -143,7 +143,7 @@ prompt import path/to/file
 ```
 
 Import reads the declarative settings out of a `.p10k.zsh` once and
-writes them natively. It is the only part of gish that looks at zsh, and
+writes them natively. It is the only part of koi that looks at zsh, and
 it never runs at prompt time.
 
 Against a real 1,720-line configuration it takes 304 of 310 settings.
@@ -168,7 +168,7 @@ a themed prompt staying usable.
 
 `same-dir` differs slightly from upstream by necessity: the trim happens
 when the line is accepted, before the command has run, so nothing can
-yet know whether it will change directory. gish reads it the other way
+yet know whether it will change directory. koi reads it the other way
 round — a prompt is trimmed unless the *previous* command moved. Either
 way a directory change leaves one full prompt behind as a landmark; it
 lands just below the `cd` rather than just above it.
@@ -178,7 +178,7 @@ lands just below the `cd` rather than just above it.
 Not implemented, deliberately.
 
 Upstream paints a cached prompt at startup because the real one is not
-ready for tens of milliseconds. gish reaches a fully resolved p10k
+ready for tens of milliseconds. koi reaches a fully resolved p10k
 prompt in about 7 ms — the same number it takes to draw the naked
 default — so there is nothing to hide behind a cache, and a cache is not
 free: it needs invalidating, it goes stale across directory changes, and
@@ -251,8 +251,8 @@ never waits for either.
 
 ## As a plugin
 
-`cmd/gish-p10k` serves the same engine over the tier-2 `ThemeProvider`
-contract, advertising `p10k-lean`, `p10k-rainbow` and so on. gish itself
+`cmd/koi-p10k` serves the same engine over the tier-2 `ThemeProvider`
+contract, advertising `p10k-lean`, `p10k-rainbow` and so on. koi itself
 does not use it — the built-in path renders in-process, and the shell's
 own prompt should not pay a round trip to draw itself. It exists for
 other shells speaking the protocol, for distributing a theme on its own

@@ -40,7 +40,7 @@ macros (`Ctrl-X (` / `)`) and `Alt-*` insert-completions.
 ### Vi mode
 
 `set -o vi` in your rc works, and so do `config editmode vi` and
-`GISH_EDIT_MODE=vi`. Every line starts in insert mode, as in bash and
+`KOI_EDIT_MODE=vi`. Every line starts in insert mode, as in bash and
 zsh; Escape enters normal mode, and the cursor changes shape so you can
 see which one you are in.
 
@@ -75,7 +75,7 @@ difference between a vi mode with gaps and one that cannot be trusted.
 
 ## Your existing tools
 
-gish implements bash's **hook surface**, so the add-ons you already have
+koi implements bash's **hook surface**, so the add-ons you already have
 work without waiting to be adopted:
 
 | what your rc does | what happens |
@@ -95,17 +95,17 @@ Measured per release in
 tool's own init line and asserting what it does — not by asserting that
 we implement the hooks.
 
-**gish claims bash's interface, not bash's identity.** `BASH_VERSION`
+**koi claims bash's interface, not bash's identity.** `BASH_VERSION`
 and `BASH_VERSINFO` report a modern bash, because tools use them as
 feature probes and gate on them: fzf checks `BASH_VERSINFO[0] < 4` to
-decide between a readline macro and `bind -x`, and gish implements the
-latter. `$0` stays `gish`, and `GISH_VERSION` says exactly what you are
+decide between a readline macro and `bind -x`, and koi implements the
+latter. `$0` stays `koi`, and `KOI_VERSION` says exactly what you are
 running.
 
 Two known gaps, both honest: readline **macro** bindings (a key bound to
 a string of editing commands) are not emulated, and `declare -F name` —
 the "is this function defined?" test — is a substrate gap tracked in
-[#119](https://github.com/blairham/gish/issues/119).
+[#119](https://github.com/blairham/koi-shell/issues/119).
 
 ## Things that changed on purpose
 
@@ -122,7 +122,7 @@ config theme             # interactive walkthrough (the small dialect)
 `config` writes to your rc file *and* applies immediately, so there is
 no "edit file, restart shell" loop.
 
-**Your `.zshrc` does not carry over, and that is the point.** gish ships
+**Your `.zshrc` does not carry over, and that is the point.** koi ships
 natively what most of that file was buying you: autosuggestions, syntax
 highlighting, a p10k-class prompt, completions, direnv-class env
 switching, asdf/mise version switching, zoxide-class jumping. Start from
@@ -140,9 +140,9 @@ Read [docs/compat.md](compat.md) for the measured scoreboard. The ones
 you are most likely to hit:
 
 - **Tools that check `$BASH_VERSION`** take their POSIX branch, because
-  gish does not claim to be bash. Usually fine; occasionally a tool
+  koi does not claim to be bash. Usually fine; occasionally a tool
   refuses. Tracked in
-  [#120](https://github.com/blairham/gish/issues/120).
+  [#120](https://github.com/blairham/koi-shell/issues/120).
 - **`declare -A` associative arrays** are partially supported —
   `${#map[@]}` miscounts.
 - **`${var/#pat}` / `${var/%pat}`** anchored substitution silently does
@@ -151,22 +151,22 @@ you are most likely to hit:
 - **`printf '%05.2f'`** rejects combined width.precision.
 
 All four are `mvdan.cc/sh` substrate gaps, tracked with reproductions in
-[#119](https://github.com/blairham/gish/issues/119). Scripts that hit
-them still run correctly under `bash script.sh` — gish does not change
+[#119](https://github.com/blairham/koi-shell/issues/119). Scripts that hit
+them still run correctly under `bash script.sh` — koi does not change
 what `#!/bin/bash` means.
 
 ## Trying it without commitment
 
 Do **not** `chsh` on day one. Launch it from your terminal emulator's
-profile, or just run `gish` in a tab. Everything gish stores lives under
-`$XDG_CONFIG_HOME/gish` and `$XDG_DATA_HOME/gish`; deleting those puts
+profile, or just run `koi` in a tab. Everything koi stores lives under
+`$XDG_CONFIG_HOME/koi` and `$XDG_DATA_HOME/koi`; deleting those puts
 you exactly where you started.
 
 ```sh
-gish                # try it in this tab
+koi                # try it in this tab
 doctor              # what's configured, what's missing, and the fix for each
 ```
 
 When you do want it as a login shell, `docs`-level instructions are in
-the [README](../README.md#using-gish-as-your-login-shell) — and your
+the [README](../README.md#using-koi-as-your-login-shell) — and your
 `.profile` still runs.
