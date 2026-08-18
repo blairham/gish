@@ -172,6 +172,8 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		}
 	case "?":
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(int(r.lastExit.code))
+	case "-":
+		vr.Kind, vr.Str = expand.String, r.optionFlags()
 	case "$":
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(os.Getpid())
 	case "PPID":
@@ -207,6 +209,57 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		return vr
 	}
 	return expand.Variable{}
+}
+
+// bashFlagOrder is the order bash renders `$-` in, taken from the
+// shell_flags table in its flags.c: lowercase then uppercase, alphabetical
+// within each, with the invocation letter appended last. Read off a real
+// bash rather than from the source, because the rendering order is what
+// callers see and nothing documents it — `set -aefuxC` answers `aefhuxBCc`
+// there, koi's own `h` being absent for the reason shellflags.go gives.
+//
+// A letter absent from here is one no shell reports, so an embedder
+// supplying one is dropped rather than appended somewhere arbitrary.
+const bashFlagOrder = "abefhikmnprtuvxBCEHPT" + "cs"
+
+// optionFlags renders `$-`: one letter per option currently set.
+//
+// This is a *probe*, which is what makes a wrong answer worse than no
+// answer. The idiom it exists for is `case $- in *e*)`, used by any
+// library that saves and restores options around a risky section —
+// `[[ $- == *e* ]] && restore=1; set +e; …` — so a `$-` that does not
+// track `set -e` does not merely fail to inform, it tells the caller
+// errexit was off and gets it left off afterwards. The script then runs
+// past the failure it was written to stop at, silently (#265).
+//
+// The letters come from two owners and are merged rather than chosen
+// between. This package knows the options it implements and when they
+// change; it cannot know whether the shell around it is interactive, has
+// job control, or was started with -c, so those arrive through the
+// environment under the same name and are unioned in. An embedder that
+// supplies nothing still gets a correct answer for everything set here,
+// which also keeps `set -u; echo $-` from being a fatal unbound variable.
+func (r *Runner) optionFlags() string {
+	var set ['z' + 1]bool
+	for i, opt := range &posixOptsTable {
+		// pipefail has no letter, in bash exactly as here, so it is
+		// `set -o`-only and simply does not appear.
+		if opt.flag != ' ' && r.opts[i] {
+			set[opt.flag] = true
+		}
+	}
+	for _, b := range []byte(r.writeEnv.Get("-").String()) {
+		if int(b) < len(set) {
+			set[b] = true
+		}
+	}
+	var sb strings.Builder
+	for _, b := range []byte(bashFlagOrder) {
+		if set[b] {
+			sb.WriteByte(b)
+		}
+	}
+	return sb.String()
 }
 
 func (r *Runner) envGet(name string) string {

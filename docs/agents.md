@@ -180,7 +180,7 @@ that starts passing while still marked fails the build:
 
 <!-- BEGIN generated agent gaps -->
 
-**28 of 28 cases agree with bash 5.3.15(1)-release.** 0 open gaps, 0 unfiled failures.
+**29 of 29 cases agree with bash 5.3.15(1)-release.** 0 open gaps, 0 unfiled failures.
 
 No open gaps: every case an agent's shell hits agrees with bash.
 
