@@ -259,7 +259,7 @@ func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []
 		}
 	}
 
-	out := append(words, actionCandidates(hc, actions)...) //nolint:gocritic // a fresh slice is intended
+	out := append(words, actionCandidates(hc, actions, cur)...) //nolint:gocritic // a fresh slice is intended
 	var matched []string
 	for _, w := range out {
 		if !strings.HasPrefix(w, cur) {
@@ -305,19 +305,24 @@ func compgenWords(ctx context.Context, hc interp.HandlerContext, list string) []
 	return strings.Fields(buf.String())
 }
 
-// actionCandidates produces the named classes compgen knows.
-func actionCandidates(hc interp.HandlerContext, actions []string) []string {
+// actionCandidates produces the named classes compgen knows. cur is the
+// word being completed: file and directory list the directory it points
+// at, the way bash does — `compgen -f sub/` answers about sub/, not
+// about the cwd.
+func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []string {
 	var out []string
 	for _, a := range actions {
 		switch a {
-		case "file":
-			for _, c := range complete.Files("", hc.Dir) {
-				out = append(out, c.Value)
-			}
-		case "directory":
-			for _, c := range complete.Files("", hc.Dir) {
-				if strings.HasSuffix(c.Value, string(filepath.Separator)) {
-					out = append(out, c.Value)
+		case "file", "directory":
+			// Bare names, no trailing separator: these are candidates a
+			// script feeds back into a path or compares against a name
+			// from elsewhere, and a separator bash never put there makes
+			// "$dir/$name" into dir//name. The line editor is the other
+			// consumer and wants the slash, which is why the shaping
+			// lives in complete.Files and not here.
+			for _, e := range complete.Entries(cur, hc.Dir, true) {
+				if a == "file" || e.IsDir {
+					out = append(out, e.Value)
 				}
 			}
 		case "command":
@@ -332,8 +337,13 @@ func actionCandidates(hc interp.HandlerContext, actions []string) []string {
 		case "builtin":
 			out = append(out, builtins.ShellBuiltins()...)
 		case "keyword":
+			// coproc is bash's twenty-second and is deliberately absent:
+			// koi does not implement it (#287), and this action answers
+			// what this shell has, the same reason -b returns fewer
+			// builtins than bash without that being a shortfall.
 			out = append(out, "if", "then", "else", "elif", "fi", "case", "esac",
-				"for", "while", "until", "do", "done", "function", "select", "time")
+				"for", "while", "until", "do", "done", "function", "select", "time",
+				"!", "[[", "]]", "{", "}", "in")
 		case "variable", "export":
 			// Runner.Vars holds the environment koi was launched with and is
 			// not updated as it runs, so reading it answered with real names
@@ -438,7 +448,7 @@ func runCompletionSpec(runner *interp.Runner, spec completionSpec, line string, 
 	}
 	generated = append(generated, matching(spec.words, cur)...)
 	if len(spec.actions) > 0 {
-		generated = append(generated, matching(actionCandidates(interp.HandlerContext{Dir: runner.Dir}, spec.actions), cur)...)
+		generated = append(generated, matching(actionCandidates(interp.HandlerContext{Dir: runner.Dir}, spec.actions, cur), cur)...)
 	}
 	if len(generated) == 0 {
 		// An empty result is still an answer: a spec that matched and

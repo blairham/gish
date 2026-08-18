@@ -62,10 +62,25 @@ func isWordBreak(r rune) bool {
 	return false
 }
 
-// Files completes file paths for word: prefix match in the word's
-// directory, ~-expansion, trailing / on directories, hidden entries only
-// when the prefix asks for them.
-func Files(word, cwd string) []Candidate {
+// Entry is one path listing, before any presentation shaping: Value is
+// the word a completion would insert (the directory part as the caller
+// typed it, plus the name), Name is the bare entry name.
+type Entry struct {
+	Value string
+	Name  string
+	IsDir bool
+}
+
+// Entries lists the directory the word points at, prefix-matched on the
+// word's last component.
+//
+// raw asks for the listing as readdir sees it, which is what compgen
+// answers with: dot entries whatever the prefix, and . and .. among
+// them. The line editor wants neither until the user types a dot, so it
+// asks for the shaped listing instead. bash draws the same distinction
+// in the other direction — its readdir returns . and .. always and it
+// drops them unless the prefix starts with a dot.
+func Entries(word, cwd string, raw bool) []Entry {
 	dirPart, prefix := filepath.Split(word)
 	scanDir := dirPart
 
@@ -86,8 +101,15 @@ func Files(word, cwd string) []Candidate {
 	if err != nil {
 		return nil
 	}
-	showHidden := strings.HasPrefix(prefix, ".")
-	var out []Candidate
+	dotted := strings.HasPrefix(prefix, ".")
+	showHidden := raw || dotted
+	var out []Entry
+	if raw && dotted {
+		out = append(out,
+			Entry{Value: dirPart + ".", Name: ".", IsDir: true},
+			Entry{Value: dirPart + "..", Name: "..", IsDir: true},
+		)
+	}
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasPrefix(name, prefix) {
@@ -96,9 +118,23 @@ func Files(word, cwd string) []Candidate {
 		if !showHidden && strings.HasPrefix(name, ".") {
 			continue
 		}
-		value := dirPart + name
-		display := name
-		if isDir(e, filepath.Join(scanDir, name)) {
+		out = append(out, Entry{
+			Value: dirPart + name,
+			Name:  name,
+			IsDir: isDir(e, filepath.Join(scanDir, name)),
+		})
+	}
+	return out
+}
+
+// Files completes file paths for word: prefix match in the word's
+// directory, ~-expansion, trailing / on directories, hidden entries only
+// when the prefix asks for them.
+func Files(word, cwd string) []Candidate {
+	var out []Candidate
+	for _, e := range Entries(word, cwd, false) {
+		value, display := e.Value, e.Name
+		if e.IsDir {
 			value += "/"
 			display += "/"
 		}
