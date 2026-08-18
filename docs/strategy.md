@@ -137,14 +137,23 @@ slowed" was reading a slow release schedule as a slow project.
 atuin + fzf + direnv and want one coherent thing — or do they actively
 prefer the modular stack?**
 
-That is the central strategic question for koi, and it is
-**unanswered from the user side**. The churn half of the Reddit corpus
-is done (827 comments); the demand half was never gathered. #171 carries
-the method, including the two access notes that matter: reddit.com
-returns 403 to server-side fetchers, and `api.pullpush.io` asked us to
-stop — which is an operator policy to respect, not a throttle to pace
-around. The sanctioned route is Reddit's official OAuth API.
+The **behavioural** half is now measured, on two unrelated censuses
+(docs/competitors.md, 2026-08-18): people assemble the stack and *keep*
+it. Debian popcon use rates run 51–62% for direnv, starship, atuin and
+mise, against 26% for nushell, 28% for xonsh and 12% for elvish. Tools
+that add to the shell someone already runs get retained; shells that
+replace it get abandoned. That rules out the comforting reading — the
+stack is not a burden people are waiting to shed — and it is the half
+that should drive decisions.
 
-Until that is answered, the honest posture is the one the code already
-takes: **inherit the stack rather than replace it** (#159). That works
-whichever way the answer falls.
+The **sentiment** half is still ungathered, and it is the part that would
+say whether those same people would have preferred one coherent tool.
+#171 carries the method, including the two access notes that matter:
+reddit.com returns 403 to server-side fetchers, and `api.pullpush.io`
+asked us to stop — an operator policy to respect, not a throttle to pace
+around. The sanctioned route is Reddit's official OAuth API, which needs
+credentials a human creates.
+
+Either way the posture is the same, and now for a measured reason rather
+than as a hedge: **inherit the stack rather than replace it** (#159). The
+sentiment answer changes the marketing, not the architecture.
