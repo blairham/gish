@@ -12,6 +12,10 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    # A cap, not a budget: the job normally finishes in 2-3 minutes. It
+    # exists so a hung step fails visibly instead of burning the 360-minute
+    # default, which is what an apt mirror stall did twice in a row.
+    timeout-minutes: 20
     strategy:
       matrix:
         os: [ ubuntu-latest, macos-latest ]
@@ -34,19 +38,23 @@ jobs:
       run: make compat-check
 
     # The ecosystem matrix (#159) is only meaningful against tools that
-    # are actually there, so the runner gets a few of them. What is
-    # missing is reported as missing rather than skipped silently.
+    # are actually there, so the runner gets a few of them. Best-effort
+    # by design (`|| true`): what is missing is reported as missing
+    # rather than skipped silently. Each command is also time-bounded,
+    # because best-effort has to include not hanging — `apt-get update`
+    # stalled here for 14 minutes with no output, twice, and a step that
+    # cannot fail but can hang is a step that only hangs.
     - name: Install ecosystem tools for the matrix
       if: runner.os == 'Linux'
       run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq fzf direnv zoxide || true
-        curl -sS https://starship.rs/install.sh | sh -s -- --yes || true
+        timeout 180 sudo apt-get update -qq || true
+        timeout 180 sudo apt-get install -y -qq fzf direnv zoxide || true
+        curl -fsS --max-time 120 https://starship.rs/install.sh | sh -s -- --yes || true
         # oh-my-posh is the other cross-shell prompt, and its init is a
         # harder test than starship's: a two-stage bootstrap ending in
         # PS0, a PROMPT_COMMAND array and PS1 holding a command
         # substitution. Its own installer, into a dir already on PATH.
-        curl -sS https://ohmyposh.dev/install.sh | sudo bash -s -- -d /usr/local/bin || true
+        curl -fsS --max-time 120 https://ohmyposh.dev/install.sh | sudo bash -s -- -d /usr/local/bin || true
 
     # The #1 abandonment cause, gated (#161): text pasted at a real
     # interactive prompt, the named init scripts sourced unmodified, and
