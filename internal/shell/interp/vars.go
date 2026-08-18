@@ -174,6 +174,25 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(int(r.lastExit.code))
 	case "-":
 		vr.Kind, vr.Str = expand.String, r.optionFlags()
+	// The call-frame views (#266). Computed on read rather than published
+	// on every call and return: three arrays rebuilt per frame push would
+	// be paid by every function call in every loop, to serve a reader that
+	// most scripts never have.
+	case shellFuncNameVar:
+		if v := r.funcNameVar(); v.Set {
+			return v
+		}
+		return expand.Variable{}
+	case shellSourceVar:
+		if v := r.sourceVar(); v.Set {
+			return v
+		}
+		return expand.Variable{}
+	case shellLineNoVar:
+		if v := r.lineNoVar(); v.Set {
+			return v
+		}
+		return expand.Variable{}
 	case "$":
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(os.Getpid())
 	case "PPID":
@@ -427,6 +446,29 @@ func (r *Runner) setFunc(name string, body *syntax.Stmt) {
 		r.Funcs = make(map[string]*syntax.Stmt, 4)
 	}
 	r.Funcs[name] = body
+	// Where it was defined, for BASH_SOURCE (#266). Recorded here because
+	// this is the only moment that knows: the body is a [syntax.Stmt],
+	// which carries a line but not a file, and by the time it is called
+	// the current file may be another one entirely.
+	if r.funcSource == nil {
+		r.funcSource = make(map[string]string, 4)
+	}
+	r.funcSource[name] = r.currentSource()
+}
+
+// currentSource is the file being executed right now: the innermost
+// frame's, or the parse name at the top level.
+//
+// The parse name rather than mainScript, because those differ for a
+// command string and bash reports the difference: `bash -c 'f(){ …; }; f'`
+// gives BASH_SOURCE the shell's own $0 even though there is no `main`
+// frame. mainScript answers the narrower question of whether that frame
+// exists at all.
+func (r *Runner) currentSource() string {
+	if len(r.frames) > 0 {
+		return r.frames[0].source
+	}
+	return r.filename
 }
 
 func stringIndex(index syntax.ArithmExpr) bool {

@@ -307,6 +307,23 @@ g
 case $- in *i*) echo interactive;; *) echo noninteractive;; esac`,
 	},
 	{
+		Name: "an error helper knows where it was called from", Category: CatControl,
+		Provenance: "#266/#250: `die() { echo \"${BASH_SOURCE[1]}:${BASH_LINENO[0]}: ${FUNCNAME[1]}: $*\"; }` is the helper every " +
+			"script of any size grows, and koi printed the message with the location blank — the part worth having. Nothing " +
+			"errored, so it looked like it worked until someone needed it. The file is not compared here because $0 differs by " +
+			"decision (#120); cmd/koi runs the same shapes against a real script, where the file is the point",
+		Script: `die() { echo "line ${BASH_LINENO[0]} in ${FUNCNAME[1]}: $*"; }
+f() { die boom; }
+f
+depth() { echo "depth=${#FUNCNAME[@]}"; }
+outer() { depth; }
+outer
+where() { caller 0 | cut -d' ' -f1-2; }
+caller_of() { where; }
+caller_of
+echo "top: [${FUNCNAME[0]-unset}] rc=$(caller 0 >/dev/null 2>&1; echo $?)"`,
+	},
+	{
 		Name: "a DEBUG trap traces, and trap -p saves a handler", Category: CatControl,
 		Provenance: "#268: a DEBUG trap is how every shell integration implements preexec, and how a script traces itself. " +
 			"koi accepted `trap … DEBUG` in a script, recorded it somewhere only the interactive loop reads, and never fired " +

@@ -754,11 +754,22 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	}
 	rewriteSubstrateGaps(file)
 	registerSubstrateBuiltins()
+	// A script file is a call frame; a command string is not. That is
+	// bash's own distinction and it decides whether FUNCNAME, BASH_SOURCE
+	// and BASH_LINENO have a bottom `main` entry (#266) — which is exactly
+	// what a top-level `die` helper reads to name the file it is in. The
+	// parse name cannot answer it, since koi hands the parser "koi" for a
+	// `-c` session so that $0 says what it should.
+	mainScript := ""
+	if inv == invokedScript {
+		mainScript = name
+	}
 	runner, err := interp.New(
 		// The "--" matters: without it a parameter that begins with a
 		// dash would be read as a shell option, so `koi script.sh -v`
 		// would try to set -v instead of passing it along.
 		interp.Params(append([]string{"--"}, params...)...),
+		interp.MainScript(mainScript),
 		interp.Env(sessionEnv(sessionFlags{interactive: interactive, invocation: inv})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
