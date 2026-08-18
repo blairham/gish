@@ -17,6 +17,7 @@ import (
 func TestShadowedRCsNamesTheSkippedFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // UserHomeDir reads this on Windows
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("KOI_RC", "")
 
@@ -24,7 +25,7 @@ func TestShadowedRCsNamesTheSkippedFile(t *testing.T) {
 	classic := filepath.Join(home, ".koirc")
 
 	// Only the classic file: it is the active one, nothing is shadowed.
-	write(t, classic, "KOI_THEME=p10k\n")
+	writeFile(t, classic, "KOI_THEME=p10k\n")
 	if got := rcPath(); got != classic {
 		t.Fatalf("rcPath = %q, want %q", got, classic)
 	}
@@ -34,7 +35,7 @@ func TestShadowedRCsNamesTheSkippedFile(t *testing.T) {
 
 	// Add the higher-precedence file: now the classic one is dead, and
 	// that is exactly what nobody could see.
-	write(t, xdg, "KOI_WELCOME=off\n")
+	writeFile(t, xdg, "KOI_WELCOME=off\n")
 	if got := rcPath(); got != xdg {
 		t.Fatalf("rcPath = %q, want the XDG file %q", got, xdg)
 	}
@@ -50,14 +51,15 @@ func TestShadowedRCsNamesTheSkippedFile(t *testing.T) {
 func TestKoiRCShadowsBothDefaults(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // UserHomeDir reads this on Windows
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	explicit := filepath.Join(home, "explicit-rc")
-	write(t, explicit, "KOI_LINT=off\n")
+	writeFile(t, explicit, "KOI_LINT=off\n")
 	t.Setenv("KOI_RC", explicit)
 
-	write(t, filepath.Join(home, ".config", "koi", "koirc"), "x=1\n")
-	write(t, filepath.Join(home, ".koirc"), "y=2\n")
+	writeFile(t, filepath.Join(home, ".config", "koi", "koirc"), "x=1\n")
+	writeFile(t, filepath.Join(home, ".koirc"), "y=2\n")
 
 	if got := rcPath(); got != explicit {
 		t.Fatalf("rcPath = %q, want %q", got, explicit)
@@ -72,6 +74,7 @@ func TestKoiRCShadowsBothDefaults(t *testing.T) {
 func TestNoRCFilesShadowNothing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // UserHomeDir reads this on Windows
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("KOI_RC", "")
 
@@ -88,10 +91,11 @@ func TestNoRCFilesShadowNothing(t *testing.T) {
 func TestDoctorWarnsAboutAShadowedRC(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // UserHomeDir reads this on Windows
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("KOI_RC", "")
-	write(t, filepath.Join(home, ".config", "koi", "koirc"), "KOI_WELCOME=off\n")
-	write(t, filepath.Join(home, ".koirc"), "KOI_THEME=p10k\n")
+	writeFile(t, filepath.Join(home, ".config", "koi", "koirc"), "KOI_WELCOME=off\n")
+	writeFile(t, filepath.Join(home, ".koirc"), "KOI_THEME=p10k\n")
 
 	got := checkRC()
 	if got.status != checkWarn {
@@ -113,15 +117,5 @@ func TestDoctorWarnsAboutAShadowedRC(t *testing.T) {
 	}
 	if got := checkRC(); got.status != checkOK {
 		t.Errorf("status = %v with a single rc file, want OK", got.status)
-	}
-}
-
-func write(t *testing.T, path, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
 	}
 }
