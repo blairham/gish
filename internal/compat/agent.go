@@ -85,7 +85,14 @@ var AgentCorpus = []AgentCase{
 		Name:       "snapshot generator: declare -F",
 		Provenance: "the generator enumerates the user's functions with `declare -F` and pipes it through `cut -d' ' -f3`; refused outright, so no user function survived into any command",
 		RC:         "greet() { echo hello; }\ndeploy() { echo deploying; }\n",
-		Argv:       []string{"-ic", `declare -F | cut -d' ' -f3 | sort | tr '\n' ' '`},
+		// Keeps the harness's exact shape (`declare -F | cut -d' ' -f3`) but
+		// asks only about the functions this case defined. A system-wide rc is
+		// outside the scratch $HOME and cannot be isolated: Debian and Ubuntu
+		// ship /etc/bash.bashrc defining command_not_found_handle, which bash
+		// lists and gish does not, so an unfiltered listing compares the
+		// runner's OS rather than the claim — that the user's own functions
+		// reach an agent's subshell.
+		Argv: []string{"-ic", `declare -F | cut -d' ' -f3 | grep -E '^(deploy|greet)$' | sort | tr '\n' ' '`},
 	},
 	{
 		Name:       "snapshot generator: shopt -p",
