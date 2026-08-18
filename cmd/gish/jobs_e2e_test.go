@@ -40,6 +40,25 @@ import (
 // separately in the command, and "resRUNNING" only in the output.
 const runningCmd = `sh -c 'printf "res%s\n" RUNNING; sleep 45'`
 
+// foregroundCmd is runningCmd with a heartbeat, for the one test that has
+// to observe the child *running again* after `fg`.
+//
+// runningCmd prints its marker once, before it is ever stopped, so after
+// `fg` there is nothing new to wait for — and waiting on `fg`'s echo of
+// the resumed command is what made TestJobControlForegroundAndInterrupt
+// flaky (#226). The echo is printed *before* fg has moved the child into
+// the foreground process group and handed it the terminal, so a Ctrl-C
+// sent on the strength of it lands in the handover window and is
+// delivered to nobody: the terminal still echoes "^C", `sleep 45` keeps
+// running, and the wait expires against a shell that behaved perfectly.
+//
+// A heartbeat makes the state observable instead of assumed. A tick
+// arriving after the buffer is cleared can only have come from a child
+// that is actually running again, which is the precondition Ctrl-C
+// needs. It also proves the stop: no tick arrives while the job is
+// stopped.
+const foregroundCmd = `sh -c 'printf "res%s\n" RUNNING; while :; do sleep 1; printf "res%s\n" TICK; done'`
+
 // TestJobControlStopListResume walks the flow that makes job control
 // worth having: interrupt what you are running, look at it, put it back.
 func TestJobControlStopListResume(t *testing.T) {
@@ -54,13 +73,7 @@ func TestJobControlStopListResume(t *testing.T) {
 
 	// Ctrl-Z is a raw keystroke: only a shell that owns the terminal and
 	// put the child in its own process group turns it into SIGTSTP.
-	s.buf.Reset()
-	s.send("\x1a")
-	s.waitFor("Stopped")
-	// The stop notice is not the end of the line. Wait for the fresh
-	// prompt before typing again, or the next send races the redraw and
-	// is lost — the same failure as waiting on intermediate output.
-	s.waitForPrompt()
+	s.stopForeground()
 
 	// The stopped job is filed and listed.
 	//
@@ -69,17 +82,13 @@ func TestJobControlStopListResume(t *testing.T) {
 	// while the line was still finishing, so the next send landed during
 	// the prompt redraw and was lost — which is how this passed locally
 	// and failed on the ubuntu runner.
-	s.buf.Reset()
-	s.send(`jobs; printf "res%s\n" J1` + "\r")
-	s.waitFor("resJ1")
+	s.runProbe(`jobs; printf "res%s\n" J1`, "resJ1")
 	if !s.seen("Stopped") {
 		t.Errorf("jobs did not list the stopped job:\n%s", s.plain())
 	}
 
 	// bg resumes it, and says so in bash's shape: [id] command &
-	s.buf.Reset()
-	s.send(`bg; printf "res%s\n" B1` + "\r")
-	s.waitFor("resB1")
+	s.runProbe(`bg; printf "res%s\n" B1`, "resB1")
 	if !s.seen("[1]") {
 		t.Errorf("bg did not report the resumed job:\n%s", s.plain())
 	}
@@ -104,31 +113,55 @@ func TestJobControlForegroundAndInterrupt(t *testing.T) {
 	s := startPTY(t, ptyOptions{})
 	s.waitForPrompt()
 
-	s.send(runningCmd + "\r")
+	s.send(foregroundCmd + "\r")
 	s.waitFor("resRUNNING")
-	s.buf.Reset()
-	s.send("\x1a")
-	s.waitFor("Stopped")
-	// The stop notice is not the end of the line. Wait for the fresh
-	// prompt before typing again, or the next send races the redraw and
-	// is lost — the same failure as waiting on intermediate output.
-	s.waitForPrompt()
+	s.stopForeground()
 
+	// Cleared before the send, never after: a tick that shared a read with
+	// fg's echo would be thrown away by a later reset, and the wait would
+	// then sit through a whole heartbeat interval for no reason — or miss
+	// it entirely if the child were stopped again first. Clear-then-send
+	// is the same rule runLine follows.
 	s.buf.Reset()
 	s.send("fg\r")
-	// fg echoes the command it is resuming.
-	s.waitFor("sleep 45")
+	// Not `fg`'s echo of the command: that is printed before the handover
+	// and is precisely the wait that made this test flaky (#226). A tick
+	// can only come from a child that is running again.
+	s.waitFor("resTICK")
 
 	// Ctrl-C must interrupt the child and leave the shell alive.
-	s.buf.Reset()
-	s.send("\x03")
-	// Ctrl-C is a keystroke, not a line, so it cannot carry its own
-	// marker. Wait for the shell to draw a fresh prompt before typing
-	// again: two writes back-to-back can lose the second in the raw-mode
-	// transition, which is what made the sibling tests flaky on CI.
-	s.waitForPrompt()
+	//
+	// It cannot carry its own marker, and there is no portable signal for
+	// "the process group is ready to receive it", so the honest contract
+	// is to send until the effect is observed — a fresh prompt. A Ctrl-C
+	// that lands in a handover window is delivered to nobody and produces
+	// no prompt, so the resend is what closes the race rather than a
+	// longer wait. Repeats are harmless: at a prompt, Ctrl-C discards an
+	// empty line and redraws.
+	s.sendUntil("\x03", promptEnd)
+
 	s.probe("AFTERINT")
 	s.waitFor("resAFTERINT")
+}
+
+// stopForeground sends Ctrl-Z and waits until the shell has both filed
+// the job and finished drawing the prompt that follows.
+//
+// Both halves matter and they are separate events. "Stopped" is the
+// notice; the prompt after it is when the shell is reading again. Typing
+// on the strength of the notice alone lands in the redraw and is lost —
+// the failure this file kept rediscovering, in four places, one per
+// caller.
+//
+// Ctrl-Z is resent on silence for the same reason Ctrl-C is: it is a
+// keystroke aimed at a process group mid-transition, and a lost one is
+// indistinguishable from a shell that never answered. It is idempotent
+// here — once the job is stopped the shell is at a prompt, where Ctrl-Z
+// does nothing.
+func (s *ptySession) stopForeground() {
+	s.t.Helper()
+	s.sendUntil("\x1a", "Stopped") // clears the buffer itself
+	s.waitForPrompt()
 }
 
 // TestJobsIsEmptyWhenNothingRuns: the listing has to be able to say
@@ -141,9 +174,7 @@ func TestJobsEmptyListing(t *testing.T) {
 	s := startPTY(t, ptyOptions{})
 	s.waitForPrompt()
 
-	s.buf.Reset()
-	s.send(`jobs; printf "res%s\n" NOJOBS` + "\r")
-	s.waitFor("resNOJOBS")
+	s.runProbe(`jobs; printf "res%s\n" NOJOBS`, "resNOJOBS")
 	if s.seen("Stopped") || s.seen("Running") {
 		t.Errorf("jobs listed something in a fresh session:\n%s", s.plain())
 	}
@@ -178,17 +209,13 @@ func TestBackgroundCommandIsAJob(t *testing.T) {
 
 	// And it is a job, which is the half that decides whether jobs, fg
 	// and kill %n can see it at all.
-	s.buf.Reset()
-	s.send(`jobs; printf "res%s\n" LISTED` + "\r")
-	s.waitFor("resLISTED")
+	s.runProbe(`jobs; printf "res%s\n" LISTED`, "resLISTED")
 	if !s.seen("sleep 45") {
 		t.Errorf("jobs did not list the backgrounded command:\n%s", s.plain())
 	}
 
 	// Reachable by job spec.
-	s.buf.Reset()
-	s.send(`kill %1; printf "res%s\n" KILLED` + "\r")
-	s.waitFor("resKILLED")
+	s.runProbe(`kill %1; printf "res%s\n" KILLED`, "resKILLED")
 	if s.seen("no such job") {
 		t.Errorf("kill %%1 could not reach the backgrounded job:\n%s", s.plain())
 	}
@@ -220,13 +247,9 @@ func TestBackgroundJobDoesNotStealTheTerminal(t *testing.T) {
 
 	// The shell still reads keys and runs commands.
 	for _, name := range []string{"ONE", "TWO"} {
-		s.buf.Reset()
-		s.send(`printf "res%s\n" ` + name + "\r")
-		s.waitFor("res" + name)
+		s.runProbe(`printf "res%s\n" `+name, "res"+name)
 	}
-	s.buf.Reset()
-	s.send(`kill %1; printf "res%s\n" DONE` + "\r")
-	s.waitFor("resDONE")
+	s.runProbe(`kill %1; printf "res%s\n" DONE`, "resDONE")
 }
 
 // Command substitution and pipelines must not become jobs. They run
@@ -239,9 +262,7 @@ func TestSubstitutionIsNotAJob(t *testing.T) {
 	s := startPTY(t, ptyOptions{})
 	s.waitForPrompt()
 
-	s.buf.Reset()
-	s.send(`x=$(echo hi); echo a | grep -q a; jobs; printf "res%s\n" NONE` + "\r")
-	s.waitFor("resNONE")
+	s.runProbe(`x=$(echo hi); echo a | grep -q a; jobs; printf "res%s\n" NONE`, "resNONE")
 	if s.seen("Running") || s.seen("Stopped") {
 		t.Errorf("a substitution or pipeline was filed as a job:\n%s", s.plain())
 	}
@@ -266,13 +287,7 @@ func TestKillByJobSpec(t *testing.T) {
 
 	s.send(runningCmd + "\r")
 	s.waitFor("resRUNNING")
-	s.buf.Reset()
-	s.send("\x1a")
-	s.waitFor("Stopped")
-	// The stop notice is not the end of the line. Wait for the fresh
-	// prompt before typing again, or the next send races the redraw and
-	// is lost — the same failure as waiting on intermediate output.
-	s.waitForPrompt()
+	s.stopForeground()
 
 	// The assertion is that the process dies, checked by asking the
 	// system rather than the shell. `jobs` is the wrong oracle here: a
@@ -285,9 +300,7 @@ func TestKillByJobSpec(t *testing.T) {
 	// status is the answer. The marker is split — "res%s" and "PG$?" in
 	// the command, "resPG1" only in the output — because the terminal
 	// echoes what is typed and a whole marker would match on the echo.
-	s.buf.Reset()
-	s.send(`kill %1; sleep 1; pgrep -f "sleep 45" >/dev/null; printf "res%s\n" "PG$?"` + "\r")
-	s.waitFor("resPG")
+	s.runProbe(`kill %1; sleep 1; pgrep -f "sleep 45" >/dev/null; printf "res%s\n" "PG$?"`, "resPG")
 	if !s.seen("resPG1") {
 		t.Errorf("`kill %%1` left the job running:\n%s", s.plain())
 	}
@@ -295,9 +308,7 @@ func TestKillByJobSpec(t *testing.T) {
 	// And the table notices. This is the half that was broken (#59):
 	// nothing owned the wait for a stopped job, so the process became a
 	// zombie and the entry outlived it.
-	s.buf.Reset()
-	s.send(`jobs; printf "res%s\n" LIST` + "\r")
-	s.waitFor("resLIST")
+	s.runProbe(`jobs; printf "res%s\n" LIST`, "resLIST")
 	if s.seen("sleep 45") {
 		t.Errorf("jobs still lists a job whose process is gone:\n%s", s.plain())
 	}
@@ -319,21 +330,11 @@ func TestStoppedJobKilledExternallyIsReaped(t *testing.T) {
 
 	s.send(runningCmd + "\r")
 	s.waitFor("resRUNNING")
-	s.buf.Reset()
-	s.send("\x1a")
-	s.waitFor("Stopped")
-	// The stop notice is not the end of the line. Wait for the fresh
-	// prompt before typing again, or the next send races the redraw and
-	// is lost — the same failure as waiting on intermediate output.
-	s.waitForPrompt()
+	s.stopForeground()
 
-	s.buf.Reset()
-	s.send(`pkill -KILL -f "sleep 45"; sleep 1; printf "res%s\n" KILLED` + "\r")
-	s.waitFor("resKILLED")
+	s.runProbe(`pkill -KILL -f "sleep 45"; sleep 1; printf "res%s\n" KILLED`, "resKILLED")
 
-	s.buf.Reset()
-	s.send(`jobs; printf "res%s\n" LIST` + "\r")
-	s.waitFor("resLIST")
+	s.runProbe(`jobs; printf "res%s\n" LIST`, "resLIST")
 	if s.seen("sleep 45") {
 		t.Errorf("a stopped job killed from outside was never reaped:\n%s", s.plain())
 	}
@@ -349,9 +350,7 @@ func TestKillRejectsUnknownJobSpec(t *testing.T) {
 	s := startPTY(t, ptyOptions{})
 	s.waitForPrompt()
 
-	s.buf.Reset()
-	s.send(`kill %99; printf "res%s\n" NOJOB` + "\r")
-	s.waitFor("resNOJOB")
+	s.runProbe(`kill %99; printf "res%s\n" NOJOB`, "resNOJOB")
 	if !s.seen("no such job") {
 		t.Errorf("kill %%99 did not report a missing job:\n%s", s.plain())
 	}
