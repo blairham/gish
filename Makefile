@@ -58,6 +58,15 @@ compat: ## Regenerate docs/compat.md from a live bash-vs-koi run (#101)
 compat-check: ## Fail if the corpus passes fewer cases than published
 	go test ./internal/compat/ -run 'TestCompatScoreboard|TestCorpusIsWellFormed'
 
+.PHONY: bash-suite
+bash-suite: ## Fetch bash's own tests/ and publish docs/bash-suite.md (#211)
+	./scripts/fetch-bash-tests.sh
+	KOI_GATES=1 go test ./internal/compat/ -run TestBashSuite -update-suite -timeout 30m -v
+
+.PHONY: bash-suite-check
+bash-suite-check: ## Run the bash suite without republishing (harness sanity only)
+	KOI_GATES=1 go test ./internal/compat/ -run 'TestBashSuite|TestSuiteSummary|TestBashSuiteDoc|TestPublishedSuite' -timeout 30m
+
 .PHONY: paste-gate
 paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161) and the ecosystem matrix (#159)
 	KOI_GATES=1 go test ./internal/compat/ -run TestInteractiveGates -update -v
