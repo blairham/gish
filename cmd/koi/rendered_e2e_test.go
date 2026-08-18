@@ -39,9 +39,14 @@ func TestThemedPromptAndGhostTextRenderStyled(t *testing.T) {
 
 	// Run a command so history has something to suggest, then type a
 	// prefix of it and expect dim ghost text for the remainder.
-	s.send("echo ghost-source\r")
-	s.waitFor("ghost-source")
-	s.waitForPrompt()
+	// runLine rather than send-then-waitForPrompt (#240): waiting for a
+	// prompt after sending a line returns while the line is still being
+	// echoed, because the editor redraws the whole prompt on every
+	// keystroke, so the 133;B mark appears mid-line. The keystrokes that
+	// follow then land in the raw-mode re-entry window and are discarded.
+	// runLine waits for the 133;D mark, which appears only once the
+	// command has actually finished.
+	s.runLine("echo ghost-source")
 
 	s.send("echo ghost-sou")
 	// The editor wraps the *remainder* in the dim style, so match the
@@ -50,13 +55,20 @@ func TestThemedPromptAndGhostTextRenderStyled(t *testing.T) {
 	// no ghost text on screen at all.
 	const ghost = "\x1b[2mrce"
 	s.waitFor(ghost)
-	s.send("\x15") // ctrl-u: clear before finishing
-
 	// And the knob really turns it off — same typing, no dim remainder.
-	s.send("KOI_SUGGEST=off\r")
-	s.waitForPrompt()
+	//
+	// The leading Ctrl-U is part of the same write rather than a separate
+	// send: two back-to-back writes can lose the second in a raw-mode
+	// transition, and this was that pair. probe() leads with the same
+	// character for the same reason.
+	s.runLine("\x15KOI_SUGGEST=off")
 	s.buf.Reset()
 	s.send("echo ghost-sou")
+	// Proof the line was actually typed, before asserting something is
+	// *absent* from it. Without this the check below passes vacuously
+	// whenever the keystrokes are dropped: no typing means no ghost text,
+	// which is indistinguishable from the knob working.
+	s.waitFor("ghost-sou")
 	s.probe("SUGGESTOFF")
 	out := s.waitFor("resSUGGESTOFF")
 	if s.seen(ghost) {
