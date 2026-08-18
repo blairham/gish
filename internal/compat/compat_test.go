@@ -94,14 +94,143 @@ func TestCorpusIsWellFormed(t *testing.T) {
 	}
 }
 
+// buildKoi is the binary every differential suite measures. By default it
+// builds the working tree, which answers "is this branch correct?".
+//
+// $KOI_BIN answers the other question, which had no way to be asked (#284):
+// "is the koi on this machine correct?". Those two diverge silently — an
+// installed koi was found 15 commits behind a green main, failing 15 of the
+// 17 agent-gate cases, among them `exec -a` (#241) on Claude Code's find and
+// grep shims and `set -Eeuo pipefail` (#245) on every strict-mode script.
+// Nothing reported it, because nothing was testing that binary.
+//
+//	KOI_BIN=$(command -v koi-bash) go test ./internal/compat/ -run TestAgentGate
+//
+// An unusable $KOI_BIN is fatal rather than a fall back to building. Falling
+// back would let a mistyped path report a green run of a binary nobody asked
+// for, which is the failure this exists to catch, wearing a pass.
 func buildKoi(t *testing.T) string {
 	t.Helper()
+	if bin := os.Getenv("KOI_BIN"); bin != "" {
+		abs, err := resolveKoiBin(bin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Name it, so a green run is attributable to a known binary rather
+		// than to whatever happened to be on disk at the time.
+		t.Logf("gating installed binary %s (%s)", abs, koiVersion(t, abs))
+		return abs
+	}
 	bin := filepath.Join(t.TempDir(), "koi")
 	cmd := exec.Command("go", "build", "-o", bin, "../../cmd/koi")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build koi: %v\n%s", err, out)
 	}
 	return bin
+}
+
+// resolveKoiBin validates a $KOI_BIN value and returns it absolute. Split
+// out of buildKoi so the rejections are testable: exercising them through
+// buildKoi means tripping t.Fatal, and a subtest that fatals is a failed
+// subtest whatever its parent concludes about it.
+func resolveKoiBin(bin string) (string, error) {
+	abs, err := filepath.Abs(bin)
+	if err != nil {
+		return "", fmt.Errorf("KOI_BIN=%q: %w", bin, err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("KOI_BIN=%q: %w", bin, err)
+	}
+	if info.IsDir() || info.Mode()&0o111 == 0 {
+		return "", fmt.Errorf("KOI_BIN=%q: not an executable file", bin)
+	}
+	return abs, nil
+}
+
+// koiVersion is the binary's self-reported version, or the reason it could
+// not be read. Only ever used to label a run, so it never fails one.
+func koiVersion(t *testing.T, bin string) string {
+	t.Helper()
+	out, err := exec.Command(bin, "--version").Output()
+	if err != nil {
+		return "version unreadable: " + err.Error()
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestKoiBinOverride covers the #284 escape hatch itself. Without this the
+// override could stop working and every suite would quietly go back to
+// gating a fresh build while the Makefile target still claimed otherwise —
+// the same class of silent pass the override exists to end.
+func TestKoiBinOverride(t *testing.T) {
+	// A path that is not the working tree's build, so a fall back to
+	// building would be visible rather than coincidentally identical.
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "koi-under-test")
+	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/koi").CombinedOutput(); err != nil {
+		t.Fatalf("build fixture: %v\n%s", err, out)
+	}
+
+	t.Run("honors an executable path", func(t *testing.T) {
+		t.Setenv("KOI_BIN", bin)
+		if got := buildKoi(t); got != bin {
+			t.Errorf("buildKoi() = %q, want the KOI_BIN path %q", got, bin)
+		}
+	})
+
+	t.Run("resolves a relative path", func(t *testing.T) {
+		t.Setenv("KOI_BIN", filepath.Join(dir, ".", "koi-under-test"))
+		if got := buildKoi(t); got != bin {
+			t.Errorf("buildKoi() = %q, want the absolute path %q", got, bin)
+		}
+	})
+
+	t.Run("unset still builds the working tree", func(t *testing.T) {
+		t.Setenv("KOI_BIN", "")
+		got := buildKoi(t)
+		if got == bin {
+			t.Fatalf("buildKoi() returned the fixture with KOI_BIN unset")
+		}
+		if _, err := os.Stat(got); err != nil {
+			t.Errorf("buildKoi() = %q, which does not exist: %v", got, err)
+		}
+	})
+
+	// The rejections are the point: each one is a way to run green against a
+	// binary the caller did not mean, so each must stop the run instead.
+	for _, tc := range []struct{ name, path string }{
+		{"missing file", filepath.Join(dir, "no-such-koi")},
+		{"a directory", dir},
+		{"not executable", writeFile(t, filepath.Join(dir, "plain"), 0o644)},
+	} {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			if _, err := resolveKoiBin(tc.path); err == nil {
+				t.Errorf("resolveKoiBin(%q) = nil error; want a rejection", tc.path)
+			}
+		})
+	}
+
+	// A build is not silently substituted for a bad path: buildKoi must be
+	// reached only after the resolver agrees.
+	t.Run("accepts the fixture", func(t *testing.T) {
+		got, err := resolveKoiBin(bin)
+		if err != nil {
+			t.Fatalf("resolveKoiBin(%q) = %v; want it accepted", bin, err)
+		}
+		if got != bin {
+			t.Errorf("resolveKoiBin(%q) = %q, want %q", bin, got, bin)
+		}
+	})
+}
+
+// writeFile creates a file with the given mode and returns its path.
+func writeFile(t *testing.T, path string, mode os.FileMode) string {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("not a binary\n"), mode); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 // bashMajor is the oracle's major version ("5"), or "?" when unknown.

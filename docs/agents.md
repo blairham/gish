@@ -33,7 +33,7 @@ their own `$SHELL`. A binary named `koi` is invisible to them. So give
 koi a name they recognize:
 
 ```sh
-ln -s "$(command -v koi)" ~/.local/bin/koi-agent-bash
+make install-agent                                  # koi + both symlinks, into ~/.local/bin
 export SHELL="$HOME/.local/bin/koi-agent-bash"
 ```
 
@@ -52,6 +52,28 @@ That is the whole configuration, and it does three things at once:
 Verified on this machine: the symlink is recognized by a `$SHELL` grep,
 `-lc` runs normally through it, and a write outside the workspace is
 refused (`open /etc/…: permission denied`).
+
+`install-agent` exists rather than `install` because `go install` writes to
+`GOBIN`, and this page points `$SHELL` somewhere else. Nothing used to
+connect the two, so the binary an agent ran was whatever had been hand-copied
+into place once. One was found **15 commits behind a green `main`**, failing
+15 of the 17 cases on this page — including `exec -a` (#241), which is what
+Claude Code's bundled `find` and `grep` run on, and `set -Eeuo pipefail`
+(#245), which every strict-mode script opens with and which silently applied
+nothing. Set `KOI_PREFIX` to install elsewhere.
+
+Two commands keep that from recurring, and neither needs to be remembered
+daily — the first is the one to run when something is behaving oddly:
+
+```sh
+make installed-version   # is the koi an agent runs the koi in this tree?
+make gate-installed      # run the gates against the INSTALLED binary, not a fresh build
+```
+
+The distinction matters more than it sounds. Every gate here builds from
+source, so all of them answer *is this branch correct?* and none answer *is
+the koi on this machine correct?* — which is the one a user experiences.
+`KOI_BIN=<path>` puts any binary under the gates (#284).
 
 ## Per-agent notes
 

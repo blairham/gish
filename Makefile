@@ -1,11 +1,14 @@
 BINARY_NAME := koi
 BUILD_DIR := build
+# Where install-agent puts koi and the $SHELL symlinks (#284). Not GOBIN:
+# docs/agents.md points $SHELL at ~/.local/bin, and go install does not.
+KOI_PREFIX ?= $(HOME)/.local
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --verify --quiet HEAD 2>/dev/null || echo "none")
 DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)"
 
-.PHONY: all build clean test test-cover lint fmt vet tidy install check sync check-versions proto
+.PHONY: all build clean test test-cover lint fmt vet tidy install install-agent check sync check-versions proto gate-installed installed-version
 
 all: build
 
@@ -15,6 +18,28 @@ build:
 
 install:
 	go install $(LDFLAGS) ./cmd/koi
+
+# Install where an agent actually finds koi, and keep the symlinks current.
+#
+# `install` uses go install, which writes to GOBIN. docs/agents.md tells you
+# to point $SHELL at ~/.local/bin/koi-agent-bash. Nothing connected the two,
+# so the copy an agent ran was whatever was hand-placed there once — one was
+# found 15 commits stale, failing 15 of 17 agent-gate cases while every gate
+# on main stayed green (#284).
+#
+# mv rather than cp: replacing a running binary in place is ETXTBSY, while
+# rename swaps the directory entry and leaves the running process on the old
+# inode. That is the difference between this working and it failing for the
+# one user guaranteed to be running koi — the person installing it.
+install-agent: build
+	@mkdir -p $(KOI_PREFIX)/bin
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(KOI_PREFIX)/bin/$(BINARY_NAME).new
+	@chmod 755 $(KOI_PREFIX)/bin/$(BINARY_NAME).new
+	@mv -f $(KOI_PREFIX)/bin/$(BINARY_NAME).new $(KOI_PREFIX)/bin/$(BINARY_NAME)
+	@ln -sfn $(KOI_PREFIX)/bin/$(BINARY_NAME) $(KOI_PREFIX)/bin/koi-bash
+	@ln -sfn $(KOI_PREFIX)/bin/$(BINARY_NAME) $(KOI_PREFIX)/bin/koi-agent-bash
+	@echo "installed to $(KOI_PREFIX)/bin: $$($(KOI_PREFIX)/bin/$(BINARY_NAME) --version)"
+	@echo "  koi-bash, koi-agent-bash -> $(KOI_PREFIX)/bin/$(BINARY_NAME)"
 
 clean:
 	rm -rf $(BUILD_DIR) coverage.out coverage.html
@@ -79,6 +104,17 @@ paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161
 .PHONY: paste-gate-check
 paste-gate-check: ## Fail if a pasted construct, an init script, or an installed tool regressed
 	KOI_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
+
+.PHONY: installed-version
+installed-version: ## Report the installed koi's version against this tree's HEAD (#284)
+	@./scripts/installed-version.sh
+
+.PHONY: gate-installed
+gate-installed: ## Run every differential gate against the INSTALLED koi, not a fresh build (#284)
+	@bin=$${KOI_BIN:-$(KOI_PREFIX)/bin/koi-bash}; \
+	echo "gating $$bin"; \
+	KOI_GATES=1 KOI_BIN=$$bin go test ./internal/compat/ \
+		-run 'TestAgentGate|TestAgentKnownGaps|TestCompatScoreboard|TestInteractiveGates' -v
 
 .PHONY: agent-gate
 agent-gate: ## Regenerate the open-gap table in docs/agents.md from a live run (#208)
