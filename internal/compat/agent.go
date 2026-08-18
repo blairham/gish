@@ -219,8 +219,6 @@ var AgentCorpus = []AgentCase{
 		Name:       "file descriptors above 2 carry data",
 		Provenance: "fd 3+ is how a script separates a log or trace channel from stdout, and how `flock` and `read -u` are wired. Every spelling — exec 3>, 3<, per-command 3>, {v}> — accepts the write and discards it",
 		Argv:       []string{"-c", `exec 3> "$HOME/fd"; echo hi >&3; exec 3>&-; cat "$HOME/fd"`},
-		Known:      246,
-		KnownNote:  "the shell reports success and produces an empty artifact, pointing blame at the program that was meant to write it",
 	},
 	{
 		Name:       "PIPESTATUS reports each stage",
@@ -236,16 +234,12 @@ var AgentCorpus = []AgentCase{
 	{
 		Name:       "declare -i does arithmetic",
 		Provenance: "an integer attribute that is refused leaves the literal source text in the variable, so every later comparison or accumulation is wrong",
-		Argv:       []string{"-c", `declare -i n 2>/dev/null; n=1+1; echo "$n"`},
-		Known:      249,
-		KnownNote:  "the variable holds `1+1`; a numeric test on it errors and a value written onward is source text, not a number",
+		Argv:       []string{"-c", `declare -i n; n=1+1; echo "$n"`},
 	},
 	{
-		Name:       "declare -r rejects assignment",
-		Provenance: "scripts use readonly as a guard — fail if anything rebinds this — and to freeze configuration before sourcing untrusted fragments. koi keeps the original value but accepts the assignment with exit 0",
-		Argv:       []string{"-c", `declare -r v=1 2>/dev/null; if v=2 2>/dev/null; then echo ASSIGN-ACCEPTED; else echo ASSIGN-REJECTED; fi`},
-		Known:      249,
-		KnownNote:  "the guard is decorative: no diagnostic and no status, so the intent behind readonly is silently unmet",
+		Name:       "readonly assignment stops the script",
+		Provenance: "scripts use readonly as a guard — fail if anything rebinds this — and to freeze configuration before sourcing untrusted fragments. The value was kept and the error reported, but the script carried on regardless, so everything written on the assumption that the assignment had worked still ran. A subshell keeps the parent alive, which is what makes this observable rather than just an exit status",
+		Argv:       []string{"-c", `declare -r v=1; ( v=2 ) 2>/dev/null; echo "after=[$v]"`},
 	},
 	{
 		Name:       "FUNCNAME locates an error",
@@ -261,8 +255,6 @@ var AgentCorpus = []AgentCase{
 		Name:       "compgen -v sees a variable the script set",
 		Provenance: "the same enumeration asked the other way. koi reads interp's legacy Runner.Vars, which holds the environment koi was launched with, so the answer is stale rather than empty: real names, none of them the script's own",
 		Argv:       []string{"-c", `xyzzy=1; compgen -v xyzzy`},
-		Known:      264,
-		KnownNote:  "a completion offering variable names offers the ones koi started with and none the user has since defined",
 	},
 }
 

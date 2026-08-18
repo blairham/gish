@@ -334,8 +334,20 @@ func actionCandidates(hc interp.HandlerContext, actions []string) []string {
 			out = append(out, "if", "then", "else", "elif", "fi", "case", "esac",
 				"for", "while", "until", "do", "done", "function", "select", "time")
 		case "variable", "export":
+			// Runner.Vars holds the environment koi was launched with and is
+			// not updated as it runs, so reading it answered with real names
+			// and none of the ones the script had set (#264). Environ is the
+			// live view.
 			if runner := sessionRunner(); runner != nil {
-				out = append(out, slices.Sorted(maps.Keys(runner.Vars))...)
+				var names []string
+				runner.Environ().Each(func(name string, vr expand.Variable) bool {
+					if vr.IsSet() && (a == "variable" || vr.Exported) {
+						names = append(names, name)
+					}
+					return true
+				})
+				slices.Sort(names)
+				out = append(out, slices.Compact(names)...)
 			}
 		case "function":
 			// The other way a harness asks which functions exist, alongside

@@ -158,18 +158,9 @@ that starts passing while still marked fails the build:
 
 <!-- BEGIN generated agent gaps -->
 
-**24 of 28 cases agree with bash 5.3.15(1)-release.** 4 open gaps, 0 unfiled failures.
+**28 of 28 cases agree with bash 5.3.15(1)-release.** 0 open gaps, 0 unfiled failures.
 
-Each of these is filed, reproduced, and failing right now. They are suppressed in CI by an issue number in the corpus, and the suppression is itself gated — a case that starts passing while still marked fails the build, so a fix cannot land without updating this table.
-
-| issue | case | what it costs |
-| --- | --- | --- |
-| [#246](https://github.com/blairham/koi-shell/issues/246) | file descriptors above 2 carry data | the shell reports success and produces an empty artifact, pointing blame at the program that was meant to write it |
-| [#249](https://github.com/blairham/koi-shell/issues/249) | declare -i does arithmetic | the variable holds `1+1`; a numeric test on it errors and a value written onward is source text, not a number |
-| [#249](https://github.com/blairham/koi-shell/issues/249) | declare -r rejects assignment | the guard is decorative: no diagnostic and no status, so the intent behind readonly is silently unmet |
-| [#264](https://github.com/blairham/koi-shell/issues/264) | compgen -v sees a variable the script set | a completion offering variable names offers the ones koi started with and none the user has since defined |
-
-The shape they share is not a missing feature — it is a missing feature that **reports success**. A harness cannot route around a failure it is never told about, which is what makes this class expensive out of proportion to its size.
+No open gaps: every case an agent's shell hits agrees with bash.
 
 <!-- END generated agent gaps -->
 

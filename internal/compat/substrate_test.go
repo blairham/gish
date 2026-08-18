@@ -51,12 +51,6 @@ var substrateGaps = []substrateGap{
 		upstream: "same as the prefix form",
 	},
 	{
-		name:     "exec file-descriptor persistence",
-		script:   `exec 3>&1; echo via-fd3 >&3; exec 3>&-`,
-		koiWant:  "",
-		upstream: "output to the duplicated fd is lost; common in logging wrappers",
-	},
-	{
 		name:     "single quote escaped inside an assignment",
 		script:   `x='a'\''b'; printf '%s' "$x"`,
 		koiWant:  `a\'b`,
