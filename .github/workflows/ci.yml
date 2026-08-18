@@ -29,6 +29,33 @@ jobs:
         check-latest: true # setup-go's manifest lags fresh Go patch releases; resolve via go.dev
         cache: true
 
+    # Both differential harnesses compare against a *specific* bash, and
+    # neither runner ships it (#273). interp's TestRunnerRunConfirm skips
+    # itself entirely when $BASH_VERSION is not 5.3, which is how it went
+    # unnoticed that the suite had never once run in CI; the bash-suite
+    # scoreboard wants the same binary as its oracle. Cached on the version,
+    # so the build is paid for once per runner image.
+    - name: Cache bash 5.3
+      id: bash-cache
+      uses: actions/cache@v4
+      with:
+        path: build/bash-bin
+        key: bash-5.3-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Build bash 5.3
+      if: steps.bash-cache.outputs.cache-hit != 'true'
+      run: ./scripts/build-bash.sh
+
+    - name: Put bash 5.3 ahead of the system bash
+      run: |
+        echo "$PWD/build/bash-bin" >> "$GITHUB_PATH"
+
+    - name: Confirm the differential suites have their oracle
+      run: |
+        bash --version | head -1
+        test "$(bash -c 'echo -n $BASH_VERSION' | cut -d. -f1,2)" = "5.3" \
+          || { echo "bash 5.3 is not first on PATH; the differential suites would silently skip"; exit 1; }
+
     - name: Run tests
       run: make test
 
