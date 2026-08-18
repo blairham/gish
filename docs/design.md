@@ -68,6 +68,62 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **No cross-shell components** (2026-08,
+  [#214](https://github.com/blairham/koi-shell/issues/214)): koi does not
+  ship its highlighting, autosuggestions or prompt engine as add-ons for
+  bash and zsh. The pieces stay in the shell.
+
+  The play is genuinely tempting, and the numbers are the reason it keeps
+  coming back: add-on tools out-install new shells on Homebrew — fzf beats
+  fish about 3:1, the aggregate is ~6.7:1 (docs/strategy.md) — because
+  people upgrade the shell they have far more readily than they replace
+  it. Oh My Zsh ramped a generation into zsh exactly that way. Meet users
+  where they are, convert later.
+
+  It is still no, for three reasons that compound:
+
+  **It is the competition's game, played on their board.** UX delivered
+  into the incumbent shell is precisely what ble.sh (fish-grade
+  highlighting and autosuggestions, in pure bash) and IRIS
+  (IntelliSense-grade completion into zsh/bash/fish) already do. Every
+  add-on koi ships removes a reason to switch *to koi* and adds a part to
+  the unbundled starship + zoxide + atuin + fzf stack, which
+  docs/strategy.md names as the real competitor.
+
+  **fish already ran this experiment.** Its plateau is attributed partly
+  to its signature features leaking out as zsh plugins: once you can have
+  the good defaults without the shell, the shell stops being the thing
+  you need. Shipping our own features into zsh would be running fish's
+  failure deliberately.
+
+  **It spends the budget we do not have.** Cross-shell means N shells × M
+  integrations, forever, against every upstream's release schedule. That
+  is the maintenance load that put powerlevel10k on life support at 55k
+  stars — and docs/adoption.md's composite law names **maintainer count
+  as koi's own zeroed factor**. This is not a cost we can absorb and
+  discover later; it is the specific way projects in this category die.
+
+  The on-ramp it was meant to serve is already covered by moves that do
+  not arm anyone: koi hosts the incumbent stack first-class and proves it
+  (#159 — starship, direnv, fzf, zoxide, atuin and mise run through their
+  own bash init lines), `koi migrate` imports an existing setup by parsing
+  it (#160), and a trial costs one tab rather than a `chsh` (#212).
+  `cmd/koi-p10k` does serve the prompt engine over the plugin contract —
+  to *koi* plugins, which is the opposite direction.
+
+  **The exception, stated so it is not rediscovered as a loophole**:
+  components that create pull *toward* koi rather than parity *inside* the
+  incumbent are fine, case by case. The test is whether the thing makes
+  someone else's shell better or makes koi visible — the compat scoreboard
+  tooling (#211) and a read-only history viewer pass it; a
+  `koi-highlight.zsh` does not.
+
+  Revisit if the demand half of the Reddit corpus (#171) comes back
+  saying people want the unbundled stack and will not adopt a shell to
+  get it. That would not make add-ons a good business, but it would mean
+  the switch-to-koi path is closed and a different strategy is needed —
+  which is a bigger decision than this one.
+
 - **ACP on the agent edge, in two places** (2026-08,
   [#166](https://github.com/blairham/koi-shell/issues/166),
   [#167](https://github.com/blairham/koi-shell/issues/167), docs/acp.md): the

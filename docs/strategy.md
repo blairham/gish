@@ -42,6 +42,14 @@ AGENTS.md used to say the tier-2 plugin system is the differentiator —
   that an add-on can deliver into the shell someone already uses is not
   a reason to switch shells.
 
+  The tempting inversion — ship koi's own UX as an add-on, meet people
+  in the shell they run, convert later — is **decided against** and
+  recorded in docs/design.md (#214). Briefly: it is ble.sh's and IRIS's
+  game rather than ours, every add-on removes a reason to switch, fish's
+  plateau is partly its features leaking out as zsh plugins, and N shells
+  × M integrations spends the maintainer count that docs/adoption.md
+  identifies as koi's zeroed factor.
+
 What is actually defensible is narrower and more durable:
 
 1. **Bash compatibility** — the historical *gate*, not a feature
