@@ -180,10 +180,8 @@ var AgentCorpus = []AgentCase{
 	},
 	{
 		Name:       "snapshot generator: declare -F survives eval",
-		Provenance: "#215 taught declare its -F flag as a REPL parse-time rewrite; text arriving through eval is parsed by the substrate directly and still refuses the flag, so a harness helper that evals its probes sees the unfixed shell",
+		Provenance: "#215 taught declare its -F flag as a REPL parse-time rewrite, which text arriving through eval never passes through, so a harness helper that evals its probes saw the unfixed shell. The substrate implements the flag now, so the rewrite is no longer what answers this",
 		Argv:       []string{"-c", `f(){ :; }; eval 'declare -F f' 2>/dev/null || echo EVAL-REFUSED`},
-		Known:      242,
-		KnownNote:  "the #215 fix is invisible to eval, command substitution and sourced files",
 	},
 	{
 		Name:       "read -d '' consumes NUL-delimited input",
@@ -253,15 +251,18 @@ var AgentCorpus = []AgentCase{
 		Name:       "FUNCNAME locates an error",
 		Provenance: "`die() { echo \"${BASH_SOURCE[1]}:${BASH_LINENO[0]}: ${FUNCNAME[1]}: $*\" >&2; }` is every hand-rolled error helper; under koi it prints the message with the location blank",
 		Argv:       []string{"-c", `f(){ echo "fn=${FUNCNAME[0]:-MISSING}"; }; f`},
-		Known:      250,
-		KnownNote:  "a script's own diagnostics lose the part worth having, and nothing errors to say so",
 	},
 	{
 		Name:       "compgen -A function enumerates functions",
-		Provenance: "the other way a harness asks which functions exist, alongside the declare -F that #215 fixed; this one still answers nothing",
+		Provenance: "the other way a harness asks which functions exist, alongside declare -F; the `function` action was simply absent from koi's compgen, so it answered nothing — which reads exactly like a shell with no functions",
 		Argv:       []string{"-c", `g(){ :; }; compgen -A function 2>/dev/null | grep -c '^g$'`},
-		Known:      250,
-		KnownNote:  "a snapshot generator using compgen rather than declare -F carries none of the user's functions across",
+	},
+	{
+		Name:       "compgen -v sees a variable the script set",
+		Provenance: "the same enumeration asked the other way. koi reads interp's legacy Runner.Vars, which holds the environment koi was launched with, so the answer is stale rather than empty: real names, none of them the script's own",
+		Argv:       []string{"-c", `xyzzy=1; compgen -v xyzzy`},
+		Known:      264,
+		KnownNote:  "a completion offering variable names offers the ones koi started with and none the user has since defined",
 	},
 }
 

@@ -337,6 +337,14 @@ func actionCandidates(hc interp.HandlerContext, actions []string) []string {
 			if runner := sessionRunner(); runner != nil {
 				out = append(out, slices.Sorted(maps.Keys(runner.Vars))...)
 			}
+		case "function":
+			// The other way a harness asks which functions exist, alongside
+			// declare -F. Answering nothing here is indistinguishable from a
+			// shell with no functions, so a snapshot generator built on
+			// compgen carried none of the user's functions across.
+			if runner := sessionRunner(); runner != nil {
+				out = append(out, slices.Sorted(maps.Keys(runner.Funcs))...)
+			}
 		}
 	}
 	return out
