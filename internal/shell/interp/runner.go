@@ -41,6 +41,10 @@ const (
 	shellReplyVar = "REPLY"
 	// shellFuncNameVar names the call stack variable, innermost function first.
 	shellFuncNameVar = "FUNCNAME"
+	// shellCommandVar, or BASH_COMMAND, holds the command being run, as
+	// written rather than as expanded. Read by a DEBUG trap and, more
+	// often, by an ERR trap saying which command failed.
+	shellCommandVar = "BASH_COMMAND"
 
 	fifoNamePrefix = "sh-interp-"
 )
@@ -492,6 +496,8 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	r.pipeStatusSet = false
 	r.pipeStatus = nil
 
+	r.traceCommand(ctx, st)
+
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	// The descriptor table is modified in place, so a statement with its own
 	// redirections gets a copy to modify and the original is put back after.
@@ -696,6 +702,14 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				return
 			}
 			r2 := r.subshell(true)
+			// Every stage of a pipeline is traced, whether or not
+			// "functrace" is set: bash reports `echo a` and `cat` alike for
+			// `echo a | cat`. A stage is a subshell here as an
+			// implementation detail, and letting subshell's inheritance rule
+			// apply to it would trace the last stage and silently skip the
+			// rest — a partial trace being worse than none, since it reads
+			// as a pipeline with fewer commands in it than it has.
+			r2.callbackDebug = r.callbackDebug
 			r2.stdout = pw
 			if cm.Op == syntax.PipeAll {
 				r2.stderr = pw
@@ -1128,6 +1142,138 @@ func (r *Runner) printFuncDef(name string, body *syntax.Stmt) {
 	var buf bytes.Buffer
 	printer.Print(&buf, body)
 	r.outf("%s\n", buf.String())
+}
+
+// traceCommand publishes BASH_COMMAND and fires the DEBUG trap before a
+// command runs (#268).
+//
+// A DEBUG trap used to be refused outright here, which koi papered over
+// by intercepting `trap … DEBUG` at the call seam and running it once per
+// interactive *line*. That left script and -c sessions recording a trap
+// and never firing it: accepted, silent, exit 0 — the worst shape, since
+// a preexec hook that never runs looks like a shell where nothing
+// happens rather than like a shell that refused.
+//
+// BASH_COMMAND is published for the ERR trap's sake as much as DEBUG's:
+// `trap 'echo failed: $BASH_COMMAND' ERR` is the standard way a script
+// says which command failed, and it was reporting an empty string. It is
+// maintained only while some trap is set, which is the one deliberate
+// divergence in it — bash keeps the variable current unconditionally,
+// and doing that here would cost printing the statement back to source
+// on every command in every loop, to serve a reader that only exists
+// inside a trap.
+//
+// What is matched, measured against bash rather than reasoned about:
+// firing before each simple command including every stage of a pipeline
+// and a bare assignment, BASH_COMMAND as the *unexpanded* source, and a
+// function body or a sourced file left untraced unless "functrace" is
+// set. Two known divergences, stated so they are not surprises: bash
+// also fires for the header of a `for` or `while`, once per iteration,
+// and koi does not; and koi's pipeline stages run concurrently, so their
+// traces can interleave where bash's are strictly left to right.
+func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) {
+	if r.handlingTrap {
+		return
+	}
+	if r.callbackDebug == "" && r.callbackErr == "" && r.callbackExit == "" {
+		return
+	}
+	// Only a simple command. A compound statement's own trace is the
+	// divergence noted above, and firing for both would report every
+	// command twice — once for the `if` and once for its body.
+	if _, ok := st.Cmd.(*syntax.CallExpr); !ok {
+		return
+	}
+	r.setVarString(shellCommandVar, stmtSource(st))
+	if r.callbackDebug == "" {
+		return
+	}
+	// A function body and a sourced file are both traced only under
+	// "functrace" — the same rule, and both measured: bash prints nothing
+	// for the commands inside `. file` until `set -T`.
+	if (len(r.funcStack) > 0 || r.inSource) && !r.opts[optFuncTrace] {
+		return
+	}
+	r.trapCallback(ctx, r.callbackDebug, "debug")
+}
+
+// listedTraps is what `trap -p` reports, as distinct from what runs. See
+// the field on [Runner] for why the two are not the same set.
+type listedTraps struct{ exit, err, debug string }
+
+// printTraps answers `trap -p` and bare `trap`: the handlers that are
+// set, spelled as the commands that would restore them.
+//
+// That spelling is the whole point of the builtin — a script saves a
+// handler with `old=$(trap -p EXIT)` and restores it later by running
+// what it captured — so the action is *shell*-quoted rather than
+// Go-quoted. `%q` was close enough to read and wrong to re-run: it
+// renders a backslash or a `$` the way Go would, and the restore then
+// installs a different handler than the one saved.
+//
+// The order is bash's, which numbers EXIT as 0 and treats DEBUG and ERR
+// as pseudo-signals after the real ones. Nothing depends on it, but a
+// listing that sorts differently from the shell it is imitating is a
+// gratuitous diff in anything comparing the two.
+func (r *Runner) printTraps(names []string) {
+	set := []struct{ name, callback string }{
+		{"EXIT", r.listed.exit},
+		{"DEBUG", r.listed.debug},
+		{"ERR", r.listed.err},
+	}
+	for _, tr := range set {
+		if tr.callback == "" {
+			continue
+		}
+		if len(names) > 0 && !slices.Contains(names, tr.name) {
+			continue
+		}
+		r.outf("trap -- %s %s\n", singleQuote(tr.callback), tr.name)
+	}
+}
+
+// singleQuote wraps s so the shell reads it back byte for byte.
+//
+// Deliberately not [syntax.Quote], which picks whichever quoting is
+// shortest and answers `"echo it's $HOME"` where bash answers
+// `'echo it'\”s $HOME'`. Both re-run correctly, so this is about the
+// listing being comparable with bash's rather than about safety — but a
+// `trap -p` that differs from bash only in its quoting style is a diff in
+// every side-by-side, for nothing. Single quotes are safe for every byte
+// including newlines; the one exception is a single quote itself, which
+// is what the '\” dance is for.
+func singleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// printSignalNames answers `trap -l`, the numbered signal table.
+//
+// The numbers are this platform's rather than a fixed list, because they
+// differ between Linux and darwin and the number is the part a caller
+// acts on — `kill -N` takes it. The set is the portable one, on the same
+// rule internal/jobs states for `kill -l`: a name that means different
+// things on different unixes is worse than one that is simply absent.
+//
+// One line per signal, which is koi's `kill -l` rather than bash's five
+// columns. In bash the two listings are the same output, and they are
+// here too; matching bash's column layout in one of them and not the
+// other would make koi disagree with itself, which is the worse of the
+// two divergences. TestTrapListMatchesKillList holds them together.
+func (r *Runner) printSignalNames() {
+	for _, s := range signalList() {
+		r.outf("%2d) SIG%s\n", s.num, s.name)
+	}
+}
+
+// stmtSource renders a statement back to source, which is what
+// BASH_COMMAND holds: bash reports `echo $i`, not `echo 1`, because the
+// trap runs *before* the expansion.
+func stmtSource(st *syntax.Stmt) string {
+	var sb strings.Builder
+	if err := syntax.NewPrinter(syntax.SingleLine(true)).Print(&sb, st.Cmd); err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 func (r *Runner) trapCallback(ctx context.Context, callback, name string) {

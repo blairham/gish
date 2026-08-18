@@ -307,6 +307,23 @@ g
 case $- in *i*) echo interactive;; *) echo noninteractive;; esac`,
 	},
 	{
+		Name: "a DEBUG trap traces, and trap -p saves a handler", Category: CatControl,
+		Provenance: "#268: a DEBUG trap is how every shell integration implements preexec, and how a script traces itself. " +
+			"koi accepted `trap … DEBUG` in a script, recorded it somewhere only the interactive loop reads, and never fired " +
+			"it — no diagnostic, exit 0. `trap -p` was refused outright, so the save-and-restore idiom returned an empty " +
+			"string and lost the handler it was protecting",
+		Script: `trap 'echo D:$BASH_COMMAND' DEBUG
+echo one
+trap - DEBUG
+trap 'echo cleanup' EXIT
+saved=$(trap -p EXIT)
+trap - EXIT
+eval "$saved"
+trap 'echo failed: $BASH_COMMAND' ERR
+false
+echo body`,
+	},
+	{
 		Name: "trap on EXIT", Category: CatControl,
 		Provenance: "cleanup handlers in every serious script",
 		Script: `trap 'echo cleanup-ran' EXIT

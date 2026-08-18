@@ -1801,6 +1801,86 @@ var runTests = []runTest{
 		"cat <<'EOF'\nfoo\\\nbar\nEOF",
 		"foo\\\nbar\n",
 	},
+	// The DEBUG trap, and BASH_COMMAND with it (#268). A DEBUG trap used
+	// to be refused here and intercepted a layer up, which left a script's
+	// `trap … DEBUG` recorded and never fired — accepted, silent, exit 0.
+	{
+		"trap 'echo D:$BASH_COMMAND' DEBUG; echo a; echo b",
+		"D:echo a\na\nD:echo b\nb\n",
+	},
+	{
+		// BASH_COMMAND is the source text, not the expansion: the trap
+		// runs before the words are expanded, which is the whole reason a
+		// tracer can print what was written.
+		"trap 'echo D:$BASH_COMMAND' DEBUG; x=1; echo $x",
+		"D:x=1\nD:echo $x\n1\n",
+	},
+	{
+		// The far more common reader of BASH_COMMAND: an ERR trap saying
+		// which command failed. It was reporting an empty string.
+		"trap 'echo failed: $BASH_COMMAND' ERR; false; echo done",
+		"failed: false\ndone\n",
+	},
+	{
+		// A function body is not traced without "functrace"; the call is.
+		"trap 'echo D' DEBUG; f() { echo in; }; f",
+		"D\nin\n",
+	},
+	{
+		"trap 'echo D' DEBUG; ( echo sub )",
+		"sub\n",
+	},
+	{
+		// The trap fires for the command that removes it, which is the
+		// order bash runs them in rather than an accident.
+		"trap 'echo D' DEBUG; trap - DEBUG; echo after",
+		"D\nafter\n",
+	},
+	{
+		// The trap's own status must not become the command's.
+		"trap 'true' DEBUG; false; echo $?",
+		"1\n",
+	},
+	{
+		"trap 'echo x' EXIT; trap -p",
+		"trap -- 'echo x' EXIT\nx\n",
+	},
+	{
+		// bare `trap` prints the same listing as `trap -p`.
+		"trap 'echo x' EXIT; trap",
+		"trap -- 'echo x' EXIT\nx\n",
+	},
+	{
+		"trap 'echo e' ERR; trap 'echo x' EXIT; trap -p",
+		"trap -- 'echo x' EXIT\ntrap -- 'echo e' ERR\nx\n",
+	},
+	{
+		"trap 'echo e' ERR; trap 'echo x' EXIT; trap -p ERR",
+		"trap -- 'echo e' ERR\nx\n",
+	},
+	{
+		"trap -p; echo none",
+		"none\n",
+	},
+	{
+		// The reason `-p` exists: save a handler, do something that needs
+		// it gone, put it back. It runs in a command substitution, and a
+		// subshell that reported its own empty set would hand back an
+		// empty string — losing the handler silently, which is worse than
+		// `-p` never having worked.
+		"trap 'echo cleanup' EXIT\nsaved=$(trap -p EXIT)\ntrap - EXIT\neval \"$saved\"\necho body",
+		"body\ncleanup\n",
+	},
+	{
+		"trap 'echo bye' EXIT; ( trap -p EXIT )",
+		"trap -- 'echo bye' EXIT\nbye\n",
+	},
+	{
+		// The listing is what restores the handler, so it has to be
+		// shell-quoted rather than Go-quoted — including the awkward case.
+		"trap \"echo \\\"it's fine\\\"\" EXIT; trap -p",
+		"trap -- 'echo \"it'\\''s fine\"' EXIT\nit's fine\n",
+	},
 	// `$-` tracks the options that are set (#265). The letters themselves
 	// are not compared, because bash reports `h` for hashing and an
 	// embedder contributes letters this package cannot know about; what is
