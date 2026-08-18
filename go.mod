@@ -251,4 +251,4 @@ tool (
 	mvdan.cc/gofumpt
 )
 
-replace mvdan.cc/sh/v3 => github.com/blairham/sh/v3 v3.13.2-0.20260818140134-49551925c22d
+replace mvdan.cc/sh/v3 => github.com/blairham/sh/v3 v3.13.2-0.20260818144410-4efd06657966

@@ -17,36 +17,50 @@ import (
 //
 // The usual route for a construct the interpreter refuses is the
 // CallHandler: rename the call so it arrives somewhere koi controls
-// (overrides.go). Two constructs never become a call at all — the
-// *parser* classifies them, and the interpreter rejects them inside its
-// own dispatch — so the only seam left is the tree between parse and
-// run:
+// (overrides.go). One construct never becomes a call at all — the
+// *parser* classifies it, and the interpreter rejects it inside its own
+// dispatch — so the only seam left is the tree between parse and run:
 //
-//   - `>|` parses as [syntax.RdrClob] and hits the interpreter's
-//     "unhandled redirect op" default. It fails with **no message and
-//     exit 1**, and the file is never created. Silent is what makes it
-//     expensive: `echo hi >| file` looks like it worked.
 //   - `declare -F` / `typeset -F` parse as a *declaration clause*, which
 //     the interpreter implements itself and which no handler observes
 //     (the same wall declcall.go documents from the other side).
 //
-// Both are how agent harnesses and init scripts enumerate a shell:
-// Claude Code's shell snapshot opens with `echo … >| "$SNAPSHOT_FILE"`
-// and carries the user's functions across with `declare -F`, so a shell
-// that fails both is one those tools cannot drive at all.
+// That is how agent harnesses and init scripts enumerate a shell: Claude
+// Code's shell snapshot carries the user's functions across with
+// `declare -F`, so a shell that fails it is one those tools cannot drive
+// at all.
+//
+// `>|` was the other entry here, rewritten to a plain `>`. It is now
+// implemented upstream and the rewrite had to go, because the same
+// upstream commit implements `set -C`: renaming `>|` to `>` turned the
+// one redirect which is *supposed* to ignore noclobber into the one form
+// noclobber refuses. That is worse than the gap the rename was covering,
+// and it is the argument against this file growing rather than shrinking
+// — a rewrite is only equivalent until the substrate learns the
+// distinction it was flattening. The corpus case "`>|` overrides
+// noclobber" exists to keep it gone.
 //
 // Scope, stated rather than discovered later: this rewrites what *koi*
 // parses — an interactive line, `-c`, and a script file. `source` and
-// `eval` re-parse inside the interpreter, so a `>|` in a sourced file is
-// still the substrate's answer. Closing that means fixing it upstream,
-// which is what #119 tracks; this is the part koi can carry meanwhile.
+// `eval` re-parse inside the interpreter, so a `declare -F` in a sourced
+// file is still the substrate's answer (#242). Closing that means fixing
+// it upstream, which is what #119 tracks; this is the part koi can carry
+// meanwhile.
 
 // clobberEquivalent maps each clobbering redirect to the plain form the
-// interpreter implements. `>|` is the bash spelling and the one that
-// matters; the rest parse only under [syntax.LangZsh] and are here so a
-// future dialect switch does not reintroduce the same silent failure.
+// interpreter implements. These parse only under [syntax.LangZsh], which koi
+// never selects, so they are unreachable today and are kept so that a future
+// dialect switch does not reintroduce the silent failure `>|` used to have.
+//
+// `>|` ([syntax.RdrClob]) is deliberately absent: it is implemented upstream,
+// and renaming it now would make noclobber refuse it.
+//
+// Note that only the appending forms are safe to rename for the same reason.
+// If a zsh dialect is ever selected, `&>|` ([syntax.RdrAllClob]) has to be
+// dropped from here and fixed upstream the way `>|` was, because `&>` is
+// refused under noclobber whereas `&>|` must not be. Appending is never
+// refused, so `>>|` and `&>>|` are unaffected either way.
 var clobberEquivalent = map[syntax.RedirOperator]syntax.RedirOperator{
-	syntax.RdrClob:    syntax.RdrOut,
 	syntax.AppClob:    syntax.AppOut,
 	syntax.RdrAllClob: syntax.RdrAll,
 	syntax.AppAllClob: syntax.AppAll,
@@ -60,10 +74,9 @@ func rewriteSubstrateGaps(node syntax.Node) {
 			return true
 		}
 		for _, rd := range stmt.Redirs {
-			// No noclobber in the substrate, so the clobbering forms and
-			// their plain counterparts mean exactly the same thing. If
-			// noclobber ever lands, this is what has to grow a real
-			// distinction rather than a rename.
+			// Noclobber has landed in the substrate, so a clobbering form
+			// and its plain counterpart no longer mean the same thing.
+			// See the map for which renames survive that, and why.
 			if plain, ok := clobberEquivalent[rd.Op]; ok {
 				rd.Op = plain
 			}

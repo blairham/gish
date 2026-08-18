@@ -188,17 +188,13 @@ var AgentCorpus = []AgentCase{
 	},
 	{
 		Name:       "read -d '' consumes NUL-delimited input",
-		Provenance: "`find -print0 | while read -r -d '' f` is the only safe way to walk filenames with spaces or newlines; koi refuses -d, leaves the variable empty, and still exits 0",
+		Provenance: "`find -print0 | while read -r -d '' f` is the only safe way to walk filenames with spaces or newlines. -d was refused with exit 2, which nothing calling `read` checks, so the loop body simply never ran",
 		Argv:       []string{"-c", `printf 'a\000b\000' | { read -r -d '' x 2>/dev/null; echo "[${x}]"; }`},
-		Known:      243,
-		KnownNote:  "the read looks to the caller exactly like a successful read of an empty line, so no caller-side care can detect it",
 	},
 	{
 		Name:       "read -s does not silently return empty",
-		Provenance: "the same sweep found -s is accepted with no diagnostic at all — worse than -d, which at least complains",
+		Provenance: "the same sweep found -s returning nothing with no diagnostic. It was implemented, but read the process's own fd 0 rather than the shell's stdin, so every pipe and redirect — and every embedder supplying its own reader, koi included — got an empty string",
 		Argv:       []string{"-c", `echo hi | { read -r -s x 2>/dev/null; echo "[${x}]"; }`},
-		Known:      243,
-		KnownNote:  "no message and no status: a prompt reading a confirmation gets an empty string and proceeds",
 	},
 	{
 		Name: "quoted heredoc writes the file it was given",
@@ -217,10 +213,13 @@ var AgentCorpus = []AgentCase{
 	},
 	{
 		Name:       "noclobber protects an existing file",
-		Provenance: "`set -C` is refused, so a redirect the script asked to be prevented proceeds — the data-loss corner of the same bug",
-		Argv:       []string{"-c", `printf old > "$HOME/n"; set -C 2>/dev/null; echo new > "$HOME/n" 2>/dev/null; cat "$HOME/n"`},
-		Known:      245,
-		KnownNote:  "a script that sets noclobber precisely so it cannot destroy a file destroys it, and reports success",
+		Provenance: "`set -C` was refused, so a redirect the script asked to have prevented proceeded — the data-loss corner of the same bug. Note that the stderr suppression has to come *before* the failing redirect: redirections are applied left to right, so a trailing `2>/dev/null` is set up too late to hide the diagnostic, in bash exactly as much as here",
+		Argv:       []string{"-c", `printf old > "$HOME/n"; set -C; echo new 2>/dev/null > "$HOME/n"; cat "$HOME/n"`},
+	},
+	{
+		Name:       "`>|` overrides noclobber",
+		Provenance: "Claude Code's shell snapshot opens with `echo … >| \"$SNAPSHOT_FILE\"`, so `>|` is on the first line of the first thing the harness runs. It earns a case of its own because koi used to rewrite it to a plain `>`, which was harmless while the substrate had no noclobber and became the exact opposite of the intent once it did",
+		Argv:       []string{"-c", `printf old > "$HOME/n"; set -C; echo new >| "$HOME/n"; cat "$HOME/n"`},
 	},
 	{
 		Name:       "file descriptors above 2 carry data",
