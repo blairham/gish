@@ -244,6 +244,11 @@ func runEditor(ctx context.Context, login bool) error {
 	// honored on the first session — which is the one that matters when a
 	// new machine is bootstrapped from dotfiles.
 	exitStory(runner)
+	// The re-touch loop (#210). Resolved in the background off the
+	// startup path and reported at a prompt, never before one — a notice
+	// that cost first-prompt latency would be paying for retention with
+	// the thing that earns users in the first place (#37).
+	updateMgr := newUpdateNotifier()
 	// The previous line's context, released once the next line starts so
 	// its background statements have a window to exec (see
 	// runInterruptible).
@@ -279,6 +284,7 @@ func runEditor(ctx context.Context, login bool) error {
 			jumpMgr.note(runner)
 		}
 		sessionMgr.atPrompt(runner, lastCommandText)
+		updateMgr.atPrompt(runner, os.Stderr)
 		// Output capture (#99 stage 2) is opt-in and re-read each
 		// prompt, so `config blocks on` takes effect without a restart.
 		if shellVar(runner, "KOI_BLOCKS", "off") == "on" {
