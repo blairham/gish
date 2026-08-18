@@ -130,12 +130,31 @@ func checkRC() checkResult {
 			fmt.Sprintf("edit %s — the shell starts anyway but skips it", display),
 		}
 	}
+	// A second rc file that exists and is never read is invisible from
+	// here otherwise, and a ✔ would argue the configuration is fine
+	// (#232). Reported after the parse check, because a shadowing note on
+	// a file that does not parse would bury the more urgent problem.
+	if shadowed := shadowedRCs(); len(shadowed) > 0 {
+		names := make([]string, 0, len(shadowed))
+		for _, p := range shadowed {
+			names = append(names, displayPath(p))
+		}
+		return checkResult{
+			checkWarn, "rc",
+			fmt.Sprintf("%s parses cleanly, but %s also exists and is never read (first hit wins)",
+				display, strings.Join(names, " and ")),
+			fmt.Sprintf("move what you need into %s, then delete %s", display, strings.Join(names, " and ")),
+		}
+	}
 	return checkResult{checkOK, "rc", display + " parses cleanly", ""}
 }
 
 // checkTheme validates the whole KOI_THEME_* surface. The prompt
 // already degrades on bad values; doctor says why it degraded.
 func checkTheme(env expand.Environ) checkResult {
+	// p10kNote records which p10k.conf the engine will read, when the
+	// p10k theme is the one selected. Empty for every other theme.
+	var p10kNote string
 	theme := env.Get("KOI_THEME").String()
 	if theme == "" {
 		theme = "plain"
@@ -148,6 +167,18 @@ func checkTheme(env expand.Environ) checkResult {
 		}
 	}
 	if theme == "p10k" {
+		// Which p10k.conf is read, and whether it is there (#232, the same
+		// class as a shadowed rc): a config file that silently stops being
+		// read leaves the prompt falling back to preset defaults with
+		// nothing saying so. Reported rather than warned about, because
+		// not having one is the normal case.
+		if path, perr := promptengine.ConfigPath(); perr == nil {
+			if _, serr := os.Stat(path); serr != nil {
+				p10kNote = fmt.Sprintf(" (no %s; presets and KOI_P10K_* only)", displayPath(path))
+			} else {
+				p10kNote = " (config: " + displayPath(path) + ")"
+			}
+		}
 		if preset := env.Get("KOI_P10K_PRESET").String(); preset != "" && promptengine.Preset(preset) == nil {
 			return checkResult{
 				checkWarn, "theme",
@@ -198,7 +229,7 @@ func checkTheme(env expand.Environ) checkResult {
 			"config theme.segments / theme.color.<id> / theme.lines / theme.sep to rewrite them",
 		}
 	}
-	return checkResult{checkOK, "theme", theme, ""}
+	return checkResult{checkOK, "theme", theme + p10kNote, ""}
 }
 
 // checkLint flags the half-enabled state: the Enter-time multi-line
