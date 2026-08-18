@@ -1,15 +1,23 @@
 # Core-shaped Homebrew formula for gish (#164).
 #
-# Kept in the repo so a third-party submitter to homebrew/homebrew-core
-# has something to copy rather than reconstruct — Homebrew core applies
-# its notability bar more leniently to a formula submitted by someone
-# other than the author, so the submission is deliberately not ours to
-# make.
+# Not submittable yet, and docs/packaging.md says why with the numbers:
+# homebrew/homebrew-core wants 30 forks / 30 watchers / 75 stars for a
+# third-party submission and triple that (225 stars) for a self-submission
+# by the repository owner. Finding someone else to open the PR is worth
+# 3x, so the submission is deliberately not ours to make. This file exists
+# so that when the bar trips, submitting is a same-day action rather than
+# a week of reconstruction.
 #
 # Differences from the tap formula GoReleaser generates:
 #   - built from source, which is what core prefers for Go programs
 #   - no caveats telling anyone to run chsh: "never require chsh" is our
 #     own rule, and core reviewers dislike caveats regardless
+#   - only the version is stamped. The tap build stamps commit and date
+#     too, but core builds from a release tarball, which carries no git
+#     metadata — stamping the tap owner into main.commit (as this file
+#     used to) put the string "homebrew" where a commit hash belongs, and
+#     a build timestamp would make the build non-reproducible. main.go
+#     already defaults both to "none"/"unknown".
 #   - the test actually runs the shell rather than checking --version,
 #     because a binary that prints its version and cannot run a command
 #     is exactly the breakage worth catching
@@ -29,8 +37,6 @@ class Gish < Formula
     ldflags = %W[
       -s -w
       -X main.version=#{version}
-      -X main.commit=#{tap&.user || "homebrew"}
-      -X main.date=#{time.iso8601}
     ]
     system "go", "build", *std_go_args(ldflags: ldflags), "./cmd/gish"
     system "go", "build", *std_go_args(ldflags: ldflags, output: bin/"gish-git"), "./cmd/gish-git"
@@ -40,9 +46,14 @@ class Gish < Formula
   test do
     # It runs a command, and it is POSIX-clean on the -c path.
     assert_equal "ok", shell_output("#{bin}/gish -c 'echo ok'").strip
-    # Its own diagnostics agree that the install is sane.
+    # Its own diagnostics agree that the install is sane. Verified to exit 0
+    # under `env -i` with an empty HOME and no TERM — doctor exits non-zero
+    # only on ✘, and a bare install produces ⚠ at worst.
     system bin/"gish", "-c", "doctor >/dev/null"
-    # The bundled plugins are real binaries, not stubs.
     assert_match "gish", shell_output("#{bin}/gish --version")
+    # The bundled plugins got built and installed, rather than the install
+    # step silently producing only the shell.
+    assert_predicate bin/"gish-git", :executable?
+    assert_predicate bin/"gish-carapace", :executable?
   end
 end
