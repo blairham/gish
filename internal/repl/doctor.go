@@ -79,6 +79,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkClipboard(),
 		checkTerminal(),
 		checkLoginShell(),
+		checkUpdate(),
 	}
 
 	style := ui.Styles(ui.Enabled(hc.Stdout))
@@ -613,4 +614,43 @@ func sameFile(a, b string) bool {
 		return false
 	}
 	return os.SameFile(ai, bi)
+}
+
+// checkUpdate reports what the package manager already knows locally
+// about newer koi releases (#210).
+//
+// The wording is careful on purpose. koi never fetches anything, so the
+// only thing it can honestly assert is that something newer *has been
+// seen*. It cannot assert the converse: local metadata is exactly as
+// fresh as the user's last `brew update`, and reporting "up to date"
+// from stale data would be a confident answer that is wrong precisely
+// when it matters — the moment a fix has shipped and not been fetched.
+func checkUpdate() checkResult {
+	if Version == "dev" {
+		return checkResult{
+			checkOK, "update",
+			"built from source (version \"dev\") — release notices are for installed builds",
+			"",
+		}
+	}
+	latest, source := localLatestVersion()
+	if latest == "" {
+		return checkResult{
+			checkOK, "update",
+			fmt.Sprintf("running %s; no local package metadata to compare against, so nothing is checked and nothing is fetched", Version),
+			"",
+		}
+	}
+	if newerVersion(Version, latest) {
+		return checkResult{
+			checkWarn, "update",
+			fmt.Sprintf("koi %s is available (running %s), per %s", latest, Version, displayPath(source)),
+			upgradeHint() + "   (config update.notify off silences the prompt notice)",
+		}
+	}
+	return checkResult{
+		checkOK, "update",
+		fmt.Sprintf("running %s; nothing newer in local package metadata — which is as fresh as your last `brew update`, not a claim you are current", Version),
+		"",
+	}
 }

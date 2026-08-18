@@ -47,6 +47,7 @@ var configSettings = []configSetting{
 	{"suggest", "KOI_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
 	{"editmode", "KOI_EDIT_MODE", []string{"emacs", "vi"}, "line editor dialect — `set -o vi` sets it too"},
 	{"welcome", "KOI_WELCOME", []string{"on", "off"}, "the first-run notice that says how to uninstall (#212)"},
+	{"update.notify", "KOI_UPDATE_NOTIFY", []string{"on", "off"}, "say when the package manager already knows of a newer koi (#210)"},
 }
 
 const configUsage = `usage: config [setting [value]]
@@ -87,6 +88,7 @@ settings:
   suggest    on | off               (KOI_SUGGEST)
   editmode   emacs | vi             (KOI_EDIT_MODE)
   welcome    on | off               (KOI_WELCOME)
+  update.notify on | off            (KOI_UPDATE_NOTIFY)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
                     exit, plus any plugin segment id  (KOI_THEME_SEGMENTS)
   theme.color.<id>  color name, raw SGR params, or default

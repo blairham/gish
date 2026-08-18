@@ -64,6 +64,14 @@ late 2024 and open-sourced in 2026 to an audience that had already
 left. That is not a risk you can evaluate after adopting something,
 which is why it is stated here rather than conceded later.
 
+Even the update notice keeps that promise: koi tells you when a newer
+release exists, and it learns that by **reading what your package
+manager already downloaded** — never by asking anyone. There is no
+request to opt into, no cadence to configure, and nothing leaves the
+machine. The flip side is stated where it matters: koi can tell you
+something newer exists, but it will never claim you are up to date,
+because local metadata is only as fresh as your last `brew update`.
+
 **Try it without commitment.** Run `koi` in one tab — no `chsh`
 required, nothing to undo but two directories. On its first run it
 tells you how to uninstall it, once, before you have invested anything. Coming from bash or zsh,
