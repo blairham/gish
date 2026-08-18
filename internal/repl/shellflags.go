@@ -19,25 +19,67 @@ import (
 // since the nineties. An empty `$-` means every one of those blocks is
 // skipped, silently, and the tool appears to have installed nothing.
 //
+// What lands here is only the half the *shell* knows. Whether errexit or
+// nounset is on is the interpreter's business and changes on any line, so
+// `$-` is rendered there (interp.optionFlags) from the live option table,
+// with these letters unioned in — which is the whole of #265: this file
+// used to answer alone, and answered the same string forever, so the probe
+// `case $- in *e*)` reported errexit off in a shell that had just set it.
+//
 // It is supplied through the base environment rather than as a shell
-// variable because the interpreter has no special case for `$-`, and a
-// variable named `-` cannot be written by any assignment syntax. Going
-// in through the environment also keeps it out of children: Each does
-// not yield it, so no subprocess is handed an env entry named "-",
-// which nothing in the world expects to see.
+// variable because a variable named `-` cannot be written by any
+// assignment syntax. Going in through the environment also keeps it out
+// of children: Each does not yield it, so no subprocess is handed an env
+// entry named "-", which nothing in the world expects to see.
 
-// shellFlags reports the option letters for this session, in bash's
-// order. Only the ones koi can honestly claim appear.
-func shellFlags(interactive bool) string {
+// invocation is how the shell was started, which bash reports as the last
+// letter of `$-`: `c` for -c, `s` for commands read from standard input,
+// and neither for a script named on the command line.
+type invocation byte
+
+const (
+	invokedScript  invocation = 0
+	invokedCommand invocation = 'c'
+	invokedStdin   invocation = 's'
+)
+
+// sessionFlags is what only the shell around the interpreter can answer.
+//
+// Each field is claimed rather than inferred, because the honest answer
+// differs by path and inferring would overclaim: `koi -ic` is interactive
+// and sources the rc, but runs no line editor, so it has neither history
+// expansion nor job control — and saying otherwise in a variable whose
+// entire purpose is to be probed is how a caller takes the wrong branch.
+type sessionFlags struct {
+	interactive bool // -i, or a session on a terminal
+	jobControl  bool // process groups and terminal handoff are live (#5)
+	histExpand  bool // `!!` and friends are being expanded (#96)
+	invocation  invocation
+}
+
+// shellFlags reports this session's letters. Only the ones koi can
+// honestly claim appear; ordering is left to the interpreter, which has
+// the other half of the string.
+//
+// bash's `h` (hashall) is the one deliberate omission, and it is why the
+// tests compare probe answers rather than the whole string: bash reports
+// it in every shell, but koi's `set` refuses `+h` (#245), so claiming it
+// would put a letter in `$-` that a caller cannot turn off. Absent is a
+// safe answer for a probe; present-and-unchangeable is not.
+func shellFlags(f sessionFlags) string {
 	flags := "B" // brace expansion, always on
-	if interactive {
-		flags += "H" // history expansion (#96)
+	if f.interactive {
 		flags += "i"
-		if jobs.Supported() {
-			flags += "m" // job control (#5)
-		}
 	}
-	flags += "s" // reading commands from standard input
+	if f.histExpand {
+		flags += "H"
+	}
+	if f.jobControl && jobs.Supported() {
+		flags += "m"
+	}
+	if f.invocation != invokedScript {
+		flags += string(rune(f.invocation))
+	}
 	return flags
 }
 
@@ -60,10 +102,10 @@ func (e flagsEnviron) Get(name string) expand.Variable {
 func (e flagsEnviron) Each(fn func(string, expand.Variable) bool) { e.base.Each(fn) }
 
 // sessionEnv builds the runner's base environment with `$-` in place.
-func sessionEnv(interactive bool) expand.Environ {
+func sessionEnv(f sessionFlags) expand.Environ {
 	return flagsEnviron{
 		base:  expand.ListEnviron(os.Environ()...),
-		flags: shellFlags(interactive),
+		flags: shellFlags(f),
 	}
 }
 

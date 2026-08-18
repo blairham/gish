@@ -1801,6 +1801,45 @@ var runTests = []runTest{
 		"cat <<'EOF'\nfoo\\\nbar\nEOF",
 		"foo\\\nbar\n",
 	},
+	// `$-` tracks the options that are set (#265). The letters themselves
+	// are not compared, because bash reports `h` for hashing and an
+	// embedder contributes letters this package cannot know about; what is
+	// compared is the answer the idiom asks for, which is all a caller
+	// ever acts on.
+	{
+		"set -e; case $- in *e*) echo on;; *) echo off;; esac",
+		"on\n",
+	},
+	{
+		"set -e; set +e; case $- in *e*) echo on;; *) echo off;; esac",
+		"off\n",
+	},
+	{
+		"set -uf; case $- in *u*) echo u;; esac; case $- in *f*) echo f;; esac",
+		"u\nf\n",
+	},
+	{
+		"f() { set -e; case $- in *e*) echo on;; esac; }; f",
+		"on\n",
+	},
+	{
+		"( set -u; case $- in *u*) echo sub;; esac ); case $- in *u*) echo outer;; *) echo clean;; esac",
+		"sub\nclean\n",
+	},
+	{
+		"eval 'set -f; case $- in *f*) echo yes;; esac'",
+		"yes\n",
+	},
+	{
+		// `set -o pipefail` has no letter, in bash exactly as here.
+		"set -o pipefail; case $- in *o*) echo letter;; *) echo none;; esac",
+		"none\n",
+	},
+	{
+		// `$-` is always set, so `set -u` must not make reading it fatal.
+		"set -u; echo \"${-+present}\"",
+		"present\n",
+	},
 	// A quoted delimiter makes the body literal, and that includes escape
 	// processing — not only expansion (#244). The cases below were the
 	// whole bug: `\\`, `\$` and an escaped backquote were the one set

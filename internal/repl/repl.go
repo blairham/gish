@@ -126,7 +126,12 @@ func runEditor(ctx context.Context, login bool) error {
 		sandboxExecMiddleware,
 		table.ExecMiddleware)
 	runnerOpts := []interp.RunnerOption{
-		interp.Env(sessionEnv(true)),
+		interp.Env(sessionEnv(sessionFlags{
+			interactive: true,
+			jobControl:  true,
+			histExpand:  true,
+			invocation:  invokedStdin,
+		})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(execChain...),
 	}
@@ -654,7 +659,7 @@ func acceptWhen(text string) bool {
 func runPlain(ctx context.Context, login bool) error {
 	registerSubstrateBuiltins()
 	runner, err := interp.New(
-		interp.Env(sessionEnv(false)),
+		interp.Env(sessionEnv(sessionFlags{invocation: invokedStdin})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 		interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))),
@@ -722,7 +727,7 @@ func RunCommand(ctx context.Context, src string, login, interactive bool, operan
 	if len(operands) > 0 {
 		name, params = operands[0], operands[1:]
 	}
-	return runScript(ctx, strings.NewReader(src), name, login, interactive, params...)
+	return runScript(ctx, strings.NewReader(src), name, login, interactive, invokedCommand, params...)
 }
 
 // RunFile runs the script at path. Everything after the path is a
@@ -733,7 +738,7 @@ func RunFile(ctx context.Context, path string, login, interactive bool, params .
 		return err
 	}
 	defer f.Close()
-	return runScript(ctx, f, path, login, interactive, params...)
+	return runScript(ctx, f, path, login, interactive, invokedScript, params...)
 }
 
 // runScript is the non-interactive execution path, optionally preceded
@@ -742,7 +747,7 @@ func RunFile(ctx context.Context, path string, login, interactive bool, params .
 // $0 is the parse name, which is why it is threaded through rather than
 // fixed: for a script it is the path, and for -c it is whatever operand
 // the caller supplied.
-func runScript(ctx context.Context, r io.Reader, name string, login, interactive bool, params ...string) error {
+func runScript(ctx context.Context, r io.Reader, name string, login, interactive bool, inv invocation, params ...string) error {
 	file, err := syntax.NewParser().Parse(r, name)
 	if err != nil {
 		return err
@@ -754,7 +759,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		// dash would be read as a shell option, so `koi script.sh -v`
 		// would try to set -v instead of passing it along.
 		interp.Params(append([]string{"--"}, params...)...),
-		interp.Env(sessionEnv(false)),
+		interp.Env(sessionEnv(sessionFlags{interactive: interactive, invocation: inv})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 		interp.CallHandler(declCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))),

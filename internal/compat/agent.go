@@ -201,6 +201,13 @@ var AgentCorpus = []AgentCase{
 		Argv: []string{"-c", `cat > "$HOME/w" <<'X'` + "\n" + `re='\\d+' and \$var` + "\nX\n" + `cat "$HOME/w"`},
 	},
 	{
+		Name: "`-i` reaches `$-`, so an rc's interactive half runs",
+		Provenance: "fzf's key-binding script opens `[[ $- =~ i ]]`, and a great many rc files gate their interactive half on `case $- in *i*)`. " +
+			"koi's `$-` was a constant containing neither `i` nor the letter of any option that had been set, so under `-i` those blocks were " +
+			"skipped in silence and the tool looked like it had installed nothing (#265)",
+		Argv: []string{"-ic", `case $- in *i*) echo interactive;; *) echo noninteractive;; esac`},
+	},
+	{
 		Name:       "strict-mode header takes effect",
 		Provenance: "`set -Eeuo pipefail` is the header on essentially every modern bash script and CI job. -E was refused, and one refused letter voided the whole call, so none of -e, -u or pipefail applied either and the script ran on past the failure it was written to stop at",
 		Argv:       []string{"-c", `set -Eeuo pipefail; false; echo REACHED`},

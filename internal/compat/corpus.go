@@ -286,6 +286,27 @@ echo "${HOME:?home must be set}" >/dev/null && echo home-ok
 (false | true); echo "pipestatus=$?"`,
 	},
 	{
+		Name: "`$-` answers the option probe", Category: CatControl,
+		Provenance: "#265: `[[ $- == *e* ]] && restore=1; set +e; …; ((restore)) && set -e` is how a library protects a " +
+			"risky section. `$-` was a constant with no `e` in it, so the probe said errexit was off in a shell that had " +
+			"just set it, the restore never ran, and the script continued past the failure it was written to stop at. " +
+			"The letters are compared as answers rather than as a string: koi does not claim bash's `h`, and what a " +
+			"caller acts on is whether its own letter is in there",
+		Script: `set -e
+[[ $- == *e* ]] && restore=1
+set +e
+case $- in *e*) echo still-on;; *) echo suspended;; esac
+[[ $restore == 1 ]] && set -e
+case $- in *e*) echo restored;; *) echo lost;; esac
+set -uf
+case $- in *u*) echo u;; esac
+case $- in *f*) echo f;; esac
+g() { case $- in *e*) echo e-in-function;; esac; }
+g
+( set +e; case $- in *e*) echo e-in-subshell;; *) echo clean-subshell;; esac )
+case $- in *i*) echo interactive;; *) echo noninteractive;; esac`,
+	},
+	{
 		Name: "trap on EXIT", Category: CatControl,
 		Provenance: "cleanup handlers in every serious script",
 		Script: `trap 'echo cleanup-ran' EXIT
