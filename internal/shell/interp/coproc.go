@@ -106,7 +106,8 @@ func (r *Runner) coproc(ctx context.Context, cc *syntax.CoprocClause) {
 			close(bg.done)
 		}()
 		r2.stmt(ctx, cc.Stmt)
-		r2.exit.exiting = false // subshells don't exit the parent shell
+		r2.exit.exiting = false  // subshells don't exit the parent shell
+		r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 	}()
 
 	// Starting a coprocess succeeds; whether the command does is what

@@ -86,7 +86,8 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 			r2.bgProcs = inheritedJobs(r.bgProcs)
 			r2.stdout = w
 			r2.stmts(ctx, cs.Stmts)
-			r2.exit.exiting = false // subshells don't exit the parent shell
+			r2.exit.exiting = false  // subshells don't exit the parent shell
+			r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 			r.lastExpandExit = r2.exit
 			if r2.exit.fatalExit {
 				return r2.exit.err // surface fatal errors immediately
@@ -170,7 +171,8 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 					panic(fmt.Sprintf("unexpected process substitution operator: %q", ps.Op))
 				}
 				r2.stmts(ctx, ps.Stmts)
-				r2.exit.exiting = false // subshells don't exit the parent shell
+				r2.exit.exiting = false  // subshells don't exit the parent shell
+				r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 			}()
 			return path, nil
 		},
@@ -438,7 +440,7 @@ func (r *Runner) errf(format string, a ...any) {
 
 func (r *Runner) stop(ctx context.Context) bool {
 	// Some traps trigger on exit, so we do want those to run.
-	if !r.handlingTrap && (r.exit.returning || r.exit.exiting) {
+	if !r.handlingTrap && (r.exit.returning || r.exit.exiting || r.exit.aborting) {
 		return true
 	}
 	if err := ctx.Err(); err != nil {
@@ -473,7 +475,8 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 		r.bgProcs = append(r.bgProcs, bg)
 		go func() {
 			r2.Run(ctx, &st2)
-			r2.exit.exiting = false // subshells don't exit the parent shell
+			r2.exit.exiting = false  // subshells don't exit the parent shell
+			r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 			*bg.exit = r2.exit
 			close(bg.done)
 		}()
@@ -726,7 +729,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.Subshell:
 		r2 := r.subshell(false)
 		r2.stmts(ctx, cm.Stmts)
-		r2.exit.exiting = false // subshells don't exit the parent shell
+		r2.exit.exiting = false  // subshells don't exit the parent shell
+		r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 		r.exit = r2.exit
 	case *syntax.CallExpr:
 		// Build new slices, to not modify the caller's AST
@@ -765,9 +769,16 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					// "declare", "export", "let", "((...))" or "read", which
 					// all carry on. Inside a subshell it ends the subshell
 					// only, which falls out of how exiting is handled.
+					//
+					// "Fatal" is bash's word for throwing away the command
+					// being run and going back to reading input, though --
+					// not for killing the shell, which it only does under
+					// `set -o posix`. Marking this `exiting` cost a script
+					// every line after the offending one, so a cleanup or a
+					// teardown trap below it never ran (#308).
 					r.errf("%s: readonly variable\n", name)
 					r.exit.code = 1
-					r.exit.exiting = true
+					r.exit.aborting = true
 					return
 				}
 
@@ -885,7 +896,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				r2.stmt(ctx, cm.X)
-				r2.exit.exiting = false // subshells don't exit the parent shell
+				r2.exit.exiting = false  // subshells don't exit the parent shell
+				r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 				pw.Close()
 			})
 			r.pipeStatus = nil
@@ -1576,6 +1588,46 @@ func elapsedString(d time.Duration, posix bool) string {
 func (r *Runner) stmts(ctx context.Context, stmts []*syntax.Stmt) {
 	for _, stmt := range stmts {
 		r.stmt(ctx, stmt)
+	}
+}
+
+// stmtsTopLevel runs a whole file's statements, and is where an `aborting`
+// exit stops unwinding and the shell carries on.
+//
+// bash calls an assignment to a readonly variable fatal, but "fatal" there
+// means it throws away the command it is running and goes back to reading
+// input -- not that the shell dies. Measured against 5.3, everything after
+// the failure *in that command* is skipped and the next one runs:
+//
+//	readonly foo=one
+//	f() { echo in1; foo=4; echo in2; }   # in2 never runs
+//	f
+//	echo after                           # this does, and the script exits 0
+//
+// What resumes is the next *line*, not the next statement, because a line is
+// bash's reading unit -- the same rule ParseAsRead is built on. On one line,
+//
+//	readonly foo=one; foo=4; echo done
+//
+// bash prints the error and `done` never appears. So the statements skipped
+// here are the ones that begin no later than the line the aborted statement
+// ended on, which covers both shapes with one comparison.
+//
+// Note this is the non-POSIX behavior, which is the default and the one koi
+// was getting wrong. Under `set -o posix` bash really does exit the shell --
+// koi cannot express that yet, since it does not accept the option at all
+// (#245); the branch belongs with it when it lands.
+func (r *Runner) stmtsTopLevel(ctx context.Context, stmts []*syntax.Stmt) {
+	for i := 0; i < len(stmts); i++ {
+		r.stmt(ctx, stmts[i])
+		if !r.exit.aborting {
+			continue
+		}
+		r.exit.aborting = false
+		resumeAfter := stmts[i].End().Line()
+		for i+1 < len(stmts) && stmts[i+1].Pos().Line() <= resumeAfter {
+			i++
+		}
 	}
 }
 

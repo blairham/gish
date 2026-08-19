@@ -278,6 +278,14 @@ type exitStatus struct {
 	exiting   bool // whether the current shell is exiting
 	fatalExit bool // whether the current shell is exiting due to a fatal error; err below must not be nil
 
+	// aborting unwinds to the top level and resumes there, which is what
+	// bash does to the errors it calls fatal in a non-interactive shell --
+	// an assignment to a readonly variable being the one koi raises (#308).
+	// It is not `exiting`: the shell survives and reads on. See
+	// [Runner.stmtsTopLevel] for where it is caught and why the resuming
+	// point is a line rather than a statement.
+	aborting bool
+
 	// err holds the error information for a non-zero exit status code or fatal error.
 	// Used so that running a single statement with a custom handler
 	// which returns a non-fatal Go error, such as a Go error wrapping [NewExitStatus],
@@ -288,7 +296,7 @@ type exitStatus struct {
 // clear sets the exit status code and error to zero, as long as the exit status
 // was not set by `return`, `exit`, or a fatal error.
 func (e *exitStatus) clear() {
-	if e.returning || e.exiting || e.fatalExit {
+	if e.returning || e.exiting || e.fatalExit || e.aborting {
 		return
 	}
 	e.code = 0
@@ -1072,7 +1080,7 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
 	switch node := node.(type) {
 	case *syntax.File:
 		r.filename = node.Name
-		r.stmts(ctx, node.Stmts)
+		r.stmtsTopLevel(ctx, node.Stmts)
 	case *syntax.Stmt:
 		r.stmt(ctx, node)
 	case syntax.Command:
