@@ -499,6 +499,35 @@ const (
 	mainFrameName   = "main"
 )
 
+// enterFuncForReturnTrap turns the RETURN trap off for a function call
+// unless "functrace" is set, and returns what to restore on the way out.
+//
+// bash inherits RETURN into a function only under `set -T`, which is the
+// same switch that governs DEBUG. `source` is deliberately not routed
+// through here: a sourced file inherits the trap unconditionally, so its
+// return fires whatever the caller had set.
+func (r *Runner) enterFuncForReturnTrap() bool {
+	old := r.returnTrapOff
+	if !r.opts[optFuncTrace] {
+		r.returnTrapOff = true
+	}
+	return old
+}
+
+// runReturnTrap fires the RETURN trap for a frame that is about to be
+// left, if it is set and reachable from here.
+//
+// Called *before* the frame is popped, because FUNCNAME inside the trap
+// is still the function that is returning — which is what a cleanup
+// handler reads to name what it is cleaning up after. The exit status is
+// restored by trapCallback, so a `return 5` still answers 5.
+func (r *Runner) runReturnTrap(ctx context.Context) {
+	if r.callbackReturn == "" || r.returnTrapOff {
+		return
+	}
+	r.trapCallback(ctx, r.callbackReturn, "return")
+}
+
 // pushFrame enters a context; the returned function leaves it.
 func (r *Runner) pushFrame(f callFrame) func() {
 	old := r.frames
@@ -1309,7 +1338,7 @@ func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) {
 
 // listedTraps is what `trap -p` reports, as distinct from what runs. See
 // the field on [Runner] for why the two are not the same set.
-type listedTraps struct{ exit, err, debug string }
+type listedTraps struct{ exit, err, debug, ret string }
 
 // printTraps answers `trap -p` and bare `trap`: the handlers that are
 // set, spelled as the commands that would restore them.
@@ -1330,6 +1359,7 @@ func (r *Runner) printTraps(names []string) {
 		{"EXIT", r.listed.exit},
 		{"DEBUG", r.listed.debug},
 		{"ERR", r.listed.err},
+		{"RETURN", r.listed.ret},
 	}
 	for _, tr := range set {
 		if tr.callback == "" {
@@ -1851,12 +1881,19 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			isFunc:   true,
 		})
 
+		oldReturnTrapOff := r.enterFuncForReturnTrap()
+
 		// Functions run in a nested scope.
 		// Note that [Runner.exec] below does something similar.
 		origEnv := r.writeEnv
 		r.writeEnv = &overlayEnviron{parent: r.writeEnv, funcScope: true}
 
 		r.stmt(ctx, body)
+
+		// Before the scope and the frame go: the trap sees the
+		// function's locals and its FUNCNAME, as bash's does.
+		r.runReturnTrap(ctx)
+		r.returnTrapOff = oldReturnTrapOff
 
 		r.writeEnv = origEnv
 
