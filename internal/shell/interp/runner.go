@@ -1718,12 +1718,21 @@ func literalHdoc(rd *syntax.Redirect) (string, bool) {
 	if rd.Hdoc == nil || !hdocDelimQuoted(rd.Word) {
 		return "", false
 	}
-	// The quoted delimiter sends the lexer down its own path
-	// ([syntax.Parser.quotedHdocWord]), which yields exactly one literal
-	// and no expansion tree to preserve. Any other shape means the parser
-	// did *not* agree the delimiter was quoted, and treating live
-	// expansions as text is the same bug pointing the other way — so leave
-	// it to the expanding path.
+	// The body is one literal by the time it gets here: either the lexer
+	// built it that way because it agreed the delimiter was quoted, or
+	// [relitHeredocs] put it back that way from the source because it had
+	// not (#258). Any other shape means neither happened, and treating
+	// live expansions as text is the same bug pointing the other way — so
+	// leave it to the expanding path.
+	//
+	// That last case is reachable by one caller: an embedder that parses
+	// with [syntax.Parser] itself and hands the tree straight to Run,
+	// rather than coming through [ParseAsRead] as every koi entry point
+	// does. The repair needs the source text and Run does not have it, so
+	// the partially quoted delimiter keeps the parser's answer there. It
+	// cannot be fixed from the tree alone: a printed tree is not the
+	// source it came from, which is the whole reason relitHeredocs slices
+	// instead.
 	if len(rd.Hdoc.Parts) != 1 {
 		return "", false
 	}
@@ -1731,44 +1740,37 @@ func literalHdoc(rd *syntax.Redirect) (string, bool) {
 	if !ok {
 		return "", false
 	}
+	body := lit.Value
 	// `<<-'X'` strips leading tabs from every line. The lexer skips them
 	// only when matching the delimiter, not when building the body, so the
 	// stripping is the consumer's job either way — see the DashHdoc branch
 	// in hdocReader, which does the same thing a line at a time because it
 	// has expansions to interleave and this does not.
 	if rd.Op != syntax.DashHdoc {
-		return lit.Value, true
+		return body, true
 	}
-	lines := strings.Split(lit.Value, "\n")
+	lines := strings.Split(body, "\n")
 	for i, line := range lines {
 		lines[i] = strings.TrimLeft(line, "\t")
 	}
 	return strings.Join(lines, "\n"), true
 }
 
-// hdocDelimQuoted reports whether the *parser* treated this
-// here-document's delimiter as quoted.
+// hdocDelimQuoted reports whether a here-document's delimiter is quoted,
+// which is POSIX's test for whether the body expands: "if any character in
+// word is quoted, the here-document lines shall not be expanded".
 //
-// The parser decides this in unquotedWordBytes and keeps the verdict to
-// itself — nothing on the tree records it — so it has to be recomputed
-// here, quirk included: that function overwrites its verdict per part
-// instead of accumulating it, so only the last part decides and `<<'X'Y`
-// reads as unquoted (#258). Matching the parser is the point rather than
-// an oversight, because that verdict is what picked the lexer path which
-// built the body; being more correct than it here would mean handing back
-// a body that still has real expansions in it.
-func hdocDelimQuoted(w *syntax.Word) bool {
-	if w == nil || len(w.Parts) == 0 {
-		return false
-	}
-	switch part := w.Parts[len(w.Parts)-1].(type) {
-	case *syntax.SglQuoted, *syntax.DblQuoted:
-		return true
-	case *syntax.Lit:
-		return strings.Contains(part.Value, "\\")
-	}
-	return false
-}
+// Any character, so any part. This used to ask only the *last* part, to
+// match the parser — which decides the same question in unquotedWordBytes
+// and overwrites its verdict per part rather than accumulating it, so
+// `<<'X'Y` reads there as unquoted. Mirroring that made `<<'X'Y` expand
+// its body, from a delimiter whose quote says it must not (#258).
+//
+// Disagreeing with the parser is safe now, which it was not before:
+// [relitHeredocs] has already put such a body back to the literal it was
+// written as, so there is a single literal here to hand over rather than
+// an expansion tree to mistake for text.
+func hdocDelimQuoted(w *syntax.Word) bool { return posixQuotedDelim(w) }
 
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
 	if rd.Hdoc != nil {
