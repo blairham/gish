@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blairham/koi-shell/internal/gitstatus"
 	"github.com/blairham/koi-shell/internal/promptengine"
 )
 
@@ -75,5 +76,52 @@ func TestMergeVCSCountsIgnoresNonRepos(t *testing.T) {
 	mergeVCSCounts(g) // no Dir: nothing to do, and no panic
 	if g.Modified != 0 || g.Stashed != 0 {
 		t.Errorf("counts invented for an empty status: %+v", g)
+	}
+}
+
+// TestMergeVCSCountsMarksCountsNothingRefreshed covers the other half of
+// the cache's contract (#132). The engine renders a dim marker when
+// GitStatus.Stale is set — and nothing in the tree ever set it, so a
+// prompt served counts from a scan that had stopped working presented
+// them as current. The two clocks are what make this decidable: the
+// attempt time keeps a broken repository from forking per prompt, while
+// the success time is the age of the numbers actually on screen.
+func TestMergeVCSCountsMarksCountsNothingRefreshed(t *testing.T) {
+	t.Parallel()
+
+	// fetched is now in both cases, so no background scan starts and the
+	// test neither forks nor sleeps: what is under test is the decision,
+	// not the scanner.
+	prime := func(dir string, lastGood time.Time) {
+		countsCache.Store(dir, &countsEntry{
+			counts:    gitstatus.Counts{Dirty: 3},
+			fetched:   time.Now(),
+			succeeded: lastGood,
+			haveCount: true,
+		})
+	}
+
+	fresh := t.TempDir()
+	prime(fresh, time.Now())
+	g := &promptengine.GitStatus{Dir: fresh, Branch: "main"}
+	mergeVCSCounts(g)
+	if g.Modified != 3 {
+		t.Fatalf("cached counts not served: %+v", g)
+	}
+	if g.Stale {
+		t.Errorf("counts from a scan that just succeeded marked stale: %+v", g)
+	}
+
+	// A repository git has stopped answering for: the attempt clock keeps
+	// moving, so only the success clock can tell.
+	stuck := t.TempDir()
+	prime(stuck, time.Now().Add(-2*countsStaleAfter))
+	g = &promptengine.GitStatus{Dir: stuck, Branch: "main"}
+	mergeVCSCounts(g)
+	if g.Modified != 3 {
+		t.Fatalf("cached counts not served: %+v", g)
+	}
+	if !g.Stale {
+		t.Errorf("counts no scan has replaced presented as current: %+v", g)
 	}
 }

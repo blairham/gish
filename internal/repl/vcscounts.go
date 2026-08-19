@@ -24,20 +24,49 @@ import (
 // old, starts a refresh in the background and renders without it. A
 // prompt one keystroke behind on a counter is the cost; a prompt that
 // waits on git is not acceptable at all.
+//
+// Serving cached numbers is only honest if the prompt admits when they
+// have stopped being refreshed, and it did not (#132): the engine dims
+// the segment when GitStatus.Stale is set, and nothing here ever set it,
+// so counts from a scan that had been failing for a minute rendered
+// exactly like counts from a scan that finished a moment ago. Hence the
+// two clocks below.
 
 // countsTTL is how long a scan's answer is served before a refresh is
 // started. Short enough that the counters track editing, long enough
 // that holding Enter does not fork per prompt.
 const countsTTL = 900 * time.Millisecond
 
+// countsStaleAfter is when the counters stop claiming to be current and
+// render the dim marker instead.
+//
+// It is deliberately not countsTTL. The TTL is when a refresh *starts*,
+// which in interactive use is almost every prompt — anyone who pauses a
+// second between commands crosses it — so marking at the TTL would put
+// the marker on nearly every prompt, and a marker that is always on says
+// nothing. This is the other threshold: a refresh begins at countsTTL
+// and is bounded at ScanTimeout, so by the sum of the two a scan has
+// either delivered or given up. Numbers older than that survived a whole
+// cycle that failed to replace them, which is the case the marker is
+// for.
+const countsStaleAfter = countsTTL + gitstatus.ScanTimeout
+
 // countsCache holds the last scan per working tree.
 var countsCache sync.Map // workTree -> *countsEntry
 
 type countsEntry struct {
-	mu        sync.Mutex
-	counts    gitstatus.Counts
+	mu       sync.Mutex
+	counts   gitstatus.Counts
+	scanning bool
+
+	// fetched is the last *attempt* and succeeded is the last one that
+	// produced counts. They are separate because a failing repository
+	// moves only the first: the attempt time has to advance on failure
+	// or a repository git cannot read forks once per prompt, but letting
+	// that advance the freshness clock too is how counts from a scan
+	// that has not worked in a minute keep rendering as current.
 	fetched   time.Time
-	scanning  bool
+	succeeded time.Time
 	haveCount bool
 }
 
@@ -56,12 +85,12 @@ func mergeVCSCounts(g *promptengine.GitStatus) {
 	e := v.(*countsEntry)
 
 	e.mu.Lock()
-	stale := time.Since(e.fetched) > countsTTL
-	if stale && !e.scanning {
+	if time.Since(e.fetched) > countsTTL && !e.scanning {
 		e.scanning = true
 		go e.scan(g.Dir)
 	}
 	have, counts := e.haveCount, e.counts
+	stale := time.Since(e.succeeded) > countsStaleAfter
 	e.mu.Unlock()
 
 	if !have {
@@ -76,6 +105,7 @@ func mergeVCSCounts(g *promptengine.GitStatus) {
 		Untracked:  counts.Untracked,
 		Conflicted: counts.Conflicted,
 		Stashed:    counts.Stashed,
+		Stale:      stale,
 	})
 }
 
@@ -86,11 +116,12 @@ func (e *countsEntry) scan(dir string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.scanning = false
-	// The timestamp moves even on failure, so a repository git cannot
+	// The attempt time moves even on failure, so a repository git cannot
 	// read does not turn into a fork per prompt.
-	e.fetched = time.Now()
+	now := time.Now()
+	e.fetched = now
 	if err != nil {
 		return
 	}
-	e.counts, e.haveCount = counts, true
+	e.counts, e.haveCount, e.succeeded = counts, true, now
 }
