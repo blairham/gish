@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -30,6 +31,20 @@ type uvDecoder = uv.EventDecoder
 //   - Bytes never read from the kernel remain there for child processes —
 //     the shell stops consuming stdin the moment ctx is canceled.
 func (t *TTY) Events(ctx context.Context) (<-chan Event, error) {
+	// Wait for the previous session to finish handing its type-ahead over.
+	//
+	// A session stashes what it read but never delivered, and the next one
+	// picks that up as its starting buffer. Those are different goroutines,
+	// and nothing used to order them: the outgoing reader could still be
+	// sitting in a read when the incoming decode loop had already taken
+	// t.pending, so the bytes it stashed a moment later were not seen by
+	// the prompt they were typed at -- they waited for the one after it.
+	// The shell then sat there having written nothing, which is the whole
+	// signature of #279, and it needed the two to be scheduled in the wrong
+	// order, which is why it only showed up on a loaded CI runner.
+	if prev := t.prevDone; prev != nil {
+		<-prev
+	}
 	cr, err := uv.NewCancelReader(t.f)
 	if err != nil {
 		return nil, err
@@ -39,8 +54,20 @@ func (t *TTY) Events(ctx context.Context) (<-chan Event, error) {
 		cr.Cancel()
 	}()
 
+	// done closes once both goroutines below have stopped touching the
+	// stash, which is exactly what the next Events call waits for.
+	var stashing sync.WaitGroup
+	stashing.Add(2)
+	done := make(chan struct{})
+	t.prevDone = done
+	go func() {
+		stashing.Wait()
+		close(done)
+	}()
+
 	reads := make(chan []byte)
 	go func() {
+		defer stashing.Done()
 		defer close(reads)
 		for {
 			b := make([]byte, 256)
@@ -64,6 +91,7 @@ func (t *TTY) Events(ctx context.Context) (<-chan Event, error) {
 	winch, stopWinch := notifyResize()
 	out := make(chan Event) // unbuffered: decode only as fast as consumed
 	go func() {
+		defer stashing.Done()
 		defer close(out)
 		defer stopWinch()
 		t.decodeLoop(ctx, reads, winch, out)
@@ -73,15 +101,38 @@ func (t *TTY) Events(ctx context.Context) (<-chan Event, error) {
 
 // stashBytes appends undelivered input for the next Events session.
 func (t *TTY) stashBytes(b []byte) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.pending = append(t.pending, b...)
+}
+
+// takeStash claims what the previous session left behind.
+func (t *TTY) takeStash() ([]byte, []Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	buf, evs := t.pending, t.pendingEv
+	t.pending, t.pendingEv = nil, nil
+	return buf, evs
+}
+
+// stashEvent keeps the one event a canceled consumer never took.
+func (t *TTY) stashEvent(ev Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pendingEv = append(t.pendingEv, ev)
+}
+
+// stashUndecoded puts back bytes this session read but never decoded,
+// ahead of anything already waiting, so the input keeps its order.
+func (t *TTY) stashUndecoded(buf []byte) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pending = append(append([]byte{}, buf...), t.pending...)
 }
 
 //nolint:gocognit // the event loop is one state machine; splitting it obscures the states
 func (t *TTY) decodeLoop(ctx context.Context, reads <-chan []byte, winch <-chan os.Signal, out chan<- Event) {
-	buf := t.pending
-	t.pending = nil
-	queued := t.pendingEv
-	t.pendingEv = nil
+	buf, queued := t.takeStash()
 
 	var (
 		pasting   bool
@@ -96,16 +147,16 @@ func (t *TTY) decodeLoop(ctx context.Context, reads <-chan []byte, winch <-chan 
 		case out <- ev:
 			return true
 		case <-ctx.Done():
-			t.pendingEv = append(t.pendingEv, ev)
+			t.stashEvent(ev)
 			return false
 		}
 	}
 
 	bail := func() {
 		if pasting && paste.Len() > 0 {
-			t.pendingEv = append(t.pendingEv, PasteEvent{Text: paste.String()})
+			t.stashEvent(PasteEvent{Text: paste.String()})
 		}
-		t.pending = append(append([]byte{}, buf...), t.pending...)
+		t.stashUndecoded(buf)
 	}
 
 	for _, ev := range queued {
