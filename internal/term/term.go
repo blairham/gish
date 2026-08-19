@@ -98,8 +98,19 @@ type TTY struct {
 
 	// Type-ahead carried between Events sessions: input the loop
 	// consumed but the previous session's consumer never received.
+	//
+	// Guarded by mu, because the goroutines that *write* it belong to the
+	// session being torn down while the goroutine that reads it belongs
+	// to the one starting up. prevDone is how those two are ordered; see
+	// [TTY.Events].
+	mu        sync.Mutex
 	pending   []byte
 	pendingEv []Event
+
+	// prevDone is closed once the previous Events session has finished
+	// stashing. Only Events touches it, and the editor starts sessions
+	// one at a time.
+	prevDone chan struct{}
 
 	dec uvDecoder
 }
