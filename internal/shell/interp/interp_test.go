@@ -3254,18 +3254,49 @@ var runTests = []runTest{
 	{
 		"set -a; set +o",
 		`set -o allexport
+set -o braceexpand
+set +o emacs
 set +o errexit
 set +o errtrace
 set +o functrace
+set -o hashall
+set +o histexpand
+set +o history
+set +o ignoreeof
+set -o interactive-comments
+set +o keyword
+set +o monitor
 set +o noclobber
 set +o noexec
 set +o noglob
+set +o nolog
+set +o notify
 set +o nounset
-set +o xtrace
+set +o onecmd
+set +o physical
 set +o pipefail
+set +o posix
+set +o privileged
+set +o verbose
+set +o vi
+set +o xtrace
  #IGNORE`,
 	},
 	{`set - foobar; echo $@; set -; echo $@`, "foobar\nfoobar\n"},
+	// Options koi does not implement but bash starts in a known state:
+	// asking for the state they are already in is a no-op in bash and has
+	// to be one here, since refusing it is exit 2 and the end of a script
+	// running under `set -e` (#245).
+	{"set -h; echo ok", "ok\n"},
+	{"set +H; echo ok", "ok\n"},
+	{"set +m; echo ok", "ok\n"},
+	{"set -o hashall; echo ok", "ok\n"},
+	{"set +o posix; echo ok", "ok\n"},
+	// braceexpand and physical are implemented rather than tolerated, so
+	// both directions have to be real.
+	{"set +B; echo a{1,2}", "a{1,2}\n"},
+	{"set +B; set -B; echo a{1,2}", "a1 a2\n"},
+	{"set +o braceexpand; echo x{y,z}", "x{y,z}\n"},
 
 	// unset
 	{
@@ -3362,7 +3393,7 @@ done <<< 2`,
 	{"shopt extglob | grep 'off' | wc -l | tr -d ' '", "1\n"},
 	{
 		"shopt inherit_errexit",
-		"inherit_errexit\ton\t(\"off\" not supported)\n #JUSTERR",
+		"inherit_errexit     \ton\t(\"off\" not supported)\n #JUSTERR",
 	},
 	{
 		"shopt -o -s pipefail; shopt -o pipefail | grep -q 'on$'",

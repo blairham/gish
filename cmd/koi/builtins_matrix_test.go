@@ -104,10 +104,7 @@ var interpBuiltinCases = []builtinCase{
 	{name: "return", script: `f() { return 7; }; f; echo "status=$?"`},
 	{name: "set", script: `set -- a b c; echo "$#-$1-$3"`},
 	{name: "shift", script: `set -- a b c; shift; echo "$1-$#"`},
-	{
-		name: "shopt", script: `shopt -s nullglob; shopt nullglob`,
-		knownGap: "bash pads the option name to a fixed column; the interpreter uses a single tab",
-	},
+	{name: "shopt", script: `shopt -s nullglob; shopt nullglob`},
 	{name: "source", script: `echo 'echo sourced' > "$TMPD/s.sh"; . "$TMPD/s.sh"`},
 	{name: "test", script: `test -d /tmp && echo isdir; test -z "" && echo empty`},
 	{name: "trap", script: `trap 'echo trapped' EXIT; echo body`},
