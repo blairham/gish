@@ -322,31 +322,50 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		exit.code = r.changeDir(ctx, "cd", path)
 	case "wait":
+		anyJob := false
+		pidVar := ""
 		fp := flagParser{remaining: args}
 		for fp.more() {
 			switch flag := fp.flag(); flag {
-			case "-n", "-p":
-				return failf(2, "wait: unsupported option %q\n", flag)
+			case "-n":
+				anyJob = true
+			case "-p":
+				if pidVar = fp.value(); pidVar == "" {
+					return failf(2, "wait: -p: option requires an argument\n")
+				}
 			default:
 				return failf(2, "wait: invalid option %q\n", flag)
 			}
 		}
+		args = fp.args()
+		// bash leaves the variable *unset* unless a single job's status is
+		// what comes back, so a script can tell "job N finished" from
+		// "there was nothing to wait for" without reading $? twice.
+		if pidVar != "" && r.lookupVar(pidVar).IsSet() {
+			r.delVar(pidVar)
+		}
+		if anyJob {
+			return r.waitAny(args, pidVar)
+		}
 		if len(args) == 0 {
 			// Note that "wait" without arguments always returns exit status zero.
-			for _, bg := range r.bgProcs {
-				<-bg.done
+			for i := range r.bgProcs {
+				<-r.bgProcs[i].done
+				r.bgProcs[i].reaped = true
 			}
 			break
 		}
 		for _, arg := range args {
-			arg, ok := strings.CutPrefix(arg, "g")
-			pid := atoi(arg)
-			if !ok || pid <= 0 || pid > int64(len(r.bgProcs)) {
+			i, ok := r.bgIndex(arg)
+			if !ok {
 				return failf(1, "wait: pid %s is not a child of this shell\n", arg)
 			}
-			bg := r.bgProcs[pid-1]
-			<-bg.done
-			exit = *bg.exit
+			<-r.bgProcs[i].done
+			r.bgProcs[i].reaped = true
+			exit = *r.bgProcs[i].exit
+			if pidVar != "" {
+				r.setVarString(pidVar, arg)
+			}
 		}
 	case "builtin":
 		if len(args) < 1 {

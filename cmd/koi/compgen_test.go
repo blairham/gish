@@ -182,21 +182,21 @@ func TestCompgenKeywordsMatchBashExceptCoproc(t *testing.T) {
 	}
 
 	// The six that were missing all work, which is why the list was a
-	// reporting bug and not an honest refusal. coproc is checked the
-	// other way: it stays off the list for exactly as long as it fails.
+	// reporting bug and not an honest refusal. coproc joined them in
+	// #287: it used to be checked the other way — off the list for as
+	// long as it failed — and it now runs, so it is listed and exercised
+	// like the rest.
 	for _, tc := range []struct{ name, script string }{
 		{"[[", "[[ 1 == 1 ]] && echo ok"},
 		{"{", "{ echo ok; }"},
 		{"!", "! false && echo ok"},
 		{"in", "for i in ok; do echo $i; done"},
+		{"coproc", `coproc c { echo ok; }; read -r r <&"${c[0]}"; echo "$r"`},
 	} {
 		out, status := shellLines(t, koi, dir, tc.script)
 		if status != 0 || strings.Join(out, "") != "ok" {
 			t.Errorf("koi lists %q as a keyword but %q gave %q (status %d)", tc.name, tc.script, out, status)
 		}
-	}
-	if _, status := shellLines(t, koi, dir, "coproc c { :; }"); status == 0 {
-		t.Error("coproc now runs; it should be added to the keyword list (#287)")
 	}
 }
 

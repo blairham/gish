@@ -315,6 +315,13 @@ type bgProc struct {
 	done chan struct{}
 
 	exit *exitStatus
+
+	// reaped records that a wait has already collected this job, which is
+	// what makes `wait -n` return each job once and then answer 127 (#287).
+	// bash reaps in every form of wait, not only -n, so plain `wait` and
+	// `wait PID` set it too — otherwise `wait; wait -n` would hand back a
+	// job bash considers long gone.
+	reaped bool
 }
 
 type alias struct {
