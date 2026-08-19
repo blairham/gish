@@ -450,6 +450,10 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 	}
 	r.exit = exitStatus{}
 	if st.Background || st.Disown {
+		// From here on the shell and this job write to the same stdout
+		// concurrently, which is not something a bash background job
+		// ever does to it -- see syncWriter (#301).
+		r.shareOutput()
 		r2 := r.subshell(true)
 		st2 := *st
 		st2.Background = false

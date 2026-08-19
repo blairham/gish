@@ -232,34 +232,47 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}
 			args = args[1:]
 		}
+		// One logical line, one write. Background jobs are goroutines
+		// sharing this writer rather than separate processes with their
+		// own fds, so an echo assembled from a write per argument lets
+		// another job's output land mid-line -- "done:2done:3" (#301).
+		// bash is atomic here because a short echo is a single write(2),
+		// and building the line first is how we get the same guarantee.
+		var line strings.Builder
 		for i, arg := range args {
 			if i > 0 {
-				r.out(" ")
+				line.WriteString(" ")
 			}
 			if doExpand {
 				arg, _, _ = expand.Format(r.ecfg, arg, nil)
 			}
-			r.out(arg)
+			line.WriteString(arg)
 		}
 		if newline {
-			r.out("\n")
+			line.WriteString("\n")
 		}
+		r.out(line.String())
 	case "printf":
 		if len(args) == 0 {
 			return failf(2, "usage: printf format [arguments]\n")
 		}
 		format, args := args[0], args[1:]
+		// Accumulated for the same reason as echo above: a format that
+		// recycles over its arguments would otherwise be one write per
+		// cycle, and a concurrent job could interleave between them.
+		var out strings.Builder
 		for {
 			s, n, err := expand.Format(r.ecfg, format, args)
 			if err != nil {
 				return failf(1, "%v\n", err)
 			}
-			r.out(s)
+			out.WriteString(s)
 			args = args[n:]
 			if n == 0 || len(args) == 0 {
 				break
 			}
 		}
+		r.out(out.String())
 	case "break", "continue":
 		if !r.inLoop {
 			return failf(0, "%s is only useful in a loop\n", name)
