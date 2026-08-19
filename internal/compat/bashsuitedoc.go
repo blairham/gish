@@ -35,13 +35,28 @@ deliberate bash arcana fails the whole file. It is not comparable to the
 question — does the stuff people actually paste work — against a
 denominator we chose ourselves.
 
-The other two are here because a single number would mislead in both
-directions. koi parses a script **up front**, so one unsupported
-construct on line 129 forfeits the other 368 lines: the strict figure is
-dominated by parse coverage rather than by runtime behavior, and
-publishing it alone would hide where the gap actually is.
-
 `)
+
+	// Counted rather than asserted (#275). This paragraph used to say the
+	// strict figure was dominated by parse coverage, and the counts said
+	// the opposite by better than three to one — a claim about the very
+	// number the paragraph above tells the reader to quote. Deriving it
+	// from the same run that produced the table is what stops it drifting
+	// again.
+	fmt.Fprintf(&b, `The other two are here because a single number would mislead in both
+directions. **Strict is a file count, and runtime behavior dominates
+it**: %d files parse perfectly and then behave differently, against %d
+koi cannot read at all.
+
+Parse coverage belongs to **line agreement** instead, where a construct
+koi cannot read really does account for a large share of the missed
+lines. koi reads a script the way bash does (#276) — the statements
+before the syntax error run, and the error is reported where it is — so
+an unreadable construct on line 129 costs the lines after it rather than
+the whole file. It still costs them, which is why parsed is published
+beside the other two.
+
+`, s.Parsed-s.Passed, s.Files-s.Parsed)
 
 	gaps := ParseGaps(results)
 	if len(gaps) > 0 {

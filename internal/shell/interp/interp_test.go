@@ -3605,7 +3605,10 @@ done <<< 2`,
 	{"eval echo foo", "foo\n"},
 	{"eval 'echo foo'", "foo\n"},
 	{"eval 'exit 1'", "exit status 1"},
-	{"eval '(x'", "eval: 1:1: reached EOF without matching `(` with `)`\nexit status 1 #JUSTERR"},
+	// koi-local: 2, not upstream's 1. bash answers 2 for a syntax error
+	// in every non-interactive form — a script, -c, a sourced file and
+	// eval alike — and koi's own `-n` check already said so (#276).
+	{"eval '(x'", "eval: 1:1: reached EOF without matching `(` with `)`\nexit status 2 #JUSTERR"},
 	{"set a b; eval 'echo $@'", "a b\n"},
 	{"eval 'a=foo'; echo $a", "foo\n"},
 	{`a=b eval "echo $a"`, "\n"},

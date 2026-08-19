@@ -58,10 +58,12 @@ import (
 //     brutal — one wrong line in a 369-line file of deliberate bash
 //     arcana fails the file.
 //   - **Parsed** is how many files koi can read at all. It matters
-//     because koi parses a script *up front*: a single unsupported
-//     construct on line 129 forfeits the other 368 lines, so the strict
-//     number is dominated by parse coverage rather than by runtime
-//     behavior. Reporting only strict would hide that.
+//     because a construct koi cannot read costs every line after it in
+//     that file — koi reads a script the way bash does (#276), so the
+//     readable prefix still runs, but the rest is gone. That is a claim
+//     about *line agreement*, not about strict: strict is a file count,
+//     and runtime failures outnumber parse failures in it better than
+//     three to one (#275). Reporting only strict would hide the shape.
 //   - **Line agreement** is how much of bash's output koi reproduced
 //     exactly. It is the number that says what the shape of the gap is.
 //

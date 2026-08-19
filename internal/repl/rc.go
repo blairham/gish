@@ -137,13 +137,18 @@ func loadRC(ctx context.Context, runner *interp.Runner) {
 		return
 	}
 	defer f.Close()
-	file, err := syntax.NewParser().Parse(f, path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, err)
-		return
-	}
+	// Read as bash reads (#276). This is the case the issue was filed
+	// about: an rc with one construct koi cannot read used to lose every
+	// line of itself, so a single unsupported line at the bottom cost the
+	// user their whole prompt, aliases and functions. Now it costs that
+	// line and the ones after it, and the warning still names where.
+	stmts, perr := interp.ParseAsRead(f, path)
+	file := &syntax.File{Name: path, Stmts: stmts}
 	if err := safely("running "+path, func() error { return runner.Run(ctx, file) }); err != nil {
 		fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, err)
+	}
+	if perr != nil {
+		fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, perr)
 	}
 }
 
@@ -171,14 +176,18 @@ func loadProfile(ctx context.Context, runner *interp.Runner) {
 		if err != nil {
 			continue // missing files are normal
 		}
-		file, perr := syntax.NewParser().Parse(f, path)
+		// Same rule as the rc above (#276): what parsed runs, and the
+		// error is reported after it rather than instead of it. A broken
+		// /etc/profile taking the machine's PATH setup down with it is
+		// the version of this that is not the user's to fix.
+		stmts, perr := interp.ParseAsRead(f, path)
 		f.Close()
-		if perr != nil {
-			fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, perr)
-			continue
-		}
+		file := &syntax.File{Name: path, Stmts: stmts}
 		if rerr := safely("running "+path, func() error { return runner.Run(ctx, file) }); rerr != nil {
 			fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, rerr)
+		}
+		if perr != nil {
+			fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, perr)
 		}
 	}
 }
