@@ -29,37 +29,52 @@ func TestHistoryBuiltinMatchesBash(t *testing.T) {
 	bashBin := requireBash(t)
 	koiBin := buildKoi(t)
 
-	cases := []struct{ name, script string }{
+	// minBash guards the two rows whose *bash* behavior changed. macOS
+	// ships 3.2 as /bin/bash, and there the oracle asserts the opposite
+	// of what koi means to do — the situation printf_test.go already
+	// handles this way, and the reason KOI_TEST_BASH exists.
+	//
+	// The bound is 5 rather than bisected: only 3.2 and 5.3 were
+	// available to measure, so 4.x is untested and a conservative bound
+	// costs coverage there and never correctness.
+	cases := []struct {
+		name, script string
+		minBash      int
+	}{
 		// The starting point: bash succeeds silently on an empty list.
-		{"an empty list prints nothing and succeeds", `history; echo "rc=$?"`},
+		{"an empty list prints nothing and succeeds", `history; echo "rc=$?"`, 0},
 
-		{"-s appends and the list is numbered from 1", `history -s "echo one"; history -s "echo two"; history`},
-		{"a count shows the newest n, keeping their numbers", `history -s "echo one"; history -s "echo two"; history 1`},
-		{"a count larger than the list shows all of it", `history -s a; history 9`},
-		{"-c clears it", `history -s a; history -s b; history -c; history; echo "rc=$?"`},
-		{"-d removes one and renumbers", `history -s a; history -s b; history -d 1; history`},
-		{"-d counts back from the newest when negative", `history -s a; history -s b; history -d -1; history`},
-		{"-s with no argument is a no-op", `history -s; history; echo "rc=$?"`},
+		{"-s appends and the list is numbered from 1", `history -s "echo one"; history -s "echo two"; history`, 0},
+		{"a count shows the newest n, keeping their numbers", `history -s "echo one"; history -s "echo two"; history 1`, 0},
+		{"a count larger than the list shows all of it", `history -s a; history 9`, 0},
+		{"-c clears it", `history -s a; history -s b; history -c; history; echo "rc=$?"`, 0},
+		{"-d removes one and renumbers", `history -s a; history -s b; history -d 1; history`, 0},
+		{"-d counts back from the newest when negative", `history -s a; history -s b; history -d -1; history`, 5},
+		{"-s with no argument is a no-op", `history -s; history; echo "rc=$?"`, 0},
 
 		// -p is the half that connects the builtin to the expander koi
 		// already had (#96), so `history -p '!!'` and typing `!!` cannot
 		// disagree about what `!!` means.
-		{"-p expands without running or recording", `history -s "echo hi"; history -p '!!'; history`},
-		{"-p on an empty list fails", `history -p '!!'; echo "rc=$?"`},
-		{"-p with no argument succeeds silently", `history -p; echo "rc=$?"`},
+		{"-p expands without running or recording", `history -s "echo hi"; history -p '!!'; history`, 0},
+		{"-p on an empty list fails", `history -p '!!'; echo "rc=$?"`, 0},
+		{"-p with no argument succeeds silently", `history -p; echo "rc=$?"`, 0},
 
 		// Errors. bash prints its usage line for a bad *option* and not
 		// for a bad operand, which was measured rather than assumed.
-		{"an invalid option exits 2", `history -x; echo "rc=$?"`},
-		{"a non-numeric count exits 2", `history abc; echo "rc=$?"`},
-		{"-d wants a number", `history -d abc; echo "rc=$?"`},
-		{"-d out of range exits 1", `history -d 99; echo "rc=$?"`},
-		{"-d needs an argument", `history -d; echo "rc=$?"`},
-		{"only one of -anrw at a time", `history -r -w /dev/null; echo "rc=$?"`},
+		{"an invalid option exits 2", `history -x; echo "rc=$?"`, 0},
+		{"a non-numeric count exits 2", `history abc; echo "rc=$?"`, 5},
+		{"-d wants a number", `history -d abc; echo "rc=$?"`, 0},
+		{"-d out of range exits 1", `history -d 99; echo "rc=$?"`, 0},
+		{"-d needs an argument", `history -d; echo "rc=$?"`, 0},
+		{"only one of -anrw at a time", `history -r -w /dev/null; echo "rc=$?"`, 0},
 	}
 
+	major := bashMajor(t, bashBin)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if major < tc.minBash {
+				t.Skipf("oracle is bash %d: this behavior changed after it", major)
+			}
 			compareStdout(t, bashBin, koiBin, tc.script)
 		})
 	}
