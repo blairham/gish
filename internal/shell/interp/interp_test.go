@@ -5799,6 +5799,34 @@ func skipIfOracleGap(t *testing.T, src string) {
 	}
 }
 
+// oracleRetries is how many extra times a racing case may ask bash. The
+// one case that races was measured at roughly one wrong answer in three
+// hundred runs on a machine under three times its core count in load, so
+// five retries put a spurious failure far below the rate of every other
+// thing that can go wrong in CI.
+const oracleRetries = 5
+
+// oracleRacesItself reports whether bash answers this script differently
+// from run to run.
+//
+// Matched on the exact script, the way [skipIfOracleGap] is and for the
+// same reason: the neighbouring `wait -n` cases were measured too and are
+// stable, so a predicate like "mentions wait" would hand a retry to cases
+// that have earned a single-shot check.
+//
+//	(exit 3) & wait; wait -n; echo $?
+//
+// A bare `wait` reaps every job, so the `wait -n` after it has nothing
+// left and answers 127. bash usually agrees and sometimes answers 3 --
+// the job's own status -- because whether the job has left the table by
+// then is not something bash sequences against `wait` returning. It is
+// bash racing itself rather than disagreeing with the recorded answer:
+// 300 runs under load gave 299 of the former and one of the latter, and
+// `(exit 3) & p=$!; wait $p; wait -n` never varied at all.
+func oracleRacesItself(src string) bool {
+	return src == `(exit 3) & wait; wait -n; echo $?`
+}
+
 func TestRunnerRunConfirm(t *testing.T) {
 	if testing.Short() {
 		t.Skip("calling bash is slow")
@@ -5825,25 +5853,43 @@ func TestRunnerRunConfirm(t *testing.T) {
 			skipIfUnsupported(t, c.in)
 			skipIfOracleGap(t, c.in)
 			t.Parallel()
-			tdir := t.TempDir()
-			ctx, cancel := context.WithTimeout(t.Context(), runnerRunTimeout)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, "bash")
-			cmd.Dir = tdir
-			cmd.Stdin = strings.NewReader(c.in)
-			out, err := cmd.CombinedOutput()
+			askBash := func() (string, error) {
+				tdir := t.TempDir()
+				ctx, cancel := context.WithTimeout(t.Context(), runnerRunTimeout)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, "bash")
+				cmd.Dir = tdir
+				cmd.Stdin = strings.NewReader(c.in)
+				out, err := cmd.CombinedOutput()
+				return string(out), err
+			}
+			out, err := askBash()
 			if strings.Contains(c.want, " #JUSTERR") {
 				// bash sometimes exits with status code 0 and
 				// stderr "bash: ..." for an error
-				fauxErr := bytes.HasPrefix(out, []byte("bash:"))
+				fauxErr := strings.HasPrefix(out, "bash:")
 				if err == nil && !fauxErr {
 					t.Fatalf("wanted bash to error in %q", c.in)
 				}
 				return
 			}
-			got := string(out)
+			got := out
 			if err != nil {
 				got += err.Error()
+			}
+			// A case whose subject is bash's own job reaping does not
+			// answer the same way every time, so asking once turns a
+			// property of bash into a coin flip (#317). Asking again is
+			// the honest assertion for it -- bash must still produce
+			// this answer, just not on demand -- and it stays scoped to
+			// the exact scripts measured to race, so no other case has
+			// its check weakened.
+			for try := 0; got != c.want && try < oracleRetries && oracleRacesItself(c.in); try++ {
+				out, err = askBash()
+				got = out
+				if err != nil {
+					got += err.Error()
+				}
 			}
 			if got != c.want {
 				t.Fatalf("wrong bash output in %q:\nwant: %q\ngot:  %q",
