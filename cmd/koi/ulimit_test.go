@@ -44,19 +44,24 @@ func bashLimitLetters(t *testing.T, bash, dir string) []string {
 	return out
 }
 
-// nofileIsRuntimeOwned explains the one letter that cannot be compared.
+// Every letter bash reports is compared, `n` included.
 //
-// The Go runtime rewrites RLIMIT_NOFILE for its own process before main
-// runs — raising the soft limit to near the hard one on linux, and on
-// darwin clamping it to the kernel's real per-process ceiling, which is
-// *lower* than the nominal limit a login shell carries. os/exec then
-// restores the original for every child, so koi's children get exactly
-// what bash's do; it is only koi's own view of the number that differs.
-// The original is saved in an unexported runtime variable with no
-// accessor, so koi cannot report it. What matters to a script — that
-// setting the limit reaches the programs it then runs — is asserted
-// directly by TestUlimitSetReachesChildren.
-const nofileIsRuntimeOwned = "n"
+// It used to be excluded. The Go runtime rewrites RLIMIT_NOFILE for its
+// own process before main runs — raising the soft limit to near the hard
+// one on linux, and on darwin clamping it to the kernel's real
+// per-process ceiling, which is *lower* than the nominal limit a login
+// shell carries — and then restores the original for every child. So
+// koi's children got what bash's did while koi's own view of the number
+// did not match either, and the letter was skipped with a note saying the
+// original was unreachable.
+//
+// It is reachable, just not from inside this process (#294): the runtime
+// keeps it unexported, and a Go child raises its own limit at init the
+// same way, so the question has to go to a child that is not Go. koi asks
+// one, which is why `-n` now belongs in the loop below like every other
+// letter — and why leaving it there is the real regression test, since a
+// koi that went back to reporting its own limit would fail on this
+// machine by a factor of four and on linux by a factor of a thousand.
 
 func TestUlimitMatchesBash(t *testing.T) {
 	t.Parallel()
@@ -64,9 +69,6 @@ func TestUlimitMatchesBash(t *testing.T) {
 	dir := t.TempDir()
 
 	for _, letter := range bashLimitLetters(t, bash, dir) {
-		if letter == nofileIsRuntimeOwned {
-			continue
-		}
 		for _, which := range []string{"-", "-S", "-H"} {
 			script := "ulimit " + which + letter
 			t.Run(script, func(t *testing.T) {
@@ -169,6 +171,14 @@ func TestUlimitSetMatchesBash(t *testing.T) {
 		// difference is permanent rather than cosmetic.
 		"ulimit -c 1; ulimit -c 2; ulimit -c",
 		"ulimit -S -c 1; ulimit -S -c 2; ulimit -c", // the soft half alone still can
+		// `n` reads its answer from a child while the runtime is still
+		// substituting one (#294), and setting it is what ends that: from
+		// then on the shell's own limit really is what children get, so
+		// the reported number has to switch back to it. Both sides of
+		// that switch are here.
+		"ulimit -n 512; ulimit -n",
+		"ulimit -S -n 400; ulimit -Sn; ulimit -Hn",
+		"ulimit -n 512; ulimit -n 256; ulimit -n",
 	} {
 		t.Run(script, func(t *testing.T) {
 			t.Parallel()
