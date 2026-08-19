@@ -27,9 +27,14 @@ import (
 	"time"
 )
 
-// scanTimeout bounds one scan. A repository large enough to exceed it
+// ScanTimeout bounds one scan. A repository large enough to exceed it
 // is a repository where a prompt should not be waiting anyway.
-const scanTimeout = 5 * time.Second
+//
+// Exported because a caller serving cached counts needs it to know when
+// its cache has stopped being refreshed: past one TTL plus one timeout,
+// a scan has either landed or given up, so numbers older than that are
+// numbers no cycle managed to replace.
+const ScanTimeout = 5 * time.Second
 
 // Counts is a working tree's state.
 type Counts struct {
@@ -45,7 +50,7 @@ type Counts struct {
 
 // Read scans the working tree at root.
 func Read(ctx context.Context, root string) (Counts, error) {
-	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
+	ctx, cancel := context.WithTimeout(ctx, ScanTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain=v2", "--branch")
 	cmd.Dir = root
