@@ -350,7 +350,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			return failf(2, "usage: %s [n]\n", name)
 		}
 	case "pwd":
-		evalSymlinks := false
+		// `set -o physical` makes resolving the default, which is what
+		// -P asks for one call at a time.
+		evalSymlinks := r.opts[optPhysical]
 		for len(args) > 0 {
 			switch args[0] {
 			case "-L":
@@ -1067,11 +1069,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		if len(args) == 0 {
 			if posixOpts {
 				for i, opt := range &posixOptsTable {
-					r.printOptLine(opt.name, r.opts[i], true)
+					r.printOptLine(opt.name, setOptColumn, r.opts[i], true)
 				}
 			} else {
 				for i, opt := range bashOptsTable {
-					r.printOptLine(opt.name, r.opts[len(posixOptsTable)+i], opt.supported)
+					r.printOptLine(opt.name, shoptOptColumn, r.opts[len(posixOptsTable)+i], opt.supported)
 				}
 			}
 			break
@@ -1079,7 +1081,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		for _, arg := range args {
 			opt, supported := (*bool)(nil), true
 			if posixOpts {
-				opt = r.posixOptByName(arg)
+				var po posixOpt
+				opt, po = r.posixOptByName(arg)
+				supported = po.supported
 			} else {
 				opt, supported = r.bashOptByName(arg)
 			}
@@ -1094,7 +1098,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				}
 				*opt = mode == "-s"
 			default: // ""
-				r.printOptLine(arg, *opt, supported)
+				r.printOptLine(arg, shoptOptColumn, *opt, supported)
 			}
 		}
 		r.updateExpandOpts()
@@ -1436,13 +1440,28 @@ func mapfileSplit(delim byte, dropDelim bool) bufio.SplitFunc {
 	}
 }
 
-func (r *Runner) printOptLine(name string, enabled, supported bool) {
+// setOptColumn is the width bash pads a `set -o` name to before the tab.
+// Measured from bash 5.3 rather than chosen — a listing is something
+// scripts cut fields out of.
+//
+// `shopt` pads too, to twenty, and koi deliberately does not follow it
+// there. The width is not stable across bash versions the way this one is:
+// matching 5.3's shopt makes koi differ from the 3.2 that ships on macOS,
+// which is what the CI runner has, so the choice is which bash to be wrong
+// against rather than whether. That difference is recorded as a known gap
+// in the builtins matrix and belongs to `shopt` rather than to #245.
+const (
+	setOptColumn   = 15
+	shoptOptColumn = 0 // no padding; see above
+)
+
+func (r *Runner) printOptLine(name string, column int, enabled, supported bool) {
 	state := r.optStatusText(enabled)
 	if supported {
-		r.outf("%s\t%s\n", name, state)
+		r.outf("%-*s\t%s\n", column, name, state)
 		return
 	}
-	r.outf("%s\t%s\t(%q not supported)\n", name, state, r.optStatusText(!enabled))
+	r.outf("%-*s\t%s\t(%q not supported)\n", column, name, state, r.optStatusText(!enabled))
 }
 
 // unescapeRead drops the backslashes which escape another character, as "read"

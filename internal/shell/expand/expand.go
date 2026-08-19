@@ -80,6 +80,11 @@ type Config struct {
 	// patterns which match nothing to result in zero fields.
 	NullGlob bool
 
+	// NoBraces disables brace expansion, which is what `set +B` asks for.
+	// The word is then left exactly as written -- `a{1,2}` is the string
+	// `a{1,2}` -- rather than being expanded and the results discarded.
+	NoBraces bool
+
 	// NoUnset corresponds to the shell option which treats unset variables
 	// as errors.
 	NoUnset bool
@@ -509,7 +514,7 @@ func FieldsSeq(cfg *Config, words ...*syntax.Word) iter.Seq2[string, error] {
 		}
 		for _, word := range words {
 			word := *word // make a copy, since SplitBraces replaces the Parts slice
-			if !syntax.SplitBraces(&word) {
+			if cfg.NoBraces || !syntax.SplitBraces(&word) {
 				if expandWord(&word) {
 					return
 				}

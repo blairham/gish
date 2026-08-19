@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -396,7 +397,12 @@ func New(opts ...RunnerOption) (*Runner, error) {
 		accessHandler:  DefaultAccessHandler(),
 	}
 	r.dirStack = r.dirBootstrap[:0]
-	// turn "on" the default Bash options
+	// turn "on" the options bash starts with on — braceexpand, hashall and
+	// interactive-comments among the `set -o` ones, so that `set -o`
+	// reports what bash reports rather than a table of zeroes.
+	for i, opt := range &posixOptsTable {
+		r.opts[i] = opt.defaultState
+	}
 	for i, opt := range bashOptsTable {
 		r.opts[len(posixOptsTable)+i] = opt.defaultState
 	}
@@ -514,35 +520,39 @@ func Params(args ...string) RunnerOption {
 			}
 			enable := flag[0] == '-'
 			if flag[1] != 'o' {
-				opt := r.posixOptByFlag(flag[1])
-				if opt == nil {
+				status, opt := r.posixOptByFlag(flag[1])
+				if status == nil {
 					return fmt.Errorf("invalid option: %q", flag)
 				}
-				*opt = enable
+				if err := setPosixOpt(status, opt, enable); err != nil {
+					return err
+				}
 				continue
 			}
 			value := fp.value()
 			if value == "" && enable {
-				for i, opt := range &posixOptsTable {
-					r.printOptLine(opt.name, r.opts[i], true)
+				for _, i := range posixOptNames() {
+					r.printOptLine(posixOptsTable[i].name, setOptColumn, r.opts[i], true)
 				}
 				continue
 			}
 			if value == "" && !enable {
-				for i, opt := range &posixOptsTable {
+				for _, i := range posixOptNames() {
 					setFlag := "+o"
 					if r.opts[i] {
 						setFlag = "-o"
 					}
-					r.outf("set %s %s\n", setFlag, opt.name)
+					r.outf("set %s %s\n", setFlag, posixOptsTable[i].name)
 				}
 				continue
 			}
-			opt := r.posixOptByName(value)
-			if opt == nil {
+			status, opt := r.posixOptByName(value)
+			if status == nil {
 				return fmt.Errorf("invalid option: %q", value)
 			}
-			*opt = enable
+			if err := setPosixOpt(status, opt, enable); err != nil {
+				return err
+			}
 		}
 		if args := fp.args(); args != nil {
 			// If "--" wasn't given and there were zero arguments,
@@ -710,22 +720,55 @@ func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	}
 }
 
-func (r *Runner) posixOptByName(name string) *bool {
+func (r *Runner) posixOptByName(name string) (*bool, posixOpt) {
 	for i, opt := range &posixOptsTable {
 		if opt.name == name {
-			return &r.opts[i]
+			return &r.opts[i], opt
 		}
 	}
-	return nil
+	return nil, posixOpt{}
 }
 
-func (r *Runner) posixOptByFlag(flag byte) *bool {
+func (r *Runner) posixOptByFlag(flag byte) (*bool, posixOpt) {
 	for i, opt := range &posixOptsTable {
-		if opt.flag == flag {
-			return &r.opts[i]
+		if opt.flag == flag && opt.flag != ' ' {
+			return &r.opts[i], opt
 		}
 	}
-	return nil
+	return nil, posixOpt{}
+}
+
+// setPosixOpt moves an option, or explains why it cannot.
+//
+// An option koi does not implement can still be *set to the state it is
+// already in* — `set -h` in a shell whose hashall is on, `set +H` in one
+// whose histexpand is off. That is not a pretence: nothing changes because
+// nothing needs to, which is exactly what bash does with the same line.
+// Asking for the other state is refused, because the alternative is a shell
+// that says it is in POSIX mode and is not.
+func setPosixOpt(status *bool, opt posixOpt, enable bool) error {
+	if opt.supported || enable == *status {
+		*status = enable
+		return nil
+	}
+	state := "off"
+	if enable {
+		state = "on"
+	}
+	return fmt.Errorf("cannot turn %s %s: not implemented", opt.name, state)
+}
+
+// posixOptNames lists the options the way bash prints them, which is by
+// name rather than in the order the table happens to be in.
+func posixOptNames() []int {
+	idx := make([]int, len(posixOptsTable))
+	for i := range idx {
+		idx[i] = i
+	}
+	slices.SortFunc(idx, func(a, b int) int {
+		return strings.Compare(posixOptsTable[a].name, posixOptsTable[b].name)
+	})
+	return idx
 }
 
 func (r *Runner) bashOptByName(name string) (status *bool, supported bool) {
@@ -741,9 +784,26 @@ func (r *Runner) bashOptByName(name string) (status *bool, supported bool) {
 // runnerOpts contains all POSIX Shell and Bash options as one contiguous table.
 type runnerOpts [len(posixOptsTable) + len(bashOptsTable)]bool
 
+// posixOpt is one `set -o` option: the letter `set -x` spells it with, the
+// name `set -o xtrace` spells it with, the state bash starts it in, and
+// whether koi can actually put it in the other state.
+//
+// The last two are why bash's whole list lives here rather than only the
+// options koi implements (#245). `set -o` is a listing people read and
+// scripts grep, and koi's answered with ten entries where bash answers with
+// twenty-seven. Worse, `set -h` and `set +H` — a no-op in any non-interactive
+// bash, since those are already the states it starts in — came back "invalid
+// option" and exit 2, which under `set -e` is the end of the script.
+//
+// An option koi cannot honor is still refused when something asks for the
+// state it cannot produce. That is deliberate: the alternative is accepting
+// `set -o posix` and not being in POSIX mode, which is the shape of bug this
+// issue was opened about rather than a fix for it.
 type posixOpt struct {
-	flag byte   // one-character flag form for this option; a space if none exists
-	name string // full name of the option
+	flag         byte   // one-character flag form for this option; a space if none exists
+	name         string // full name of the option
+	defaultState bool   // the state bash starts this option in, non-interactively
+	supported    bool   // whether koi can put it in the other state
 }
 
 type bashOpt struct {
@@ -752,18 +812,51 @@ type bashOpt struct {
 	supported    bool // whether we support the option's non-default state
 }
 
+// The order here is the order of the opt* constants below, which index into
+// it — not the order `set -o` prints, which is sorted by name at the point
+// of printing the way bash's is.
 var posixOptsTable = [...]posixOpt{
-	// sorted alphabetically by name
-	{'a', "allexport"},
-	{'e', "errexit"},
-	{'E', "errtrace"},
-	{'T', "functrace"},
-	{'C', "noclobber"},
-	{'n', "noexec"},
-	{'f', "noglob"},
-	{'u', "nounset"},
-	{'x', "xtrace"},
-	{' ', "pipefail"},
+	// Implemented.
+	{'a', "allexport", false, true},
+	{'e', "errexit", false, true},
+	{'E', "errtrace", false, true},
+	{'T', "functrace", false, true},
+	{'C', "noclobber", false, true},
+	{'n', "noexec", false, true},
+	{'f', "noglob", false, true},
+	{'u', "nounset", false, true},
+	{'x', "xtrace", false, true},
+	{' ', "pipefail", false, true},
+	{'B', "braceexpand", true, true},
+	{'P', "physical", false, true},
+
+	// Known and listed, but koi cannot leave the state bash starts them
+	// in. Asking for that state is answered rather than pretended.
+	//
+	// notify and monitor are job control (#5). histexpand and history are
+	// the line editor's, not the interpreter's, and are already off in a
+	// non-interactive shell — which is the state scripts ask for. emacs
+	// and vi are the editor's for the same reason. verbose would have to
+	// echo input as it is read, which the interpreter never sees: it is
+	// handed statements, not lines. posix changes behavior across the
+	// whole interpreter and is its own piece of work, named by #308 for
+	// the one it already owes. The rest are POSIX corners nothing in the
+	// corpus reaches for.
+	{'b', "notify", false, false},
+	{'m', "monitor", false, false},
+	{'H', "histexpand", false, false},
+	{' ', "history", false, false},
+	{' ', "emacs", false, false},
+	{' ', "vi", false, false},
+	{'v', "verbose", false, false},
+	{' ', "posix", false, false},
+	{'h', "hashall", true, false},
+	{' ', "interactive-comments", true, false},
+	{'k', "keyword", false, false},
+	{'t', "onecmd", false, false},
+	{'p', "privileged", false, false},
+	{' ', "ignoreeof", false, false},
+	{' ', "nolog", false, false},
 }
 
 var bashOptsTable = [...]bashOpt{
@@ -896,9 +989,26 @@ const (
 	optNoUnset
 	optXTrace
 	optPipeFail
+	optBraceExpand
+	optPhysical
+	optNotify
+	optMonitor
+	optHistExpand
+	optHistory
+	optEmacs
+	optVi
+	optVerbose
+	optPosix
+	optHashAll
+	optInteractiveComments
+	optKeyword
+	optOneCmd
+	optPrivileged
+	optIgnoreEOF
+	optNoLog
 
-	// These correspond to indexes (offset by the above ten items) of
-	// supported options in [bashOptsTable]
+	// These correspond to indexes (offset by the whole of
+	// [posixOptsTable]) of supported options in [bashOptsTable]
 	optDotGlob
 	optExpandAliases
 	optExtGlob
