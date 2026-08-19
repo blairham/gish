@@ -168,12 +168,36 @@ func TestBindXRunsAndRewritesTheLine(t *testing.T) {
 	}
 	// The shape of an fzf widget, minus fzf: read the line, put
 	// something else there, and move the cursor.
-	s := hookSession(t, `bind -x '"\C-t": READLINE_LINE="echo bound-widget-ran"; READLINE_POINT=${#READLINE_LINE}'`+"\n")
+	//
+	// The rewritten line prints a *variable* rather than a literal, and
+	// that indirection is the whole point of the test rather than a
+	// flourish. When the widget wrote `echo bound-widget-ran`, the marker
+	// appeared the moment the editor echoed the rewritten line back --
+	// before anything ran -- so the wait after the Enter was satisfied by
+	// that same echo and returned immediately. The test passed whether or
+	// not the editor ever took the line back and ran it, which is the half
+	// its name claims (#299). Here the echo can only ever show
+	// `echo $widget_output`; the marker exists nowhere until the shell
+	// expands it, so only execution can satisfy the assertion.
+	//
+	// The \$ is escaped so the expansion happens when the *line runs*,
+	// not when the widget body runs -- unescaped, the widget would write
+	// the marker straight into READLINE_LINE and put us back where we
+	// started.
+	rc := "widget_output=bound-widget-ran\n" +
+		`bind -x '"\C-t": READLINE_LINE="echo \$widget_output"; READLINE_POINT=${#READLINE_LINE}'` + "\n"
+	s := hookSession(t, rc)
 	s.waitForPrompt()
 	s.buf.Reset()
-	s.sendUntil("\x14", "bound-widget-ran") // Ctrl-T, then the rewritten line is echoed back
+	// Ctrl-T, then the rewritten line is echoed back: READLINE_LINE was set.
+	s.sendUntil("\x14", "echo $widget_output")
+	// No buffer clear between the waits -- #195 bans that, and nothing
+	// here needs it: the marker cannot already be present.
 	s.send("\r")
 	s.waitFor("bound-widget-ran")
+	// And the shell got back to a prompt, so the line was accepted rather
+	// than left in the editor.
+	s.waitFor(commandDone)
 }
 
 // A binding koi cannot express must cost that binding and nothing
