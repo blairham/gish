@@ -24,10 +24,11 @@ import (
 // lie that then has to be maintained against a shell we do not control;
 // what a caller acts on is what ran and what the status was.
 func TestPartialParseMatchesBash(t *testing.T) {
-	bashBin, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skip("no bash: the oracle is unavailable")
-	}
+	// requireBash, not a bare LookPath: it honors KOI_TEST_BASH, which is
+	// how the CI runner's older bash gets reproduced here — and the
+	// status this test compares is exactly the thing that differs
+	// between bash versions.
+	bashBin := requireBash(t)
 	koiBin := buildKoi(t)
 
 	cases := []struct {
@@ -121,10 +122,11 @@ func TestPartialParseSideEffectsStand(t *testing.T) {
 // discard the whole hook, so the tool appeared to install and did
 // nothing. `source` has the same shape for an rc file.
 func TestPartialParseInEvalAndSource(t *testing.T) {
-	bashBin, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skip("no bash: the oracle is unavailable")
-	}
+	// requireBash, not a bare LookPath: it honors KOI_TEST_BASH, which is
+	// how the CI runner's older bash gets reproduced here — and the
+	// status this test compares is exactly the thing that differs
+	// between bash versions.
+	bashBin := requireBash(t)
 	koiBin := buildKoi(t)
 	dir := t.TempDir()
 
