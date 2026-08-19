@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
@@ -101,6 +102,11 @@ type Runner struct {
 	stdin  *os.File // e.g. the read end of a pipe
 	stdout io.Writer
 	stderr io.Writer
+
+	// bgWriteMu serializes writes to stdout and stderr once a background
+	// job exists to share them. It is a pointer so that subshells hold the
+	// same lock as the shell that spawned them; see bgwrite.go.
+	bgWriteMu *sync.Mutex
 
 	ecfg *expand.Config
 	ectx context.Context // just so that Runner.Subshell can use it again
@@ -1135,6 +1141,7 @@ func (r *Runner) subshell(background bool) *Runner {
 		stdin:          r.stdin,
 		stdout:         r.stdout,
 		stderr:         r.stderr,
+		bgWriteMu:      r.bgWriteMu,
 		filename:       r.filename,
 		opts:           r.opts,
 		usedNew:        r.usedNew,
