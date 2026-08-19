@@ -67,7 +67,15 @@ var interpBuiltinCases = []builtinCase{
 	{name: "command", script: `command echo via-command`},
 	{name: "continue", script: `for i in 1 2 3; do [ "$i" = 2 ] && continue; echo "$i"; done`},
 	{
-		name: "dirs", script: `dirs`,
+		// `cd "$HOME"` first, and that is load-bearing: the gap is about
+		// abbreviating $HOME, so it can only show when the directory on
+		// the stack is under $HOME. A bare `dirs` used to exercise it by
+		// accident, because the runner's cwd happened to sit inside the
+		// developer's home — and when #260 gave the runner a scratch
+		// home, the two shells started agreeing and this entry looked
+		// like a gap that had closed. It had not; the test had stopped
+		// asking.
+		name: "dirs", script: `cd "$HOME"; dirs`,
 		knownGap: "bash abbreviates $HOME to ~ in the stack; the interpreter prints absolute paths",
 	},
 	{name: "echo", script: `echo plain; echo -n no-newline; echo`},

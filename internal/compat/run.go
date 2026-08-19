@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,22 +60,45 @@ func RunAll(ctx context.Context, bashBin, koiBin string) []Result {
 // output plus exit status. Combined because a difference in *where*
 // output lands is itself a compat difference worth catching.
 func runScript(ctx context.Context, shell, script string) (string, int) {
+	// A scratch $HOME, not the developer's (#260). This block said
+	// "hermetic-ish" and the -ish was doing the work: `make compat`
+	// writes the published scoreboard, so a case that reads anything
+	// under $HOME was scored against whatever happened to be in one
+	// person's home directory, and a case that *wrote* would have
+	// written into it. Nothing in the corpus does either today, which is
+	// exactly the state in which this gets missed.
+	//
+	// The two runners beside this one already did it right and are what
+	// this copies: bashsuite.go and agent.go.
+	home, err := os.MkdirTemp("", "koi-compat-")
+	if err != nil {
+		return "[runner error: " + err.Error() + "]", -1
+	}
+	defer os.RemoveAll(home) //nolint:errcheck // scratch dir
+
 	rctx, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(rctx, shell, "-c", script) //nolint:gosec // fixed shells, curated corpus
-	// A hermetic-ish environment: the corpus must not depend on the
-	// runner's dotfiles or locale.
 	// TMPDIR is passed through rather than left unset: with no TMPDIR a
 	// shell falls back to /tmp, so a case needing a temp file (process
 	// substitution makes a fifo) fails wherever /tmp is not writable and
 	// the scoreboard publishes a compat gap that is really a sandbox.
+	// It deliberately stays the system one rather than following $HOME
+	// into the scratch dir: what it has to be is *writable*, and the
+	// system temp dir is the value both shells would have used anyway.
 	cmd.Env = []string{
-		"PATH=" + pathEnv(), "HOME=" + homeEnv(), "LC_ALL=C", "TERM=dumb",
+		"PATH=" + pathEnv(), "HOME=" + home, "LC_ALL=C", "TERM=dumb",
 		"TMPDIR=" + os.TempDir(),
+		// The XDG roots go inside it too, the way agent.go does: koi
+		// resolves its rc through XDG before $HOME, so a scratch home
+		// alone would still let a real ~/.config/koi decide the score.
+		"XDG_CONFIG_HOME=" + filepath.Join(home, "config"),
+		"XDG_DATA_HOME=" + filepath.Join(home, "data"),
+		"XDG_STATE_HOME=" + filepath.Join(home, "state"),
 	}
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
-	err := cmd.Run()
+	err = cmd.Run()
 	code := 0
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
@@ -86,7 +110,6 @@ func runScript(ctx context.Context, shell, script string) (string, int) {
 }
 
 func pathEnv() string   { return os.Getenv("PATH") }
-func homeEnv() string   { return os.Getenv("HOME") }
 func itoa(n int) string { return strconv.Itoa(n) }
 
 // Summary is the scoreboard's headline numbers.
