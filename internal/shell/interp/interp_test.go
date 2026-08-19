@@ -3393,7 +3393,7 @@ done <<< 2`,
 	{"shopt extglob | grep 'off' | wc -l | tr -d ' '", "1\n"},
 	{
 		"shopt inherit_errexit",
-		"inherit_errexit     \ton\t(\"off\" not supported)\n #JUSTERR",
+		"inherit_errexit\ton\t(\"off\" not supported)\n #JUSTERR",
 	},
 	{
 		"shopt -o -s pipefail; shopt -o pipefail | grep -q 'on$'",

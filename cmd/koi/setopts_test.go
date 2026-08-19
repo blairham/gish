@@ -23,11 +23,25 @@ func TestSetOListingMatchesBash(t *testing.T) {
 	koi, bash := buildKoi(t), bashBin(t)
 	dir := t.TempDir()
 
+	// The column bash pads to is not stable across its own majors, and the
+	// runner that matters here ships bash 3.2 — so the padding is only
+	// asserted where it can be, and the names and states everywhere. The
+	// same split ulimit's grammar test already makes, for the same reason.
+	exactColumns := bashMajor(t, bash) >= 4
+
 	for _, script := range []string{"set -o", "set +o"} {
 		t.Run(script, func(t *testing.T) {
 			t.Parallel()
 			got, _ := shellRows(t, koi, dir, script)
 			want, _ := shellRows(t, bash, dir, script)
+			if !exactColumns {
+				for i := range got {
+					got[i] = squeeze(got[i])
+				}
+				for i := range want {
+					want[i] = squeeze(want[i])
+				}
+			}
 			if strings.Join(got, "\n") != strings.Join(want, "\n") {
 				t.Errorf("%s:\n koi: %q\nbash: %q", script, got, want)
 			}

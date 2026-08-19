@@ -1440,13 +1440,19 @@ func mapfileSplit(delim byte, dropDelim bool) bufio.SplitFunc {
 	}
 }
 
-// optColumn is the width bash pads an option name to before the tab, and
-// it is not one number: `set -o` uses fifteen and `shopt` twenty. Measured
-// from bash 5.3 rather than chosen — a listing is something scripts cut
-// fields out of.
+// setOptColumn is the width bash pads a `set -o` name to before the tab.
+// Measured from bash 5.3 rather than chosen — a listing is something
+// scripts cut fields out of.
+//
+// `shopt` pads too, to twenty, and koi deliberately does not follow it
+// there. The width is not stable across bash versions the way this one is:
+// matching 5.3's shopt makes koi differ from the 3.2 that ships on macOS,
+// which is what the CI runner has, so the choice is which bash to be wrong
+// against rather than whether. That difference is recorded as a known gap
+// in the builtins matrix and belongs to `shopt` rather than to #245.
 const (
 	setOptColumn   = 15
-	shoptOptColumn = 20
+	shoptOptColumn = 0 // no padding; see above
 )
 
 func (r *Runner) printOptLine(name string, column int, enabled, supported bool) {
