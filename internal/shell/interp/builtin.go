@@ -195,6 +195,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 	case "unset":
 		vars := true
 		funcs := true
+		// -n unsets the *reference* rather than what it points at, which
+		// is the only way to remove a nameref at all (#277).
+		byRef := false
 	unsetOpts:
 		for i, arg := range args {
 			switch arg {
@@ -202,6 +205,8 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				funcs = false
 			case "-f":
 				vars = false
+			case "-n":
+				byRef, funcs = true, false
 			default:
 				args = args[i:]
 				break unsetOpts
@@ -209,6 +214,17 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 
 		for _, arg := range args {
+			// Without -n, unsetting a nameref unsets its *target* and
+			// leaves the reference in place. That is bash's rule and it
+			// is the opposite of what koi did, so `unset foo` removed the
+			// nameref and kept the variable it pointed at — after which
+			// every later use of the name was an ordinary variable and
+			// the rest of a script drifted (#277).
+			if _, _, isElem := cutElemSubscript(arg); vars && !byRef && !isElem {
+				if vr := r.lookupVar(arg); vr.Kind == expand.NameRef && vr.Str != "" {
+					arg = vr.Str
+				}
+			}
 			if name, sub, ok := cutElemSubscript(arg); vars && ok {
 				r.unsetElem(name, sub)
 			} else if vars && r.lookupVar(arg).IsSet() {

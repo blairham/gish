@@ -1080,6 +1080,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		valType := ""
 		declQuery := "" // "-f", "-F" or "-p" for query mode
 		namedAny := false
+		unref := false // "+n": detach a nameref
 		switch cm.Variant.Value {
 		case "declare":
 			// When used in a function, "declare" acts as "local"
@@ -1112,6 +1113,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					modes = append(modes, flag)
 				case "-a", "-A", "-n":
 					valType = flag
+				case "+n":
+					unref = true
 				case "-g":
 					global = true
 				case "-f", "-p", "-F":
@@ -1192,8 +1195,21 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					}
 					r.out(")\n")
 				default:
+					// Declared but never set prints bare: `declare -n foo`
+					// and `declare -x foo`, not `... foo=""`. The two are
+					// the same rule, and it turns on Set rather than on
+					// the value being empty — `foo=` *is* set, and bash
+					// prints `declare -- foo=""` for it.
+					if !vr.Set {
+						r.outf("declare -%s %s\n", flags, name)
+						continue
+					}
 					r.outf("declare -%s %s=%q\n", flags, name, vr.Str)
 				}
+				continue
+			}
+			if unref {
+				r.unsetNameRef(name, as)
 				continue
 			}
 			vr := r.lookupVar(name)
@@ -1206,9 +1222,23 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				vr.Integer = false
 			}
 			if as.Naked {
-				if valType == "-A" {
+				switch valType {
+				case "-A":
 					vr.Kind = expand.Associative
-				} else {
+				case "-n":
+					// `declare -n foo` with no value *promotes* an
+					// existing variable: bash reads foo's current value
+					// as the name it now points at, so
+					//
+					//	bar=one; foo=bar; declare -n foo; echo $foo
+					//
+					// prints "one". Keeping the value and not the
+					// attribute — which is what KeepValue did here — left
+					// foo an ordinary variable holding the string "bar",
+					// so every later read gave the target's *name* where
+					// bash gives its value (#277).
+					vr.Kind = expand.NameRef
+				default:
 					vr.Kind = expand.KeepValue
 				}
 			} else {
@@ -1232,6 +1262,21 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				}
 			}
 			r.setVar(name, vr)
+		}
+		if !namedAny && valType == "-n" && declQuery == "" && !unref {
+			// A bare `declare -n` lists the namerefs, the way a bare
+			// `declare -f` lists the functions. Sorted, as bash sorts.
+			var names []string
+			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
+				if vr.Kind == expand.NameRef {
+					names = append(names, name)
+				}
+				return true
+			})
+			slices.Sort(names)
+			for _, name := range names {
+				r.outf("declare -n %s=%q\n", name, r.lookupVar(name).Str)
+			}
 		}
 		if !namedAny && (declQuery == "-f" || declQuery == "-F") {
 			// A bare "declare -f" or "declare -F" lists every function, sorted

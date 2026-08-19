@@ -210,6 +210,14 @@ func (v Variable) Resolve(env Environ) (string, Variable) {
 		if v.Kind != NameRef {
 			return name, v
 		}
+		if v.Str == "" {
+			// A nameref with no target: `declare -n foo` on a variable
+			// that was unset. It points at nothing, and bash expands it
+			// to nothing. Following it would ask the environment for the
+			// variable named "" — which is not a name any shell has, and
+			// which the interpreter panics on rather than answering.
+			return name, Variable{}
+		}
 		name = v.Str // keep name for the next iteration
 		v = env.Get(name)
 	}

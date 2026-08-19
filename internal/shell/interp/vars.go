@@ -504,8 +504,27 @@ func (r *Runner) arithmStr(s string) string {
 }
 
 func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign, valType string) (string, expand.Variable) {
-	if n, v := prev.Resolve(r.writeEnv); n != "" {
-		name, prev = n, v
+	// danglingRef records a nameref with no target — `declare -n foo` on a
+	// variable that was unset. bash assigns to the nameref variable itself
+	// there and *keeps* the attribute, so the value assigned becomes the
+	// name it now points at; dropping to a plain string instead would
+	// silently un-declare it.
+	danglingRef := false
+	// `declare -n name=value` sets *name*'s reference and never follows an
+	// existing one: retargeting a nameref is the point of writing it
+	// again. Following it instead pointed the old *target* at the new
+	// name, so `declare -n r=a; declare -n r=b` left a chain r->a->b —
+	// which happens to resolve to the right value and is the wrong shape,
+	// visible the moment anything lists or prints the attributes (#277).
+	if valType != "-n" {
+		if n, v := prev.Resolve(r.writeEnv); n != "" {
+			name, prev = n, v
+		} else if prev.Kind == expand.NameRef {
+			danglingRef = true
+		}
+	}
+	if danglingRef {
+		valType = "-n"
 	}
 	prev.Set = true
 	if as.Value != nil {
@@ -631,4 +650,30 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	prev.List = list
 	prev.Indexes = indexes
 	return name, prev
+}
+
+// unsetNameRef serves `declare +n`, which detaches a nameref (#277).
+//
+// The order is bash's and it is the whole subtlety: any assignment is
+// performed *first*, through the reference, and only then is the
+// attribute removed. So with foo pointing at bar,
+//
+//	typeset +n foo=other
+//
+// leaves bar="other" and foo="bar" — foo keeps the target's *name* as
+// its own value, because that is what a nameref's value has always been.
+// Detaching first would have assigned "other" to foo itself and lost
+// both halves.
+func (r *Runner) unsetNameRef(name string, as *syntax.Assign) {
+	self := r.lookupVar(name)
+	if !as.Naked {
+		// Assign through the reference, exactly as a plain `foo=other`
+		// would while the attribute is still on.
+		target, tv := r.assignVal(name, self, as, "")
+		r.setVar(target, tv)
+	}
+	if self.Kind == expand.NameRef {
+		self.Kind = expand.String
+	}
+	r.setVar(name, self)
 }
