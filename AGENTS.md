@@ -187,44 +187,55 @@ year — which is how an ordinary `${x%%[![:space:]]*}` trim stayed a
 crash long after it was fixed. Waiting for a tag is not a strategy when
 the substrate is the compatibility claim.
 
-So the rule is: **pin to whatever commit has the fix.** `blairham/sh` is
-our fork of `mvdan/sh` — clone it beside this repo, `origin` the fork and
-`upstream` the real one. Its job is to carry patches upstream has not
-taken, so a fix is one push and one `go get` away rather than a
-negotiation. The `koi-carry` branch is that carry.
+So the rule is: **pin to whatever commit has the fix.** That rule now
+governs only `syntax` and `pattern`, which are the two packages koi still
+consumes from the module.
 
-Two things to know before reaching for it, both of which this file
-previously had wrong:
+`interp` and `expand` are no longer consumed. They were lifted into
+`internal/shell` and are maintained here; `internal/shell/doc.go` is the
+authority on why, and the short version is that every local fix koi has
+needed landed in one of them, and `declare -i` required a new field on
+`expand.Variable` — which cannot be added to a struct in a package we do
+not own. **There is no `replace` directive in `go.mod`.** An earlier
+version of this file described one pointing `mvdan.cc/sh/v3` at the fork;
+that approach was superseded by the lift and never shipped.
 
-- **The fork *is* the dependency path.** `go.mod` replaces
-  `mvdan.cc/sh/v3` with `github.com/blairham/sh/v3` at a pseudo-version
-  of `koi-carry`. Rebase that branch on `upstream/master` to pick up
-  upstream work; add a commit to it to carry a new fix.
-- **A carry costs one line, not an import rewrite.** This file used to
-  say a carry needed `module github.com/blairham/sh/v3` plus a sweep
-  across ~18k lines. That is backwards: Go matches a `replace` target's
-  `go.mod` against the **left**-hand path, so the fork keeps `module
-  mvdan.cc/sh/v3` untouched and the whole carry is
+`blairham/sh` is our fork of `mvdan/sh` — clone it beside this repo,
+`origin` the fork and `upstream` the real one. Both of its remaining jobs
+are about provenance, not dependency resolution:
 
-  ```sh
-  go mod edit -replace=mvdan.cc/sh/v3=github.com/blairham/sh/v3@<pseudo-version>
-  ```
+- **It holds the commits the lift was taken from.** Branch `koi-carry`,
+  head `5967f857`, pushed to `origin` — upstream master plus the thirteen
+  local fixes. `internal/shell/doc.go` cites that SHA, so the branch has
+  to stay.
+- **It is where upstream's diff since the lift is readable.** `git fetch
+  upstream && git log 5967f857..upstream/master -- interp/ expand/` is
+  the re-sync review. Anything worth having gets ported into
+  `internal/shell` by hand; the carry branch is not rebased forward.
 
-  Keeping the fork byte-identical to upstream apart from the fix is what
-  makes that work, and it is also what would make an upstream PR easy.
-  Note that `go mod edit` rejects a bare commit SHA and leaves `go.mod`
-  unparseable until it is hand-edited; the pseudo-version is
-  `v3.13.2-0.<UTC commit time>-<12-char sha>`.
+A new `interp` or `expand` fix is therefore an ordinary change in this
+repo, not a push to the fork. Only a `syntax` or `pattern` fix moves the
+module pin:
+
+```sh
+go get mvdan.cc/sh/v3@<commit>
+```
+
+`go get` resolves a bare SHA to a pseudo-version; `go mod edit` does not,
+and leaves `go.mod` unparseable until it is hand-edited. The
+pseudo-version is `v3.13.2-0.<UTC commit time>-<12-char sha>`.
 
 **Do not open issues or pull requests on `mvdan/sh`.** An earlier attempt
 filed enough of both in one day that the maintainer asked twice to stop,
-closed the PRs, and warned that the account would be blocked next. The
-carry delivers the fix without upstream's involvement, which is the whole
-point of having it. Whether and when to re-engage upstream is the
+closed the PRs, and warned that the account would be blocked next. Owning
+`interp` and `expand` in-tree delivers the fix without upstream's
+involvement, which is the whole point of the lift. Whether and when to re-engage upstream is the
 maintainer's call to make, not something to do in passing while fixing a
 bug.
 
-What we do *not* do is reimplement the substrate. `syntax`, `interp`,
+What we do *not* do is reimplement the substrate. Lifting `interp` and
+`expand` is not reimplementing them — they arrived as upstream's code
+plus thirteen commits, tests and license included. `syntax`, `interp`,
 `expand` and `pattern` are ~18k lines of implementation against ~18k
 lines of tests, ten years and 4,000+ commits deep. bash compatibility is
 a long tail nobody derives from a spec — it is discovered by being
