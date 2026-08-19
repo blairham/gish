@@ -8,7 +8,7 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.0(1)-release** on the machine t
 | --- | --- | --- |
 | **strict** | **6/83 files (7%)** | identical output *and* exit status for a whole file |
 | parsed | 65/83 files (78%) | koi can read the file at all |
-| line agreement | 4516/13655 lines (33%) | how much of bash's output koi reproduced exactly |
+| line agreement | 5651/13655 lines (41%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -18,10 +18,17 @@ question — does the stuff people actually paste work — against a
 denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
-directions. koi parses a script **up front**, so one unsupported
-construct on line 129 forfeits the other 368 lines: the strict figure is
-dominated by parse coverage rather than by runtime behavior, and
-publishing it alone would hide where the gap actually is.
+directions. **Strict is a file count, and runtime behavior dominates
+it**: 59 files parse perfectly and then behave differently, against 18
+koi cannot read at all.
+
+Parse coverage belongs to **line agreement** instead, where a construct
+koi cannot read really does account for a large share of the missed
+lines. koi reads a script the way bash does (#276) — the statements
+before the syntax error run, and the error is reported where it is — so
+an unreadable construct on line 129 costs the lines after it rather than
+the whole file. It still costs them, which is why parsed is published
+beside the other two.
 
 ## What the parser cannot read
 
