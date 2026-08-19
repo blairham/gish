@@ -78,15 +78,24 @@ func (r *Runner) waitAny(pids []string, pidVar string) exitStatus {
 		}
 	}
 
-	// Nothing has finished, so block on all of them at once. The channel
-	// is buffered to the number of watchers, so the ones that lose the
-	// race still send and exit rather than blocking forever on a receiver
-	// that has moved on — there is no goroutine here that outlives the job
-	// it is watching.
+	// Nothing has finished, so block on all of them at once. The channel is
+	// buffered to the number of watchers, so the ones that lose the race
+	// still send and exit rather than blocking forever on a receiver that
+	// has moved on.
+	//
+	// Each watcher takes its channel *now* rather than indexing bgProcs
+	// when its job finishes, because by then the slice may have moved. A
+	// losing watcher outlives this call -- it blocks until its own job ends,
+	// which is later than the one that won -- and what the shell does in
+	// that interval is start more jobs, every one of which appends to
+	// bgProcs and can reallocate it. Reading the slice from the watcher was
+	// therefore concurrent with that append (#313). The channel is all the
+	// watcher ever needed.
 	finished := make(chan int, len(candidates))
 	for _, i := range candidates {
+		done := r.bgProcs[i].done
 		go func(i int) {
-			<-r.bgProcs[i].done
+			<-done
 			finished <- i
 		}(i)
 	}
