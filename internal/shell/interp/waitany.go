@@ -21,6 +21,11 @@ func (r *Runner) bgIndex(arg string) (int, bool) {
 	if !ok || pid <= 0 || pid > int64(len(r.bgProcs)) {
 		return 0, false
 	}
+	// An inherited job is visible to `jobs` but is not ours to wait for,
+	// which is the answer bash gives a command substitution that tries.
+	if r.bgProcs[pid-1].inherited {
+		return 0, false
+	}
 	return int(pid) - 1, true
 }
 
@@ -45,7 +50,7 @@ func (r *Runner) waitAny(pids []string, pidVar string) exitStatus {
 	var candidates []int
 	if len(pids) == 0 {
 		for i := range r.bgProcs {
-			if !r.bgProcs[i].reaped {
+			if !r.bgProcs[i].reaped && !r.bgProcs[i].inherited {
 				candidates = append(candidates, i)
 			}
 		}

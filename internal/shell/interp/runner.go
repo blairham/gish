@@ -77,6 +77,13 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 				return err
 			}
 			r2 := r.subshell(false)
+			// A command substitution sees the caller's jobs. bash
+			// draws the line here rather than at "is this a
+			// subshell": `echo $(jobs -r | wc -l)` counts them and
+			// `( jobs -r | wc -l )` does not, and it is the former
+			// that every bounded parallel loop is built out of
+			// (#302). They arrive non-waitable; see bgProc.inherited.
+			r2.bgProcs = inheritedJobs(r.bgProcs)
 			r2.stdout = w
 			r2.stmts(ctx, cs.Stmts)
 			r2.exit.exiting = false // subshells don't exit the parent shell
@@ -461,6 +468,7 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 		bg := bgProc{
 			done: make(chan struct{}),
 			exit: new(exitStatus),
+			cmd:  stmtSource(st),
 		}
 		r.bgProcs = append(r.bgProcs, bg)
 		go func() {
@@ -859,6 +867,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// rest — a partial trace being worse than none, since it reads
 			// as a pipeline with fewer commands in it than it has.
 			r2.callbackDebug = r.callbackDebug
+			// Same exception, for the same reason: `jobs` in a
+			// pipeline stage reports the shell's jobs in bash, and
+			// the idiom this exists for is a pipeline --
+			// `$(jobs -r | wc -l)`. Letting subshell's rule apply
+			// would empty the list in the one place it is read
+			// (#302). Non-waitable; see bgProc.inherited.
+			r2.bgProcs = inheritedJobs(r.bgProcs)
 			r2.stdout = pw
 			if cm.Op == syntax.PipeAll {
 				r2.stderr = pw
