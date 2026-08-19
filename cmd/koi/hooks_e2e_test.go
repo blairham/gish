@@ -42,9 +42,7 @@ func TestPromptCommandRuns(t *testing.T) {
 
 	// And again before the next prompt: a hook that runs once is a hook
 	// that silently stops updating whatever it maintains.
-	s.buf.Reset()
-	s.send("echo between\r")
-	s.waitFor("between")
+	s.runProbe("echo between", "between")
 	s.waitFor("pc-ran")
 }
 
@@ -69,9 +67,7 @@ func TestPS0PrintsBeforeOutput(t *testing.T) {
 	}
 	s := hookSession(t, "PS0='ps0-marker\\n'\n")
 	s.waitForPrompt()
-	s.buf.Reset()
-	s.send("echo the-out'put'\r")
-	out := s.waitFor("the-output")
+	out := s.runProbe("echo the-out'put'", "the-output")
 	if !strings.Contains(out, "ps0-marker") {
 		t.Fatalf("PS0 did not print: %q", out)
 	}
@@ -88,11 +84,9 @@ func TestDebugTrapSeesTheCommand(t *testing.T) {
 	}
 	s := hookSession(t, `trap 'printf "pre:%s\n" "$BASH_COMMAND"' DEBUG`+"\n")
 	s.waitForPrompt()
-	s.buf.Reset()
 	// Quoted on the way in so the marker in the output cannot be the
 	// pty's echo of what was typed.
-	s.send("echo ran'-it'\r")
-	out := s.waitFor("ran-it")
+	out := s.runProbe("echo ran'-it'", "ran-it")
 	// BASH_COMMAND is the line as written, quotes and all — which is
 	// what bash reports and what consumers expect to re-quote.
 	if !strings.Contains(out, `pre:echo ran'-it'`) {
@@ -110,13 +104,17 @@ func TestExtdebugCancelsTheCommand(t *testing.T) {
 	s := hookSession(t, "shopt -s extdebug\ntrap '[[ $BASH_COMMAND == *forbidden* ]] && exit 1 || true' DEBUG\n")
 	s.waitForPrompt()
 
-	s.buf.Reset()
-	s.send("echo allow'ed'\r")
-	s.waitFor("allowed")
+	s.runProbe("echo allow'ed'", "allowed")
 
-	s.buf.Reset()
-	s.send("echo forbidden-out'put'\r")
-	s.waitForPrompt()
+	// The canceled line prints nothing, so there is no marker to wait
+	// for and the D mark is the only signal that it is over. Waiting on
+	// the *prompt* mark here is what #286 was: the editor redraws the
+	// prompt on every echoed keystroke, so a B mark is already in the
+	// buffer while the line is still being typed, the wait returns at
+	// once, and the next send lands in the raw-mode re-entry window
+	// where queued input is discarded — 30s of silence from a shell
+	// behaving perfectly.
+	s.runLine("echo forbidden-out'put'")
 	if strings.Contains(s.plain(), "forbidden-output") {
 		t.Errorf("extdebug did not cancel the command: %q", s.plain())
 	}
@@ -150,9 +148,7 @@ PROMPT_COMMAND='__koi_prompt'
 `
 	s := hookSession(t, rc)
 	s.waitFor("precmd")
-	s.buf.Reset()
-	s.send("echo shim-work's'\r")
-	out := s.waitFor("shim-works")
+	out := s.runProbe("echo shim-work's'", "shim-works")
 	if !strings.Contains(out, `preexec:echo shim-work's'`) {
 		t.Errorf("preexec did not fire with the command line: %q", out)
 	}
