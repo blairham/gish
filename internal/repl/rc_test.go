@@ -99,6 +99,43 @@ func TestLoadRCBrokenFileIsNotFatal(t *testing.T) {
 	}
 }
 
+// The case #276 was filed about: an rc with one unreadable construct at
+// the bottom used to lose *every* line of itself, so a single line koi
+// could not parse cost the user their prompt, aliases and functions.
+// bash keeps what it read; so does koi now.
+func TestLoadRCKeepsWhatItCouldRead(t *testing.T) {
+	rc := writeFile(t, filepath.Join(t.TempDir(), "koirc"), `
+KOI_PROMPT='kept> '
+greeting="from rc"
+greet() { echo "$greeting"; }
+if then fi
+export NEVER=set
+`)
+	t.Setenv("KOI_RC", rc)
+
+	var out strings.Builder
+	runner, err := interp.New(interp.StdIO(nil, &out, io.Discard))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loadRC(context.Background(), runner)
+
+	if got := shellVar(runner, "KOI_PROMPT", "def"); got != "kept> " {
+		t.Errorf("KOI_PROMPT = %q, want the value set before the bad line", got)
+	}
+	if err := runner.Run(context.Background(), parseLine(t, "greet")); err != nil {
+		t.Fatalf("greet: %v", err)
+	}
+	if out.String() != "from rc\n" {
+		t.Errorf("output = %q, want the function defined before the bad line", out.String())
+	}
+	// And nothing after the error runs, which is the other half of
+	// matching bash: the rc is truncated at the error, not skipped past.
+	if got := shellVar(runner, "NEVER", ""); got != "" {
+		t.Errorf("NEVER = %q, want nothing — it is after the syntax error", got)
+	}
+}
+
 func TestLoadRCMissingFileIsSilent(t *testing.T) {
 	t.Setenv("KOI_RC", "")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

@@ -748,10 +748,11 @@ func RunFile(ctx context.Context, path string, login, interactive bool, params .
 // fixed: for a script it is the path, and for -c it is whatever operand
 // the caller supplied.
 func runScript(ctx context.Context, r io.Reader, name string, login, interactive bool, inv invocation, params ...string) error {
-	file, err := syntax.NewParser().Parse(r, name)
-	if err != nil {
-		return err
-	}
+	// Read as bash reads (#276): the statements before the first syntax
+	// error run, and only then is the error reported. A .bashrc with one
+	// construct koi cannot read at the bottom used to be a total loss.
+	stmts, perr := interp.ParseAsRead(r, name)
+	file := &syntax.File{Name: name, Stmts: stmts}
 	rewriteSubstrateGaps(file)
 	registerSubstrateBuiltins()
 	// A script file is a call frame; a command string is not. That is
@@ -805,17 +806,24 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		enableAliases(ctx, runner)
 		loadRC(ctx, runner)
 	}
-	return safely("running "+name, func() error { return runner.Run(ctx, file) })
+	err = safely("running "+name, func() error { return runner.Run(ctx, file) })
+	// bash reports the syntax error after the readable prefix has run,
+	// and exits 2 — the same status `koi -n` already answers. An `exit`
+	// in the prefix wins, because bash never read far enough to find the
+	// error at all.
+	if perr != nil && !runner.Exited() {
+		ReportSyntaxError(os.Stderr, perr)
+		return interp.ExitStatus(NoExecStatus)
+	}
+	return err
 }
 
 // RunReader parses and runs an entire script from r; name appears in
 // error messages. Later opts override the default stdio, which keeps the
 // core loop testable without touching the real terminal.
 func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.RunnerOption) error {
-	file, err := syntax.NewParser().Parse(r, name)
-	if err != nil {
-		return err
-	}
+	stmts, perr := interp.ParseAsRead(r, name)
+	file := &syntax.File{Name: name, Stmts: stmts}
 	rewriteSubstrateGaps(file)
 	// The session-querying builtins (declare -F) need a runner on this
 	// path too: a script asks the same questions an interactive line does.
@@ -832,7 +840,11 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		return err
 	}
 	setSessionRunner(runner)
-	return runner.Run(ctx, file)
+	err = runner.Run(ctx, file)
+	if perr != nil && !runner.Exited() {
+		return perr
+	}
+	return err
 }
 
 // backgroundRanges reports the source spans of the statements in file

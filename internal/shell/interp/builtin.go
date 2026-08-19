@@ -478,12 +478,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		// TODO: implement. for now, having this as a no-op is better than nothing.
 	case "eval":
 		src := strings.Join(args, " ")
-		p := syntax.NewParser()
-		file, err := p.Parse(strings.NewReader(src), "")
-		if err != nil {
-			return failf(1, "eval: %v\n", err)
+		// Read as bash reads (#276): what parsed before the error runs,
+		// and only then is the error reported. `eval "$(tool init)"` is
+		// the shape that matters — one construct koi cannot read at the
+		// bottom of a generated hook used to discard the whole hook.
+		stmts, perr := ParseAsRead(strings.NewReader(src), "")
+		r.stmts(ctx, stmts)
+		if perr != nil && !r.exit.exiting {
+			return failf(SyntaxErrorStatus, "eval: %v\n", perr)
 		}
-		r.stmts(ctx, file.Stmts)
 		exit = r.exit
 	case "source", ".":
 		if len(args) < 1 {
@@ -502,11 +505,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			return failf(1, "source: %v\n", err)
 		}
 		defer f.Close()
-		p := syntax.NewParser()
-		file, err := p.Parse(f, path)
-		if err != nil {
-			return failf(1, "source: %v\n", err)
-		}
+		stmts, perr := ParseAsRead(f, path)
 
 		// Keep the current versions of some fields we might modify.
 		oldParams := r.Params
@@ -543,7 +542,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			source:   sourceName,
 			callLine: pos.Line(),
 		})
-		r.stmts(ctx, file.Stmts)
+		r.stmts(ctx, stmts)
 		// A sourced file's return fires RETURN too, and unlike a
 		// function it inherits the trap without needing "functrace".
 		r.runReturnTrap(ctx)
@@ -559,6 +558,13 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 
 		exit = r.exit
 		exit.returning = false
+		// The status of a sourced file that would not parse is the
+		// syntax error's, not that of the last statement that did run —
+		// and an `exit` inside it means bash never read far enough to
+		// find the error at all.
+		if perr != nil && !exit.exiting {
+			return failf(SyntaxErrorStatus, "source: %v\n", perr)
+		}
 	case "[":
 		if len(args) == 0 || args[len(args)-1] != "]" {
 			return failf(2, "%v: [: missing matching ]\n", pos)
