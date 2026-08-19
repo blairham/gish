@@ -91,3 +91,32 @@ func TestBackgroundJobsDoNotShareALine(t *testing.T) {
 		})
 	}
 }
+
+// TestPipelineStagesDoNotShareALine covers the other way koi runs two writers
+// at once. A pipeline's stages are concurrent goroutines sharing stderr, and
+// unlike a background job nothing in the source says so -- there is no "&" to
+// warn a reader that two things are about to write one destination.
+func TestPipelineStagesDoNotShareALine(t *testing.T) {
+	t.Parallel()
+
+	src := `{ echo left >&2; } | { echo right >&2; }`
+	file, err := syntax.NewParser().Parse(strings.NewReader(src), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for run := range 50 {
+		var buf bytes.Buffer
+		r, err := interp.New(interp.StdIO(nil, &buf, &buf))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Run(context.Background(), file); err != nil {
+			t.Fatalf("run %d: %v", run, err)
+		}
+		got := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+		slices.Sort(got)
+		if len(got) != 2 || got[0] != "left" || got[1] != "right" {
+			t.Fatalf("run %d: got %q, want left and right intact", run, buf.String())
+		}
+	}
+}

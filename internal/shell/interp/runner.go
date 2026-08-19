@@ -815,6 +815,12 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r.exit.fatal(err) // not being able to create a pipe is rare but critical
 				return
 			}
+			// A pipeline runs its stages concurrently, so they share
+			// stdout and stderr the same way a background job does --
+			// `{ echo a >&2; } | { echo b >&2; }` has two stages
+			// writing one stderr at once, with no `&` anywhere to
+			// hint at it.
+			r.shareOutput()
 			r2 := r.subshell(true)
 			// Every stage of a pipeline is traced, whether or not
 			// "functrace" is set: bash reports `echo a` and `cat` alike for
