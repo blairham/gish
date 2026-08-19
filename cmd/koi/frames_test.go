@@ -21,13 +21,14 @@ import (
 //
 // bash is the oracle: nothing below encodes what bash ought to print.
 
+// bashBin is the differential oracle. It defers to requireBash so there is
+// one way to pick it: this used to do its own LookPath and therefore
+// ignored KOI_TEST_BASH, which is the variable that exists so a CI-only
+// failure against macOS's bash 3.2 can be reproduced locally. Two
+// lookalike helpers disagreeing about that is how one shipped (#287).
 func bashBin(t *testing.T) string {
 	t.Helper()
-	bin, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skip("no bash: the differential oracle is unavailable")
-	}
-	return bin
+	return requireBash(t)
 }
 
 // runScript runs one script file under a shell from a neutral directory,
