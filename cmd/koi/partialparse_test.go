@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -136,16 +137,69 @@ func TestPartialParseInEvalAndSource(t *testing.T) {
 		name   string
 		script string
 	}{
-		{"eval", "eval 'echo evaled\nif then fi'\necho after=$?\n"},
-		{"source", ". " + lib + "\necho after=$?\n"},
+		{"eval", "eval 'echo evaled\nif then fi'\necho ran=$?\n"},
+		{"source", ". " + lib + "\necho ran=$?\n"},
 	}
+	statusOracle := evalStatusOracle(t, bashBin)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Both keep running afterwards — a failed eval or source is a
-			// failed command, not the end of the script — so the status
-			// each reports is the interesting part and it lands on stdout.
-			compareShells(t, bashBin, koiBin, []string{"-c", tc.script}, true)
+			// failed command, not the end of the script — so what each
+			// printed *before* the error is the version-independent part,
+			// and it is compared against whatever bash is here.
+			wantOut, _, _ := run3(t, bashBin, []string{"-c", tc.script})
+			gotOut, gotErr, _ := run3(t, koiBin, []string{"-c", tc.script})
+			wantFirst, _, _ := strings.Cut(wantOut, "\n")
+			gotFirst, _, _ := strings.Cut(gotOut, "\n")
+			if gotFirst != wantFirst {
+				t.Errorf("the readable prefix printed %q, bash printed %q", gotFirst, wantFirst)
+			}
+			if strings.TrimSpace(gotErr) == "" {
+				t.Error("reported a syntax error with no message")
+			}
+			// The status is where the oracle stops being one machine's
+			// bash. See evalStatusOracle.
+			if statusOracle == 0 {
+				t.Logf("bash here answers 1 for this; not comparing the status")
+				return
+			}
+			want := "ran=" + strconv.Itoa(statusOracle) + "\n"
+			if !strings.HasSuffix(gotOut, want) {
+				t.Errorf("output %q does not end in %q", gotOut, want)
+			}
 		})
+	}
+}
+
+// evalStatusOracle reports the status this machine's bash gives `eval` and
+// `source` when what they were handed does not parse, or 0 when it is a
+// bash whose answer koi deliberately does not match.
+//
+// bash changed this in **5.3**: 5.2 and earlier answer 1, 5.3 answers 2 —
+// which is also what every version answers for the same error in a script
+// or in `-c`, so 5.3 made the family consistent. koi answers 2 throughout,
+// because bash 5.3 is the version this project pins its claim to: the
+// suite is bash 5.3's, the differential oracle #278 builds is 5.3, and
+// docs/bash-suite.md says so on its first line.
+//
+// This is #271's situation rather than a bug — the oracle is not the same
+// on every machine — and it is handled the same way: narrowly, in the open,
+// and only for the assertion that actually differs. Both CI runners
+// answered 1 when this was written (macos-latest ships 3.2.57), so both
+// take the skip while the prefix comparison above still runs everywhere.
+// It is asked of the oracle rather than derived from a version string, so
+// a runner image that moves to 5.3 starts checking the status by itself.
+func evalStatusOracle(t *testing.T, bashBin string) int {
+	t.Helper()
+	out, _, _ := run3(t, bashBin, []string{"-c", "eval 'if then fi' 2>/dev/null\necho $?\n"})
+	switch strings.TrimSpace(out) {
+	case "2":
+		return 2
+	case "1":
+		return 0
+	default:
+		t.Fatalf("bash answered %q for a failed eval, which is neither 1 nor 2", strings.TrimSpace(out))
+		return 0
 	}
 }
 
