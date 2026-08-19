@@ -188,3 +188,58 @@ func TestInteractiveCorporaAreWellFormed(t *testing.T) {
 		seen[c.Name] = true
 	}
 }
+
+// Repeat one paste case to measure how often it flakes (#279).
+//
+// The gate runs each case once, which is the right thing for a gate and
+// useless for a flake: one failure in twelve runs is invisible to it and
+// is exactly what was seen. This is the loop that issue asks for, kept
+// rather than thrown away, because the failure has only ever appeared on
+// a Linux CI runner and the person who can measure it is whoever is on
+// that runner next.
+//
+//	KOI_PASTE_REPEAT=50 \
+//	KOI_PASTE_CASE='history expansion: !! with a command prefix' \
+//	  go test ./internal/compat/ -run TestPasteCaseRepeatedly -v -timeout 30m
+//
+// With no KOI_PASTE_CASE it repeats the whole corpus, which is the
+// slower question — "does anything here flake" rather than "does this".
+func TestPasteCaseRepeatedly(t *testing.T) {
+	runs, _ := strconv.Atoi(os.Getenv("KOI_PASTE_REPEAT"))
+	if runs <= 0 {
+		t.Skip("set KOI_PASTE_REPEAT=N to measure a flake rate")
+	}
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash on this machine: the differential oracle is unavailable")
+	}
+	koiBin := buildKoi(t)
+
+	only := os.Getenv("KOI_PASTE_CASE")
+	cases := make([]compat.PasteCase, 0, len(compat.PasteCorpus))
+	for _, c := range compat.PasteCorpus {
+		if only == "" || c.Name == only {
+			cases = append(cases, c)
+		}
+	}
+	if len(cases) == 0 {
+		t.Fatalf("no paste case named %q", only)
+	}
+
+	failed := 0
+	for run := 1; run <= runs; run++ {
+		for _, c := range cases {
+			r := compat.RunPaste(context.Background(), bashBin, koiBin, c)
+			if r.Pass || r.Skipped {
+				continue
+			}
+			failed++
+			// Logged per failure rather than counted silently: the
+			// *reason* is the point, and after #279 it names the phase,
+			// the byte total and whether the shell was still alive.
+			t.Errorf("run %d/%d — %s: %s\n  bash=%q (%d)\n  koi=%q (%d)",
+				run, runs, c.Name, r.Reason, r.BashOut, r.BashCode, r.KoiOut, r.KoiCode)
+		}
+	}
+	t.Logf("%d failure(s) in %d runs of %d case(s)", failed, runs, len(cases))
+}

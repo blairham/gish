@@ -101,6 +101,14 @@ bash-suite-check: ## Run the bash suite without republishing (harness sanity onl
 paste-gate: ## Regenerate docs/interactive-compat.md: paste + source gates (#161) and the ecosystem matrix (#159)
 	KOI_GATES=1 go test ./internal/compat/ -run TestInteractiveGates -update -v
 
+.PHONY: paste-flake-rate
+paste-flake-rate: ## Repeat one paste case to measure how often it flakes (#279)
+	@# The gate runs each case once, which cannot see a 1-in-12 failure.
+	@# Override KOI_PASTE_CASE to pick another, or clear it for the corpus.
+	KOI_PASTE_REPEAT=$${KOI_PASTE_REPEAT:-50} \
+	KOI_PASTE_CASE=$${KOI_PASTE_CASE-history expansion: !! with a command prefix} \
+	go test ./internal/compat/ -run TestPasteCaseRepeatedly -v -count=1 -timeout 30m
+
 .PHONY: paste-gate-check
 paste-gate-check: ## Fail if a pasted construct, an init script, or an installed tool regressed
 	KOI_GATES=1 go test ./internal/compat/ -run 'TestInteractiveGates|TestInteractiveCorporaAreWellFormed'
