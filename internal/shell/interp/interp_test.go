@@ -1969,6 +1969,46 @@ var runTests = []runTest{
 		"trap 'echo x' EXIT; trap -p",
 		"trap -- 'echo x' EXIT\nx\n",
 	},
+
+	// RETURN (#295). The frame rules are covered end to end against real
+	// bash in cmd/koi/trapreturn_test.go, including `source`, which needs
+	// a file this table has no way to write. These are the in-package
+	// core: that it fires, that it does not eat the return status, and
+	// the two inheritance rules that decide everything else.
+	{
+		"f(){ trap 'echo left' RETURN; echo in; }; f",
+		"in\nleft\n",
+	},
+	{
+		"f(){ trap 'echo left' RETURN; return 5; }; f; echo rc=$?",
+		"left\nrc=5\n",
+	},
+	{
+		// FUNCNAME inside the trap is still the returning function — a
+		// cleanup handler reads it to name what it is cleaning up after.
+		"f(){ trap 'echo left:$FUNCNAME' RETURN; :; }; f",
+		"left:f\n",
+	},
+	{
+		// A function does not inherit RETURN...
+		"trap 'echo R' RETURN; f(){ echo in; }; f; echo done",
+		"in\ndone\n",
+	},
+	{
+		// ...until functrace says so.
+		"set -T; trap 'echo R' RETURN; f(){ echo in; }; f",
+		"in\nR\n",
+	},
+	{
+		// A nested call turning inheritance off must not silence the
+		// caller's own return.
+		"f(){ trap 'echo R' RETURN; g; }; g(){ echo g; }; f",
+		"g\nR\n",
+	},
+	{
+		"f(){ trap 'echo T' RETURN; :; }; f; trap -p RETURN",
+		"T\ntrap -- 'echo T' RETURN\n",
+	},
 	{
 		// bare `trap` prints the same listing as `trap -p`.
 		"trap 'echo x' EXIT; trap",

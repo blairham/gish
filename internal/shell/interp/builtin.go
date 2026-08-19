@@ -509,6 +509,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			callLine: pos.Line(),
 		})
 		r.stmts(ctx, file.Stmts)
+		// A sourced file's return fires RETURN too, and unlike a
+		// function it inherits the trap without needing "functrace".
+		r.runReturnTrap(ctx)
 		popFrame()
 
 		// If we modified the parameters and the sourced file didn't
@@ -1110,6 +1113,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				r.callbackExit, r.listed.exit = callback, callback
 			case "DEBUG":
 				r.callbackDebug, r.listed.debug = callback, callback
+			case "RETURN":
+				// Setting it here also makes it reachable here: `trap`
+				// installs the handler for the context it is run in, so a
+				// function that sets its own RETURN trap fires it even
+				// though entering that function had turned inheritance
+				// off. That is what makes the cleanup idiom work.
+				r.callbackReturn, r.listed.ret = callback, callback
+				r.returnTrapOff = false
 			default:
 				return failf(2, "trap: %s: invalid signal specification\n", arg)
 			}

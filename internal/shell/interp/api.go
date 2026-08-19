@@ -168,9 +168,28 @@ type Runner struct {
 	keepRedirs bool
 
 	// Fake signal callbacks
-	callbackErr   string
-	callbackExit  string
-	callbackDebug string
+	callbackErr    string
+	callbackExit   string
+	callbackDebug  string
+	callbackReturn string
+
+	// returnTrapOff disables the RETURN trap for the frame being run,
+	// which is the whole of how bash's inheritance rule works (#295).
+	//
+	// The handler itself is global — `trap ... RETURN` sets one, and
+	// nothing puts it back afterwards, which is why a trap set inside a
+	// function is still listed by `trap -p` once that function has
+	// returned, and still fires for a later top-level `source`. What is
+	// per-frame is only whether it is *reachable*: entering a function
+	// turns it off unless "functrace" is set, and leaving restores what
+	// the caller had. Entering a `source` does not turn it off at all.
+	//
+	// The two halves have to be separate. Saving and restoring the
+	// handler would lose a trap the function set; not restoring the flag
+	// would let a nested call's disable leak back into its caller and
+	// silence the caller's own return. Both were measured against bash
+	// before being written down.
+	returnTrapOff bool
 
 	// listed mirrors the callbacks above for `trap -p`'s benefit, and is
 	// inherited by a subshell unconditionally where they are not.
@@ -1131,6 +1150,10 @@ func (r *Runner) subshell(background bool) *Runner {
 	if r.opts[optFuncTrace] {
 		r2.callbackDebug = r.callbackDebug
 	}
+	// A subshell is the same frame as far as RETURN is concerned: it is
+	// not a function call, so nothing about it changes reachability.
+	r2.callbackReturn = r.callbackReturn
+	r2.returnTrapOff = r.returnTrapOff
 	r2.listed = r.listed
 	// The frame stack crosses into a subshell, because `$(caller 0)` and
 	// `$(trap -p)` are how a script asks these questions at all — a
