@@ -301,3 +301,76 @@ func TestScoreboardMatchesCorpusSize(t *testing.T) {
 	}
 	fmt.Fprintln(os.Stderr) // keep -v output readable
 }
+
+// The corpus runs with a scratch $HOME, not the developer's (#260).
+//
+// This is not tidiness. `make compat` writes the published scoreboard, so
+// a case that reads anything under $HOME would be scored against whatever
+// is in one person's home directory and the number would not be
+// reproducible between machines — and a case that *wrote* would write into
+// a real home. Nothing in the corpus does either today, which is exactly
+// the state in which a rule like this quietly stops being true.
+func TestRunnerDoesNotUseTheRealHome(t *testing.T) {
+	bashBin, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not installed: nothing to be differential against")
+	}
+	koiBin := buildKoi(t)
+
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory to protect")
+	}
+
+	// Read back what each shell was actually given, through the same
+	// entry point the scoreboard uses — testing runScript directly would
+	// not prove the corpus path is sandboxed.
+	r := compat.Run(context.Background(), bashBin, koiBin, compat.Case{
+		Name:   "home probe",
+		Script: `echo "$HOME"; echo "${XDG_CONFIG_HOME:-unset}"`,
+	})
+	for _, got := range []struct{ shell, out string }{
+		{"bash", r.BashOut}, {"koi", r.KoiOut},
+	} {
+		home, xdg, _ := strings.Cut(strings.TrimSpace(got.out), "\n")
+		if home == realHome {
+			t.Errorf("%s ran with the real $HOME (%s)", got.shell, home)
+		}
+		if home == "" {
+			t.Errorf("%s ran with no $HOME at all", got.shell)
+		}
+		// The XDG roots have to move too: koi resolves its rc through
+		// them before $HOME, so a scratch home alone would still let a
+		// real ~/.config/koi decide the score.
+		if !strings.HasPrefix(xdg, home) {
+			t.Errorf("%s: XDG_CONFIG_HOME = %q, which is not inside its $HOME %q", got.shell, xdg, home)
+		}
+	}
+
+	// And a case that writes lands in the scratch dir, which is gone
+	// afterwards — the half a read-only probe cannot show.
+	//
+	// The witness name is unique per run rather than fixed. A fixed one
+	// is self-poisoning: the first failing run leaves the file in the
+	// real home, and every later run then fails on that leftover instead
+	// of on what it did itself. (Which is how this comment came to be
+	// written.)
+	witness := "koi-compat-witness-" + filepath.Base(t.TempDir())
+	w := compat.Run(context.Background(), bashBin, koiBin, compat.Case{
+		Name:   "home write probe",
+		Script: `echo marker > "$HOME/` + witness + `"; cat "$HOME/` + witness + `"`,
+	})
+	if !w.Pass {
+		t.Errorf("writing under the scratch home did not work the same in both shells: %s\n  bash: %q\n  koi: %q",
+			w.Reason, w.BashOut, w.KoiOut)
+	}
+	if path := filepath.Join(realHome, witness); fileExists(path) {
+		os.Remove(path) //nolint:errcheck // best effort; the failure below is the point
+		t.Fatalf("a corpus case wrote %s into the real home directory", witness)
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
