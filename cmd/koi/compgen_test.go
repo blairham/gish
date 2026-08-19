@@ -164,7 +164,7 @@ func TestCompgenPathsMatchBash(t *testing.T) {
 // 5.3 and failed on the macOS runner, where koi matched bash exactly.
 // Subset keeps the claim that matters — a short list still fails, which
 // is the regression this guards.
-func TestCompgenKeywordsMatchBashExceptCoproc(t *testing.T) {
+func TestCompgenKeywordsMatchBash(t *testing.T) {
 	t.Parallel()
 	koi, bash := buildKoi(t), bashBin(t)
 	dir := t.TempDir()
@@ -173,30 +173,38 @@ func TestCompgenKeywordsMatchBashExceptCoproc(t *testing.T) {
 	want, _ := shellLines(t, bash, dir, "compgen -k")
 
 	for _, kw := range difference(want, got) {
-		if kw != "coproc" {
-			t.Errorf("bash lists keyword %q and koi does not", kw)
-		}
+		t.Errorf("bash lists keyword %q and koi does not", kw)
 	}
-	if extra := difference(got, want); len(extra) > 0 {
-		t.Errorf("koi lists keywords bash does not: %q", extra)
+	for _, kw := range difference(got, want) {
+		// The oracle has a version, and koi's list is bash 5.3's. macOS
+		// ships 3.2 as /bin/bash, which predates `coproc` by a major
+		// release — so there, koi listing it is koi being newer rather
+		// than koi being wrong. Confirmed against the oracle instead of
+		// assumed, so this stops excusing it the moment the runner's
+		// bash grows the keyword.
+		if kw == featCoproc && !oracleHas(t, bash, featCoproc) {
+			t.Logf("bash here has no %s (%s); koi listing it is not a mismatch", kw, bashVersion(t, bash))
+			continue
+		}
+		t.Errorf("koi lists keyword %q and bash does not", kw)
 	}
 
 	// The six that were missing all work, which is why the list was a
-	// reporting bug and not an honest refusal. coproc is checked the
-	// other way: it stays off the list for exactly as long as it fails.
+	// reporting bug and not an honest refusal. coproc joined them in
+	// #287: it used to be checked the other way — off the list for as
+	// long as it failed — and it now runs, so it is listed and exercised
+	// like the rest.
 	for _, tc := range []struct{ name, script string }{
 		{"[[", "[[ 1 == 1 ]] && echo ok"},
 		{"{", "{ echo ok; }"},
 		{"!", "! false && echo ok"},
 		{"in", "for i in ok; do echo $i; done"},
+		{"coproc", `coproc c { echo ok; }; read -r r <&"${c[0]}"; echo "$r"`},
 	} {
 		out, status := shellLines(t, koi, dir, tc.script)
 		if status != 0 || strings.Join(out, "") != "ok" {
 			t.Errorf("koi lists %q as a keyword but %q gave %q (status %d)", tc.name, tc.script, out, status)
 		}
-	}
-	if _, status := shellLines(t, koi, dir, "coproc c { :; }"); status == 0 {
-		t.Error("coproc now runs; it should be added to the keyword list (#287)")
 	}
 }
 

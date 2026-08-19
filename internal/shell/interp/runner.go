@@ -1295,6 +1295,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				}
 			}
 		}
+	case *syntax.CoprocClause:
+		r.coproc(ctx, cm)
 	case *syntax.TimeClause:
 		start := time.Now()
 		if cm.Stmt != nil {

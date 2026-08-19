@@ -337,13 +337,14 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 		case "builtin":
 			out = append(out, builtins.ShellBuiltins()...)
 		case "keyword":
-			// coproc is bash's twenty-second and is deliberately absent:
-			// koi does not implement it (#287), and this action answers
-			// what this shell has, the same reason -b returns fewer
-			// builtins than bash without that being a shortfall.
+			// All twenty-two of bash's. coproc was the one deliberate
+			// omission — this action answers what *this* shell has, and
+			// listing a keyword koi dropped on the floor would have been
+			// the wrong kind of parity — and it is here now that koi runs
+			// it (#287).
 			out = append(out, "if", "then", "else", "elif", "fi", "case", "esac",
 				"for", "while", "until", "do", "done", "function", "select", "time",
-				"!", "[[", "]]", "{", "}", "in")
+				"coproc", "!", "[[", "]]", "{", "}", "in")
 		case "variable", "export":
 			// Runner.Vars holds the environment koi was launched with and is
 			// not updated as it runs, so reading it answered with real names

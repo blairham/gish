@@ -2293,6 +2293,48 @@ var runTests = []runTest{
 	// background/wait
 	{"wait", ""},
 	{"wait foo", "wait: pid foo is not a child of this shell\nexit status 1 #JUSTERR"},
+
+	// `wait -n` (#287). Every expectation here was taken from real bash
+	// rather than reasoned about: the status is the finished job's, an
+	// already-finished job satisfies it without blocking, each job is
+	// handed back once, and 127 means there is nothing left — which is
+	// how a drain loop knows to stop.
+	{"wait -n; echo $?", "127\n"},
+	{"(exit 3) & wait -n; echo $?", "3\n"},
+	// Ordered with a sleep rather than left to the scheduler: two jobs
+	// that both exit immediately have no defined finishing order, so an
+	// expectation about which -n returns first would be a coin flip
+	// dressed up as a test.
+	{"(exit 3) & (sleep 0.1; exit 4) & wait -n; echo $?", "3\n"},
+	{"(sleep 0.1; exit 3) & (exit 4) & wait -n; echo $?", "4\n"},
+	{"(exit 3) & (sleep 0.1; exit 4) & wait -n; wait -n; echo $?", "4\n"},
+	{"(exit 3) & wait -n; wait -n; echo $?", "127\n"},
+	// Reaping is not a -n-only notion: bash's plain `wait` collects the
+	// jobs too, so nothing is left for a following -n.
+	{"(exit 3) & wait; wait -n; echo $?", "127\n"},
+	{"(exit 3) & p=$!; wait $p; wait -n; echo $?", "127\n"},
+	{"wait -n foo", "wait: pid foo is not a child of this shell\nexit status 1 #JUSTERR"},
+	// -p records *which* job answered, so a script can tell "job N
+	// finished" from "there was nothing left" without reading $? twice.
+	// bash leaves it unset in the second case, and so does koi.
+	// The pid's *value* is deliberately not compared: koi's jobs are
+	// goroutines and $! spells them "gN", where bash has a real process
+	// id. What has to agree is whether the variable was set, and that it
+	// carries the same spelling the shell itself hands out.
+	{"(exit 3) & wait -n -p v; echo \"$?/${v:+set}\"", "3/set\n"},
+	{"wait -n -p v; echo \"$?/${v-unset}\"", "127/unset\n"},
+	{"(exit 3) & p=$!; wait -p v $p; [ \"$v\" = \"$p\" ] && echo matches", "matches\n"},
+
+	// coproc (#287): the clause parsed and the executor dropped it.
+	{
+		"coproc C { read -r l; echo \"got:$l\"; }; echo hi >&\"${C[1]}\"; read -r r <&\"${C[0]}\"; echo \"$r\"",
+		"got:hi\n",
+	},
+	// No name means COPROC, which is also bash's rule for a simple command.
+	{"coproc { echo named-by-default; }; read -r r <&\"${COPROC[0]}\"; echo \"$r\"", "named-by-default\n"},
+	// NAME_PID spells the job the way $! does, so `wait` can find it.
+	{"coproc C { exit 4; }; wait \"$C_PID\"; echo $?", "4\n"},
+	{"coproc 1bad { :; }", "coproc: \"1bad\": not a valid name\nexit status 1 #JUSTERR"},
 	{"{ true; } & wait", ""},
 	{"{ false; } & wait", ""},
 	{"{ sleep 0.01; true; } & wait", ""},
