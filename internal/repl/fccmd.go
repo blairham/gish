@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
-
-	"github.com/blairham/koi-shell/internal/history"
 )
 
 // fc (#60): the POSIX history builtin.
@@ -70,6 +68,14 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 			args = args[1:]
 			break
 		}
+		// `fc -l -2` asks for the last two, not for an option named 2.
+		// bash reads a leading minus followed by digits as the *first*
+		// operand counting back from the newest entry, which fcRange
+		// below already understands -- the flag loop was eating it first
+		// and answering "invalid option" (#306).
+		if isNegativeNumber(flag) {
+			break
+		}
 		// Flags cluster: -ln and -l -n mean the same thing.
 		for _, r := range flag[1:] {
 			switch r {
@@ -102,15 +108,18 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 		return []string{"false"}
 	}
 
-	store := historyStore
-	if store == nil {
-		fmt.Fprintln(hc.Stderr, "fc: no history in this session")
-		return []string{"false"}
-	}
-	entries := store.RecentEntries(fcCount)
+	// The same list `history` reports, rather than the store underneath it
+	// (#306). `history -s` writes into a session-local copy, so reading
+	// the store directly meant `history` listing two commands while `fc
+	// -l` said there was no history at all -- and under `koi -c`, where
+	// there is no store, fc said that about every session.
+	entries := historyEntries()
 	if len(entries) == 0 {
-		fmt.Fprintln(hc.Stderr, "fc: no history yet")
-		return []string{"false"}
+		// bash prints nothing and succeeds. Nothing to list is not an
+		// error: `fc -l` in a fresh shell is a reasonable thing for a
+		// script to do, and answering it with status 1 ends one running
+		// under `set -e`.
+		return []string{"true"}
 	}
 
 	first, last, err := fcRange(args, len(entries))
@@ -134,13 +143,19 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 	return []string{"true"}
 }
 
-// writeFCLine prints one entry, numbered the way bash does.
-func writeFCLine(hc interp.HandlerContext, n int, e history.Entry, numbered bool) {
+// writeFCLine prints one entry the way bash's `fc -l` does: the number,
+// a tab, a space, the command -- and with -n, the tab and space alone.
+//
+// Measured from bash 5.3 rather than borrowed from the builtin next door.
+// This used to print `%5d  %s`, which is `history`'s format, so anything
+// cutting a field out of `fc -l` got a different shape than bash gives it
+// (#306).
+func writeFCLine(hc interp.HandlerContext, n int, command string, numbered bool) {
 	if numbered {
-		fmt.Fprintf(hc.Stdout, "%5d  %s\n", n, e.Command)
+		fmt.Fprintf(hc.Stdout, "%d\t %s\n", n, command)
 		return
 	}
-	fmt.Fprintf(hc.Stdout, "\t%s\n", e.Command)
+	fmt.Fprintf(hc.Stdout, "\t %s\n", command)
 }
 
 // fcRange resolves the first/last operands against a history of n
@@ -190,4 +205,20 @@ func fcIndex(s string, n int) (int, error) {
 		return n + v + 1, nil
 	}
 	return v, nil
+}
+
+// isNegativeNumber reports whether an argument is a negative count rather
+// than a flag, which for fc is the difference between "the last two" and a
+// usage error.
+func isNegativeNumber(arg string) bool {
+	digits, ok := strings.CutPrefix(arg, "-")
+	if !ok || digits == "" {
+		return false
+	}
+	for _, r := range digits {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

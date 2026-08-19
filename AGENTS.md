@@ -335,3 +335,4 @@ the `KOI_SEMANTIC_MARKS=off` fallback.
 - `go test -race ./...`; the REPL core is tested through `repl.RunReader` with `interp.StdIO` redirection — no real terminal needed
 - Tests must never touch real user state (home directory, real shell rc files, real history). Use `t.TempDir()` + `t.Setenv`
 - Plugin host integration tests (spawning a real plugin binary over go-plugin) land with the first dispatch path; keep them hermetic by building the fixture plugin from `testdata` at test time
+- **`cmd/koi`'s tests need `-count=1` after changing anything under `internal/`.** They run koi as a subprocess rather than importing it, so Go sees no dependency between the test package and the code under test and serves a cached PASS. Nothing is wrong and nothing says so — which matters most when checking a fix by breaking it deliberately, because a mutation that "passes" reads exactly like a test that cannot fail. `go test -count=1 ./cmd/koi/`

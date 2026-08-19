@@ -94,9 +94,13 @@ var nativeCases = map[string]nativeCase{
 	// and differ every run — so the assertion is the shape bash prints:
 	// two lines of "0m0.000s 0m0.000s", shell then children.
 	"times": {script: "times", wantOut: "m0", wantExit: exitCode(0)},
-	// fc lists interactive history, and the script path records none, so
-	// the honest answer here is that there is nothing to list.
-	"fc": {script: "fc -l", wantOut: "no history", wantExit: exitCode(1)},
+	// fc lists interactive history, and the script path records none. It
+	// used to say so and exit 1; bash prints nothing and succeeds, and a
+	// script listing its history defensively should not be ended by it
+	// under `set -e` (#306). So the case is what bash does: seed the list
+	// through `history -s`, since nothing else puts a command in it
+	// without running it, and check the entry comes back.
+	"fc": {script: "history -s seeded; fc -l", wantOut: "seeded", wantExit: exitCode(0)},
 	// newgrp is deliberately not provided (#61). It is still claimed, so
 	// the name explains itself and points at the system's own rather
 	// than shadowing it with "unsupported builtin".
