@@ -347,6 +347,25 @@ type bgProc struct {
 	// `wait PID` set it too — otherwise `wait; wait -n` would hand back a
 	// job bash considers long gone.
 	reaped bool
+
+	// cmd is the job's command as written, which is the only thing `jobs`
+	// has to show for it: koi's jobs are goroutines, so there is no
+	// process to ask afterwards what it was running.
+	cmd string
+
+	// inherited marks a job this shell can *see* but is not the parent of.
+	// A command substitution gets one of these per job of the shell that
+	// spawned it, because `jobs` inside `$(...)` reports the caller's jobs
+	// in bash -- which is the whole reason the bounded parallel loop's
+	// `$(jobs -r | wc -l)` counts anything at all. `wait` still refuses
+	// them, exactly as bash's does: "not a child of this shell".
+	inherited bool
+
+	// reported records that a finished job has already been listed. bash
+	// mentions a job's completion once and then drops it from the table,
+	// so a second `jobs` in the same script does not report the same Done
+	// job again.
+	reported bool
 }
 
 type alias struct {

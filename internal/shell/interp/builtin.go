@@ -36,81 +36,121 @@ import (
 // IsBuiltin returns true if the given word is a POSIX Shell
 // or Bash builtin.
 func IsBuiltin(name string) bool {
-	switch name {
-	case
-		// POSIX Shell builtins, from section 1.d obtained in September 2025 from:
-		// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_09_01_01
-		"alias",
-		"bg",
-		"cd",
-		"command",
-		"false",
-		"fc",
-		"fg",
-		"getopts",
-		"hash",
-		"jobs",
-		"kill",
-		"newgrp",
-		"pwd",
-		"read",
-		"true",
-		"umask",
-		"unalias",
-		"wait",
+	_, ok := builtinNames[name]
+	return ok
+}
 
-		// POSIX Shell special built-ins, obtained in September 2025 from:
-		// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_14
-		"break",
-		":",
-		"continue",
-		".",
-		"eval",
-		"exec",
-		"exit",
-		"export",   // NOTE: our parser treats this as a keyword
-		"readonly", // NOTE: our parser treats this as a keyword
-		"return",
-		"set",
-		"shift",
-		"times",
-		"trap",
-		"unset",
+// builtinNames is every builtin koi recognizes, and whether koi actually
+// implements it. It is a map rather than the switch statement it replaced
+// because three separate surfaces have to agree about what exists -- `type`,
+// `compgen -b`, and running the thing -- and when they were free to disagree
+// they did: `jobs` was reported by `type` as a builtin, omitted by
+// `compgen -b`, and refused when run, which is the disagreement #302 is named
+// after.
+//
+// A false value means the name is a real builtin that koi does not implement
+// yet, so `compgen -b` leaves it out rather than advertising something that
+// would refuse. The remaining six are all job control -- bg, fg, suspend and
+// disown need a foreground/background notion koi does not have without `set
+// -m` (#245), and enable and logout are interactive-shell management.
+var builtinNames = map[string]bool{
+	// POSIX Shell builtins, from section 1.d obtained in September 2025 from:
+	// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_09_01_01
+	"alias":   true,
+	"bg":      false,
+	"cd":      true,
+	"command": true,
+	"false":   true,
+	"fc":      false,
+	"fg":      false,
+	"getopts": true,
+	"hash":    true,
+	"jobs":    true,
+	"kill":    false,
+	"newgrp":  false,
+	"pwd":     true,
+	"read":    true,
+	"true":    true,
+	"umask":   false,
+	"unalias": true,
+	"wait":    true,
 
-		// Bash built-ins which are not present in POSIX, obtained in September 2025 from:
-		// https://man.archlinux.org/man/bash.1.en#SHELL_BUILTIN_COMMANDS
-		"source",
-		"bind",
-		"builtin",
-		"caller",
-		"compgen",
-		"complete",
-		"compopt",
-		"declare", // NOTE: our parser treats this as a keyword
-		"typeset", // NOTE: our parser treats this as a keyword
-		"dirs",
-		"disown",
-		"echo", // TODO: surely this is POSIX? but why is it not in the main POSIX spec page?
-		"enable",
-		"history",
-		"help",
-		"let", // NOTE: our parser treats this as a keyword
-		"local",
-		"logout",
-		"mapfile",
-		"readarray",
-		"popd",
-		"printf", // TODO: surely this is POSIX? but why is it not in the main POSIX spec page?
-		"pushd",
-		"shopt",
-		"suspend",
-		"test",
-		"[", // NOTE: an alias for "test", not explicitly listed
-		"type",
-		"ulimit":
-		return true
+	// POSIX Shell special built-ins, obtained in September 2025 from:
+	// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_14
+	"break":    true,
+	":":        true,
+	"continue": true,
+	".":        true,
+	"eval":     true,
+	"exec":     true,
+	"exit":     true,
+	"export":   true, // NOTE: our parser treats this as a keyword
+	"readonly": true, // NOTE: our parser treats this as a keyword
+	"return":   true,
+	"set":      true,
+	"shift":    true,
+	"times":    false,
+	"trap":     true,
+	"unset":    true,
+
+	// Bash built-ins which are not present in POSIX, obtained in September 2025 from:
+	// https://man.archlinux.org/man/bash.1.en#SHELL_BUILTIN_COMMANDS
+	"source":    true,
+	"bind":      false,
+	"builtin":   true,
+	"caller":    true,
+	"compgen":   true,
+	"complete":  false,
+	"compopt":   false,
+	"declare":   true, // NOTE: our parser treats this as a keyword
+	"typeset":   true, // NOTE: our parser treats this as a keyword
+	"dirs":      true,
+	"disown":    false,
+	"echo":      true, // TODO: surely this is POSIX? but why is it not in the main POSIX spec page?
+	"enable":    false,
+	"history":   false,
+	"help":      false,
+	"let":       true, // NOTE: our parser treats this as a keyword
+	"local":     true,
+	"logout":    false,
+	"mapfile":   true,
+	"readarray": true,
+	"popd":      true,
+	"printf":    true, // TODO: surely this is POSIX? but why is it not in the main POSIX spec page?
+	"pushd":     true,
+	"shopt":     true,
+	"suspend":   false,
+	"test":      true,
+	"[":         true, // NOTE: an alias for "test", not explicitly listed
+	"type":      true,
+	"ulimit":    true,
+}
+
+// ImplementedBuiltins is the sorted list of builtins this interpreter can
+// actually run, and UnimplementedBuiltins its complement: names it recognizes
+// as builtins but refuses.
+//
+// They are exported because the layers above need the same answer. koi wraps
+// this interpreter and adds builtins of its own, so "which builtins are there?"
+// was being answered from a hand-maintained copy of this list in
+// internal/builtins -- which is how `compgen -b` came to omit builtins that
+// work and, before this, to omit `jobs` for a different reason than it was
+// actually missing (#302). One list, derived, cannot drift from the dispatch
+// it describes.
+func ImplementedBuiltins() []string { return builtinsWhere(true) }
+
+// UnimplementedBuiltins returns the recognized-but-refused builtins.
+func UnimplementedBuiltins() []string { return builtinsWhere(false) }
+
+func builtinsWhere(implemented bool) []string {
+	names := make([]string, 0, len(builtinNames))
+	for name, impl := range builtinNames {
+		if impl == implemented {
+			names = append(names, name)
+		}
 	}
-	return false
+	slices.Sort(names)
+	return names
 }
 
 // TODO: atoi is duplicated in the expand package.
@@ -1248,6 +1288,8 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				action = "alias"
 			case "-v":
 				action = "variable"
+			case "-b":
+				action = "builtin"
 			default:
 				return failf(2, "compgen: %q: NOT IMPLEMENTED flag\n", flag)
 			}
@@ -1262,6 +1304,13 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			for name := range r.alias {
 				names = append(names, name)
 			}
+		case "builtin":
+			// Only the builtins koi implements. Listing one it would
+			// refuse is the disagreement this is here to end (#302):
+			// "what exists?" and "what can I call?" have to be the
+			// same answer for a builtin whose whole job is the first
+			// question.
+			names = append(names, ImplementedBuiltins()...)
 		case "variable":
 			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
 				if vr.IsSet() {
@@ -1345,6 +1394,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 
 	case "ulimit":
 		return r.ulimitBuiltin(args)
+
+	case "jobs":
+		return r.jobsBuiltin(args)
 
 	default:
 		return failf(2, "%s: unsupported builtin\n", name)

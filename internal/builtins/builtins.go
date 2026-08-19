@@ -60,7 +60,7 @@ func Register(name string, fn Func) {
 // ShellBuiltins returns the interpreter builtins that actually work,
 // for completion.
 func ShellBuiltins() []string {
-	return slices.Clone(interpImplemented)
+	return interpImplemented()
 }
 
 // Native returns the koi-native builtin names as the user types them:
@@ -74,45 +74,35 @@ func Native() []string {
 	return names
 }
 
-// interpImplemented is the set of interpreter builtins that actually run,
-// taken from mvdan.cc/sh/v3's interp dispatch (v3.13). `export`, `local`,
-// and `readonly` are parser-level keywords that behave like builtins.
-// TestInterpListsAccurate guards this list against upstream drift.
-var interpImplemented = []string{
-	":", "[", "alias", "break", "builtin", "cd", "command", "continue",
-	"dirs", "echo", "eval", "exec", "exit", "export", "false", "getopts",
-	"hash", "local", "mapfile", "popd", "printf", "pushd", "pwd", "read",
-	"readarray", "readonly", "return", "set", "shift", "shopt", "source",
-	"test", "trap", "true", "type", "unalias", "unset", "wait",
-}
+// The two lists below used to be written out by hand here, and they went
+// stale in both directions: builtins the interpreter had gained were missing
+// from the "implemented" list, and `jobs` sat in the "unsupported" one long
+// enough that `compgen -b` and `type jobs` disagreed about whether it existed
+// (#302). They are now asked of the interpreter, which is the only place that
+// knows -- so a builtin landing there shows up here without anyone
+// remembering to edit this file.
+//
+// The unsupported names are still recognized by interp.IsBuiltin, so `type`
+// calls them builtins while running one fails; listBuiltins supersedes an
+// entry once a native builtin claims the name, which is what makes the
+// listing describe the session rather than the build.
+func interpImplemented() []string { return interp.ImplementedBuiltins() }
 
-// interpUnsupported is recognized by the interpreter's IsBuiltin (so
-// `type` calls them builtins) but fails with "unsupported builtin" when
-// run. jobs/fg/bg arrive with job control (#5) and kill with #55; all
-// four stay listed here because listBuiltins supersedes an entry once a
-// native builtin claims the name, which is what makes the listing tell
-// the truth per session rather than per build.
-var interpUnsupported = []string{
-	"bg", "fc", "fg", "jobs", "kill", "newgrp", "times", "umask",
-}
-
-// Note: fc, kill, times and umask stay listed above even though koi
-// implements them. listBuiltins supersedes an entry once a native
-// builtin claims the name, so the listing describes the session rather
-// than the build — the same rule jobs/fg/bg follow.
+func interpUnsupported() []string { return interp.UnimplementedBuiltins() }
 
 func listBuiltins(_ context.Context, hc interp.HandlerContext, _ []string) error {
 	native := Native()
 	// A registered koi builtin (e.g. jobs/fg/bg under job control)
 	// supersedes its "unsupported" listing.
-	unsupported := make([]string, 0, len(interpUnsupported))
-	for _, name := range interpUnsupported {
+	unsup := interpUnsupported()
+	unsupported := make([]string, 0, len(unsup))
+	for _, name := range unsup {
 		if !slices.Contains(native, name) {
 			unsupported = append(unsupported, name)
 		}
 	}
 	fmt.Fprintf(hc.Stdout, "koi builtins:\n  %s\n\n", strings.Join(native, " "))
-	fmt.Fprintf(hc.Stdout, "shell builtins:\n  %s\n\n", strings.Join(interpImplemented, " "))
+	fmt.Fprintf(hc.Stdout, "shell builtins:\n  %s\n\n", strings.Join(interpImplemented(), " "))
 	fmt.Fprintf(hc.Stdout, "recognized but not yet supported:\n  %s\n", strings.Join(unsupported, " "))
 	return nil
 }
