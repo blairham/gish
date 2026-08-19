@@ -325,7 +325,13 @@ func pasteIntoKoi(ctx context.Context, koiBin string, c PasteCase) (string, int,
 	// A pty read cannot take a deadline, so it lives in a goroutine and
 	// the waiting happens in a select — the same rule the benchmark and
 	// e2e harnesses learned the hard way.
-	var closed atomic.Bool
+	//
+	// The read error is kept, not just the fact that reading stopped. A
+	// pty read fails when the child closes its end, so this is how the
+	// harness can say "the shell died" rather than "the shell is slow" —
+	// the distinction #279 asked for, and the one a 30s silence cannot
+	// make on its own.
+	var readErr atomic.Pointer[error]
 	chunks := make(chan []byte, 64)
 	go func() {
 		defer close(chunks)
@@ -336,32 +342,45 @@ func pasteIntoKoi(ctx context.Context, koiBin string, c PasteCase) (string, int,
 				chunks <- buf[:n]
 			}
 			if rerr != nil {
-				closed.Store(true)
+				readErr.Store(&rerr)
 				return
 			}
 		}
 	}()
 
 	var seen bytes.Buffer
+	// total counts every byte the shell has written, across buffer
+	// clears. Without it a failure reports `saw ""` after a clear, which
+	// reads as "the shell produced nothing at all" and is what sent #279's
+	// triage looking for a shell that never started — when the setup
+	// command had in fact already run and printed.
+	total := 0
 	// Silence, not elapsed time, is what says the shell is not coming
 	// back (#189). ctx still caps the case outright — see pasteIdle.
 	idle := time.NewTimer(pasteIdle)
 	defer idle.Stop()
 	// waitFor blocks until want appears, leaving the buffer intact: the
 	// final wait's buffer *is* the payload the case is judged on.
-	waitFor := func(want string) error {
+	//
+	// phase names the wait. The setup and the paste both wait for the
+	// same D mark, so `waiting for "\x1b]133;D;"` named two different
+	// moments and a failure could not be attributed to either (#279).
+	waitFor := func(phase, want string) error {
 		for !bytes.Contains(seen.Bytes(), []byte(want)) {
 			select {
 			case chunk, ok := <-chunks:
 				if !ok {
-					return fmt.Errorf("shell exited before %q", want)
+					return stalledErr(phase, want, &seen, total, readErr.Load(), "the shell exited")
 				}
 				seen.Write(chunk)
+				total += len(chunk)
 				idle.Reset(pasteIdle)
 			case <-idle.C:
-				return fmt.Errorf("no output for %s waiting for %q; saw %q", pasteIdle, want, plainText(seen.String()))
+				return stalledErr(phase, want, &seen, total, readErr.Load(),
+					"nothing written for "+pasteIdle.String())
 			case <-ctx.Done():
-				return fmt.Errorf("timeout waiting for %q; saw %q", want, plainText(seen.String()))
+				return stalledErr(phase, want, &seen, total, readErr.Load(),
+					"the "+pasteTimeout.String()+" cap for the whole case ran out")
 			}
 		}
 		return nil
@@ -370,15 +389,15 @@ func pasteIntoKoi(ctx context.Context, koiBin string, c PasteCase) (string, int,
 	// matched so the *next* wait cannot re-match it — the non-destructive
 	// half of what `seen.Reset()` used to do, without discarding the
 	// bytes that shared the read (#195).
-	waitPast := func(want string) error {
-		if err := waitFor(want); err != nil {
+	waitPast := func(phase, want string) error {
+		if err := waitFor(phase, want); err != nil {
 			return err
 		}
 		consumeThrough(&seen, bytes.Index(seen.Bytes(), []byte(want))+len(want))
 		return nil
 	}
 
-	if err := waitFor(markPromptEnd); err != nil {
+	if err := waitFor("first prompt", markPromptEnd); err != nil {
 		return "", 0, err
 	}
 	if c.Setup != "" {
@@ -401,10 +420,10 @@ func pasteIntoKoi(ctx context.Context, koiBin string, c PasteCase) (string, int,
 		// come and gone while the shell idled — reported as "no output
 		// for 30s ... saw \"\"" (#195). It failed only under load, which
 		// is why every rerun passed.
-		if err := waitPast("\x1b]133;D;"); err != nil {
+		if err := waitPast("setup command finishing", "\x1b]133;D;"); err != nil {
 			return "", 0, err
 		}
-		if err := waitFor(markPromptEnd); err != nil {
+		if err := waitFor("prompt after setup", markPromptEnd); err != nil {
 			return "", 0, err
 		}
 	}
@@ -412,7 +431,7 @@ func pasteIntoKoi(ctx context.Context, koiBin string, c PasteCase) (string, int,
 	if _, err := f.WriteString(bracketed(c.Text) + "\r"); err != nil {
 		return "", 0, err
 	}
-	if err := waitFor("\x1b]133;D;"); err != nil {
+	if err := waitFor("pasted command finishing", "\x1b]133;D;"); err != nil {
 		return "", 0, err
 	}
 	// Give the tail of the output a moment to arrive; the D mark is
@@ -472,3 +491,41 @@ func normalizeOutput(raw string) string {
 }
 
 func plainText(s string) string { return ansiEscapes.ReplaceAllString(s, "") }
+
+// stalledErr explains a wait that did not finish (#279).
+//
+// The message it replaces said only how long it waited, what it wanted,
+// and what was in the buffer — and each of those three was ambiguous in
+// the one failure that has been seen:
+//
+//   - the awaited mark named two different waits, since the setup command
+//     and the pasted command both end with a D mark;
+//   - the buffer had been cleared before the wait, so `saw ""` meant
+//     "nothing since the clear" and was read as "the shell never wrote
+//     anything";
+//   - a shell that had *died* and one that was merely quiet produced the
+//     same 30 seconds of silence.
+//
+// So it names the phase, reports the running total as well as the
+// buffer, and says whether the pty is still open. A flake this rare is
+// worth diagnosing on its first recurrence rather than its third.
+func stalledErr(phase, want string, seen *bytes.Buffer, total int, readErr *error, cause string) error {
+	state := "the shell is still running"
+	if readErr != nil {
+		state = "the pty is closed (" + (*readErr).Error() + "), so the shell is gone"
+	}
+	return fmt.Errorf("%s: %s while waiting for %s; %d bytes written in total, %q since the buffer was last cleared; %s",
+		phase, cause, markName(want), total, plainText(seen.String()), state)
+}
+
+// markName spells a semantic mark the way its documentation does, since
+// the raw escape is unreadable in a failure message.
+func markName(want string) string {
+	switch want {
+	case markPromptEnd:
+		return "the prompt-end mark (OSC 133 B)"
+	case "\x1b]133;D;":
+		return "the command-finished mark (OSC 133 D)"
+	}
+	return strconv.Quote(want)
+}
