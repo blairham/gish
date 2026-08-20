@@ -949,6 +949,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				pw.Close()
 			})
 			r.pipeStatus = nil
+			var r3 *Runner
 			if r.opts[optLastPipe] {
 				// lastpipe: the final stage runs in the current shell, so
 				// `cmd | read x` keeps x. Until #277 this was the only
@@ -967,7 +968,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				// stage runs synchronously in the parent's goroutine, and
 				// the background flavor snapshots the environment via Each,
 				// which loses values a FuncEnviron can only answer by name.
-				r3 := r.subshell(false)
+				r3 = r.subshell(false)
 				r3.callbackDebug = r.callbackDebug
 				r3.bgProcs = inheritedJobs(r.bgProcs)
 				r3.stdin = pr
@@ -980,6 +981,22 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 			pr.Close()
 			wg.Wait()
+			// A process substitution started inside a stage — `tee >(…)`
+			// — registers on that stage's runner, which the pipeline
+			// throws away; the following `wait` then had nothing to wait
+			// on and the substitution's output raced the next command
+			// (#459). The stages' own jobs come back to the shell that
+			// ran the pipeline; the inherited prefix stays the parent's.
+			for _, stage := range []*Runner{r2, r3} {
+				if stage == nil {
+					continue
+				}
+				for _, bg := range stage.bgProcs {
+					if !bg.inherited {
+						r.bgProcs = append(r.bgProcs, bg)
+					}
+				}
+			}
 			// A pipeline of three or more stages nests to the left, so cm.X is
 			// itself a pipeline whose stages r2 collected; only its last stage
 			// runs here as cm.Y.
