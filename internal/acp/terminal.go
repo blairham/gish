@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 // The terminal capability (#167): the half of ACP where the *client*
@@ -325,16 +326,42 @@ func ExecRunner(ctx context.Context, cmd Command, out *Output) (Process, error) 
 		c.Env = append(os.Environ(), cmd.Env...)
 	}
 	c.Stdout, c.Stderr = out, out
+	// Own process group, so Kill can reach everything the command forked
+	// (#328). Under a sandbox profile the direct child is only the
+	// `koi __sandbox-exec` wrapper — signaling one pid orphans the chain
+	// underneath it, which is the same reason the main shell's job
+	// control runs each line in its own group.
+	setProcessGroup(c)
+	// Output goes through a pipe whose write end every descendant
+	// inherits, and Wait does not return until that pipe reaches EOF —
+	// so a descendant that outlives the command (a double-forked daemon,
+	// or a survivor of the kill) would hang terminal/wait_for_exit
+	// forever (#329). WaitDelay is Go's backstop for exactly this: once
+	// the process itself has exited, stop waiting for its inherited fds.
+	c.WaitDelay = waitDelay
 	if err := c.Start(); err != nil {
 		return nil, err
 	}
 	return &execProcess{cmd: c}, nil
 }
 
+// waitDelay bounds how long Wait keeps listening on the output pipe
+// after the process itself is gone (see ExecRunner). A variable so
+// tests exercising the backstop do not cost the suite five seconds.
+var waitDelay = 5 * time.Second
+
 type execProcess struct{ cmd *exec.Cmd }
 
 func (p *execProcess) Wait() (int, string, error) {
 	err := p.cmd.Wait()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		// The command exited 0 and only its inherited output pipe stayed
+		// open — a descendant holding it (#329). That is the
+		// descendant's doing, not the command's exit status, and
+		// reporting it as an error would tell the agent the command
+		// failed when it succeeded.
+		return 0, "", nil
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
@@ -352,5 +379,5 @@ func (p *execProcess) Kill() error {
 	if p.cmd.Process == nil {
 		return nil
 	}
-	return p.cmd.Process.Kill()
+	return killProcessGroup(p.cmd.Process)
 }
