@@ -452,8 +452,13 @@ func (r *Runner) errf(format string, a ...any) {
 }
 
 func (r *Runner) stop(ctx context.Context) bool {
-	// Some traps trigger on exit, so we do want those to run.
-	if !r.handlingTrap && (r.exit.returning || r.exit.exiting || r.exit.aborting) {
+	// Inside a trap action these flags always belong to the action itself
+	// — runTrapCallback clears the shell's in-flight ones at entry, which
+	// is what lets an EXIT trap run while the shell is exiting — so a
+	// `return` raised within the action ends what it should end rather
+	// than being suppressed until the action runs out of statements
+	// (#355).
+	if r.exit.returning || r.exit.exiting || r.exit.aborting {
 		return true
 	}
 	if err := ctx.Err(); err != nil {
@@ -665,7 +670,11 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	r.pipeStatusSet = false
 	r.pipeStatus = nil
 
-	r.traceCommand(ctx, st)
+	if r.traceCommand(ctx, st) {
+		// extdebug: the DEBUG trap cancelled this command; nothing ran,
+		// not even its redirections, and $? reads 0 (#355).
+		return
+	}
 
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	// The descriptor table is modified in place, so a statement with its own
@@ -1455,30 +1464,37 @@ func (r *Runner) printFuncDef(name string, body *syntax.Stmt) {
 // also fires for the header of a `for` or `while`, once per iteration,
 // and koi does not; and koi's pipeline stages run concurrently, so their
 // traces can interleave where bash's are strictly left to right.
-func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) {
+// traceCommand reports whether the statement should be skipped: under
+// extdebug, a DEBUG trap answering nonzero cancels the command (#355).
+func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) bool {
 	if r.handlingTrap {
-		return
+		return false
 	}
 	if r.callbackDebug == "" && r.callbackErr == "" && r.callbackExit == "" {
-		return
+		return false
 	}
 	// Only a simple command. A compound statement's own trace is the
 	// divergence noted above, and firing for both would report every
 	// command twice — once for the `if` and once for its body.
 	if _, ok := st.Cmd.(*syntax.CallExpr); !ok {
-		return
+		return false
 	}
 	r.setVarString(shellCommandVar, stmtSource(st))
 	if r.callbackDebug == "" {
-		return
+		return false
 	}
 	// A function body and a sourced file are both traced only under
 	// "functrace" — the same rule, and both measured: bash prints nothing
 	// for the commands inside `. file` until `set -T`.
 	if (r.inFunction() || r.inSource) && !r.opts[optFuncTrace] {
-		return
+		return false
 	}
-	r.trapCallback(ctx, r.callbackDebug, "debug", st.Pos().Line())
+	code := r.trapCallback(ctx, r.callbackDebug, "debug", st.Pos().Line())
+	// Under extdebug, a DEBUG trap answering nonzero tells the shell not
+	// to run the command at all — the mechanism a debugger's step and
+	// skip are built on (#355). The skipped command leaves $? as 0,
+	// measured against 5.3.
+	return code != 0 && r.opts[optExtDebug]
 }
 
 // listedTraps is what `trap -p` reports, as distinct from what runs. See
@@ -1659,8 +1675,10 @@ func (r *Runner) runPendingSignalTraps(ctx context.Context) {
 // DEBUG and ERR, the line the trap was set on for EXIT and RETURN — with
 // later action lines counting on from it, which is bash's arithmetic
 // (#352). Zero means the action's own positions report as written.
-func (r *Runner) trapCallback(ctx context.Context, callback, name string, baseLine uint) {
-	r.runTrapCallback(ctx, callback, name, baseLine, false)
+// It reports the action's final exit status, which extdebug's skip rule
+// reads off the DEBUG trap (#355); every other caller ignores it.
+func (r *Runner) trapCallback(ctx context.Context, callback, name string, baseLine uint) uint8 {
+	return r.runTrapCallback(ctx, callback, name, baseLine, false)
 }
 
 // signalTrapCallback runs a real signal's handler. It differs from the
@@ -1669,7 +1687,7 @@ func (r *Runner) trapCallback(ctx context.Context, callback, name string, baseLi
 // it), so a return, exit, or abort raised inside the handler propagates
 // instead of being rolled back with the exit status.
 func (r *Runner) signalTrapCallback(ctx context.Context, callback, name string, baseLine uint) {
-	r.runTrapCallback(ctx, callback, name, baseLine, true)
+	_ = r.runTrapCallback(ctx, callback, name, baseLine, true)
 }
 
 // runSubshellExitTrap fires this subshell's own EXIT trap: the end of the
@@ -1684,12 +1702,13 @@ func (r *Runner) runSubshellExitTrap(ctx context.Context) {
 	r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
 }
 
-func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, baseLine uint, keepFlow bool) {
+//nolint:unparam // the status feeds extdebug's skip rule via trapCallback
+func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, baseLine uint, keepFlow bool) uint8 {
 	if callback == "" {
-		return // nothing to do
+		return 0 // nothing to do
 	}
 	if r.handlingTrap {
-		return // don't recurse, as that could lead to cycles
+		return 0 // don't recurse, as that could lead to cycles
 	}
 	r.handlingTrap = true
 	defer func() { r.handlingTrap = false }()
@@ -1700,10 +1719,19 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	if err != nil {
 		r.errf(name+"trap: %v\n", err)
 		// ignore errors in the callback
-		return
+		return 0
 	}
 	oldExit, oldLastExit := r.exit, r.lastExit
 	r.lastExit = r.exit
+	// The action starts with a clean slate: the exiting or returning
+	// already in flight belongs to the shell around the trap, and left in
+	// place it either stopped the action's first statement (before
+	// handlingTrap suppressed flow in [Runner.stop]) or — with the
+	// suppression — kept a `return 2` inside a function the action calls
+	// from ending that function, so a trailing `return 0` overwrote the
+	// answer extdebug reads (#355). Control flow the action itself raises
+	// behaves normally and is inspected below.
+	r.exit = exitStatus{}
 	// The callback's own statements must not disturb whether the ERR trap has
 	// already run for the failure which got us here, as [Runner.stmtSync]
 	// clears that for every statement it runs.
@@ -1731,13 +1759,15 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	if oldPipeStatusVar.Set {
 		r.setVar(shellPipeStatusVar, oldPipeStatusVar)
 	}
+	code := r.exit.code
 	if keepFlow && (r.exit.returning || r.exit.exiting || r.exit.aborting) {
 		// A real signal's handler may redirect control — see
 		// [Runner.signalTrapCallback] — and rolling that back would trap
 		// the shell in the loop the handler exists to break out of.
-		return
+		return code
 	}
 	r.exit, r.lastExit = oldExit, oldLastExit // traps on EXIT or ERR should not modify the result
+	return code
 }
 
 func (r *Runner) flattenAssigns(args []*syntax.Assign) iter.Seq[*syntax.Assign] {
