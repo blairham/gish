@@ -884,6 +884,32 @@ var runTests = []runTest{
 		"compgen: -A \"directory\": NOT IMPLEMENTED action\nexit status 2 #IGNORE bash implements this action",
 	},
 
+	// FUNCNEST bounds function nesting (#349). The violation unwinds the
+	// whole function stack and the top level resumes: the rest of the
+	// violating line is lost, the next line runs with status 1.
+	{
+		"FUNCNEST=2; f(){ echo f; g; }; g(){ echo g; h; }; h(){ echo h; }; f; echo never",
+		"f\ng\nh: maximum function nesting level exceeded (2)\nexit status 1 #JUSTERR",
+	},
+	{
+		"FUNCNEST=1\nf(){ g; echo never; }\ng(){ :; }\nf\necho st=$?",
+		"g: maximum function nesting level exceeded (1)\nst=1\n #JUSTERR",
+	},
+	{
+		// A runaway f(){ f; } dies cleanly instead of hanging the shell.
+		"FUNCNEST=20\nx=0\nf(){ x=$((x+1)); f; }\nf\necho x=$x st=$?",
+		"f: maximum function nesting level exceeded (20)\nx=20 st=1\n #JUSTERR",
+	},
+	{
+		// Zero and non-numeric values do not bind.
+		"FUNCNEST=0; n=0; f(){ n=$((n+1)); [ $n -lt 3 ] && f; }; f; echo n=$n",
+		"n=3\n",
+	},
+	{
+		"FUNCNEST=abc; n=0; f(){ n=$((n+1)); [ $n -lt 3 ] && f; }; f; echo n=$n",
+		"n=3\n",
+	},
+
 	// FUNCNAME
 	{
 		`f() { echo "[${FUNCNAME[0]:-MISSING}]"; }; f`,
