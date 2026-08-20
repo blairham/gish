@@ -1,3 +1,5 @@
+//go:build unix
+
 package main
 
 import (
@@ -8,6 +10,10 @@ import (
 	"testing"
 )
 
+// The file is unix-only because buildKoi is: the harness lives in
+// startup_test.go, which is tagged for the pty work it also holds.
+// Nothing here is unix-specific in principle.
+//
 // TestInvocationOptionSurface pins the argv shapes #427 found missing:
 // shopt's -O/+O form, the SHELLOPTS and BASHOPTS import, and a script
 // operand found on PATH.
