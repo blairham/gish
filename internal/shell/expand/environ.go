@@ -96,6 +96,11 @@ type Variable struct {
 	Exported bool
 	ReadOnly bool
 
+	// Global marks a write that must reach the global scope through
+	// every function scope in between — `declare -g` (#379). It is a
+	// write-time signal like [KeepValue], never stored.
+	Global bool
+
 	// Integer marks a variable declared with "declare -i", whose assigned
 	// values are evaluated as arithmetic expressions.
 	Integer bool
