@@ -90,6 +90,10 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 			r2.runSubshellExitTrap(ctx)
 			r2.exit.exiting = false  // subshells don't exit the parent shell
 			r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
+			// Nor does a `return` inside one return from the enclosing
+			// function: it ends the subshell with that status, and the
+			// caller carries on (#422).
+			r2.exit.returning = false
 			r.lastExpandExit = r2.exit
 			if r2.exit.fatalExit {
 				return r2.exit.err // surface fatal errors immediately
@@ -174,8 +178,9 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 				}
 				r2.stmts(ctx, ps.Stmts)
 				r2.runSubshellExitTrap(ctx)
-				r2.exit.exiting = false  // subshells don't exit the parent shell
-				r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
+				r2.exit.exiting = false   // subshells don't exit the parent shell
+				r2.exit.aborting = false  // nor unwind it: an abort inside a subshell ends that subshell
+				r2.exit.returning = false // nor return from the enclosing function (#422)
 			}()
 			return path, nil
 		},
@@ -549,6 +554,10 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 			r2.runSubshellExitTrap(ctx)
 			r2.exit.exiting = false  // subshells don't exit the parent shell
 			r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
+			// Nor does a `return` inside one return from the enclosing
+			// function: it ends the subshell with that status, and the
+			// caller carries on (#422).
+			r2.exit.returning = false
 			*bg.exit = r2.exit
 			close(bg.done)
 		}()
@@ -806,8 +815,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		r2 := r.subshell(false)
 		r2.stmts(ctx, cm.Stmts)
 		r2.runSubshellExitTrap(ctx)
-		r2.exit.exiting = false  // subshells don't exit the parent shell
-		r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
+		r2.exit.exiting = false   // subshells don't exit the parent shell
+		r2.exit.aborting = false  // nor unwind it: an abort inside a subshell ends that subshell
+		r2.exit.returning = false // nor return from the enclosing function (#422)
 		r.exit = r2.exit
 	case *syntax.CallExpr:
 		// Build new slices, to not modify the caller's AST
@@ -1050,8 +1060,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			wg.Go(func() {
 				r2.stmt(ctx, cm.X)
 				r2.runSubshellExitTrap(ctx)
-				r2.exit.exiting = false  // subshells don't exit the parent shell
-				r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
+				r2.exit.exiting = false   // subshells don't exit the parent shell
+				r2.exit.aborting = false  // nor unwind it: an abort inside a subshell ends that subshell
+				r2.exit.returning = false // nor return from the enclosing function (#422)
 				pw.Close()
 			})
 			r.pipeStatus = nil

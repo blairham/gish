@@ -1616,6 +1616,14 @@ func (r *Runner) subshell(background bool) *Runner {
 	// instrumentation, not a script's trap, so no shell option governs
 	// whether a subshell or pipeline stage is traced (#474).
 	r2.traceHook = r.traceHook
+	// A subshell is still inside whatever function or sourced file
+	// contains it, which is what `return` asks about (#422). Losing
+	// these made `f(){ (return 5); }` report "can only be done from a
+	// func" and, worse, made `$(echo a; return; echo b)` carry on past
+	// the return — a wrong status is visible, silently running the rest
+	// of a command substitution is not.
+	r2.inFunc = r.inFunc
+	r2.inSource = r.inSource
 	// A subshell is the same frame as far as RETURN is concerned: it is
 	// not a function call, so nothing about it changes reachability.
 	r2.callbackReturn = r.callbackReturn
