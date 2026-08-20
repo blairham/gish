@@ -552,7 +552,7 @@ func (r *Runner) runReturnTrap(ctx context.Context) {
 	if r.callbackReturn == "" || r.returnTrapOff {
 		return
 	}
-	r.trapCallback(ctx, r.callbackReturn, "return")
+	r.trapCallback(ctx, r.callbackReturn, "return", r.callbackReturnLine)
 }
 
 // pushFrame enters a context; the returned function leaves it.
@@ -703,7 +703,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		// "errtrace" is set.
 		if !r.errTrapFired && (r.errTrapDepth == 0 || r.opts[optErrTrace]) {
 			r.errTrapFired = true
-			r.trapCallback(ctx, r.callbackErr, "error")
+			r.trapCallback(ctx, r.callbackErr, "error", st.Pos().Line())
 		}
 		// If the "errexit" option is set and a command failed, exit the shell. Exceptions:
 		//
@@ -1472,7 +1472,7 @@ func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) {
 	if (r.inFunction() || r.inSource) && !r.opts[optFuncTrace] {
 		return
 	}
-	r.trapCallback(ctx, r.callbackDebug, "debug")
+	r.trapCallback(ctx, r.callbackDebug, "debug", st.Pos().Line())
 }
 
 // listedTraps is what `trap -p` reports, as distinct from what runs. See
@@ -1589,11 +1589,12 @@ func stmtSource(st *syntax.Stmt) string {
 }
 
 // setSignalTrap arms, ignores, or restores one real signal (#350).
-func (r *Runner) setSignalTrap(name string, sig os.Signal, action string, reset bool) {
+func (r *Runner) setSignalTrap(name string, sig os.Signal, action string, reset bool, setLine uint) {
 	if reset {
 		signal.Reset(sig)
 		delete(r.sigTraps, name)
 		delete(r.sigListed, name)
+		delete(r.sigTrapLines, name)
 		return
 	}
 	if r.sigTraps == nil {
@@ -1602,8 +1603,12 @@ func (r *Runner) setSignalTrap(name string, sig os.Signal, action string, reset 
 	if r.sigListed == nil {
 		r.sigListed = make(map[string]string)
 	}
+	if r.sigTrapLines == nil {
+		r.sigTrapLines = make(map[string]uint)
+	}
 	r.sigTraps[name] = action
 	r.sigListed[name] = action
+	r.sigTrapLines[name] = setLine
 	if action == "" {
 		// `trap '' SIG` ignores the signal — for this shell, and, since
 		// an ignored disposition survives exec, for its children too.
@@ -1634,7 +1639,8 @@ func (r *Runner) runPendingSignalTraps(ctx context.Context) {
 		select {
 		case sig := <-r.sigChan:
 			if cb := r.sigTraps[r.sigNames[sig]]; cb != "" {
-				r.signalTrapCallback(ctx, cb, r.sigNames[sig])
+				name := r.sigNames[sig]
+				r.signalTrapCallback(ctx, cb, name, r.sigTrapLines[name])
 			}
 		default:
 			return
@@ -1642,8 +1648,13 @@ func (r *Runner) runPendingSignalTraps(ctx context.Context) {
 	}
 }
 
-func (r *Runner) trapCallback(ctx context.Context, callback, name string) {
-	r.runTrapCallback(ctx, callback, name, false)
+// trapCallback runs a fake trap's handler. baseLine is what $LINENO
+// reports on the action's first line — the triggering command's line for
+// DEBUG and ERR, the line the trap was set on for EXIT and RETURN — with
+// later action lines counting on from it, which is bash's arithmetic
+// (#352). Zero means the action's own positions report as written.
+func (r *Runner) trapCallback(ctx context.Context, callback, name string, baseLine uint) {
+	r.runTrapCallback(ctx, callback, name, baseLine, false)
 }
 
 // signalTrapCallback runs a real signal's handler. It differs from the
@@ -1651,11 +1662,11 @@ func (r *Runner) trapCallback(ctx context.Context, callback, name string) {
 // loop out of a function is a documented idiom (bash's own suite uses
 // it), so a return, exit, or abort raised inside the handler propagates
 // instead of being rolled back with the exit status.
-func (r *Runner) signalTrapCallback(ctx context.Context, callback, name string) {
-	r.runTrapCallback(ctx, callback, name, true)
+func (r *Runner) signalTrapCallback(ctx context.Context, callback, name string, baseLine uint) {
+	r.runTrapCallback(ctx, callback, name, baseLine, true)
 }
 
-func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, keepFlow bool) {
+func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, baseLine uint, keepFlow bool) {
 	if callback == "" {
 		return // nothing to do
 	}
@@ -1685,7 +1696,18 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, kee
 	oldErrTrapFired := r.errTrapFired
 	oldPipeStatusSet, oldPipeStatus := r.pipeStatusSet, r.pipeStatus
 	oldPipeStatusVar := r.lookupVar(shellPipeStatusVar)
+	var oldLineOffset uint64
+	if r.ecfg != nil {
+		oldLineOffset = r.ecfg.LineOffset
+		r.ecfg.LineOffset = 0
+		if baseLine > 0 {
+			r.ecfg.LineOffset = uint64(baseLine) - 1
+		}
+	}
 	r.stmts(ctx, file.Stmts)
+	if r.ecfg != nil {
+		r.ecfg.LineOffset = oldLineOffset
+	}
 	r.errTrapFired = oldErrTrapFired
 	r.pipeStatusSet, r.pipeStatus = oldPipeStatusSet, oldPipeStatus
 	if oldPipeStatusVar.Set {
@@ -2211,6 +2233,15 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		// function's locals and its FUNCNAME, as bash's does.
 		r.runReturnTrap(ctx)
 		r.returnTrapOff = oldReturnTrapOff
+
+		// The same rule for EXIT when `exit` was called in here (#352):
+		// bash fires the EXIT trap where the exit happened, so the
+		// action sees this function's FUNCNAME rather than an empty
+		// stack. Run's own firing point skips it once fired.
+		if r.exit.exiting && !r.exitTrapFired && !r.handlingTrap && r.callbackExit != "" {
+			r.exitTrapFired = true
+			r.trapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine)
+		}
 
 		r.writeEnv = origEnv
 

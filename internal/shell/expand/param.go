@@ -79,7 +79,7 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 	case "LINENO":
 		// This is the only parameter expansion that the environment
 		// interface cannot satisfy.
-		line := uint64(cfg.curParam.Pos().Line())
+		line := uint64(cfg.curParam.Pos().Line()) + cfg.LineOffset
 		vr = Variable{Set: true, Kind: String, Str: strconv.FormatUint(line, 10)}
 	default:
 		vr = cfg.Env.Get(name)

@@ -3608,6 +3608,38 @@ done <<< 2`,
 	{"trap 'echo at_exit' EXIT; trap - EXIT; echo OK", "OK\n"},
 	{"set -e; trap 'echo A' ERR EXIT; false; echo FAIL", "A\nA\nexit status 1"},
 	{"trap 'foobar' UNKNOWN", "trap: UNKNOWN: invalid signal specification\nexit status 1 #JUSTERR"},
+	// $LINENO inside a trap action (#352): DEBUG and ERR count from the
+	// line of the command that triggered them, EXIT from the line the
+	// trap was set on, and a multi-line action counts on from its base.
+	{
+		"trap 'echo L=$LINENO' DEBUG\necho one\necho two",
+		"L=2\none\nL=3\ntwo\n",
+	},
+	{
+		"trap 'echo E=$LINENO' ERR\ntrue\nfalse\necho after",
+		"E=3\nafter\n",
+	},
+	{
+		"trap 'echo X=$LINENO' EXIT\ntrue\nexit 0",
+		"X=1\n",
+	},
+	{
+		// EXIT counts from the trap's own line. bash resets LINENO per
+		// input unit on stdin (this harness's mode) and answers 1 here;
+		// koi parses its input as one file, where bash answers 3 too.
+		"true\ntrue\ntrap 'echo X=$LINENO' EXIT\ntrue\nexit 0",
+		"X=3\n #IGNORE bash counts stdin lines per input unit",
+	},
+	{
+		"trap 'echo A=$LINENO\necho B=$LINENO' DEBUG\necho one",
+		"A=3\nB=4\none\n",
+	},
+	// An EXIT trap fired by `exit` inside a function sees that
+	// function's FUNCNAME, not an emptied stack (#352).
+	{
+		"f(){ trap 'echo T:${FUNCNAME[0]:-none}' EXIT; exit 5; }\nf\necho never",
+		"T:f\nexit status 5",
+	},
 	{"trap 'foobar' 99; echo st=$?", "trap: 99: invalid signal specification\nst=1\n #JUSTERR"},
 	// TODO: our builtin appears to not receive the piped bytes?
 	// {"trap 'echo on_err' ERR; trap | grep -q '.*echo on_err.*'", "trap -- \"echo on_err\" ERR\n"},

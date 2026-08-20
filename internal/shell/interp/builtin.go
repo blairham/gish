@@ -1222,6 +1222,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				r.callbackErr, r.listed.err = callback, callback
 			case "EXIT":
 				r.callbackExit, r.listed.exit = callback, callback
+				r.callbackExitLine = pos.Line()
 			case "DEBUG":
 				r.callbackDebug, r.listed.debug = callback, callback
 			case "RETURN":
@@ -1231,13 +1232,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				// though entering that function had turned inheritance
 				// off. That is what makes the cleanup idiom work.
 				r.callbackReturn, r.listed.ret = callback, callback
+				r.callbackReturnLine = pos.Line()
 				r.returnTrapOff = false
 			default:
 				name, sig, ok := lookupSignal(arg)
 				if !ok {
 					return failf(1, "trap: %s: invalid signal specification\n", arg)
 				}
-				r.setSignalTrap(name, sig, callback, reset)
+				r.setSignalTrap(name, sig, callback, reset, pos.Line())
 			}
 		}
 

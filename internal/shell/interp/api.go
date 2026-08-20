@@ -195,6 +195,20 @@ type Runner struct {
 	sigChan   chan os.Signal
 	sigNames  map[os.Signal]string
 
+	// Where each non-command trap was set, for $LINENO inside its action
+	// (#352): bash counts an EXIT, RETURN, or signal trap's action lines
+	// from the line of the `trap` command that installed it, where DEBUG
+	// and ERR count from the line of the command that triggered them.
+	callbackExitLine   uint
+	callbackReturnLine uint
+	sigTrapLines       map[string]uint
+
+	// exitTrapFired notes the EXIT trap already ran: `exit` inside a
+	// function fires it early, at the call, so the action still sees
+	// that function's FUNCNAME and locals (#352) — by the time [Runner.Run]'s
+	// own firing point is reached the frames are gone.
+	exitTrapFired bool
+
 	// returnTrapOff disables the RETURN trap for the frame being run,
 	// which is the whole of how bash's inheritance rule works (#295).
 	//
@@ -1284,7 +1298,9 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
 		// trap because its signal came in the script's final moment
 		// would make `kill -X $$` on the last line a silent no-op.
 		r.runPendingSignalTraps(ctx)
-		r.trapCallback(ctx, r.callbackExit, "exit")
+		if !r.exitTrapFired {
+			r.trapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine)
+		}
 	}
 	maps.Insert(r.Vars, r.writeEnv.Each)
 	// Return the first of: a fatal error, a non-fatal handler error, or the exit code.
