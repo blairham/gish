@@ -1932,11 +1932,76 @@ func (r *Runner) printSignalNames() {
 // BASH_COMMAND holds: bash reports `echo $i`, not `echo 1`, because the
 // trap runs *before* the expansion.
 func stmtSource(st *syntax.Stmt) string {
+	// The whole statement, redirections included (#445). Printing only
+	// st.Cmd dropped them, so `echo one > /dev/null` reached a DEBUG or
+	// ERR trap as `echo one` — a different string from bash's, and the
+	// text is what a debugger or logger matching on BASH_COMMAND acts on.
+	//
+	// bash re-renders rather than quoting the source, and the shape was
+	// measured rather than guessed. It normalizes spacing: `echo a
+	// >/dev/null` and `echo b   >   /dev/null` both answer
+	// `> /dev/null`. A space follows the operator when the target is a
+	// word, and does not when the redirection is a dup or a close
+	// (`2>&1`, `4>&-`) or a heredoc (`<<EOF`) — which is why this walks
+	// the redirects instead of handing the statement to the printer,
+	// whose own style writes `>/dev/null` throughout.
+	//
+	// A heredoc keeps its body and terminator, with real newlines: bash
+	// answers "cat <<EOF > /dev/null\nbody line\nEOF\n" byte for byte,
+	// where the obvious guess is that it prints the operator alone.
+	printer := syntax.NewPrinter(syntax.SingleLine(true))
+	print := func(sb *strings.Builder, node syntax.Node) bool {
+		if err := printer.Print(sb, node); err != nil {
+			return false
+		}
+		return true
+	}
+
 	var sb strings.Builder
-	if err := syntax.NewPrinter(syntax.SingleLine(true)).Print(&sb, st.Cmd); err != nil {
+	if !print(&sb, st.Cmd) {
 		return ""
 	}
-	return strings.TrimSuffix(sb.String(), "\n")
+	line := strings.TrimSuffix(sb.String(), "\n")
+
+	var bodies strings.Builder
+	for _, rd := range st.Redirs {
+		var part strings.Builder
+		if rd.N != nil {
+			if !print(&part, rd.N) {
+				return ""
+			}
+		}
+		op := rd.Op.String()
+		part.WriteString(op)
+		switch rd.Op {
+		case syntax.DplIn, syntax.DplOut, syntax.Hdoc, syntax.DashHdoc:
+			// Tight: a dup names a descriptor, and a heredoc's word is
+			// its delimiter rather than a target.
+		default:
+			part.WriteString(" ")
+		}
+		if rd.Word != nil {
+			if !print(&part, rd.Word) {
+				return ""
+			}
+		}
+		line += " " + strings.TrimSuffix(part.String(), "\n")
+		if rd.Hdoc != nil {
+			var body strings.Builder
+			if !print(&body, rd.Hdoc) {
+				return ""
+			}
+			bodies.WriteString("\n")
+			bodies.WriteString(strings.TrimSuffix(body.String(), "\n"))
+			bodies.WriteString("\n")
+			var delim strings.Builder
+			if rd.Word != nil && print(&delim, rd.Word) {
+				bodies.WriteString(strings.TrimSuffix(delim.String(), "\n"))
+			}
+			bodies.WriteString("\n")
+		}
+	}
+	return line + bodies.String()
 }
 
 // setSignalTrap arms, ignores, or restores one real signal (#350).
