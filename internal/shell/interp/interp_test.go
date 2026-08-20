@@ -4710,6 +4710,14 @@ done <<< 2`,
 	},
 
 	// brace expansion; there are also some tests in the expand package
+	// Braces expand before parameters, textually (#363): a brace suffix
+	// on a short-form $var extends the variable's name, while ${var}
+	// keeps its boundary and $1 was never a name to extend.
+	{"var=baz varx=vx vary=vy; echo $var{x,y}", "vx vy\n"},
+	{"var=baz; echo ${var}{x,y}", "bazx bazy\n"},
+	{"a1=one a2=two; echo $a{1,2}", "one two\n"},
+	{"set -- p; echo $1{x,y}", "px py\n"},
+	{"vx_q=deep; v=top; echo $v{x_q,}", "deep top\n"},
 	{"echo a}b", "a}b\n"},
 	{"echo {a,b{c,d}", "{a,bc {a,bd\n"},
 	{"echo a{b}", "a{b}\n"},
