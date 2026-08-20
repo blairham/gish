@@ -1,11 +1,10 @@
 package shinternal
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"regexp"
 
 	"mvdan.cc/sh/v3/pattern"
 )
