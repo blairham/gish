@@ -1727,6 +1727,34 @@ var runTests = []runTest{
 		"n1=[a]\n",
 	},
 
+	// The dynamic variables a script times and identifies itself with
+	// (#408). SECONDS starts at zero, EPOCHSECONDS is ten digits, and
+	// BASHPID differs inside a subshell — koi has no separate process
+	// there, so the number is per execution context.
+	{`echo "[$SECONDS]"`, "[0]\n"},
+	{`x=$EPOCHSECONDS; [ ${#x} -eq 10 ] && echo epoch-ok`, "epoch-ok\n"},
+	{`b=$BASHPID; s=$( (echo $BASHPID) ); [ "$b" != "$s" ] && echo differs`, "differs\n"},
+	{`BASH_ARGV0=hello; echo $0`, "hello\n"},
+	{
+		// A write to GROUPS is discarded rather than refused, which is
+		// bash's — refusing it would make an ignored assignment fatal.
+		`before=${GROUPS[0]}; GROUPS[0]=-1; [ "${GROUPS[0]}" = "$before" ] && echo write-discarded`,
+		"write-discarded\n",
+	},
+	// `$_` is the previous command's last argument, and was the
+	// shell's own path forever — which flips every ${_+word} probe.
+	{`echo hi >/dev/null; echo "[$_]"`, "[hi]\n"},
+	{`true a b; echo "[$_]"`, "[b]\n"},
+	{`f(){ :; }; f q; echo "[$_]"`, "[q]\n"},
+	{`echo; echo "[$_]"`, "\n[echo]\n"},
+	{`x=1; echo "[$_]"`, "[]\n"},
+	// A loop variable must be an identifier; koi ran the loop and
+	// quietly shadowed the positional parameter (#409).
+	{
+		`for 1 in a b c; do echo "[$1]"; done; echo rc=$?`,
+		"`1': not a valid identifier\nrc=1\n #JUSTERR",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

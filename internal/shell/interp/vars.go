@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
 	"github.com/blairham/koi-shell/internal/shell/shinternal"
@@ -203,6 +204,30 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 	case "RANDOM": // not for cryptographic use
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(mathrand.IntN(32767))
 		// TODO: support setting RANDOM to seed it
+	case "SECONDS":
+		// The dynamic variables a script times itself with, and they
+		// were simply absent — an empty string in arithmetic is zero,
+		// so a loop measuring elapsed time never advanced (#408).
+		vr.Kind, vr.Str = expand.String, strconv.Itoa(int(time.Since(r.startTime).Seconds())+r.secondsBase)
+	case "EPOCHSECONDS":
+		vr.Kind, vr.Str = expand.String, strconv.FormatInt(time.Now().Unix(), 10)
+	case "EPOCHREALTIME":
+		now := time.Now()
+		vr.Kind, vr.Str = expand.String, fmt.Sprintf("%d.%06d", now.Unix(), now.Nanosecond()/1000)
+	case "BASH_ARGV0":
+		vr.Kind, vr.Str = expand.String, r.lookupVar("0").Str
+		vr.Set = true
+	case "BASHPID":
+		// $$ keeps the shell's pid through a subshell while BASHPID
+		// reports the subshell's own. koi has no separate process for
+		// a subshell, so the identity a script is really asking about
+		// is "am I in a different execution context?" — answered with
+		// the shell's pid at the top level and a distinct number per
+		// subshell.
+		vr.Kind, vr.Str = expand.String, strconv.Itoa(r.bashPID())
+	case "GROUPS":
+		vr.Kind, vr.Set = expand.Indexed, true
+		vr.List = r.groupsList()
 	case "SRANDOM": // pseudo-random generator from the system
 		var p [4]byte
 		cryptorand.Read(p[:])
@@ -222,6 +247,12 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		vr.Kind, vr.List = expand.Indexed, r.dirStack
 	case "0":
 		vr.Kind = expand.String
+		if r.argv0 != "" {
+			// BASH_ARGV0 is $0's writable view: assigning it renames
+			// the shell for everything that reads $0 (#408).
+			vr.Str = r.argv0
+			return vr
+		}
 		if r.filename != "" {
 			vr.Str = r.filename
 		} else {
@@ -357,6 +388,16 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 		r.exit.code = 1
 		return
 	}
+	if name == "BASH_ARGV0" {
+		// Writing BASH_ARGV0 sets $0, which is the point of it.
+		r.argv0 = vr.Str
+	}
+	if name == "GROUPS" {
+		// bash discards a write to GROUPS silently rather than
+		// refusing it: the array is what the kernel says (#408), and a
+		// refusal would make an assignment that bash ignores fatal.
+		return
+	}
 	if name == "OPTIND" {
 		// Assigning OPTIND restarts the scan, including the position
 		// *within* a clustered word — which is what makes a recursive
@@ -380,6 +421,13 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 }
 
 func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax.ArithmExpr, vr expand.Variable) {
+	if name == "BASH_ARGV0" {
+		// Writing BASH_ARGV0 sets $0, which is the point of it.
+		r.argv0 = vr.Str
+	}
+	if name == "GROUPS" {
+		return // discarded, as in bash (#408)
+	}
 	if vr.Kind == expand.String && index == nil {
 		// When assigning a string to an array, fall back to the
 		// zero value for the index.
