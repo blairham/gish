@@ -77,6 +77,11 @@ operand:
 	syscall.Umask(current)
 
 	switch {
+	case symbolic && prefixed:
+		// -p -S is the re-runnable form of the symbolic listing, which
+		// is what a script saves (#533). koi printed the mode alone,
+		// so what it saved could not be replayed.
+		fmt.Fprintf(hc.Stdout, "umask -S %s\n", symbolicUmask(current))
 	case symbolic:
 		fmt.Fprintln(hc.Stdout, symbolicUmask(current))
 	case prefixed:
