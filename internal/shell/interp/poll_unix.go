@@ -3,8 +3,10 @@
 package interp
 
 import (
+	"context"
 	"io"
 	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,6 +29,50 @@ const readTimeoutStatus = 128 + 14 // SIGALRM
 // A source that is not a real file cannot be polled and is reported ready:
 // it is an in-memory reader supplied by an embedder, where a read will not
 // block, and "ready" is the answer that makes the next read behave.
+// waitReadable blocks until f is readable, the deadline passes, or ctx is
+// done. A zero deadline means no timeout.
+//
+// This is the fallback for files the runtime cannot poll — a FIFO opened
+// read-write is the common case — where SetReadDeadline is refused and a
+// blocked Read would hold the goroutine until the process exits (#348).
+// It polls in short slices so a cancelled context still interrupts, since
+// the deadline trick the pollable path uses is unavailable here too.
+func waitReadable(ctx context.Context, f *os.File, deadline time.Time) (timedOut bool, _ error) {
+	fds := []unix.PollFd{{Fd: int32(f.Fd()), Events: unix.POLLIN}}
+	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		slice := 100 * time.Millisecond
+		if !deadline.IsZero() {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				return true, nil
+			}
+			slice = min(slice, remaining)
+		}
+		fds[0].Revents = 0
+		// A zero remaining rounds to a zero-millisecond poll, which is
+		// the instant answer readyToRead uses; the deadline check above
+		// already decided the timeout, so that is fine.
+		n, err := unix.Poll(fds, int(slice.Milliseconds())+1)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		// Any event counts as readable, not just POLLIN: POLLHUP means the
+		// next read answers EOF at once, POLLERR an error, and darwin's
+		// poll reports /dev/null as POLLNVAL — where a read also answers
+		// immediately. Waiting on any of them would block forever on input
+		// that is already decided.
+		if n > 0 && fds[0].Revents != 0 {
+			return false, nil
+		}
+	}
+}
+
 func readyToRead(src io.Reader) (bool, error) {
 	f, ok := src.(*os.File)
 	if !ok {

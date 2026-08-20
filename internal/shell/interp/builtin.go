@@ -1525,6 +1525,13 @@ type deadlineReader interface {
 	SetReadDeadline(time.Time) error
 }
 
+// isRegularFile reports whether f is a plain file, which never blocks a
+// read and so needs neither a deadline nor a poll.
+func isRegularFile(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode().IsRegular()
+}
+
 // readLine reads one line, or one -n/-N-bounded run, from src.
 //
 // It reports whether the read timed out separately from the error,
@@ -1549,14 +1556,19 @@ func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim by
 	// now to interrupt a blocked read, and -t, which sets it ahead. Whichever
 	// fires, the read returns os.ErrDeadlineExceeded and which one it was is
 	// decided by asking the context afterwards.
-	if dr, ok := src.(deadlineReader); ok {
+	//
+	// Not every blocking file takes a deadline: the runtime refuses one on
+	// anything it cannot add to its poller, and a FIFO opened read-write —
+	// `exec 9<> pipe`, the shape scripts use precisely to keep a FIFO from
+	// blocking on open — is in that set. Treating the refusal as "a regular
+	// file, returns immediately" left `read -u 9 -t 1` blocked until killed
+	// (#348), so a refused deadline on something other than a regular file
+	// falls back to poll(2) before each byte instead.
+	var poll *os.File
+	var pollDeadline time.Time
+	if dr, ok := src.(deadlineReader); ok && dr.SetReadDeadline(time.Time{}) == nil {
 		if timeout > 0 {
-			// A regular file refuses a deadline (ErrNoDeadline) and needs
-			// none, so the refusal is ignored rather than reported: bash
-			// returns the data immediately in that case too.
-			if err := dr.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-				timeout = 0
-			}
+			dr.SetReadDeadline(time.Now().Add(timeout))
 		}
 		stopc := make(chan struct{})
 		stop := context.AfterFunc(ctx, func() {
@@ -1571,8 +1583,22 @@ func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim by
 			}
 			dr.SetReadDeadline(time.Time{})
 		}()
+	} else if f, ok := src.(*os.File); ok && !isRegularFile(f) {
+		poll = f
+		if timeout > 0 {
+			pollDeadline = time.Now().Add(timeout)
+		}
 	}
 	for {
+		if poll != nil {
+			pollTimedOut, err := waitReadable(ctx, poll, pollDeadline)
+			if err != nil {
+				return line, false, err
+			}
+			if pollTimedOut {
+				return line, true, nil
+			}
+		}
 		var buf [1]byte
 		n, err := src.Read(buf[:])
 		if n > 0 {
