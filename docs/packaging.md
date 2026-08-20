@@ -5,7 +5,7 @@ that gets copied into blog posts, dotfiles READMEs and YouTube
 descriptions for years. `brew install koi` and `brew tap … && brew
 install …` are not the same artifact.
 
-## Homebrew core (#164)
+## Homebrew core
 
 **The goal was "in core before the announcement, so the install line in
 the post is one command". That is not achievable, and the reason is
@@ -75,8 +75,8 @@ reconstruct.
 | channel | state | notes |
 | --- | --- | --- |
 | Homebrew tap | shipping | **the launch install line**, and the edge afterwards |
-| Homebrew core | blocked on notability | #164 — submit at 75 stars, via a third party |
-| winget / scoop | configured (#89) | ships with the next tag; both skip when their token is absent |
+| Homebrew core | blocked on notability | submit at 75 stars, via a third party |
+| winget / scoop | configured | ships with the first tag; both skip when their token is absent |
 | nixpkgs | after launch | a Go module package; needs a vendorHash |
 | AUR | after launch | `koi-bin` from the release tarball first |
 | Debian/Ubuntu | later | needs a stable release cadence first |
@@ -90,7 +90,8 @@ install. Launch, then breadth.
 GoReleaser is phasing `brews:` out in favor of `homebrew_casks:`, and
 says so on every run. The migration is not a rename — casks install
 differently — so it wants a release to verify against rather than a
-blind edit, and it is deliberately not bundled with the #89 work. The
+blind edit, and it is deliberately not bundled with the winget/scoop
+configuration. The
 tap is the pre-core path anyway; core carries a hand-written formula
 (`packaging/homebrew/koi.rb`), which this does not affect.
 

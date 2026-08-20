@@ -9,12 +9,12 @@ in two directions, deliberately in different places.
 | **outbound** — an agent runs inside koi | the agent's commands execute through koi's sandbox and deadlines | `koi acp`, core |
 
 The split is not organizational. **A plugin may never hold an exec
-channel** ([#34](https://github.com/blairham/koi-shell/issues/34)), so the
+channel**, so the
 outbound role cannot be a plugin without weakening the invariant that
 makes plugins safe. The inbound role is a plugin precisely because it is
 deletable if ACP does not take.
 
-## The spike (#166), answered
+## The spike, answered
 
 The load-bearing assumption was that the terminal capability has real
 adopters. Checked against the protocol's own documentation and the
@@ -57,7 +57,7 @@ commands the way `bash -c` would.
 
 koi already has the missing pieces as invariants:
 
-- **Sandbox profiles** ([#21](https://github.com/blairham/koi-shell/issues/21)).
+- **Sandbox profiles.**
   `koi acp` wraps every command the agent asks for in the same re-exec
   the `sandbox` builtin uses — `workspace` by default. `--profile none`
   is allowed and says so loudly, because a sandbox the user turned off
@@ -91,7 +91,7 @@ shipped a `riskAssessment` feature that has an LLM guess what a command
 does.
 
 So this is built because the substrate is unserved. It is **not** a
-marketing pillar ([#169](https://github.com/blairham/koi-shell/issues/169)).
+marketing pillar (see docs/strategy.md).
 
 ## Using it
 
@@ -112,7 +112,7 @@ into it: `claude-code-acp` refuses to start when the `CLAUDECODE`
 environment variable is set — its nested-session guard — so running
 `koi acp claude-code-acp` from a terminal *inside* a Claude Code
 session fails on the handshake. The refusal arrives on the agent's
-stderr (passed through to the session since #331) and the fix is to
+stderr (passed through to the session) and the fix is to
 unset the guard for that one invocation:
 
 ```sh

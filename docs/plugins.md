@@ -1,8 +1,8 @@
-# koi — plugin roadmap
+# koi — plugins
 
-The plugins we intend to write, and the fast/correct rules they must obey.
-This is the tier-2 (native gRPC) roadmap; the tier-1 zsh-compat story lives
-in [design.md](design.md).
+The tier-2 (native gRPC) plugin system: the plugins that ship with koi,
+the fast/correct rules every plugin must obey, and what is planned. The
+tier-1 zsh-compat story lives in [design.md](design.md).
 
 ## The dividing rule
 
@@ -16,7 +16,7 @@ overhead. Everything that *can* be slow or wrong (git, network, k8s,
 cloud, disk scans) lives behind a deadline where it degrades instead of
 blocking.
 
-## The compatibility promise to plugin authors (#168)
+## The compatibility promise to plugin authors
 
 **A plugin binary built against `plugin/v1` keeps working across koi
 releases without a rebuild.** That is a promise, and it is enforced:
@@ -28,11 +28,10 @@ a removal needs a `v2` package and a `Handshake.ProtocolVersion` bump,
 with v1 plugins still loading.
 
 The promise is only worth making if somebody outside this repository can
-compile a plugin to hold us to it, which until #188 nobody could: the
-handshake and the dispensers lived in `internal/`. They are now published
-as `pkg/pluginsdk/v1`, and `pkg/pluginsdk/v1/abi_test.go` freezes the part
-of the ABI that the protos do not describe — the handshake cookie and the
-eight service names both ends dispense by.
+compile a plugin to hold us to it, so the handshake and the dispensers
+are published as `pkg/pluginsdk/v1`, and `pkg/pluginsdk/v1/abi_test.go`
+freezes the part of the ABI that the protos do not describe — the
+handshake cookie and the eight service names both ends dispense by.
 
 Both published paths carry the contract version the way the proto package
 does (`koi.plugin.v1` → `pkg/pluginapi/v1`, `pkg/pluginsdk/v1`), so a
@@ -131,10 +130,10 @@ before it existed:
   its `pluginsdk.Plugin` in a `newPlugin()` the tests call too, so
   "claims theme" and "serves theme" are the same assertion.
 
-Non-Go plugins are equally supported and always were: the contract is the
-protos plus the go-plugin handshake, and `pkg/pluginsdk/v1/abi_test.go`
-records the handshake values and service names another language's
-implementation has to reproduce.
+Non-Go plugins are equally supported: the contract is the protos plus
+the go-plugin handshake, and `pkg/pluginsdk/v1/abi_test.go` records the
+handshake values and service names another language's implementation
+has to reproduce.
 
 ## Latency budgets
 
@@ -158,34 +157,126 @@ Two invariants sit under all of these:
   shell metacharacters — this closes the "completion became code
   execution" class of bugs and keeps quoting identical across plugins.
 
-## Prompt segments (`PromptSegmentProvider`)
+## The first-party plugins
 
-| Plugin | What | Fast/correct notes |
-| --- | --- | --- |
-| `koi-git` | branch, dirty state, ahead/behind — gitstatusd-class | **Flagship; build first.** Resident, per-repo cache, fsevents/inotify invalidation (never poll). Cached render <1ms; cold scans happen off-prompt and repaint in place |
-| `koi-aws` | ~~planned~~ **landed** (#79, cmd/koi-aws) | Four capabilities on one connection: %p{aws} segment (profile@region + SSO expiry from local config/token metadata — declared env_keys, deny-filtered host-side), --profile/--region completion, per-directory AWS_PROFILE via the #12 trust flow (.aws-profile), aws-whoami (5m TTL) / aws-login commands. Never calls AWS on the prompt path; never reads credential values |
-| `koi-k8s` | ~~kubeconfig context/namespace~~ **superseded** | The native p10k engine's kubecontext segment reads the kubeconfig scalar by hand, so the segment half needs no plugin. What remains plugin-worthy is cluster-resource *completion* — see `koi-kubectl` below |
-| `koi-runtimes` | ~~asdf/`.tool-versions` pins~~ **superseded** (#77) | Native tool-version switching resolves pins on cd and the pins prompt segment shows install truth, with no subprocess — strictly better than a plugin could do it |
+Every capability the host serves has a first-party plugin exercising it.
+That is deliberate: the `cmd/` plugins are living contract tests — a
+change that would break a compiled plugin breaks one of these at PR time
+— and they are the worked examples a plugin author copies from (see the
+no-registry decision in [design.md](design.md)).
 
-## Whole-prompt themes (`ThemeProvider`, #30)
+### `koi-git` — prompt segment + completion (flagship)
 
-| Plugin | What | Fast/correct notes |
-| --- | --- | --- |
-| `koi-starship-native` | starship as a resident gRPC theme — **deferred unless measured** | #45's subprocess flavor already budgets the call and serves the previous prompt stale on a miss, and cmd/koi-p10k is now the ThemeProvider reference (#30, 129µs round trip). Build this only if someone measures the per-prompt spawn actually hurting |
-| community themes | any whole-prompt look, any language | `KOI_THEME=<name>` selects by declared theme name; built-in names (plain, p10k, starship) cannot be claimed |
+A gitstatusd-class prompt segment: resident per-repo cache, fsnotify
+invalidation on the `.git` directory (never polls), background refreshes
+— a render answers from cache in microseconds, well inside the 50ms
+budget, and cold scans happen off-prompt and repaint in place. Consumed
+via the `%p{git}` prompt escape.
+
+Completion rides the same connection as a second service, sharing the
+repo cache — branches and remotes are read natively (loose refs,
+packed-refs, `.git/config`; a linked worktree resolves through its
+`gitdir:` and `commondir` hops) with no subprocess on the Tab path.
+Only changed-file completion runs git, bounded by the completion budget.
+Scope is arguments only — branch-taking subcommands, remotes-then-
+branches for push/pull/fetch, changed files for add/restore — while
+subcommand and flag breadth stays with carapace; anything out of scope
+answers an empty final batch, never a guess.
+
+### `koi-carapace` — completion breadth
+
+Bridges the carapace completion registry (~1,000 CLIs) by shelling out
+to the user's own carapace binary (`export` JSON), guarded by its
+supported-command list. No carapace installed means empty results,
+never errors.
+
+### `koi-aws` — a many-capability vendor plugin
+
+Four capabilities on one connection: the `%p{aws}` segment
+(profile@region + SSO token expiry, from local config and token
+*metadata* only — declared `env_keys`, deny-filtered host-side),
+`--profile`/`--region` completion from the user's own config,
+per-directory `AWS_PROFILE`/`AWS_REGION` proposals from a walk-up
+`.aws-profile` file through the trust flow, and `aws-whoami` /
+`aws-login` commands. Never calls AWS on the prompt path; never reads
+credential values.
+
+### `koi-direnv` — real direnv behind the env contract
+
+Delegates `.envrc` evaluation and the whole stdlib (`use nix`,
+`layout python`, `source_up`) to the user's real direnv; koi owns the
+cd moment (no `direnv hook`), the approval UX, and apply/revert. It
+checks `direnv status --json` **before** exporting — export fails
+identically for blocked, denied, and broken-`.envrc`, and only the
+status enum tells them apart. `DIRENV_*` bookkeeping is stripped (the
+host does not send it back, so it has no consumer), and direnv's
+symlink-resolved paths are mapped back into the caller's namespace so
+proposals survive on macOS.
+
+### `koi-dotenv` — plain `.env` loading
+
+Parse only — never execute, never expand; no subprocess anywhere, and
+the trust prompt shows every value. It walks up to the nearest `.env`
+(skipping `.env` *directories*, a common virtualenv location); the
+dialect is the rules motdotla/dotenv and docker compose agree on,
+written down in the source because `.env` has no spec. `$VAR` stays the
+literal string — anyone wanting interpolation or the direnv stdlib's
+`dotenv` helper uses koi-direnv.
+
+### `koi-atuin` — history sync bridge
+
+A bridge to the user's own atuin, not a reimplementation: atuin's
+opt-in, self-hostable, E2EE posture is the point, and reimplementing
+sync would inherit none of it. Append mirrors each command
+(`history start` + `end`; atuin's `--duration` is nanoseconds while the
+proto is milliseconds), and Search serves ctrl-r from atuin's database.
+Commands travel in `ATUIN_COMMAND_LINE` (`--command-from-env`) so
+nothing is escaped, and results come back `--print0`-separated because
+shell history is exactly the corpus full of newlines and quotes. No
+atuin installed = empty results, never errors.
+
+The shell-side halves live in core by design: secret scrubbing runs in
+the shell's own store (a plugin cannot unwrite the authoritative local
+file — matching commands are skipped entirely, with a notice, and
+backends only ever receive scrubbed entries), and the backend fan-out is
+async and deadline-bounded, fired after a successful local store. The
+next prompt never waits.
+
+### `koi-claude` — the reference AI provider
+
+Drives the user's claude CLI behind the `AIProvider` contract: the `??`
+prefix streams command candidates into the editor buffer (wrapped in a
+visible sandbox invocation, never auto-executed), and the `explain`
+builtin answers why-did-that-fail. Context is scrub-safe by
+construction — recent commands come from the history store, which never
+records secret-bearing commands, and env is the allowlist.
+`KOI_AI_PROVIDER` selects among providers.
+
+### `koi-p10k` — the prompt engine as a theme provider
+
+Serves the native powerlevel10k-class engine over the `ThemeProvider`
+contract as `p10k-<preset>` themes. The shell itself renders the same
+engine in-process — its own prompt should not pay a round trip — so
+this plugin exists as the reference `ThemeProvider` implementation, and
+its round trip is measured in docs/prompt.md.
+
+### `koi-acp` — the inbound agent bridge
+
+The deletable half of the ACP integration (docs/acp.md): `koi acp`
+lives in core because a plugin may never hold an exec channel; this
+plugin is the inbound edge.
+
+## Whole-prompt themes (`ThemeProvider`)
 
 A theme plugin renders the entire prompt set — `prompt`, `cont_prompt`,
 `rprompt` — from a `PromptContext` (cwd, exit code, duration, jobs,
-user/host/ssh, width, color). It may serve several themes; a miss serves
-the previous set or falls back to the built-in p10k-class theme, so a
-broken theme costs its look, never the prompt.
+user/host/ssh, width, color). It may serve several themes;
+`KOI_THEME=<name>` selects by declared theme name, and built-in names
+(plain, p10k, starship) cannot be claimed. A miss serves the previous
+set or falls back to the built-in p10k-class theme, so a broken theme
+costs its look, never the prompt.
 
-## Env providers (`EnvProvider`, #12)
-
-| Plugin | What | Fast/correct notes |
-| --- | --- | --- |
-| `koi-direnv` | ~~planned~~ **landed** (#137, cmd/koi-direnv) | Delegates `.envrc` evaluation and the whole stdlib (`use nix`, `layout python`, `source_up`) to real direnv; koi owns the cd moment, the approval UX, and apply/revert. Checks `direnv status --json` **before** exporting — export fails identically for blocked, denied, and broken-`.envrc`, and only the status enum tells them apart. `DIRENV_*` bookkeeping is stripped (the host does not send it back, so it has no consumer). direnv reports symlink-resolved paths, so `for_dir` is mapped into the caller's namespace or the host discards every proposal on macOS |
-| `koi-dotenv` | ~~plain `.env` file loading~~ **landed** (#475, cmd/koi-dotenv) | Parse only — never execute, never expand; no subprocess anywhere, and the trust prompt shows every value. The second real EnvProvider, proving the trust flow generalizes beyond the tool it was built against. Walks up to the nearest `.env` (skipping `.env` *directories* — a common virtualenv location); the dialect is the rules motdotla/dotenv and docker compose agree on, written down in the file header because `.env` has no spec |
+## Env providers (`EnvProvider`)
 
 Trust is the contract, enforced host-side: a proposal applies only after
 `trust allow` records (plugin, directory, diff-hash); a changed diff
@@ -193,8 +284,8 @@ re-pends; deny-listed variables (loader hooks, `IFS`, `KOI_*`) are
 stripped before a proposal exists; requests carry allowlisted env only.
 Applied diffs revert when the shell leaves the proposal's subtree.
 
-**Two trust models, one gesture** (#137). A plugin wrapping a tool that
-has its own approval — direnv's `direnv allow` — implements the additive
+**Two trust models, one gesture.** A plugin wrapping a tool that has
+its own approval — direnv's `direnv allow` — implements the additive
 `EnvProvider.Allow` RPC. `trust allow` calls it before applying, so
 nobody is asked twice for one action, and koi keeps its UI and its
 record while the wrapped tool stays authoritative about what it will
@@ -206,29 +297,10 @@ unimplemented and nothing changes; a plugin that cannot record the
 approval does not block it — koi's record is authoritative for koi —
 but the user is told, since the next shell may re-prompt.
 
-## Completion providers (`CompletionProvider`)
-
-| Plugin | What | Fast/correct notes |
-| --- | --- | --- |
-| `koi-carapace` | ~~bridge to carapace's registry~~ **landed** (#9, cmd/koi-carapace) | Shells out to the user's own carapace binary (`export` JSON) guarded by its supported-command list; no carapace installed means empty results, never errors |
-| `koi-git-complete` | ~~branches, remotes, modified files~~ **landed** (#476, cmd/koi-git/complete.go) | Second service on koi-git's connection, sharing the repo cache — the multi-capability shape koi-aws proved out. Branches and remotes read natively (loose refs, packed-refs, .git/config; worktree `gitdir:`/`commondir` hops resolved) with no subprocess on the Tab path; only changed-file completion runs git, budget-bounded. Out-of-scope lines get an empty final batch, never a guess — subcommand and flag breadth stays with carapace |
-| `koi-kubectl` | cluster resource completion — **demand-gated** | Resident cache with TTL; upstream kubectl completion is slow *because* it's spawn-per-tab, which is the one thing the carapace bridge can't fix. The biggest lift here, so it waits for a user to ask |
-| `koi-make` | ~~Makefile/justfile targets~~ **dropped** | carapace already completes make/just targets; a dedicated plugin buys a few milliseconds on completions nobody has complained about |
-| `koi-ssh` | ~~hosts from `~/.ssh/config`~~ **dropped** | carapace already completes ssh hosts. If it ever comes back: skip hashed `known_hosts` entries — never un-hash, never guess |
-
-## History backends (`HistoryBackend`)
-
-| Plugin | What | Fast/correct notes |
-| --- | --- | --- |
-| *(native)* secret scrubbing | gitleaks-style rules in the shell's own store (#10) | Moved shell-side by design: a plugin cannot unwrite the authoritative local file. Matching commands are skipped entirely (ignorespace posture) with a notice; backends only ever receive scrubbed entries |
-| *(native)* backend fan-out | async, deadline-bounded Append to every HistoryBackend after a successful local store | Fire-and-forget: the next prompt never waits; `stored=false` governs only a backend's own store |
-| `koi-atuin` | ~~bridge to the user's own atuin~~ **landed** (#97, cmd/koi-atuin) | Append mirrors each command (`history start` + `end`; **`--duration` is nanoseconds** while the proto is milliseconds), Search serves ctrl-r from atuin's database. A bridge, not a reimplementation: atuin's opt-in, self-hostable, E2EE posture is the point, and koi reimplementing sync would inherit none of it. Commands travel in `ATUIN_COMMAND_LINE` (`--command-from-env`) so nothing is escaped, and results come back `--print0`-separated because commands contain newlines. No atuin installed = empty results, never errors |
-| `koi-sync` | local-first SQLite history, cross-machine sync, frecency + directory-locality ctrl-r ranking | Local file is authoritative; sync is eventual and conflict-free (append-only log). Only worth building if the atuin bridge proves the demand |
-
 ## Plugin locality: where does a plugin belong when the shell is remote?
 
-`koi ssh` (#98, docs/ssh.md) copies koi to a remote box and execs it
-there. Plugins deliberately do **not** travel in v1 — the deadline-bounded
+`koi ssh` (docs/ssh.md) copies koi to a remote box and execs it there.
+Plugins deliberately do **not** travel in v1 — the deadline-bounded
 degradation already makes their absence safe, and a plugin is not a
 single static file the way the shell is. But it raises a question the
 contract has to answer before third-party plugins exist, because
@@ -255,72 +327,64 @@ then, plugin authors should assume a remote session has no plugins and
 make sure their segment's absence reads as "not shown" rather than
 "broken".
 
-## Needs new proto services (v1 is frozen-additive — new services are fine)
+## ShellEvents: designed, not yet served
 
-`ShellEvents` (#83) is defined in proto/koi/plugin/v1/events.proto and
+`ShellEvents` is defined in proto/koi/plugin/v1/events.proto and
 allocated `CAPABILITY_EVENTS`, but **the host does not serve it yet** —
 contract first, internals after, the same order the rest of this package
 was built in. docs/events.md has the design and the three rules it
-cannot break: no exec channel ever (proposals only, #111's line), the
-host never blocks on a subscriber (bidi stream, bounded buffer,
-drop-oldest — a request/response per event would make every `cd` wait on
-a plugin), and events carry allowlisted scrub-safe data only (a command
-*name*, never its argument list).
+cannot break: no exec channel ever (proposals only), the host never
+blocks on a subscriber (bidi stream, bounded buffer, drop-oldest — a
+request/response per event would make every `cd` wait on a plugin), and
+events carry allowlisted scrub-safe data only (a command *name*, never
+its argument list).
 
-| Plugin | New surface | Notes |
-| --- | --- | --- |
-| command-not-found | one unary RPC | ~~"did you mean"~~ done natively (#42, Damerau suggestions). What's left for a plugin is package suggestions ("install it with brew install …"), inherently off the hot path; demand-gated |
-| env provider (direnv-class) | ~~`EnvProvider` service~~ **landed** (#12) | Trust model host-enforced: per-(plugin, dir, diff-hash) allow, deny-listed vars stripped, subtree revert |
-| `koi-jump` (zoxide-class) | ~~CommandProvider~~ **landed** (#11); the plugin itself **superseded** (#94) | Native `z` ships in the shell — frecency index bootstrapped from history, zero prompt hooks — so there is nothing left for the plugin to add |
-| koi-agent | ~~new service~~ **landed** (#34, `AIProvider.Plan`) | `agent "<task>"` — the provider plans (a spec, never an exec channel); the shell renders it, saves it as an artifact, and executes approved steps through the real exec path, sandbox-wrapped, with destructive steps gating individually (provider flag OR the shell's own parse) and escalation as its own explicit answer. Hooks split to their own issue (ShellEvents) |
-| AI assist | ~~invoked RPC~~ **landed** (#20, `AIProvider`) | `??` prefix → Compose (streamed candidates, best-first) lands in the editor buffer wrapped in a visible #21 sandbox invocation — never auto-executes; `explain` builtin → Explain for the last command. Context is scrub-safe by construction (recent commands come from the #10-gated history store; env is the allowlist). Human-scale deadline (90s), Ctrl-C cancels; `koi-claude` (cmd/koi-claude) is the reference provider, driving the user's claude CLI; KOI_AI_PROVIDER selects among several, KOI_AI_SANDBOX tunes the wrap |
+## Planned
 
-## Build order
+The bar for a new first-party plugin: prove an unproven part of the
+contract, or answer direct demand — a plugin architecture is not why
+anyone switches shells, so the list stays short on purpose.
 
-The original three, all resolved:
+- **A first-party ShellEvents consumer** — lands with the host wiring
+  above. ShellEvents would otherwise be the one capability no in-tree
+  plugin exercises, which is exactly the state the in-tree plugins
+  exist to prevent. Its first consumer should be small and chosen to
+  exercise the contract's hard rules (the bidi stream, drop-oldest, the
+  no-exec-channel line) — a notify-when-a-long-command-finishes plugin
+  is the right shape.
+- **`koi-kubectl`** — cluster resource completion from a resident cache
+  with a TTL. Upstream kubectl completion is slow *because* it is
+  spawn-per-tab, which is the one thing the carapace bridge cannot fix.
+  The biggest lift on this list, so it waits for a user to ask.
+- **`koi-starship-native`** — starship as a resident gRPC theme. The
+  built-in starship theme already budgets its per-prompt subprocess and
+  serves the previous prompt stale on a miss, so this is only worth
+  building if the spawn is measured to actually hurt.
+- **`koi-sync`** — local-first SQLite history with cross-machine sync
+  and frecency + directory-locality ctrl-r ranking. The local file
+  stays authoritative; sync would be eventual and conflict-free
+  (append-only log). Only worth building if the atuin bridge proves the
+  demand.
+- **Package suggestions on command-not-found** — "install it with
+  `brew install …`", one unary RPC, inherently off the hot path. The
+  did-you-mean half is already native (Damerau suggestions in core).
 
-1. **`koi-git`** — landed (#8). Hardest latency case (every prompt, every
-   repo); proved the deadline/stale/repaint machinery before anything
-   depended on it.
-2. **`koi-carapace`** — landed (#9). Completion breadth for free.
-3. ~~`koi-scrub`~~ — done natively in the shell store (#10), with the
-   HistoryBackend fan-out alongside it.
+## Deliberately not plugins
 
-## What's next (reassessed 2026-08)
+Things that look like plugin material and aren't, so they are not
+re-proposed:
 
-Every capability the host serves now has a first-party plugin exercising
-it, which was the point of building them in-tree (docs/design.md's
-no-registry decision: the `cmd/` plugins are living contract tests). And
-#169's correction binds here too — a plugin architecture is not why
-anyone switches shells — so the bar for a new first-party plugin is:
-prove an unproven contract surface, or answer direct demand. Not fill
-out this table.
-
-What clears that bar, in order:
-
-1. **`koi-dotenv`** (#475, landed — cmd/koi-dotenv) — the second real EnvProvider. Tiny
-   (parse-only, no subprocess), and it proves the #12 trust flow
-   generalizes beyond the tool it was built against rather than being
-   shaped around direnv. `.env` files are ubiquitous in exactly the
-   population koi is courting, and most of them don't run direnv.
-2. **git completion as a second service on `koi-git`** (#476, landed —
-   cmd/koi-git/complete.go) — the roadmap's koi-git-complete row, in
-   the same binary as the segment. Proves the multi-service-one-
-   connection shape on the flagship and answers Tab for the
-   most-completed CLI at ref-cache latency.
-3. **A first-party ShellEvents consumer** — when #83's host wiring
-   lands. ShellEvents is the one allocated capability no in-tree plugin
-   exercises, which is exactly the state the in-tree plugins exist to
-   prevent. Its first consumer should be small and chosen to exercise
-   the contract's hard rules (the bidi stream, drop-oldest, the
-   no-exec-channel line) — a notify-when-a-long-command-finishes plugin
-   is the right shape.
-
-Superseded rather than pending — struck in the tables above so this doc
-stops advertising overtaken work: `koi-runtimes` (#77 made tool-version
-switching native), `koi-jump` (#94 made `z` native), the `koi-k8s`
-prompt segment (the native kubecontext segment), `koi-make` and
-`koi-ssh` (carapace covers both), the native half of command-not-found
-(#42). Deferred with a condition attached: `koi-starship-native` (only
-if the per-prompt spawn is measured to hurt), `koi-kubectl` (waits for
-demand), `koi-sync` (gated on the atuin bridge proving demand).
+- **Tool-version switching and the pins segment** — native. Pins only
+  select among installed versions, resolution is file reads with no
+  subprocess on cd, and a plugin could only add latency.
+- **Directory jumping (`z`)** — native. The shell is the tracking
+  point: the loop notes directory changes with zero prompt hooks, and a
+  fresh index bootstraps from the history store's recorded cwds.
+- **The kubecontext prompt segment** — native. The prompt engine reads
+  the kubeconfig's current-context scalar by hand; only cluster
+  *completion* (above) still warrants a plugin.
+- **Makefile/justfile targets and ssh-host completion** — carapace
+  covers both. If ssh-host completion ever returns as a plugin: skip
+  hashed `known_hosts` entries — never un-hash, never guess.
+- **Secret scrubbing** — shell-side, structurally: a plugin cannot
+  unwrite the authoritative local history file.

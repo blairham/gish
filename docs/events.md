@@ -1,6 +1,6 @@
 # ShellEvents: event-triggered automations
 
-Split out of [#34](https://github.com/blairham/koi-shell/issues/34) as its own
+Split out of the agent work as its own
 idea: plugins that react to what happens in a session — `cd` into a repo
 and get the toolchain setup suggested, a lockfile changes and the install
 command is offered, a command fails twice and `explain` is proposed.
@@ -32,13 +32,14 @@ correctness hazard.
 ### 1. No exec channel, ever
 
 A plugin proposes; the shell decides. This is the same line
-[#111](https://github.com/blairham/koi-shell/issues/111) drew for the agent
+drawn for the agent
 builtin — **koi hosts other people's agents rather than being one** —
 and it is precisely why orchestration cannot move behind the plugin
 boundary without weakening the invariant.
 
 `Proposal` has no field that causes execution. `suggested_command` lands
-in the editor buffer for the user to read and edit, the #20 posture, and
+in the editor buffer for the user to read and edit — the same
+preview-before-execute posture as the AI surface — and
 the host owns quoting: a suggestion is *data*, never buffer text. That
 closes the "a completion became code execution" class of bug for this
 service too.
@@ -79,7 +80,8 @@ private paths, and hostnames live, and a plugin reacting to "a git
 command failed" does not need them. Environment is the allowlisted
 subset, exactly as `EnvDiffRequest` carries it.
 
-This is the #10/#12/#20 posture applied unchanged, and it is cheaper to
+This is the posture the history scrubber, the env trust flow and the
+AI surface already hold, applied unchanged, and it is cheaper to
 hold now than to retrofit: a plugin ecosystem that has learned to expect
 full command lines cannot be told later that it can't have them.
 
@@ -112,7 +114,8 @@ full command lines cannot be told later that it can't have them.
 - **direnv's hook**: a good feature whose install step (`eval "$(direnv
   hook bash)"`) is a permanent tax on every shell start and a source of
   ordering bugs. koi notices `cd` natively; that is the whole point of
-  #12, and ShellEvents should never reintroduce a hook install.
+  the EnvProvider design, and ShellEvents should never reintroduce a
+  hook install.
 - **PowerShell's event subsystem**: rich, and almost nobody uses it —
   a caution that the vocabulary should stay small enough to learn in one
   sitting.

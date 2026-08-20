@@ -44,9 +44,9 @@ Every simple command the session executes appends one JSON object:
   warning at startup; a full disk during the run costs trace lines, never
   the command being traced.
 - **The trace file is not scrubbed.** History rejects secret-bearing
-  command lines (#10); a trace names its file explicitly and records
+  command lines; a trace names its file explicitly and records
   expanded argv, which is the point of a debugging trace — treat the file
   accordingly.
 
 Bash-compatible `set -x` fidelity (PS4 expansion, `BASH_XTRACEFD`) is a
-separate track: #413.
+separate, planned track — deliberately not folded into this trace.

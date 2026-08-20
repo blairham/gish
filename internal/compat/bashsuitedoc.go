@@ -50,7 +50,7 @@ koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
 koi cannot read really does account for a large share of the missed
-lines. koi reads a script the way bash does (#276) — the statements
+lines. koi reads a script the way bash does — the statements
 before the syntax error run, and the error is reported where it is — so
 an unreadable construct on line 129 costs the lines after it rather than
 the whole file. It still costs them, which is why parsed is published
@@ -61,9 +61,9 @@ beside the other two.
 	gaps := ParseGaps(results)
 	if len(gaps) > 0 {
 		b.WriteString("## What the parser cannot read\n\n")
-		b.WriteString(`Each of these stops a whole file. They are the sharpest upstream targets
-we have for [#119](https://github.com/blairham/koi-shell/issues/119),
-because bash's own suite is the evidence that real bash code uses them.
+		b.WriteString(`Each of these stops a whole file. They are the sharpest fix targets
+this suite produces, because bash's own suite is the evidence that real
+bash code uses them.
 
 `)
 		b.WriteString("| construct | files |\n| --- | --- |\n")

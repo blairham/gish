@@ -39,7 +39,7 @@ meaning, for the life of the 1.x line.
 
 ## Not covered, stated plainly
 
-- **The `agent` builtin** is frozen and experimental (#111). It is
+- **The `agent` builtin** is frozen and experimental. It is
   unadvertised, gets no further investment, and may be removed. `??`
   and `explain` are the advertised AI surface.
 - **Exact output text** of `doctor`, `plugins`, `blocks`, `sessions`,
@@ -80,11 +80,11 @@ koi is pre-1.0 today, and this page is deliberately written as though
 it were not, because the research finding is specific: **a published
 stability contract matters more than the version number.** The surfaces
 above were designed with freezing in mind — the prompt escape set
-(#109) and the manifest schema (#108) were both settled by asking what
+and the manifest schema were both settled by asking what
 we would be willing to keep forever — and this page writes that habit
 down as a promise rather than leaving it as an internal one.
 
-The version path is decided (#213):
+The version path is decided:
 
 > **`v0.0.0` is the first tag. A short 0.x line runs through the public
 > announcement. 1.0 follows it, gated by the closed list below.**
@@ -122,20 +122,22 @@ shape of nushell's *"Should we plan on 1.0 at all?"*.
    table above, or explicitly in *Not covered*. Unclassified today and
    in scope for this item: the `config` keys added since the table was
    written (`blocks`, `jump`, `tools`, `highlight`, `editmode`,
-   `ssh.bring`), the vi-mode keymap (#163), and `koi ssh`'s per-host
+   `ssh.bring`), the vi-mode keymap, and `koi ssh`'s per-host
    policy state.
-2. **The bash-suite scoreboard is published** (#211). Freezing a
+2. **The bash-suite scoreboard is published.** Freezing a
    compatibility claim without knowing the incumbent's own denominator
    is a promise made blind.
 3. **The deprecation machinery has survived one real upgrade.** `zi` →
    `plugin` is the worked example, and it needs to be observed working
    across an actual released version bump rather than merely existing
    in the code.
-4. **The config-dialect decisions are settled** — #185 (convert other
-   prompt dialects, or bridge) and #134, both of which can still move a
-   covered surface.
-5. **Windows is named as out of scope for the freeze.** Per #110 the
-   native interactive port is sequenced to 1.x; the contract covers
+4. **The config-dialect decisions are settled** — whether other prompt
+   dialects are converted or bridged, and how the prompt engine's two
+   config dialects relate — both of which can still move a covered
+   surface.
+5. **Windows is named as out of scope for the freeze.** The
+   native interactive port is sequenced to 1.x (see
+   docs/windows.md); the contract covers
    macOS and Linux, and the Windows interactive surfaces are listed as
    not-yet-covered rather than silently included.
 

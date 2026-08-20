@@ -36,8 +36,8 @@ original.
 | zinit / zi | `zi migrate` — koi has that engine natively |
 | `.zsh_history` / `.bash_history` | the JSONL store, with timestamps and durations kept |
 
-History import goes through the same secret rules as a typed command
-([#10](https://github.com/blairham/koi-shell/issues/10)): a history file is
+History import goes through the same secret rules as a typed
+command: a history file is
 the single most likely place for a token to be sitting, and the importer
 does not put one back on disk.
 

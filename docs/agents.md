@@ -22,9 +22,10 @@ koi exists to collapse.
    sandbox itself.
 
 The first half is enforced by a CI gate (`internal/compat/agent.go`),
-not asserted — see [the gate](#the-gate) below. #11475-class bugs mean
-even `SHELL=koi` is not always respected, so this page states what is
-tested, what is configured, and what is neither.
+not asserted — see [the gate](#the-gate) below. Harness bugs of the
+`anthropics/claude-code#11475` class mean even `SHELL=koi` is not
+always respected, so this page states what is tested, what is
+configured, and what is neither.
 
 ## The recipe that works everywhere
 
@@ -41,7 +42,7 @@ That is the whole configuration, and it does three things at once:
 
 - **`$SHELL` matches `*bash*`**, so a harness that greps for bash finds
   it and spawns it.
-- **The `koi-agent` prefix turns on `--sandbox workspace`** (#215): a
+- **The `koi-agent` prefix turns on `--sandbox workspace`**: a
   binary invoked as `koi-agent` or `koi-agent-<suffix>` starts
   sandboxed, because a harness is handed a path to a shell and has
   nowhere to put a flag. An explicit `--sandbox`, including
@@ -57,9 +58,9 @@ refused (`open /etc/…: permission denied`).
 `GOBIN`, and this page points `$SHELL` somewhere else. Nothing used to
 connect the two, so the binary an agent ran was whatever had been hand-copied
 into place once. One was found **15 commits behind a green `main`**, failing
-15 of the 17 cases on this page — including `exec -a` (#241), which is what
-Claude Code's bundled `find` and `grep` run on, and `set -Eeuo pipefail`
-(#245), which every strict-mode script opens with and which silently applied
+15 of the 17 cases on this page — including `exec -a`, which is what
+Claude Code's bundled `find` and `grep` run on, and `set -Eeuo pipefail`,
+which every strict-mode script opens with and which silently applied
 nothing. Set `KOI_PREFIX` to install elsewhere.
 
 Two commands keep that from recurring, and neither needs to be remembered
@@ -73,13 +74,13 @@ make gate-installed      # run the gates against the INSTALLED binary, not a fre
 The distinction matters more than it sounds. Every gate here builds from
 source, so all of them answer *is this branch correct?* and none answer *is
 the koi on this machine correct?* — which is the one a user experiences.
-`KOI_BIN=<path>` puts any binary under the gates (#284).
+`KOI_BIN=<path>` puts any binary under the gates.
 
 ## Per-agent notes
 
 | agent | how it picks a shell | state |
 | --- | --- | --- |
-| **Claude Code** | sources a generated *shell snapshot* before every command, produced by running your shell; spawns `<shell> -c -l '<generator>'` | the snapshot generator's constructs — `>\|`, `declare -F`, `shopt -p` — are all in the gate, captured from the real generator (#215) |
+| **Claude Code** | sources a generated *shell snapshot* before every command, produced by running your shell; spawns `<shell> -c -l '<generator>'` | the snapshot generator's constructs — `>\|`, `declare -F`, `shopt -p` — are all in the gate, captured from the real generator |
 | **Codex CLI** | spawns `$SHELL -lc` | the invocation shape is in the gate; the CLI's own settings are **not verified here** |
 | **Gemini CLI** | spawns a shell per tool call | same: shape tested, settings **not verified here** |
 
@@ -130,7 +131,7 @@ green:
 
 | case | behavior | why |
 | --- | --- | --- |
-| `echo $0` | `koi`, where bash prints its own path | koi claims bash's *interface*, not its identity (#120). A harness that needs to know can see it. |
+| `echo $0` | `koi`, where bash prints its own path | koi claims bash's *interface*, not its identity (see docs/design.md). A harness that needs to know can see it. |
 | `BASH_VERSION` / `BASH_VERSINFO` | answered | tools branch on these to pick an implementation; fzf picks its Ctrl-T path on `BASH_VERSINFO[0] < 4`, and unset reads as 0 |
 
 ### Two bugs this gate found on its first run
@@ -142,7 +143,7 @@ something ran it:
 - **`koi -ic 'll'` did not expand aliases.** The rc loaded, the alias
   was recorded, `alias ll` printed it, and the command still answered
   `127: executable file not found`. `bash -ic 'll'` runs it. This is the
-  #163 alias trap on the agent path: everything looks configured and
+  classic alias trap, moved onto the agent path: everything looks configured and
   nothing works. Expansion stays off for non-interactive runs, which is
   bash's rule and what keeps a script's meaning independent of who runs
   it.
@@ -198,4 +199,4 @@ No open gaps: every case an agent's shell hits agrees with bash.
   the ceiling on the machine you are on.
 - Not that koi is an agent. koi *hosts* agents — `??` and `explain`
   are the advertised AI surface, and the `agent` builtin is frozen and
-  unadvertised (#111).
+  unadvertised (see docs/design.md).

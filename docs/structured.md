@@ -8,16 +8,16 @@ data killing awk/sed/jq incantations.
 But nushell's adoption ceiling — more stars than fish, roughly a quarter
 of the installs — points at the trick nobody has pulled off: **structured
 data without breaking bash muscle memory or script reuse.** That is the
-gap [#104](https://github.com/blairham/koi-shell/issues/104) asks about, and
+gap this exploration is about, and
 this document answers its questions before any code is written.
 
 **Status: exploration. Nothing here is committed.** The point of writing
-it now is that one of the answers came out differently than the issue
-assumed, and that changes what a v1 would look like.
+it now is that one of the answers came out differently than the original
+framing assumed, and that changes what a v1 would look like.
 
 ## The finding that reshapes the design
 
-The issue states the constraint as: *"must be plain command syntax
+The original framing states the constraint as: *"must be plain command syntax
 (builtins + args), zero new grammar — the bash parser is the contract.
 `ps aux | from auto | where %cpu > 50` should parse as ordinary commands
 today."*
@@ -115,7 +115,8 @@ not a limitation the user has to learn.
 
 1. **`from auto` needs a parser corpus.** The jc project already parses
    ~200 command outputs, and its output is JSON. Making it the
-   `from auto` backend via a plugin fits the delegate line (#112) and
+   `from auto` backend via a plugin fits the delegate line — native for
+   the keystroke, prompt, and cd path; delegate everything else — and
    avoids koi maintaining parsers for `ps` across four platforms. Not
    yet verified: whether jc's coverage and licensing suit this, and
    whether shelling out per pipeline is fast enough.
@@ -126,7 +127,7 @@ not a limitation the user has to learn.
    notion of non-string values, so the values would live beside it, keyed
    by pipeline. That plumbing is the real implementation cost and needs a
    spike before any estimate is credible.
-4. **Does the table renderer belong to #90's ui package?** Almost
+4. **Does the table renderer belong to the ui package?** Almost
    certainly yes — `to table` is exactly the lipgloss table already used
    by `plugins` and `zi list`, and it must degrade to plain columns under
    the same `ui.Enabled` gate.
@@ -137,8 +138,8 @@ Worth building, **after** v1, and only with the `-gt` vocabulary above.
 The feature's whole claim is "structured data that doesn't cost you
 bash", and a design that silently creates files named `50` does not
 have that claim. Sequencing it after v1 also means the compat scoreboard
-(#101) and the benchmark suite (#102) exist to prove the substrate
-didn't regress when it lands.
+(docs/compat.md) and the benchmark suite (docs/bench.md) exist to prove
+the substrate didn't regress when it lands.
 
 If it is ever cut, the honest reason to state is that the eight-tool
 native stack already covers the jq/awk slot for most people, and this is

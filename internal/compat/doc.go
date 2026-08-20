@@ -41,12 +41,12 @@ contents; each carries its provenance in the corpus.
 			fmt.Fprintf(&b, "| %s | %s | %s |\n", r.Name, r.Category, escapePipes(r.Diff()))
 		}
 		b.WriteString(`
-Gaps in the substrate belong upstream at [mvdan/sh](https://github.com/mvdan/sh) —
-fixing them there improves every consumer, not just koi. The current
-set is tracked in [#119](https://github.com/blairham/koi-shell/issues/119)
-with minimal reproductions. Shell-identity behavior (` + "`BASH_VERSION`" + `
-and tool init hooks) is a deliberate open decision, not a bug:
-[#120](https://github.com/blairham/koi-shell/issues/120).
+Parser gaps belong upstream at [mvdan/sh](https://github.com/mvdan/sh),
+whose ` + "`syntax`" + ` package koi consumes; interpreter and expansion fixes
+land in the shell packages maintained in-tree. Every gap is kept with a
+minimal reproduction. Shell-identity behavior (` + "`BASH_VERSION`" + ` and tool
+init hooks) is a deliberate decision, not a bug — see the decisions in
+[design.md](design.md).
 `)
 	}
 
