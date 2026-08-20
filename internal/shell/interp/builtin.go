@@ -382,6 +382,19 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		r.outf("%s\n", pwd)
 	case "cd":
+		// -L and -P choose whether a symlinked path is kept as written
+		// or resolved (#391). koi rejected both with a usage error and
+		// exit 2, which cost whole suite files their content: a script
+		// opening with `cd -P /` never changed directory at all.
+		physical := false
+		for len(args) > 0 && (args[0] == "-L" || args[0] == "-P" || args[0] == "--") {
+			if args[0] == "--" {
+				args = args[1:]
+				break
+			}
+			physical = args[0] == "-P"
+			args = args[1:]
+		}
 		var path string
 		switch len(args) {
 		case 0:
@@ -394,9 +407,19 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			if path == "-" {
 				path = r.envGet("OLDPWD")
 				r.outf("%s\n", path)
+			} else if found, ok := r.cdPathLookup(ctx, path); ok {
+				// A CDPATH hit prints where it landed, which is how a
+				// script can tell the search happened.
+				path = found
+				r.outf("%s\n", path)
 			}
 		default:
-			return failf(2, "usage: cd [dir]\n")
+			return failf(2, "cd: too many arguments\n")
+		}
+		if physical {
+			if resolved, err := filepath.EvalSymlinks(r.absPath(path)); err == nil {
+				path = resolved
+			}
 		}
 		exit.code = r.changeDir(ctx, "cd", path)
 	case "wait":
@@ -733,81 +756,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		exit.code = last
 	case "dirs":
-		for i, dir := range slices.Backward(r.dirStack) {
-			r.outf("%s", dir)
-			if i > 0 {
-				r.out(" ")
-			}
-		}
-		r.out("\n")
+		return r.dirs(args)
 	case "pushd":
-		change := true
-		if len(args) > 0 && args[0] == "-n" {
-			change = false
-			args = args[1:]
-		}
-		swap := func() string {
-			oldtop := r.dirStack[len(r.dirStack)-1]
-			top := r.dirStack[len(r.dirStack)-2]
-			r.dirStack[len(r.dirStack)-1] = top
-			r.dirStack[len(r.dirStack)-2] = oldtop
-			return top
-		}
-		switch len(args) {
-		case 0:
-			if !change {
-				break
-			}
-			if len(r.dirStack) < 2 {
-				return failf(1, "pushd: no other directory\n")
-			}
-			newtop := swap()
-			if code := r.changeDir(ctx, "pushd", newtop); code != 0 {
-				exit.code = code
-				return exit
-			}
-			r.builtin(ctx, syntax.Pos{}, "dirs", nil)
-		case 1:
-			if change {
-				if code := r.changeDir(ctx, "pushd", args[0]); code != 0 {
-					exit.code = code
-					return exit
-				}
-				r.dirStack = append(r.dirStack, r.Dir)
-			} else {
-				r.dirStack = append(r.dirStack, args[0])
-				swap()
-			}
-			r.builtin(ctx, syntax.Pos{}, "dirs", nil)
-		default:
-			return failf(2, "pushd: too many arguments\n")
-		}
+		return r.pushd(ctx, args)
 	case "popd":
-		change := true
-		if len(args) > 0 && args[0] == "-n" {
-			change = false
-			args = args[1:]
-		}
-		switch len(args) {
-		case 0:
-			if len(r.dirStack) < 2 {
-				return failf(1, "popd: directory stack empty\n")
-			}
-			oldtop := r.dirStack[len(r.dirStack)-1]
-			r.dirStack = r.dirStack[:len(r.dirStack)-1]
-			if change {
-				newtop := r.dirStack[len(r.dirStack)-1]
-				if code := r.changeDir(ctx, "popd", newtop); code != 0 {
-					exit.code = code
-					return exit
-				}
-			} else {
-				r.dirStack[len(r.dirStack)-1] = oldtop
-			}
-			r.builtin(ctx, syntax.Pos{}, "dirs", nil)
-		default:
-			return failf(2, "popd: invalid argument\n")
-		}
+		return r.popd(ctx, args)
 	case "return":
 		if !r.inFunc && !r.inSource {
 			return failf(1, "return: can only be done from a func or sourced script\n")
@@ -1710,6 +1663,32 @@ func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim by
 	}
 }
 
+// cdPathLookup searches CDPATH for a relative operand, which is how a
+// script cds to a directory by name from anywhere (#391). An absolute
+// or explicitly-relative path never searches, and a miss falls back to
+// the operand as written.
+func (r *Runner) cdPathLookup(ctx context.Context, path string) (string, bool) {
+	if path == "" || filepath.IsAbs(path) ||
+		strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") ||
+		path == "." || path == ".." {
+		return "", false
+	}
+	cdpath := r.envGet("CDPATH")
+	if cdpath == "" {
+		return "", false
+	}
+	for _, dir := range strings.Split(cdpath, ":") {
+		if dir == "" {
+			dir = "."
+		}
+		cand := filepath.Join(dir, path)
+		if info, err := r.stat(ctx, r.absPath(cand)); err == nil && info.IsDir() {
+			return cand, true
+		}
+	}
+	return "", false
+}
+
 func (r *Runner) changeDir(ctx context.Context, cmd, path string) uint8 {
 	if path == "" {
 		r.errf("%s: empty directory path\n", cmd)
@@ -1728,6 +1707,10 @@ func (r *Runner) changeDir(ctx context.Context, cmd, path string) uint8 {
 	r.Dir = apath
 	r.setVarString("OLDPWD", r.envGet("PWD"))
 	r.setVarString("PWD", apath)
+	// Entry 0 of the directory stack *is* the current directory in
+	// bash, so every chdir moves it (#390): leaving it frozen at the
+	// shell's startup directory made popd return to the wrong place.
+	r.dirStackSync()
 	return 0
 }
 

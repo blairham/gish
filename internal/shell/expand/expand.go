@@ -1571,6 +1571,13 @@ func (cfg *Config) expandUser(field string, moreFields bool) (prefix, rest strin
 		}
 		return "", field
 	}
+	// ~N, ~+N and ~-N name directory stack entries (#390): ~1 is the
+	// entry below the current directory, ~-1 the one above the bottom.
+	// They stay literal when the stack cannot answer, as bash leaves an
+	// out-of-range index.
+	if dir, ok := cfg.dirStackTilde(name); ok {
+		return dir, rest
+	}
 	if name == "" {
 		// Current user; try via "HOME", otherwise fall back to the
 		// system's appropriate home dir env var. Don't use os/user, as
@@ -2235,4 +2242,36 @@ func ReadFields(cfg *Config, s string, n int, raw bool) []string {
 
 func isHexDigit(b byte) bool {
 	return b >= '0' && b <= '9' || b >= 'a' && b <= 'f' || b >= 'A' && b <= 'F'
+}
+
+// dirStackTilde resolves the ~N family against DIRSTACK. The variable
+// is the interface the interpreter already publishes, which keeps the
+// expansion from needing its own view of the stack.
+func (cfg *Config) dirStackTilde(name string) (string, bool) {
+	digits := name
+	fromEnd := false
+	switch {
+	case strings.HasPrefix(name, "+"):
+		digits = name[1:]
+	case strings.HasPrefix(name, "-"):
+		digits, fromEnd = name[1:], true
+	}
+	if digits == "" {
+		return "", false
+	}
+	n, err := strconv.Atoi(digits)
+	if err != nil || n < 0 {
+		return "", false
+	}
+	stack := cfg.Env.Get("DIRSTACK")
+	if stack.Kind != Indexed {
+		return "", false
+	}
+	if fromEnd {
+		n = len(stack.List) - 1 - n
+	}
+	if n < 0 || n >= len(stack.List) {
+		return "", false
+	}
+	return stack.List[n], true
 }
