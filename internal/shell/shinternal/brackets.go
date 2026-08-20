@@ -41,7 +41,17 @@ func NormalizeBrackets(pat string) string {
 		case '[':
 			rewritten, consumed := normalizeBracketAt(pat[i:])
 			if consumed == 0 {
-				sb.WriteByte(b)
+				// A `[` that never closes is a literal `[`, and the
+				// scan carries on from the next byte — so
+				// `[[:alpha:]` is a literal bracket followed by a real
+				// bracket expression, which is how bash reads it and
+				// why it matches the file named `[a` (#468).
+				//
+				// It has to be *escaped* rather than written back as
+				// it stands: left raw, the pattern package reads it as
+				// opening a bracket again and swallows the expression
+				// after it.
+				sb.WriteString(`\[`)
 				continue
 			}
 			sb.WriteString(rewritten)

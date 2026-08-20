@@ -1929,6 +1929,27 @@ q`,
 		"logout: not login shell: use `exit'\nrc=1\n #JUSTERR",
 	},
 
+	{
+		// A `[` that never closes is a literal one, and the scan
+		// carries on — so this is a literal bracket followed by a real
+		// bracket expression, which is how bash reads it (#468). koi
+		// gave up on the whole word and fell back to the literal.
+		`touch "[a" b; echo [[:alpha:]`,
+		"[a\n",
+	},
+	{
+		`case "[a" in [[:alpha:]) echo m;; *) echo no;; esac`,
+		"m\n",
+	},
+	{
+		// The residual of #372: a backslash inside a bracket escapes
+		// the character after it, so this is the range a-z. Already
+		// answered correctly at the expand layer; the case pins it so
+		// it cannot regress unnoticed (#464).
+		`case p in [a-\z]) echo m;; *) echo no;; esac`,
+		"m\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
