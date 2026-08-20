@@ -970,6 +970,43 @@ func setPosixOpt(status *bool, opt posixOpt, enable bool) error {
 	return fmt.Errorf("cannot turn %s %s: not implemented", opt.name, state)
 }
 
+// shellOptsList and bashOptsList render SHELLOPTS and BASHOPTS: the
+// names that are on, colon-separated, in the order each listing prints
+// them. bash spells the set -o names with hyphens
+// (interactive-comments), which is the spelling `set -o` itself uses.
+func (r *Runner) shellOptsList() string {
+	var on []string
+	for _, i := range posixOptNames() {
+		if r.opts[i] {
+			on = append(on, posixOptsTable[i].name)
+		}
+	}
+	return strings.Join(on, ":")
+}
+
+func (r *Runner) bashOptsList() string {
+	var on []string
+	for _, i := range bashOptNames() {
+		if r.opts[len(posixOptsTable)+i] {
+			on = append(on, bashOptsTable[i].name)
+		}
+	}
+	return strings.Join(on, ":")
+}
+
+// bashOptNames lists the shopt options by name, which is how bash
+// prints them; the table itself groups the supported ones first.
+func bashOptNames() []int {
+	indexes := make([]int, len(bashOptsTable))
+	for i := range indexes {
+		indexes[i] = i
+	}
+	slices.SortFunc(indexes, func(a, b int) int {
+		return strings.Compare(bashOptsTable[a].name, bashOptsTable[b].name)
+	})
+	return indexes
+}
+
 // posixOptNames lists the options the way bash prints them, which is by
 // name rather than in the order the table happens to be in.
 func posixOptNames() []int {
@@ -1070,10 +1107,16 @@ var posixOptsTable = [...]posixOpt{
 	{' ', "posix", false, false},
 	{'h', "hashall", true, false},
 	{' ', "interactive-comments", true, false},
-	{'k', "keyword", false, false},
+	// keyword is implemented (#396): every assignment-shaped word goes
+	// into the command's environment, not just the leading ones.
+	{'k', "keyword", false, true},
 	{'t', "onecmd", false, false},
 	{'p', "privileged", false, false},
-	{' ', "ignoreeof", false, false},
+	// ignoreeof governs what an *interactive* shell does with EOF, so
+	// there is nothing for this runner to do — but refusing it made
+	// `set -o ignoreeof` in an rc abort rather than be irrelevant
+	// (#396). The shell around the interpreter owns the behavior.
+	{' ', "ignoreeof", false, true},
 	{' ', "nolog", false, false},
 }
 
@@ -1141,8 +1184,10 @@ var bashOptsTable = [...]bashOpt{
 		supported:    true,
 	},
 	// unsupported options, sorted alphabetically by name
+	{name: "array_expand_once"},
 	{name: "assoc_expand_once"},
 	{name: "autocd"},
+	{name: "bash_source_fullpath"},
 	{name: "cdable_vars"},
 	{name: "cdspell"},
 	{name: "checkhash"},
@@ -1177,7 +1222,16 @@ var bashOptsTable = [...]bashOpt{
 		name:         "force_fignore",
 		defaultState: true,
 	},
-	{name: "globasciiranges"},
+	{
+		// On by default in bash 5.x, which koi had as off — a default
+		// is as visible to a script as a setting (#393).
+		name:         "globasciiranges",
+		defaultState: true,
+	},
+	{
+		name:         "globskipdots",
+		defaultState: true,
+	},
 	{name: "gnu_errfmt"},
 	{name: "histappend"},
 	{name: "histreedit"},
@@ -1188,8 +1242,7 @@ var bashOptsTable = [...]bashOpt{
 	},
 	{name: "huponexit"},
 	{
-		name:         "inherit_errexit",
-		defaultState: true,
+		name: "inherit_errexit",
 	},
 	{
 		name:         "interactive_comments",
@@ -1201,8 +1254,13 @@ var bashOptsTable = [...]bashOpt{
 	{name: "mailwarn"},
 	{name: "no_empty_cmd_completion"},
 	{name: "nocasematch"},
+	{name: "noexpand_translation"},
 	{
 		name:         "progcomp",
+		defaultState: true,
+	},
+	{
+		name:         "patsub_replacement",
 		defaultState: true,
 	},
 	{name: "progcomp_alias"},
@@ -1216,6 +1274,7 @@ var bashOptsTable = [...]bashOpt{
 		name:         "sourcepath",
 		defaultState: true,
 	},
+	{name: "varredir_close"},
 	{name: "xpg_echo"},
 }
 

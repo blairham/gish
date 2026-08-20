@@ -1042,7 +1042,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 
 	case "shopt":
 		mode := ""
-		posixOpts := false
+		posixOpts, quiet, print := false, false, false
 		fp := flagParser{remaining: args}
 		for fp.more() {
 			switch flag := fp.flag(); flag {
@@ -1050,25 +1050,53 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				mode = flag
 			case "-o":
 				posixOpts = true
-			case "-p", "-q":
-				return failf(2, "shopt: unsupported option %q\n", flag)
+			case "-q":
+				// The scripting probe form: no output, the answer is
+				// the status (#393). koi refused it with exit 2, so
+				// `shopt -q extglob && …` took the error branch.
+				quiet = true
+			case "-p":
+				print = true
 			default:
 				return failf(2, "shopt: invalid option %q\n", flag)
 			}
 		}
 		args := fp.args()
 		if len(args) == 0 {
+			if quiet {
+				break
+			}
 			if posixOpts {
-				for i, opt := range &posixOptsTable {
-					r.printOptLine(opt.name, setOptColumn, r.opts[i], true)
+				for _, i := range posixOptNames() {
+					if print {
+						r.outf("set %co %s\n", setSign(r.opts[i]), posixOptsTable[i].name)
+						continue
+					}
+					r.printOptLine(posixOptsTable[i].name, setOptColumn, r.opts[i], true)
 				}
 			} else {
-				for i, opt := range bashOptsTable {
-					r.printOptLine(opt.name, shoptOptColumn, r.opts[len(posixOptsTable)+i], opt.supported)
+				// Alphabetical, as bash prints it: koi's supported
+				// options sit in a leading block of the table, which
+				// listed them all first (#393).
+				for _, i := range bashOptNames() {
+					opt := bashOptsTable[i]
+					on := r.opts[len(posixOptsTable)+i]
+					if print {
+						// -p prints each option as the command that
+						// would set it, which is what a script saves
+						// and replays.
+						r.outf("shopt %s %s\n", shoptState(on), opt.name)
+						continue
+					}
+					r.printOptLine(opt.name, shoptOptColumn, on, opt.supported)
 				}
 			}
 			break
 		}
+		// -q and a bare listing both answer through the status: 0 when
+		// every named option is on, 1 otherwise. -p's status does the
+		// same, which koi always reported as 0.
+		allOn := true
 		for _, arg := range args {
 			opt, supported := (*bool)(nil), true
 			if posixOpts {
@@ -1079,7 +1107,17 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				opt, supported = r.bashOptByName(arg)
 			}
 			if opt == nil {
-				return failf(1, "shopt: invalid option name %q\n", arg)
+				// The two tables word it differently, and the -o form
+				// answers 0 when *setting* an unknown name — measured,
+				// odd, and bash's.
+				if posixOpts {
+					r.errf("shopt: %s: invalid option name\n", arg)
+					if mode == "" {
+						exit.code = 1
+					}
+					return exit
+				}
+				return failf(1, "shopt: %s: invalid shell option name\n", arg)
 			}
 
 			switch mode {
@@ -1088,9 +1126,30 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 					return failf(1, "shopt: unsupported option %q\n", arg)
 				}
 				*opt = mode == "-s"
-			default: // ""
+			default: // "" and -p
+				if !*opt {
+					allOn = false
+				}
+				if quiet {
+					continue
+				}
+				if posixOpts {
+					if print {
+						r.outf("set %co %s\n", setSign(*opt), arg)
+						continue
+					}
+					r.printOptLine(arg, setOptColumn, *opt, supported)
+					continue
+				}
+				if print {
+					r.outf("shopt %s %s\n", shoptState(*opt), arg)
+					continue
+				}
 				r.printOptLine(arg, shoptOptColumn, *opt, supported)
 			}
+		}
+		if mode == "" && !allOn {
+			exit.code = 1
 		}
 		r.updateExpandOpts()
 
@@ -1682,6 +1741,22 @@ const (
 	setOptColumn   = 15
 	shoptOptColumn = 0 // no padding; see above
 )
+
+// setSign and shoptState spell an option's state the way each listing
+// re-states it: `set -o x` / `set +o x`, and `shopt -s x` / `shopt -u x`.
+func setSign(on bool) byte {
+	if on {
+		return '-'
+	}
+	return '+'
+}
+
+func shoptState(on bool) string {
+	if on {
+		return "-s"
+	}
+	return "-u"
+}
 
 func (r *Runner) printOptLine(name string, column int, enabled, supported bool) {
 	state := r.optStatusText(enabled)

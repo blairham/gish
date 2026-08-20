@@ -4325,8 +4325,10 @@ done <<< 2`,
 	{"ref=xxx typeset -p nosuch 2>/dev/null; echo st=$?", "st=1\n"},
 	{"shopt extglob | grep 'off' | wc -l | tr -d ' '", "1\n"},
 	{
+		// off by default, as in bash 5.3 — koi had it on (#393), and a
+		// default is as visible to a script as a setting.
 		"shopt inherit_errexit",
-		"inherit_errexit\ton\t(\"off\" not supported)\n #JUSTERR",
+		"inherit_errexit\toff\t(\"on\" not supported)\nexit status 1 #JUSTERR",
 	},
 	{
 		"shopt -o -s pipefail; shopt -o pipefail | grep -q 'on$'",
@@ -4338,15 +4340,17 @@ done <<< 2`,
 	},
 	{
 		"shopt pipefail",
-		"shopt: invalid option name \"pipefail\"\nexit status 1 #JUSTERR",
+		"shopt: pipefail: invalid shell option name\nexit status 1 #JUSTERR",
 	},
 	{
 		"shopt -s pipefail",
-		"shopt: invalid option name \"pipefail\"\nexit status 1 #JUSTERR",
+		"shopt: pipefail: invalid shell option name\nexit status 1 #JUSTERR",
 	},
 	{
+		// The -o table words it differently, and *setting* an unknown
+		// name through it answers 0 — odd, measured, and bash's.
 		"shopt -o -s extglob",
-		"shopt: invalid option name \"extglob\"\nexit status 1 #JUSTERR",
+		"shopt: extglob: invalid option name\n #JUSTERR",
 	},
 	{
 		"shopt -s login_shell",
@@ -4358,11 +4362,11 @@ done <<< 2`,
 	},
 	{
 		"shopt -s nosuchname",
-		"shopt: invalid option name \"nosuchname\"\nexit status 1 #JUSTERR",
+		"shopt: nosuchname: invalid shell option name\nexit status 1 #JUSTERR",
 	},
 	{
 		"shopt -o -s nosuchname",
-		"shopt: invalid option name \"nosuchname\"\nexit status 1 #JUSTERR",
+		"shopt: nosuchname: invalid option name\n #JUSTERR",
 	},
 	{
 		"touch a .b ..c; shopt -u dotglob; echo *",
@@ -4423,13 +4427,65 @@ done <<< 2`,
 		"touch a ab abB Ac Ad; shopt -s nocaseglob; echo *b",
 		"ab abB\n",
 	},
+	// -p and -q are implemented now (#393): -p prints each option as
+	// the command that would restore it, -q answers through the status
+	// alone, and a named query's status is the option's state.
 	{
-		"shopt -p",
-		"shopt: unsupported option \"-p\"\nexit status 2 #IGNORE",
+		"shopt -p dotglob; echo p=$?",
+		"shopt -u dotglob\np=1\n",
 	},
 	{
-		"shopt -q",
-		"shopt: unsupported option \"-q\"\nexit status 2 #IGNORE",
+		"shopt -s dotglob; shopt -p dotglob; echo p=$?",
+		"shopt -s dotglob\np=0\n",
+	},
+	{
+		"shopt -q dotglob; echo q=$?; shopt -s dotglob; shopt -q dotglob; echo q=$?",
+		"q=1\nq=0\n",
+	},
+	{
+		"shopt -s dotglob; shopt -q dotglob extglob; echo q=$?",
+		"q=1\n",
+	},
+	{
+		"shopt -o -p allexport",
+		"set +o allexport\nexit status 1",
+	},
+	{
+		"shopt -o -q allexport; echo oq=$?",
+		"oq=1\n",
+	},
+	// SHELLOPTS and BASHOPTS answer the option probe every portable
+	// script writes, and were absent entirely (#396).
+	{
+		`echo "[$SHELLOPTS]"`,
+		"[braceexpand:hashall:interactive-comments]\n",
+	},
+	{
+		`set -e; echo "[$SHELLOPTS]"`,
+		"[braceexpand:errexit:hashall:interactive-comments]\n",
+	},
+	{
+		"shopt -s dotglob; case $BASHOPTS in *dotglob*) echo yes;; esac",
+		"yes\n",
+	},
+	// set -k binds every assignment-shaped word, not just the leading
+	// ones — and decides from what was *written*, so a quoted one and a
+	// value that merely expands to an = stay arguments (#396).
+	{
+		`set -k; f(){ echo "c=[$c] args=[$*]"; }; f hi c=7`,
+		"c=[7] args=[hi]\n",
+	},
+	{
+		`set -k; c=1; echo hi c=7; echo "after=[$c]"`,
+		"hi\nafter=[1]\n",
+	},
+	{
+		`set -k; echo "x=1"`,
+		"x=1\n",
+	},
+	{
+		"set -o ignoreeof; echo rc=$?",
+		"rc=0\n",
 	},
 
 	// $'\x{...}' and $'\cX' (#365): the brace hex form (closing brace
