@@ -1220,6 +1220,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			switch spec {
 			case "ERR":
 				r.callbackErr, r.listed.err = callback, callback
+				// Installing the trap rebases the inheritance rule to
+				// here: a trap set inside a subshell or a function fires
+				// for failures in that scope (#354) — "not inherited"
+				// restricts a *parent's* trap, not the one this scope
+				// just set. Leaving depth alone made `(trap 'echo e'
+				// ERR; false)` silent. Function returns restore their
+				// caller's depth, so the rebase does not leak upward.
+				r.errTrapDepth = 0
 			case "EXIT":
 				r.callbackExit, r.listed.exit = callback, callback
 				r.callbackExitLine = pos.Line()

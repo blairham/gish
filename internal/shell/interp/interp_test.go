@@ -3644,6 +3644,20 @@ done <<< 2`,
 	// TODO: our builtin appears to not receive the piped bytes?
 	// {"trap 'echo on_err' ERR; trap | grep -q '.*echo on_err.*'", "trap -- \"echo on_err\" ERR\n"},
 	{"trap 'false' ERR EXIT; false", "exit status 1"},
+	// An ERR trap set inside a subshell or a function fires for failures
+	// in that scope (#354): "not inherited" restricts a parent's trap,
+	// never the one the scope itself set.
+	{"( trap 'echo e' ERR; false; echo after ); echo main", "e\nafter\nmain\n"},
+	{"f(){ trap 'echo e' ERR; false; echo in-f; }; f; false; echo top", "e\nin-f\ne\ntop\n"},
+	{"trap 'echo outer' ERR; f(){ false; echo in-f; }; f", "in-f\n"},
+	{
+		// A compound command whose redirection fails also fires it.
+		// 2>/dev/null first: redirections apply left to right, and the
+		// failing open's complaint is the shell's, so it must already be
+		// redirected when the open fails.
+		"( trap 'echo e' ERR; while [ -z x ]; do :; done 2>/dev/null </dev/null >/nonexistent-dir-354/f; echo after: $? )",
+		"e\nafter: 1\n #IGNORE the unwritable path differs by platform",
+	},
 	// An EXIT trap set in a subshell runs when that subshell ends (#353),
 	// whether it fell off the end, called exit, ran as a command
 	// substitution, a background job, or a pipeline stage — and the
