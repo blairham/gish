@@ -3644,6 +3644,21 @@ done <<< 2`,
 	// TODO: our builtin appears to not receive the piped bytes?
 	// {"trap 'echo on_err' ERR; trap | grep -q '.*echo on_err.*'", "trap -- \"echo on_err\" ERR\n"},
 	{"trap 'false' ERR EXIT; false", "exit status 1"},
+	// An EXIT trap set in a subshell runs when that subshell ends (#353),
+	// whether it fell off the end, called exit, ran as a command
+	// substitution, a background job, or a pipeline stage — and the
+	// parent's EXIT trap never fires inside one.
+	{"( trap 'echo sub' EXIT; exit 0 ); echo main", "sub\nmain\n"},
+	{"( trap 'echo sub' EXIT; true ); echo main", "sub\nmain\n"},
+	{"trap 'echo outer' EXIT; ( true ); echo main; trap - EXIT", "main\n"},
+	{"x=$( trap 'echo ce' EXIT; echo body ); echo \"[$x]\"", "[body\nce]\n"},
+	{"{ trap 'echo bgx' EXIT; true; } & wait; echo done", "bgx\ndone\n"},
+	{"true | { trap 'echo p' EXIT; true; }; echo main", "p\nmain\n"},
+	// `exit` inside an EXIT trap replaces the status; an ordinary
+	// failing command in the action does not.
+	{"( trap 'exit 9' EXIT; exit 3 ); echo st=$?", "st=9\n"},
+	{"( trap 'echo t; false' EXIT; exit 3 ); echo st=$?", "t\nst=3\n"},
+	{"trap 'exit 9' EXIT; exit 3", "exit status 9"},
 	// A parse error in one trap callback must not disable later ones.
 	{"trap '(' ERR; false; trap 'echo ok' ERR; false; :", "errortrap: error trap:1:1: `(` must be followed by a statement list\nok\n #IGNORE"},
 	// On entry to a trap, "$?" is the status of the command which triggered it.
