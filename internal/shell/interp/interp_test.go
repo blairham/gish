@@ -1869,8 +1869,11 @@ q`,
 		// than an error, because bash's are /dev/fd entries and koi's
 		// FIFO is gone by then (#420): the failed open answered nothing
 		// at all, so a line went missing rather than reading zero.
-		`f() { wc -l < $1; wc -l < $1; echo reached; }; f <(echo one); echo done=$?`,
-		"       1\n       0\nreached\ndone=0\n #IGNORE wc's column width varies by platform",
+		// Written with `read` rather than `wc -l`, whose column
+		// padding differs between platforms — which is what CI
+		// reported when it was.
+		`f() { read -r x < $1; echo "1:[$x]"; read -r y < $1; echo "2:[$y] rc=$?"; echo reached; }; f <(echo one); echo done=$?`,
+		"1:[one]\n2:[] rc=1\nreached\ndone=0\n",
 	},
 
 	// declare -F
