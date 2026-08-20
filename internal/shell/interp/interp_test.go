@@ -5051,6 +5051,22 @@ var runTestsUnix = []runTest{
 		"[ -p a ] && echo x; mkfifo a; [ -p a ] && echo y",
 		"y\n",
 	},
+	// `read -t` on a FIFO opened read-write (#348). The runtime refuses a
+	// deadline on that shape, and treating the refusal as "regular file"
+	// left the read blocked until killed; it is answered with poll(2) now.
+	{
+		"mkfifo p; exec 9<> p; read -r -u 9 -t 0.1 x; echo \"st=$? x=[$x]\"",
+		"st=142 x=[]\n",
+	},
+	{
+		"mkfifo p; exec 9<> p; echo hi >&9; read -r -u 9 -t 1 x; echo \"st=$? x=[$x]\"",
+		"st=0 x=[hi]\n",
+	},
+	{
+		// Whatever arrived before the timeout is still assigned here too.
+		"mkfifo p; exec 9<> p; printf par >&9; read -r -u 9 -t 0.1 x; echo \"st=$? x=[$x]\"",
+		"st=142 x=[par]\n",
+	},
 	{
 		"[[ -p a ]] && echo x; mkfifo a; [[ -p a ]] && echo y",
 		"y\n",
