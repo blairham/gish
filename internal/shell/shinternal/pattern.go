@@ -5,9 +5,7 @@ package shinternal
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
-	"strings"
 
 	"mvdan.cc/sh/v3/pattern"
 )
@@ -25,53 +23,24 @@ func ExtendedPatternMatcher(pat string, mode pattern.Mode) (func(string) bool, e
 	// Extended pattern matching operators are always on outside of pathname expansion.
 	expr, err := pattern.Regexp(pat, mode)
 	if err != nil {
-		// Handle !(pattern-list) negation: when Regexp returns NegExtglobError,
-		// match the inner pattern and negate the result.
+		// !(pattern-list) cannot become an RE2 expression once anything
+		// composes with it — no lookahead — so those patterns run the
+		// backtracking matcher instead (#373). It handles the group in
+		// any position, nested and repeated included.
 		var negErr *pattern.NegExtGlobError
 		if !errors.As(err, &negErr) {
 			return nil, err
 		}
-		return extNegatedMatcher(pat, negErr.Groups)
+		return extGlobMatcher(pat, mode)
 	}
-	rx := regexp.MustCompile(expr)
-	return rx.MatchString, nil
-}
-
-// extNegatedMatcher handles !(pattern-list) extglob negation.
-// Only a single !(...) group with fixed-string prefix and suffix is supported.
-func extNegatedMatcher(pat string, groups []pattern.NegExtGlobGroup) (func(string) bool, error) {
-	if len(groups) != 1 {
-		return nil, fmt.Errorf("multiple extglob !(...) groups are not supported yet")
-	}
-	g := groups[0]
-	prefix := pat[:g.Start]
-	suffix := pat[g.End:]
-
-	if pattern.HasMeta(prefix, 0) || pattern.HasMeta(suffix, 0) {
-		return nil, fmt.Errorf("extglob !(...) is only supported with a fixed prefix and suffix")
-	}
-
-	// Use @(inner) to compile the pattern list, then negate the match.
-	inner := pat[g.Start+len("!(") : g.End-len(")")]
-	expr, err := pattern.Regexp("@("+inner+")", pattern.EntireString|pattern.ExtendedOperators)
+	// Compile, never MustCompile: pattern.Regexp can hand back an
+	// expression Go's regexp rejects — an unclosed class inside an
+	// extglob group, found as a shell-killing panic (#373) — and an
+	// invalid pattern is the caller's literal-fallback case, not a
+	// crash.
+	rx, err := regexp.Compile(expr)
 	if err != nil {
-		return nil, err
+		return nil, &pattern.SyntaxError{}
 	}
-	rx := regexp.MustCompile(expr)
-
-	return func(name string) bool {
-		if !strings.HasPrefix(name, prefix) {
-			return false
-		}
-		if !strings.HasSuffix(name, suffix) {
-			return false
-		}
-		end := len(name) - len(suffix)
-		if end < len(prefix) {
-			return false // prefix and suffix overlap in name
-		}
-		middle := name[len(prefix):end]
-
-		return !rx.MatchString(middle)
-	}, nil
+	return rx.MatchString, nil
 }

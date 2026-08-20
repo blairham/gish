@@ -4736,27 +4736,38 @@ done <<< 2`,
 		"shopt -s extglob\n[[ \"bar\" == !(foo) ]] && echo match",
 		"match\n",
 	},
-	// Unsupported: multiple groups, glob prefix, or glob suffix.
+	// !(...) composed with prefixes, suffixes, and other groups (#373):
+	// the backtracking matcher handles what a lookahead-free regexp
+	// cannot.
 	{
 		"shopt -s extglob\ncase \"xabab\" in *a!(b)) echo match;; esac",
-		" #IGNORE glob prefix not supported",
+		"match\n",
 	},
 	{
 		"shopt -s extglob\ncase \"baz\" in !(foo)!(bar)) echo match;; esac",
-		" #IGNORE multiple extglob negation groups not supported",
+		"match\n",
 	},
 	{
 		"shopt -s extglob\ncase \".bar\" in .*!(foo)) echo match;; esac",
-		" #IGNORE glob prefix not supported",
+		"match\n",
 	},
 	{
 		"shopt -s extglob\ncase \".foo\" in .*!(foo)) echo match;; esac",
-		" #IGNORE glob prefix not supported",
+		"match\n",
 	},
 	{
 		"shopt -s extglob\ncase \"bar\" in .*!(foo)) echo match;; esac",
-		" #IGNORE glob prefix not supported",
+		"",
 	},
+	{"shopt -s extglob\n[[ foo = !(x)* ]]; echo $?", "0\n"},
+	{"shopt -s extglob\n[[ fff = *(!(f)) ]]; echo $?", "0\n"},
+	{"shopt -s extglob\n[[ a.b = !(*.*).!(*.*) ]]; echo $?", "0\n"},
+	{"shopt -s extglob\n[[ a.b.c = !(*.*).!(*.*) ]]; echo $?", "1\n"},
+	{"shopt -s extglob\n[[ foo = +(!(f)o) ]]; echo $?", "0\n"},
+	// An invalid pattern compares as its literal self.
+	{`shopt -s extglob
+[[ "+(a|b[" == "+(a|b[" ]] && echo eq
+case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 	{
 		// Extended pattern matching is always available outside of pathname expansions (globbing).
 		"[[ a123z == a@([0-9])z ]]; echo $?; [[ a123z == a+([0-9])z ]]; echo $?",

@@ -1857,7 +1857,21 @@ func (r *Runner) flattenAssigns(args []*syntax.Assign) iter.Seq[*syntax.Assign] 
 
 func match(pat, name string) bool {
 	matcher, err := shinternal.ExtendedPatternMatcher(pat, pattern.EntireString|pattern.ExtendedOperators)
-	_ = err // TODO: report these errors
+	if err != nil {
+		// An invalid pattern compares as its literal self in bash's
+		// case and [[ ]] (#373): the pattern string arrives here with
+		// its quoted spans escaped, so unescape before comparing.
+		var sb strings.Builder
+		for i := 0; i < len(pat); i++ {
+			b := pat[i]
+			if b == '\\' && i+1 < len(pat) {
+				i++
+				b = pat[i]
+			}
+			sb.WriteByte(b)
+		}
+		return sb.String() == name
+	}
 	return matcher != nil && matcher(name)
 }
 
