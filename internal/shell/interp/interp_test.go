@@ -1876,6 +1876,20 @@ q`,
 		"1:[one]\n2:[] rc=1\nreached\ndone=0\n",
 	},
 
+	// bash 5.3's funsubs run in the *current* shell, which is what they
+	// exist for (#421): koi ran them in a subshell like an ordinary
+	// substitution, so nothing they changed survived.
+	{`v=1; x=${ v=2; echo aa; }; echo "x=$x v=$v"`, "x=aa v=2\n"},
+	{`set -- p q; x=${ set -- z; }; echo "$@"`, "z\n"},
+	{`x=${ echo a; echo b; }; echo "[$x]"`, "[a\nb]\n"},
+	{
+		// `${| …; }` takes its value from REPLY and does *not* capture
+		// output, and the caller's REPLY is saved around it.
+		`y=${| echo out; REPLY=hey; }; echo "y=[$y]"`,
+		"out\ny=[hey]\n",
+	},
+	{`REPLY=old; y=${| :; }; echo "y=[$y] REPLY=[$REPLY]"`, "y=[] REPLY=[old]\n"},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
