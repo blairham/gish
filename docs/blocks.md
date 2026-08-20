@@ -6,7 +6,7 @@ closed-source, login-gated terminal, and the observation that makes it
 koi's to take is that **blocks are a shell feature awkwardly
 implemented in a terminal**: the shell already knows command
 boundaries, exit codes, durations, and cwd. No local-first shell has
-shipped it ([#99](https://github.com/blairham/koi-shell/issues/99)).
+shipped it.
 
 This document is the design, and the reason the feature ships in stages
 rather than all at once.
@@ -32,7 +32,7 @@ things. Checked against each terminal's own documentation:
 | --- | --- | --- |
 | kitty | scroll-to-prompt, select-output, click-to-move-cursor | its docs suggest shells emit these as a builtin |
 | WezTerm | scroll-to-prompt, select-output, SetUserVar | |
-| Ghostty | scroll-to-prompt, click-to-move-cursor (PR #10536) | **no output-retrieval API** — its author is explicitly wary of escape-sequence-driven control, so "select output" is the terminal's own selection, not a query |
+| Ghostty | scroll-to-prompt, click-to-move-cursor (Ghostty pull request 10536) | **no output-retrieval API** — its author is explicitly wary of escape-sequence-driven control, so "select output" is the terminal's own selection, not a query |
 | iTerm2 | shell integration: marks, SetUserVar, OSC 7 | |
 | VS Code | command decorations and navigation | |
 | Alacritty | nothing — **no OSC 133 support at all** | the marks are inert here, which is harmless |
@@ -179,7 +179,8 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
    then total bytes — bytes last, so a size cap never evicts recent
    output to keep old output.
 
-   The #10 rules run over output **as it is written**, so a leaked
+   History's secret-scrubbing rules run over output **as it is
+   written**, so a leaked
    blocks directory cannot leak a token and there is no scrubbing step
    for a later reader to forget. Crucially the *posture* differs from a
    command line: output is **redacted**, not rejected. Dropping a
@@ -196,7 +197,7 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
    all. A block that shows says so when its output was truncated or
    redacted, rather than presenting a partial or doctored log as whole.
 
-   Bare `blocks` on a terminal opens the #100 picker over those same
+   Bare `blocks` on a terminal opens the shared fuzzy picker over those same
    commands; `blocks list` and every headless path keep the plain
    listing, so the command stays usable in scripts and the picker is a
    presentation layer rather than the only way in.
@@ -226,7 +227,7 @@ the line discipline translates `\n` to `\r\n`. Verified by byte count.
 Stage 1 is free and immediately useful. Stage 2 is the whole risk of
 the feature, so it is isolated and opt-in. Stages 3 and 4 are
 mechanical once capture is trustworthy, and they are also what
-[session restore](https://github.com/blairham/koi-shell/issues/103) and the
+session restore and the
 "history should capture output" asks from the atuin threads want.
 
 Shipping stage 1 alone is deliberate: a `blocks` command that listed

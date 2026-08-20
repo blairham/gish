@@ -12,15 +12,15 @@ prompt import         # bring your ~/.p10k.zsh across
 
 `p10k` is the same command as `prompt`, kept because it is what people
 arriving from powerlevel10k type without thinking. The engine is named
-for what it does rather than for one of the dialects that configure it
-([#184](https://github.com/blairham/koi-shell/issues/184)) — it renders
+for what it does rather than for one of the dialects that configure
+it — it renders
 presets from more than one upstream, and naming the whole thing after
 powerlevel10k would claim looks that project never shipped.
 
-What did **not** change: `KOI_THEME=p10k`, `POWERLEVEL9K_*`,
-`p10k.conf` and `~/.p10k.zsh`. Those name powerlevel10k compatibility,
-which is exactly what they are, and
-[#134](https://github.com/blairham/koi-shell/issues/134) settled that
+The names `KOI_THEME=p10k`, `POWERLEVEL9K_*`,
+`p10k.conf` and `~/.p10k.zsh` stay as they are. Those name
+powerlevel10k compatibility,
+which is exactly what they are, and it is a settled decision that
 pasting a line from an old config has to keep working.
 
 [p10k]: https://github.com/romkatv/powerlevel10k
@@ -76,8 +76,8 @@ costs data and no code:
 The two starship presets are transcribed from starship's own preset
 TOMLs, colour for colour. **`agnoster` is not a transcription** — an
 oh-my-zsh `.zsh-theme` is a zsh program, not a config file, so there is
-nothing to import and no converter that could produce one (see
-[#185](https://github.com/blairham/koi-shell/issues/185)). It rebuilds the
+nothing to import and no converter that could produce one. It rebuilds
+the
 published look.
 
 Every one of these drops something, and `prompt preset <name>` says what
@@ -209,7 +209,7 @@ The rule this package holds to is that a segment may read files and
 environment variables and nothing else — no forking, no dialing, no
 blocking. That rule is where the 6 ms comes from.
 
-**System state now lands inside it** (#132): `ram`, `swap`, `load`,
+**System state lands inside that rule too**: `ram`, `swap`, `load`,
 `disk_usage` and `battery` are files and one syscall, not subprocesses.
 What is available is per-platform, and the gaps are per *metric* rather
 than per segment:
@@ -226,7 +226,7 @@ An unavailable metric renders nothing, which is what an absent reading
 should look like; `vm_stat` and `pmset` would answer the last two, and a
 prompt that forks twice is exactly what this engine exists not to be.
 
-`ip` and `vpn_ip` are in (#132): enumerating interfaces forks nothing
+`ip` and `vpn_ip` are implemented: enumerating interfaces forks nothing
 and dials nothing, but one enumeration costs more than the whole lean
 prompt (~51µs on darwin — N+1 routing-table dumps), so both read a
 5-second TTL cache rather than the kernel per prompt; upstream itself

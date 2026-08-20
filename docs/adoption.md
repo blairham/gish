@@ -43,12 +43,13 @@ Two consequences for koi:
    and it is the factor that killed a 55k-star project. Every decision
    that widens the maintenance surface — a cross-shell port, an
    ecosystem we host rather than inherit, a second config dialect —
-   spends the one budget we cannot refill. #214 is this law applied.
+   spends the one budget we cannot refill. docs/design.md's
+   no-cross-shell-components decision is this law applied.
 2. **Trust decays irreversibly.** Warp's is the only failure in the set
    that could not be undone by later doing the right thing. That is why
-   the trust paragraph ships *before* launch (#212) rather than being
-   conceded afterwards, and why #210's re-touch loop may not phone home
-   by default.
+   the trust paragraph ships *before* launch rather than being conceded
+   afterwards, and why the update-notice re-touch loop may not phone
+   home by default.
 
 ## The churn funnel
 
@@ -58,15 +59,16 @@ inferred one.
 
 | stage | what breaks | koi's answer | state |
 | --- | --- | --- | --- |
-| **minutes** | keybindings that don't answer; the `chsh` ask turning a trial into a commitment (fish's lockout stories: login shell absent from /etc/shells, distros requiring a Bourne-compatible login shell that reads /etc/profile) | readline parity (#96, #118, #116); never require chsh — terminal-profile launch is the happy path | parity **shipped**; exit-cost surfaces **open** (#212) |
-| **week 1** | source-based tooling: nvm, rbenv, pyenv, conda, rvm, venv, virtualenvwrapper, direnv. A shell that cannot source them is unusable on day two, and it fails silently | the #161 source gate loads all of them unmodified, published in docs/interactive-compat.md and CI-enforced | **shipped** |
-| **month 1** | the bash monoculture: the lookup tax on every pasted answer, ssh fleets where your shell isn't installed, and pairing — the coworker driving your terminal | bash-paste compat (docs/compat.md), `koi ssh` (#98), `koi migrate` (#160) | **shipped**; team-shareable config **open** (#209) |
-| **months+** | update breakage and trust shocks — the nushell treadmill, the Warp login | published stability contract (#162), version-independent plugin ABI with CI enforcement (#168), frozen-additive protos | substance **shipped**; the version number does not yet say so (#213) |
+| **minutes** | keybindings that don't answer; the `chsh` ask turning a trial into a commitment (fish's lockout stories: login shell absent from /etc/shells, distros requiring a Bourne-compatible login shell that reads /etc/profile) | readline parity; never require chsh — terminal-profile launch is the happy path | parity **in place**; exit-cost surfaces **planned** |
+| **week 1** | source-based tooling: nvm, rbenv, pyenv, conda, rvm, venv, virtualenvwrapper, direnv. A shell that cannot source them is unusable on day two, and it fails silently | the source gate loads all of them unmodified, published in docs/interactive-compat.md and CI-enforced | **in place** |
+| **month 1** | the bash monoculture: the lookup tax on every pasted answer, ssh fleets where your shell isn't installed, and pairing — the coworker driving your terminal | bash-paste compat (docs/compat.md), `koi ssh`, `koi migrate` | **in place**; team-shareable config **planned** (docs/team.md) |
+| **months+** | update breakage and trust shocks — the nushell treadmill, the Warp login | published stability contract (docs/stability.md), version-independent plugin ABI with CI enforcement, frozen-additive protos | substance **in place**; the version number does not yet say so |
 
-The funnel's shape is the argument for #213. koi has already paid for
-the months+ stage and gets no credit for it, because `0.0.x` reads as
-"your investment may be taxed at any release" regardless of what the
-contract says.
+The funnel's shape is the argument for a short 0.x line with 1.0 gated
+by a closed list (docs/stability.md): koi has already paid for the
+months+ stage and gets no credit for it, because `0.0.x` reads as "your
+investment may be taxed at any release" regardless of what the contract
+says.
 
 ## Growth mechanics, ranked by transferability
 
@@ -81,8 +83,8 @@ contract says.
    pass rates. Complaints "quieted down considerably" within months.
    The mechanism is asymmetric: users forgive a *documented* 5% gap and
    punish an *undocumented* 1% gap, because the undocumented one
-   arrives at 2AM. #211 is this move, and the corpus discipline is
-   already in place to receive it.
+   arrives at 2AM. Running bash's own test suite is this move, and the
+   corpus discipline is already in place to receive it.
 3. **Compat first, opinions later** — Neovim inherited vim's config and
    grew; Helix asked for new muscle memory and did not. Sequencing, not
    quality.
@@ -90,11 +92,11 @@ contract says.
    ecosystem: Oh My Zsh's auto-updater (shipped ~3 weeks in; Robby
    Russell's retrospective calls it the turning point) and atuin's sync
    accounts. koi currently has neither; a `v0.0.x` install just ages.
-   #210, under the no-telemetry constraint.
+   The re-touch loop has to be built under the no-telemetry constraint.
 5. **Exit-cost engineering** — uv's skeptics never blocked adoption
    because rollback was free and forkability was the standing answer;
    ripgrep could refuse grep compatibility outright because quitting
-   cost nothing. Market the rollback as loudly as the install (#212).
+   cost nothing. Market the rollback as loudly as the install.
 6. **Contribution surface** — fish's Rust port took its contributor
    count from 17 to 200+. Small, obvious, <50-line first PRs are the
    funnel; this is the only mechanic that directly addresses our zero.
@@ -118,21 +120,22 @@ contract says.
 
 ## What this drives
 
-| finding | issue |
+| finding | the move |
 | --- | --- |
-| the version number is unclaimed anti-churn signal | #213 — declare 1.0 early |
-| exit cost is the first-10-minutes stage | #212 — print the revert, own /etc/shells |
-| the incumbent's own test suite is the number skeptics can't argue with | #211 — compat scoreboard round 2 |
-| no retention loop exists | #210 — opt-in re-touch, never phones home |
-| shell choice is partly a group choice | #209 — team-shareable config |
-| every add-on we ship removes a reason to switch | #214 — no cross-shell components |
-| the 2026 interop anchor is the agent subshell, not StackOverflow | #208 — the AI-agent shell story |
+| the version number is unclaimed anti-churn signal | declare 1.0 early |
+| exit cost is the first-10-minutes stage | print the revert, own /etc/shells |
+| the incumbent's own test suite is the number skeptics can't argue with | compat scoreboard round 2 — bash's own suite (docs/bash-suite.md) |
+| no retention loop exists | opt-in re-touch, never phones home |
+| shell choice is partly a group choice | team-shareable config (docs/team.md) |
+| every add-on we ship removes a reason to switch | no cross-shell components (docs/design.md) |
+| the 2026 interop anchor is the agent subshell, not StackOverflow | the AI-agent shell story (docs/agents.md) |
 
 ## Sources
 
 - Homebrew per-formula install analytics, measured 2026-08 — the only
-  per-tool install census that exists, and the reason #164 (core, not a
-  tap) is also a measurement decision.
+  per-tool install census that exists, and the reason aiming at
+  Homebrew core rather than staying a tap is also a measurement
+  decision.
 - nushell: release history and the May 2026 core-team 1.0 issue;
   first-person switch-back accounts in the attrition corpus (827
   comments, r/commandline and HN).
@@ -144,8 +147,9 @@ contract says.
   2024 login-requirement change. Fig: acquisition and shutdown dates.
 - ⚠ Maintainer-narrative quotes from Oils, xonsh, elvish, Warp and Fig
   are reconstructed and unverified — see the provenance note above.
-- The demand half of the Reddit corpus was never gathered; #171 carries
-  the method and the two access constraints (reddit.com returns 403 to
+- The demand half of the Reddit corpus was never gathered;
+  docs/competitors.md carries the method and the two access constraints
+  (reddit.com returns 403 to
   server-side fetchers; api.pullpush.io asked us to stop, which is an
   operator policy to respect). Until it is answered, nothing here
   claims users *want* one coherent tool over the modular stack — see

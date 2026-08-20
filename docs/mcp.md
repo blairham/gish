@@ -42,8 +42,9 @@ lives rather than because it executes anything.
 
 ## Rules
 
-- **Read-only, structurally.** No tool executes anything, so #34's "a
-  plugin may never hold an exec channel" has nothing here to hold.
+- **Read-only, structurally.** No tool executes anything, so the "a
+  plugin may never hold an exec channel" invariant has nothing here to
+  hold.
   Execution stays with ACP's terminal serve mode.
 - **Off by default**, re-read at each prompt, like `config blocks`.
 - **Snapshot at the prompt**, not live: the interpreter is not safe for
@@ -54,7 +55,7 @@ lives rather than because it executes anything.
   `$XDG_RUNTIME_DIR` (or a per-uid temp directory), named per session
   pid. That directory *is* the access policy; there is no auth layer.
 - **Sockets are not secret-scrubbed the way history is.** History never
-  records secret-bearing commands (#10), so `history_search` inherits
+  records secret-bearing commands, so `history_search` inherits
   that guarantee — but an alias or function body can contain a token
   (`alias deploy='TOKEN=… ssh …'`) and nothing strips it. Turning the
   server on exposes your shell's definitions to whatever you pointed at

@@ -1,6 +1,6 @@
 # announcement playbook
 
-The launch plan for koi (#106), derived from how shell announcements
+The launch plan for koi, derived from how shell announcements
 actually land: fish, nushell, and ShellGPT threads that worked; murex's
 2-point silence; Warp's trust backlash. Every rule below is someone
 else's scar tissue.
@@ -23,11 +23,12 @@ crash-isolated, deadline-bounded — they can never block a keystroke or
 take down your shell.* Keep `docs/bench.md`'s p50/p99 in the body, ready
 before anyone asks.
 
-*The backronym is retired* (#169), and so is the name that carried it.
-A koi is a fish, which says the positioning without a sentence of
-explanation: fish's out-of-box experience is the thing being chased.
-There is no naming tension to defend because the plugin architecture is
-no longer the claim — see docs/strategy.md.
+*The name carries no backronym to defend.* A koi is a fish, which says
+the positioning without a sentence of explanation: fish's out-of-box
+experience is the thing being chased. There is no naming tension to
+defend because the plugin architecture is not the claim — see
+docs/strategy.md, which records why the earlier name and its expansion
+were dropped.
 
 **State the trust stance up front, in bold.** Open source. Local-first.
 No account. No telemetry. AI is opt-in (`??` only), bring-your-own
@@ -39,11 +40,11 @@ in the editor buffer, never auto-runs. The delta between ShellGPT's
 path. Reversibility is what makes people willing to *recommend* it —
 "try it in one tab" converts, "make it your login shell" does not.
 
-**Market the rollback as loudly as the install** (#212). Exit cost is
+**Market the rollback as loudly as the install.** Exit cost is
 the forgotten half of every fast-adoption story: uv's skeptics never
 blocked adoption because rollback was free, and ripgrep could refuse
 grep compatibility outright because quitting cost nothing. koi says
-this itself now — the first interactive run prints one dim line stating
+this itself — the first interactive run prints one dim line stating
 that nothing was changed and naming the uninstall command — and the
 `chsh` instructions lead with `/etc/shells` and carry the `chsh -s
 /bin/zsh` that undoes them. `doctor` reports login-shell state and knows
@@ -60,12 +61,12 @@ ships *before* launch rather than being conceded after.
 
 **Concede the ssh objection, then flip it.** Yes, koi isn't on the
 remote box. It's a local daily driver whose bash compatibility means
-zero context-switch when you land on a server. #98 is the real answer,
-and saying "not yet, here's the plan" beats deflecting.
+zero context-switch when you land on a server. `koi ssh` is the real
+answer, and saying "not yet, here's the plan" beats deflecting.
 
 **Host agents; don't claim to be one.** The AI line is `??` and
 `explain` — opt-in, preview-before-execute, bring-your-own-provider. The
-`agent` builtin exists but is experimental and frozen (#111) and stays
+`agent` builtin exists but is experimental and frozen, and stays
 out of the pitch entirely: "shell with a built-in AI agent" is the
 Warp-shaped red flag. The *strong* AI claim is the inverse — run your
 coding agent under `koi --sandbox workspace` and the shell confines what
@@ -82,14 +83,14 @@ objection, including the hostile ones, including "why not just zsh".
 
 | artifact | state |
 | --- | --- |
-| `docs/compat.md` — the bash scoreboard (#101) | **done** — 87% against bash 5.3, gaps published |
-| `docs/bench.md` — startup + keystroke p50/p99 (#102) | **done** — 5.6ms all-features start, p50 0.2ms keystroke |
-| `docs/porting.md` — muscle-memory porting guide (#96) | **done** |
+| `docs/compat.md` — the bash scoreboard | **done** — 87% against bash 5.3, gaps published |
+| `docs/bench.md` — startup + keystroke p50/p99 | **done** — 5.6ms all-features start, p50 0.2ms keystroke |
+| `docs/porting.md` — muscle-memory porting guide | **done** |
 | README leading with the one idea | **done** |
 | 3 asciinema/GIF demos | **open** — needs a human at a terminal |
 | Packaging: brew | done (tap ships today) |
 | Packaging: AUR, nixpkgs | **open** — needs accounts and a maintainer |
-| Packaging: winget/scoop | deferred with #89 per the ratified #110 |
+| Packaging: winget/scoop | deferred with the native Windows interactive port, sequenced to v1.x |
 
 The three demos, when someone records them:
 
@@ -113,8 +114,8 @@ The three demos, when someone records them:
   the paste problem, and the one audience with a claim no other modern
   shell can match: *the only shell that works as an AI agent's `SHELL`,
   and the one place that can sandbox what the agent runs*. Their pain is
-  documented in someone else's tracker (`anthropics/claude-code#11475`,
-  `#7490`, `#13144`, `#19983`) and their current workaround is the
+  documented in someone else's tracker (anthropics/claude-code issues
+  11475, 7490, 13144, 19983) and their current workaround is the
   dual-shell split — fish for humans, zsh for agents — which is the
   partition koi collapses. Point at `docs/agents.md`: the recipe is one
   symlink, the contract is CI-gated, and it found two real bugs on its
@@ -133,17 +134,17 @@ years (docs/adoption.md). A 90-point thread with the author answering
 every reply is the shape of success; a viral spike with a trust
 backlash is not.
 
-*The "roughly 7% of developers customize their shell" figure that used
-to anchor this section is retired* — it is unsourced, and docs/strategy.md
-records why it and two other numbers were dropped (#169).
+*The "roughly 7% of developers customize their shell" figure is
+deliberately absent from this section* — it is unsourced, and
+docs/strategy.md records why it and two other numbers were dropped.
 
 ## What we will not claim
 
 - Not "Windows support" — the native interactive port is sequenced to
-  v1.x (#110), and WSL2 is the documented story until then.
-- Not "your zsh plugins all work" — tier-1 is a scoped escape hatch
-  (#105), and the honest line is that koi ships the top plugins'
-  *behaviors* natively.
+  v1.x, and WSL2 is the documented story until then.
+- Not "your zsh plugins all work" — tier-1 is a scoped escape hatch,
+  and the honest line is that koi ships the top plugins' *behaviors*
+  natively.
 - Not a bash-compat percentage without the corpus behind it —
   `docs/compat.md` states its own ceiling, and the number moves when the
   corpus grows.

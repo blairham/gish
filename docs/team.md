@@ -1,4 +1,4 @@
-# A team's koi setup, in the repo (#209)
+# A team's koi setup, in the repo
 
 What shell you use is partly a group choice, and every koi adopter
 today converts alone. A `.koi.toml` checked into a project repo turns
@@ -23,7 +23,7 @@ rather than a new config language:
 theme = "p10k"
 editmode = "vi"
 
-[[plugins]]             # plugins.toml entries, verbatim (#108)
+[[plugins]]             # plugins.toml entries, verbatim
 source = "zsh-users/zsh-autosuggestions"
 pin = "v0.7.1"
 ```
@@ -44,7 +44,8 @@ this" genuinely conflict. That exclusion is a decision, not a gap.
 
 Adoption is an explicit act, not an ambient one — it applies until
 reverted, like an editor distro kit, not per-directory like direnv (koi
-has the per-directory shape where it belongs, in the #12 trust flow).
+has the per-directory shape where it belongs, in the env-provider trust
+flow).
 
 - `koi adopt` previews everything and asks; `--yes` skips the question
   for scripted setup.

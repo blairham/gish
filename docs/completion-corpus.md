@@ -1,4 +1,4 @@
-# The Fig completion corpus: a spike (#170)
+# The Fig completion corpus: a spike
 
 **Verdict: adopt the static half, mechanically, once. Do not adopt the
 corpus as a dependency, and do not run its generators.**
@@ -17,7 +17,7 @@ corpus as a dependency, and do not run its generators.**
 | top-level entries in `src/` | 735 |
 | repo size | ~38 MB |
 
-Provenance is what the issue hoped: MIT, ~400 contributors, and the
+Provenance is what one would hope: MIT, ~400 contributors, and the
 specs predate the AWS acquisition. Fig was acquired August 2023, access
 ended 2024-09-01, and the successor (Amazon Q CLI) went closed-source
 with one commit in 2026 and parent EOS 2027-04-30. The specs were the
@@ -51,7 +51,7 @@ So there are two corpora inside this one:
    JavaScript.
 
 Adopting (2) means a JavaScript runtime on the completion path. That
-contradicts the line drawn in #112 — *native for the keystroke, prompt
+contradicts the delegate line — *native for the keystroke, prompt
 and cd path; delegate everything else* — and it would put a Node process
 inside an 80 ms budget. It is not a close call.
 
@@ -61,7 +61,7 @@ koi reads. The generators' *targets* are mostly things koi or a plugin
 can produce natively anyway — branches, containers, contexts — and the
 `koi-git`, `koi-aws` and carapace paths already do exactly that.
 
-## How it would merge with carapace (#9)
+## How it would merge with carapace
 
 They are complements, and the conflict rule follows from what each is:
 
@@ -90,7 +90,7 @@ an imported description for a flag no current CLI reports.
   literals, discard nodes containing function expressions, emit a
   compact format. The output is data, so it is reviewable and diffable.
 - Lazy loading per command, keyed the same way bash-completion's own
-  loader is (#159): a shell must not pay for 735 specs to complete `ls`.
+  loader is: a shell must not pay for 735 specs to complete `ls`.
 - Attribution. MIT requires it; the honest form is a NOTICE naming the
   project and its contributors, not a line in a README.
 

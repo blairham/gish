@@ -5,10 +5,9 @@ hardware-gated, and this page is honest about which parts have been run
 by a person and which have only been compiled.
 
 Today: **WSL2 is the supported story.** Native Windows builds, passes
-its test suite on a real windows runner, and packages
-([#89](https://github.com/blairham/koi-shell/issues/89)); what has not
-happened is someone typing into koi on Windows Terminal
-([#87](https://github.com/blairham/koi-shell/issues/87)).
+its test suite on a real windows runner, and packages through
+GoReleaser; what has not
+happened is someone typing into koi on Windows Terminal.
 
 ## What CI proves on every PR
 
@@ -39,7 +38,7 @@ console.
   second late.
 - **go-plugin over TCP loopback**, since there are no unix sockets.
 
-## What is gated on hands and a console (#87)
+## What is gated on hands and a console
 
 Each of these is written down as a checklist item rather than a claim,
 and none of it is asserted anywhere until someone has run it:
@@ -53,8 +52,7 @@ and none of it is asserted anywhere until someone has run it:
 - [ ] **Resize**: the poll above actually fires, and the editor reflows.
 - [ ] **Grapheme width**: emoji and CJK in the prompt and the buffer.
 - [ ] **Ctrl-C / Ctrl-Break**: they arrive as console control events
-      rather than signals. The posture from
-      [#3](https://github.com/blairham/koi-shell/issues/3) has to hold — the
+      rather than signals. The signal posture has to hold — the
       foreground command dies, the shell never does — which needs
       `CREATE_NEW_PROCESS_GROUP` on the child and
       `GenerateConsoleCtrlEvent` to reach it.
@@ -70,8 +68,7 @@ cannot do it yet.
 
 ## Installing
 
-Once a release is tagged with
-[#89](https://github.com/blairham/koi-shell/issues/89)'s configuration:
+Once the first release is tagged:
 
 ```powershell
 winget install blairham.koi

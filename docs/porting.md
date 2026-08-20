@@ -104,8 +104,7 @@ running.
 
 Two known gaps, both honest: readline **macro** bindings (a key bound to
 a string of editing commands) are not emulated, and `declare -F name` —
-the "is this function defined?" test — is a substrate gap tracked in
-[#119](https://github.com/blairham/koi-shell/issues/119).
+the "is this function defined?" test — is a known substrate gap.
 
 ## Things that changed on purpose
 
@@ -139,10 +138,10 @@ one caveat below.
 Read [docs/compat.md](compat.md) for the measured scoreboard. The ones
 you are most likely to hit:
 
-- **Tools that check `$BASH_VERSION`** take their POSIX branch, because
-  koi does not claim to be bash. Usually fine; occasionally a tool
-  refuses. Tracked in
-  [#120](https://github.com/blairham/koi-shell/issues/120).
+- **Tools that probe identity rather than features**: `BASH_VERSION`
+  answers the feature probes, but `$0` stays `koi`, so a tool that greps
+  `$0` or `$SHELL` for the literal string `bash` takes its POSIX branch.
+  Usually fine; occasionally a tool refuses.
 - **`declare -A` associative arrays** are partially supported —
   `${#map[@]}` miscounts.
 - **`${var/#pat}` / `${var/%pat}`** anchored substitution silently does
@@ -150,8 +149,8 @@ you are most likely to hit:
 - **`exec 3>&1` fd juggling** does not persist.
 - **`printf '%05.2f'`** rejects combined width.precision.
 
-All four are `mvdan.cc/sh` substrate gaps, tracked with reproductions in
-[#119](https://github.com/blairham/koi-shell/issues/119). Scripts that hit
+All four are `mvdan.cc/sh` substrate gaps, kept with reproductions so
+they can be re-verified. Scripts that hit
 them still run correctly under `bash script.sh` — koi does not change
 what `#!/bin/bash` means.
 

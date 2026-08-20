@@ -1,7 +1,7 @@
 # The competitive picture, re-measured
 
 The August 2026 sweep lost two of six research streams and asked to be
-re-run before "nobody owns the quadrant" was treated as settled (#171).
+re-run before "nobody owns the quadrant" was treated as settled.
 This is that re-run for the *measurable* half — repository facts, taken
 from the GitHub API on **2026-08-17**, not from memory or from the
 projects' own copy. Install and usage measurements were re-taken on
@@ -41,7 +41,8 @@ a plugin, or refuses to record a secret.
 
 **Posture: watch, and do not race it on compatibility percentage.**
 Both projects will converge there. The distance is the exec path and the
-ecosystem inheritance (#159), which is where the work has been.
+ecosystem inheritance — the incumbent stack running inside koi, proven
+in docs/interactive-compat.md — which is where the work has been.
 
 ### IRIS — the dangerous one
 
@@ -94,7 +95,7 @@ does not survive: where ble.sh **is** packaged, essentially nobody has
 taken it, in a population of 221,673 reporting installations. The
 add-on-into-bash pattern is the weakest-footprint thing in this whole
 category, which is independent evidence for the decision recorded in
-docs/design.md not to ship koi's UX that way (#214).
+docs/design.md not to ship koi's UX that way.
 
 **A methodological trap, recorded because it nearly went into this
 page.** Homebrew's analytics feed *does* list `ble.sh` with 82 installs
@@ -160,11 +161,12 @@ comparison against exactly the projects that distribute by `git clone` —
 ble.sh most of all. Homebrew's analytics count install *events*, not
 people.
 
-## What is still missing (#171, honestly)
+## What is still missing (honestly)
 
 **The Reddit sentiment sweep is still not run**, and the reason is still
 access rather than effort. The churn half is done — 827 comments, and it
-is what the #161/#163 work is built on — but the demand half (unmet
+is what the interactive gates and day-one-papercuts work is built on —
+but the demand half (unmet
 wants, assembled-stack fatigue against modular preference, the dotfiles
 flywheel, Reddit's AI sentiment against HN's, an independent check on
 blocks demand) has never been gathered.
@@ -213,7 +215,7 @@ were, the tools would show the retention profile alt-shells show, and
 they show the opposite.
 
 So the posture is unchanged, and now for a measured reason rather than a
-hedge: **inherit the stack rather than replace it** (#159). The answer to
+hedge: **inherit the stack rather than replace it**. The answer to
 the sentiment question changes the marketing, not the architecture.
 
 ### The proxy sweep (2026-08-19): what HN says while Reddit stays locked
@@ -245,15 +247,15 @@ clearly labeled as such:
   the blocks idea while leaving Warp over telemetry and click-to-focus:
   *"the way they organize each command+response into blocks is also
   cool for readability and copy/pasting"* (2024-11). Independent
-  support for #99's investment, from people who rejected the company
-  that shipped it first.
+  support for the blocks investment, from people who rejected the
+  company that shipped it first.
 - **AI-in-shell sentiment splits exactly along koi's design line**
   (2025–2026): auto-execution is distrusted — commenters ask for
   sandboxing, permission tiers, verification — while propose-for-review
   is welcomed. One thread flags terminal output itself as a prompt
   injection vector into agents (2026-04), which is worth carrying into
-  the ACP and blocks surfaces. #20's preview-before-execute and the #21
-  profiles are the shape this audience asks for unprompted.
+  the ACP and blocks surfaces. koi's preview-before-execute posture and
+  the sandbox profiles are the shape this audience asks for unprompted.
 
 **Watch-list re-check, same day**: brush 2,162★ (flat since the census),
 `pushed_at` within a day but the release cadence unchanged (v0.4.0

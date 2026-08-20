@@ -83,8 +83,8 @@ to solve this problem; koi does not have it.
 
 **Cross-platform builds are not downloaded.** Going from an arm64 laptop
 to an amd64 server needs a build for the far side, and koi does not
-fetch one: [#112](https://github.com/blairham/koi-shell/issues/112) settled
-the scope line at *native for the keystroke, prompt, and cd path;
+fetch one: the settled scope line is *native for the keystroke, prompt,
+and cd path;
 delegate everything else*, and a release downloader carries a package
 manager's obligations. Drop a build in
 `$XDG_CACHE_HOME/koi/remote-bin/<os>-<arch>/koi` and the error message
@@ -135,7 +135,7 @@ this binary on prod" ticket.
 ## Testing
 
 The transport is an interface (`Run`, `Interactive`, `Close`) with ssh as
-implementation #1, and that is load-bearing in two directions. `kubectl
+the first implementation, and that is load-bearing in two directions. `kubectl
 exec` and `docker exec` are the same problem with a different verb. And a
 local `sh` transport makes the whole matrix — no writable directory,
 `noexec` everywhere, truncated transfer, no `sha256sum`, unsupported
@@ -143,12 +143,15 @@ platform, probe timeout, repeat visit, uninstall — testable against a
 real POSIX shell under `t.TempDir()`, with no ssh, no network, and no
 remote host. See `internal/remote/remote_test.go`.
 
+## Clipboard over ssh
+
+`… | clip` copies to the clipboard of the terminal you are sitting at,
+not the machine the shell runs on — OSC 52, so zero forwarding and zero
+remote support are needed. `doctor` names your terminal and, when it
+ships OSC 52 switched off, which setting to flip.
+
 ## Not yet
 
-- ~~OSC-52 clipboard~~ **landed** (#140): `… | clip` copies to the
-  clipboard of the terminal you are sitting at, not the machine the shell
-  runs on — zero forwarding, zero remote support. `doctor` names your
-  terminal and, when it ships OSC 52 switched off, which setting to flip.
 - **Local-identity plugins over a reverse-forwarded socket**, so a remote
   session can reach local plugins while AWS SSO tokens, the history
   store, and the credential store never land on the server.

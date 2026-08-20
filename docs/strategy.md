@@ -2,8 +2,8 @@
 
 What the research actually supports, what it does not, and what that
 means for what koi claims. This page exists because three numbers we
-were repeating are wrong and one positioning premise was overturned
-(#169) — and because the corrections are more useful than the claims
+were repeating are wrong and one positioning premise was overturned —
+and because the corrections are more useful than the claims
 were.
 
 ## Three numbers to stop using
@@ -18,7 +18,7 @@ Measured on Homebrew installs: fzf/fish is **3:1**, starship/fish is
 and fzf, not by prompt or UX tools. fish ≈ zsh on Homebrew. The honest
 version of the claim is narrower and still useful: *people install
 add-ons far more readily than they change shells*, which is an argument
-for inheriting the ecosystem (#159), not for a 10:1 headline.
+for inheriting the ecosystem, not for a 10:1 headline.
 
 **3. Stack Overflow has never surveyed shells.** "zsh" appears zero
 times in the 2021–2025 surveys; everything is lumped into "Bash/Shell
@@ -28,12 +28,12 @@ survey**, in either direction.
 
 ## The premise that was wrong
 
-AGENTS.md used to say the tier-2 plugin system is the differentiator —
-"so it's in the name". The research falsifies that:
+An earlier framing held that the tier-2 plugin system is the
+differentiator — "so it's in the name". The research falsifies that:
 
 - **nushell already ships out-of-process plugins in any language.** The
   architecture is not unique. What is unique is the *distribution
-  discipline* around it (#168): a version-independent ABI and a
+  discipline* around it: a version-independent ABI and a
   deadline nobody can block — and even those are advantages, not moats.
 - **Every fish-parity UX feature is replicable as a zsh or bash
   add-on.** `ble.sh` does fish-grade syntax highlighting and
@@ -44,7 +44,7 @@ AGENTS.md used to say the tier-2 plugin system is the differentiator —
 
   The tempting inversion — ship koi's own UX as an add-on, meet people
   in the shell they run, convert later — is **decided against** and
-  recorded in docs/design.md (#214). Briefly: it is ble.sh's and IRIS's
+  recorded in docs/design.md. Briefly: it is ble.sh's and IRIS's
   game rather than ours, every add-on removes a reason to switch, fish's
   plateau is partly its features leaking out as zsh plugins, and N shells
   × M integrations spends the maintainer count that docs/adoption.md
@@ -65,7 +65,7 @@ Everything else is table stakes we happen to have.
 
 The lifecycle evidence behind this section — the composite law, the
 churn funnel stage by stage, and the growth mechanics ranked by whether
-they transfer — is recorded in [docs/adoption.md](adoption.md) (#207).
+they transfer — is recorded in [docs/adoption.md](adoption.md).
 This page says what koi should *claim*; that one says what determines
 whether anyone ever runs it.
 
@@ -148,12 +148,13 @@ that should drive decisions.
 
 The **sentiment** half is still ungathered, and it is the part that would
 say whether those same people would have preferred one coherent tool.
-#171 carries the method, including the two access notes that matter:
+docs/competitors.md carries the method, including the two access notes
+that matter:
 reddit.com returns 403 to server-side fetchers, and `api.pullpush.io`
 asked us to stop — an operator policy to respect, not a throttle to pace
 around. The sanctioned route is Reddit's official OAuth API, which needs
 credentials a human creates.
 
 Either way the posture is the same, and now for a measured reason rather
-than as a hedge: **inherit the stack rather than replace it** (#159). The
+than as a hedge: **inherit the stack rather than replace it**. The
 sentiment answer changes the marketing, not the architecture.

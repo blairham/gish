@@ -5,13 +5,13 @@
 1. **Interactive experience of zsh** — completion menus, widgets, rich prompts — with cleaner, discoverable configuration.
 2. **Scripting substrate of bash/POSIX** — scripts and muscle memory carry over; `mvdan.cc/sh` gives us a battle-tested parser/interpreter to grow a zsh dialect on top of.
 3. **Plugins with a contract** — the headline feature. Two tiers, below.
-4. **Cross-platform** — macOS and Linux first-class from day one; Windows a real target, *sequenced* (#110): the portability invariants and the windows CI gate hold now, native interactive (Windows Terminal, not just WSL) lands in v1.x after the unix beachhead. WSL2 is the supported Windows story until then.
+4. **Cross-platform** — macOS and Linux first-class from day one; Windows a real target, *sequenced*: the portability invariants and the windows CI gate hold now, native interactive (Windows Terminal, not just WSL) lands in v1.x after the unix beachhead. WSL2 is the supported Windows story until then.
 
 ## Two-tier plugin system
 
 ### Tier 1 — script plugins (migration escape hatch)
 
-*Demoted from "the adoption story" by [#105](https://github.com/blairham/koi-shell/issues/105) — see Decisions.*
+*An escape hatch, not the adoption story — see Decisions.*
 The adoption story is fish-grade defaults + bash paste-compat + the
 native stack; tier 1 exists so a switcher's handful of
 must-have zsh plugins is not a blocker, not so the .zshrc pile moves in.
@@ -63,8 +63,8 @@ The line editor and prompt engine consume both tiers through one internal interf
 3. **Tier-2 dispatch** — plugin discovery/config, resident lifecycle, deadlines; first real plugins: git prompt segment, file/carapace-style completion.
 4. **Completion UI** — menu selection, descriptions, multi-provider merge.
 5. **Tier-1 pattern compat** — precmd/preexec, aliases/exports, completion registration; the top plugins' *behaviors*, natively or by pattern.
-6. ~~**zsh dialect** — corpus-driven parser/interpreter extensions.~~ *Off the critical path per #105; revisit on demonstrated demand.*
-7. **Windows hardening** *(paused per #110 — resumes post-v1)* — ConPTY line editor path, job-object process groups.
+6. **zsh dialect** — corpus-driven parser/interpreter extensions. *Off the critical path (see Decisions); revisit on demonstrated demand.*
+7. **Windows hardening** *(paused — resumes post-v1)* — ConPTY line editor path, job-object process groups.
 
 ## Decisions
 
@@ -78,19 +78,19 @@ The line editor and prompt engine consume both tiers through one internal interf
   The proposal bundles two questions, and the first is already solved:
   **external authors need nothing moved.** `pkg/pluginsdk/v1` and
   `pkg/pluginapi/v1` exist precisely so a plugin compiles outside this
-  repo (#188), `abi_test.go` freezes what the protos cannot describe,
-  #168's CI gate fails anything that would break a compiled plugin, and
+  repo, `abi_test.go` freezes what the protos cannot describe,
+  the ABI CI gate fails anything that would break a compiled plugin, and
   the manifest's `source` entries plus `plugmgr`/ghr install from GitHub
   releases today. GitHub *is* the registry — the model the zsh and vim
   ecosystems grew huge on with no central index at all, and the nushell
-  lesson (#168) is that plugin ecosystems live or die on ABI stability,
+  lesson is that plugin ecosystems live or die on ABI stability,
   not on a registry nushell also does not have.
 
   Keeping the first-party plugins in-tree is what makes the frozen-v1
   claim enforceable rather than aspirational: they compile in the same
   CI run as the host, so a proto or SDK change that would break a plugin
   fails the PR that makes it, not a downstream repo weeks later.
-  koi-p10k is #30's proof the ThemeProvider round trip works, koi-direnv
+  koi-p10k is the standing proof the ThemeProvider round trip works, koi-direnv
   tests against real direnv, koi-atuin against real atuin — they are
   reference implementations and living contract tests, and the repo is
   their documentation. Splitting them out buys version skew and a second
@@ -99,13 +99,12 @@ The line editor and prompt engine consume both tiers through one internal interf
   the user chooses to install; in-repo has never meant in-shell.
 
   A hosted registry fails three tests this file and its neighbors
-  already record. #90 said it in as many words — the `plugin browse`
-  starter list "is explicitly not a registry (koi does not host, index,
-  or vouch for plugins)." docs/adoption.md names **maintainer count as
+  already record. The `plugin browse` starter list is explicitly not a
+  registry — koi does not host, index, or vouch for plugins. docs/adoption.md names **maintainer count as
   koi's zeroed factor**, and a registry is a standing service: submission
   review, takedowns, namespace disputes, compromised-plugin incident
   response — a second product staffed by the same zero spare
-  maintainers. And the trust stance is load-bearing (it is why #210
+  maintainers. And the trust stance is load-bearing (it is why the update notice
   refused even a phone-home version check): a koi-branded registry
   implies koi vetted its contents, and the first malicious submission
   that ships through it spends the differentiator that converts — the
@@ -128,15 +127,15 @@ The line editor and prompt engine consume both tiers through one internal interf
   **Re-raised 2026-08-20; re-affirmed unchanged.** Nothing in the
   reasoning moved, and the gate did its job — answering took three
   checks rather than a re-litigation. All three fail: koi has zero tags
-  and zero releases (v0.0.0 was pulled 2026-08-17), so post-1.0 is not
-  close; every plugin that exists is first-party in `cmd/`, so there are
-  no third-party plugins; and with none to find, no user can be failing
-  to find them. There is no demand data because there is not yet a
-  population that could generate it. The next re-proposal should open
-  with those three numbers having changed, not with the idea.
+  and zero releases (the v0.0.0 tag was pulled 2026-08-17), so post-1.0
+  is not close; every plugin that exists is first-party in `cmd/`, so
+  there are no third-party plugins; and
+  with none to find, no user can be failing to find them. There is no
+  demand data because there is not yet a population that could generate
+  it. The next re-proposal should open with those three numbers having
+  changed, not with the idea.
 
-- **No cross-shell components** (2026-08,
-  [#214](https://github.com/blairham/koi-shell/issues/214)): koi does not
+- **No cross-shell components** (2026-08): koi does not
   ship its highlighting, autosuggestions or prompt engine as add-ons for
   bash and zsh. The pieces stay in the shell.
 
@@ -172,9 +171,9 @@ The line editor and prompt engine consume both tiers through one internal interf
 
   The on-ramp it was meant to serve is already covered by moves that do
   not arm anyone: koi hosts the incumbent stack first-class and proves it
-  (#159 — starship, direnv, fzf, zoxide, atuin and mise run through their
+  (starship, direnv, fzf, zoxide, atuin and mise run through their
   own bash init lines), `koi migrate` imports an existing setup by parsing
-  it (#160), and a trial costs one tab rather than a `chsh` (#212).
+  it, and a trial costs one tab rather than a `chsh`.
   `cmd/koi-p10k` does serve the prompt engine over the plugin contract —
   to *koi* plugins, which is the opposite direction.
 
@@ -182,21 +181,19 @@ The line editor and prompt engine consume both tiers through one internal interf
   components that create pull *toward* koi rather than parity *inside* the
   incumbent are fine, case by case. The test is whether the thing makes
   someone else's shell better or makes koi visible — the compat scoreboard
-  tooling (#211) and a read-only history viewer pass it; a
+  tooling and a read-only history viewer pass it; a
   `koi-highlight.zsh` does not.
 
-  Revisit if the demand half of the Reddit corpus (#171) comes back
+  Revisit if the demand half of the Reddit corpus comes back
   saying people want the unbundled stack and will not adopt a shell to
   get it. That would not make add-ons a good business, but it would mean
   the switch-to-koi path is closed and a different strategy is needed —
   which is a bigger decision than this one.
 
-- **ACP on the agent edge, in two places** (2026-08,
-  [#166](https://github.com/blairham/koi-shell/issues/166),
-  [#167](https://github.com/blairham/koi-shell/issues/167), docs/acp.md): the
+- **ACP on the agent edge, in two places** (2026-08, docs/acp.md): the
   inbound role (an ACP agent answers `??` and `explain`) is a plugin;
   the outbound role (an agent's commands execute inside koi) is core,
-  because a plugin may never hold an exec channel (#34).
+  because a plugin may never hold an exec channel.
 
   The spike's load-bearing question — does the terminal capability have
   real adopters — resolved yes, and better than expected: the capability
@@ -215,17 +212,16 @@ The line editor and prompt engine consume both tiers through one internal interf
   Recorded caveat, so it is not re-litigated into a slogan: the
   *user-facing* claim ("people are leaving zsh because agents assume
   bash") is **not evidenced** — 2 HN accounts, 0 of 827 in a Reddit
-  corpus. Build it for the substrate, not the story (#169).
+  corpus. Build it for the substrate, not the story.
 
-- **koi claims bash's interface, not bash's identity** (2026-08,
-  [#120](https://github.com/blairham/koi-shell/issues/120)): `BASH_VERSION`
+- **koi claims bash's interface, not bash's identity** (2026-08): `BASH_VERSION`
   and `BASH_VERSINFO` report a modern bash; `$0` stays `koi`, and
   `KOI_VERSION` says exactly what is running.
 
   The issue's own recommendation was the opposite — claim nothing, and
   shim per tool — with one stated condition for revisiting: evidence
   that specific popular tools are unusable *and* that their bash hook
-  passes. The #159 matrix produced exactly that. fzf chooses between two
+  passes. The ecosystem matrix produced exactly that. fzf chooses between two
   Ctrl-T implementations on `((BASH_VERSINFO[0] < 4))`: a readline
   *macro* built from editing commands including `shell-expand-line`,
   which koi does not emulate and will not, or `bind -x`, which koi
@@ -242,8 +238,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   claim does outrun the substrate, docs/compat.md already lists the gaps
   by name and `doctor` reports them.
 
-- **One theme engine, two config dialects** (2026-08,
-  [#134](https://github.com/blairham/koi-shell/issues/134)): `p10k` is the
+- **One theme engine, two config dialects** (2026-08): `p10k` is the
   engine; the `koi` theme's knobs (`KOI_THEME_SEGMENTS`,
   `KOI_THEME_COLOR_*`, `_LINES`, `_FRAME`, `_SEP`, `_RPROMPT`) are a
   second, smaller dialect over the same idea, and they stay — they are a
@@ -268,16 +263,15 @@ The line editor and prompt engine consume both tiers through one internal interf
   it is exactly the property an import-only surface destroys.
 
 - **The engine is named for what it does, not for one of its dialects**
-  (2026-08, [#184](https://github.com/blairham/koi-shell/issues/184)): the
+  (2026-08): the
   command is `prompt`, the package is `internal/promptengine`, and
   `p10k` stays as a working alias.
 
-  #134 above settled that there is one engine with two dialects, but the
+  The decision above settled that there is one engine with two dialects, but the
   command surface still spelled the engine `p10k` — the name of one of
   those dialects, and of somebody else's project. Harmless while every
   preset was powerlevel10k's own; not harmless once the engine serves a
-  gallery from three upstreams
-  ([#186](https://github.com/blairham/koi-shell/issues/186)), where
+  gallery from three upstreams, where
   `p10k preset tokyo-night` would claim powerlevel10k ships a look it
   does not, and would set an expectation of fidelity to a project that
   never authored it.
@@ -297,9 +291,8 @@ The line editor and prompt engine consume both tiers through one internal interf
   every other — a trap for whoever edits it next, bought for six
   characters.
 
-- **Other prompt-config dialects are bridged, not converted** (2026-08,
-  [#185](https://github.com/blairham/koi-shell/issues/185)): koi reads no
-  prompt format beyond its own two dialects (#134). `starship.toml`,
+- **Other prompt-config dialects are bridged, not converted** (2026-08): koi reads no
+  prompt format beyond its own two dialects. `starship.toml`,
   oh-my-posh's JSON/YAML/TOML, powerline-shell's JSON, and oh-my-zsh
   `.zsh-theme`s are rendered by their own tools, not reimplemented.
 
@@ -308,7 +301,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   `precmd`, calls omz library functions — and converting "any omz theme"
   means implementing zsh plus omz's lib, the compat surface this file
   already rules out. There, the answer is **named presets, no
-  converter**: hand-built looks for the popular themes (#186) beat a
+  converter**: hand-built looks for the popular themes beat a
   general translator that half-works, and `koi migrate` already does the
   honest thing — names the theme and points at the nearest built-in.
 
@@ -319,14 +312,14 @@ The line editor and prompt engine consume both tiers through one internal interf
   it.** Someone with a tuned `starship.toml` wants starship's exact
   output, and a 95%-faithful reimplementation is worse than a subprocess
   — they see the difference every three seconds, and koi owns it
-  forever. The #171 evidence says the same from the user side: the stack
+  forever. The user-research evidence says the same from the user side: the stack
   is retained (starship holds a 62% popcon use rate), and the fatigue
   that exists is about trusting tools, not about running them. The
   bridges already exist and are verified, not presumed:
   `KOI_THEME=starship` renders through the user's binary, budgeted with
-  a stale fallback (#45), and oh-my-posh arrives the way its own init
+  a stale fallback, and oh-my-posh arrives the way its own init
   ships — a PROMPT_COMMAND hook that sets PS1, which koi renders as a
-  theme (#159). Measured under a real pty against oh-my-posh 30.6: the
+  theme. Measured under a real pty against oh-my-posh 30.6: the
   eval installs the hook and the next prompt is omp's own render, git
   segment included.
 
@@ -346,8 +339,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   renderer, bridged.
 
 - **Structured data uses `test`'s operator vocabulary, or not at all**
-  (2026-08, [#104](https://github.com/blairham/koi-shell/issues/104),
-  docs/structured.md): the exploration turned up that the shape everyone
+  (2026-08, docs/structured.md): the exploration turned up that the shape everyone
   writes for this feature — `... | where %cpu > 50` — parses today as
   `where %cpu` with stdout redirected, silently **creating a file named
   `50`**. "Zero new grammar" and "nushell's comparison syntax" cannot
@@ -363,8 +355,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   adoption problem. Sequenced after v1; if cut, the honest reason is
   that the native eight-tool stack already covers the jq/awk slot.
 
-- **One prompt pipeline; a small, frozen escape set** (2026-08,
-  [#109](https://github.com/blairham/koi-shell/issues/109)): the #6
+- **One prompt pipeline; a small, frozen escape set** (2026-08): the original
   `KOI_PROMPT` expander was explicitly a stopgap until the prompt
   engine existed. It does now, so the manual override became the
   **"literal" theme** — every prompt (plain, p10k, starship, plugin,
@@ -376,16 +367,15 @@ The line editor and prompt engine consume both tiers through one internal interf
   `%d` full cwd, `%?` exit status, `%#` prompt char, `%p{id}` plugin
   segment, `%%` literal. zsh's spellings are first-class aliases — the
   person writing `KOI_PROMPT` is usually porting a zsh `PROMPT` and
-  their fingers know `%n`/`%m`/`%~` (the #96 lesson). Unknown escapes
+  their fingers know `%n`/`%m`/`%~` (the muscle-memory lesson). Unknown escapes
   pass through untouched; koi does not grow zsh's full `PROMPT_SUBST`
   surface by accident.
 
-- **A manifest, not a modifier language** (2026-08,
-  [#108](https://github.com/blairham/koi-shell/issues/108)): plugin
+- **A manifest, not a modifier language** (2026-08): plugin
   configuration is data — `source`, `kind`, `pin`, `lazy` in
   `$XDG_CONFIG_HOME/koi/plugins.toml` — not a vocabulary of ice
   modifiers (`from"gh-r" as"program" pick"bin/fzf" wait"1" lucid`) to
-  learn before installing one plugin. The #23 port carried zi's full
+  learn before installing one plugin. The zi port carried its full
   surface in because it was the engine's native idiom; reproducing that
   idiom faithfully pointed the wrong way for a shell whose pitch is
   escaping the framework tax, and pre-1.0 was the free window to shrink
@@ -396,8 +386,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   with a one-time notice. Ice syntax is documented only on the migration
   path.
 
-- **The native/delegate line** (2026-08,
-  [#112](https://github.com/blairham/koi-shell/issues/112)): koi ships
+- **The native/delegate line** (2026-08): koi ships
   natively what lives in the **keystroke, prompt, and cd path** —
   highlighting, suggestions, completion, prompt segments, env diffs,
   version *switching*, directory jumping — because those are the places
@@ -416,17 +405,16 @@ The line editor and prompt engine consume both tiers through one internal interf
   The guardrail matters more than the flag: "ship the eight-tool stack
   natively" is a strategy that needs a stopping rule, and this is it.
 
-- **Host agents; do not be one** (2026-08,
-  [#111](https://github.com/blairham/koi-shell/issues/111)): the `??` compose
+- **Host agents; do not be one** (2026-08): the `??` compose
   and `explain` surfaces match the researched demand for AI in a shell
   point for point; *plan orchestration* was nowhere in that signal, and
   competing with funded agentic CLIs that already run inside the shell
   is a losing trade. The stronger position is that koi is the best
-  **host** for other people's agents — sandbox profiles on the exec path
-  (#21), permission-gated env (#12), secret-free history (#10) — which
+  **host** for other people's agents — sandbox profiles on the exec path,
+  permission-gated env, secret-free history — which
   is a claim no agent CLI can make about itself.
 
-  The #34 `agent` builtin is **frozen, not deleted**: experimental,
+  The `agent` builtin is **frozen, not deleted**: experimental,
   unadvertised, and receiving no further investment. It is not cut,
   because the proposed alternative does not survive contact with the
   architecture — moving orchestration behind the plugin boundary would
@@ -441,7 +429,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   agent" is the Warp-shaped red flag the launch playbook exists to avoid.
 
 - **Tier-1 zsh compat is an escape hatch, not the adoption story**
-  (2026-08, [#105](https://github.com/blairham/koi-shell/issues/105)):
+  (2026-08):
   the Aug 2026 research is unambiguous — config fatigue is the #1
   switching trigger (people flee the .zshrc pile, they don't pack it);
   fish built the largest post-zsh user base with zero compat while
@@ -449,15 +437,15 @@ The line editor and prompt engine consume both tiers through one internal interf
   year; and koi already ships the top zsh plugins' behaviors natively
   (autosuggestions, highlighting, p10k-class prompt, completions,
   direnv/asdf). Acquisition-critical compat is bash *paste* compat
-  (mvdan/sh, proven by the #101 scoreboard). Tier 1 is therefore
+  (mvdan/sh, proven by the compat scoreboard). Tier 1 is therefore
   scoped to pattern compat, the zsh dialect milestone leaves the
   critical path, and the freed effort goes to the differentiators that
-  win threads (#99 blocks, #98 ssh, #101/#102 published numbers). The
+  win threads (blocks, `koi ssh`, the published compat and bench numbers). The
   escape hatch stays — elvish/nushell show an ecosystem of zero is
   worse than an ecosystem of sourced scripts — it just stops being
   the bet.
 
-- **No `zsh -c` delegation shim** (2026-08, [#107](https://github.com/blairham/koi-shell/issues/107)):
+- **No `zsh -c` delegation shim** (2026-08):
   **the compat boundary is honest, not smoothed over with a chimera.**
   The once-planned escape hatch — delegating unparsed zsh constructs to
   an installed zsh — is struck before any code existed. It contradicted
@@ -471,7 +459,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   running in zsh, where the user already had it working. Do not
   re-propose without new facts.
 
-- **TTY input approach** (2026-08, [#1](https://github.com/blairham/koi-shell/issues/1)):
+- **TTY input approach** (2026-08):
   **own the editor core; borrow the terminal plumbing.** koi writes the
   buffer/cursor model, keymap engine, kill ring, undo, multi-line
   continuation, and the diff-based inline renderer — the render loop is
@@ -489,7 +477,7 @@ The line editor and prompt engine consume both tiers through one internal interf
   or single-maintainer risk at the heart of the shell, with render
   pipelines that can't host plugin hooks).
 
-- **CommandProvider** (2026-08, [#11](https://github.com/blairham/koi-shell/issues/11)):
+- **CommandProvider** (2026-08):
   plugins register commands over gRPC. Precedence: interpreter/koi
   builtin names are reserved (claims rejected with a warning); shell
   functions shadow plugin commands (dispatched before the exec seam);
@@ -502,11 +490,11 @@ The line editor and prompt engine consume both tiers through one internal interf
   launching plugins.
 
 - **The ssh story is a pushed binary, not a presence on the box**
-  (2026-08, [#98](https://github.com/blairham/koi-shell/issues/98)):
+  (2026-08):
   **`koi ssh` copies a binary, execs it for the interactive session,
   and leaves nothing else behind.** The remote `$SHELL` is never
   changed and remote dotfiles are never written — the POSIX-clean
-  non-interactive contract (#41) exists precisely so `ssh host cmd`,
+  non-interactive contract exists precisely so `ssh host cmd`,
   `scp`, `rsync`, and git-over-ssh keep working, and a shell that
   announces itself from a remote rc file breaks all four. Every failure
   path — no writable directory, `noexec` on every candidate, unsupported
@@ -529,6 +517,5 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 - Prompt styling vocabulary for tier 2 (`RenderResponse.text`): markup subset vs. structured spans. Raw text until decided.
 - Tier-1 widget shim depth: which zle APIs are worth emulating vs. declaring out of scope.
-- ~~**`EnvProvider`** (direnv-class)~~ — resolved (#12): both mechanisms, layered. Trust is per-(plugin, directory, diff-hash) — nothing applies without an explicit `trust allow`, and a changed diff re-pends (direnv's edit-reprompts semantics). A deny-list (loader hooks, `IFS`, startup-file vars, `KOI_*`) is stripped host-side before a proposal exists; `PATH` is settable but only ever through the visible allow flow. Requests carry the allowlisted env subset. Applied diffs revert when the shell leaves the proposal's subtree.
 
 The plugin roadmap itself — which plugins, in what order, under which latency budgets — lives in [plugins.md](plugins.md).
