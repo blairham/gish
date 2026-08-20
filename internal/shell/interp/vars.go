@@ -343,8 +343,11 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 				&syntax.Lit{Value: "0"},
 			}}
 		case expand.Associative:
+			// bash lands a scalar assignment to an associative array
+			// under the key "0", not the empty key: m=x on a declared
+			// -A answers ([0]="x"). Measured against 5.3 (#378).
 			index = &syntax.Word{Parts: []syntax.WordPart{
-				&syntax.DblQuoted{},
+				&syntax.Lit{Value: "0"},
 			}}
 		}
 	}
@@ -352,6 +355,18 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 		r.setVar(name, vr)
 		return
 	}
+
+	// The element paths below write through prev, which for a declared
+	// but unset array still carries Set=false — and any attributes the
+	// caller just applied live on vr, not prev. Merge both, so setting
+	// an element makes the variable set (`declare -a c; c=4` must print
+	// as an array, #378) and keeps freshly applied attributes
+	// (`export a=5` on an array keeps -x).
+	prev.Set = true
+	prev.Local = vr.Local
+	prev.Exported = vr.Exported
+	prev.ReadOnly = vr.ReadOnly
+	prev.Integer = vr.Integer
 
 	// from the syntax package, we know that value must be a string if index
 	// is non-nil; nested arrays are forbidden.
@@ -408,6 +423,69 @@ func cutElemSubscript(arg string) (name, sub string, ok bool) {
 		return arg[:i], arg[i+1 : len(arg)-1], true
 	}
 	return "", "", false
+}
+
+// varIsSet answers test's -v the way bash does (#378): a subscripted
+// name tests that element — with @ or * meaning "any element" — and a
+// bare array name tests element 0 (key "0" for an associative array),
+// not whether the array has elements at all: A[a]=1 leaves [ -v A ]
+// false. A scalar is element 0 of itself, so -v s[0] and -v s[@] answer
+// whether s is set. Measured against 5.3.
+func (r *Runner) varIsSet(x string) bool {
+	name, sub, hasSub := x, "", false
+	if n, s, ok := cutElemSubscript(x); ok {
+		name, sub, hasSub = n, s, true
+	}
+	vr := r.lookupVar(name)
+	if n, v := vr.Resolve(r.writeEnv); n != "" {
+		vr = v
+	}
+	subIndex := func() (int, bool) {
+		expr, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
+		if err != nil || expr == nil {
+			return 0, false
+		}
+		return r.arithm(expr), true
+	}
+	switch vr.Kind {
+	case expand.Indexed:
+		if hasSub && (sub == "@" || sub == "*") {
+			return len(vr.List) > 0
+		}
+		k := 0
+		if hasSub {
+			var ok bool
+			if k, ok = subIndex(); !ok {
+				return false
+			}
+			if k < 0 {
+				if k += shinternal.IndexedMax(vr.List, vr.Indexes) + 1; k < 0 {
+					r.errf("%s: bad array subscript\n", name)
+					return false
+				}
+			}
+		}
+		if vr.Indexes != nil {
+			return slices.Contains(vr.Indexes, k)
+		}
+		return k >= 0 && k < len(vr.List)
+	case expand.Associative:
+		// @ and * are ordinary keys here, not "any element": bash
+		// answers [ -v B[@] ] false on a populated associative array
+		// without an "@" key — the post-5.1 literal-key rule.
+		key := "0"
+		if hasSub {
+			key = sub
+		}
+		_, ok := vr.Map[key]
+		return ok
+	default:
+		if !hasSub || sub == "@" || sub == "*" {
+			return vr.IsSet()
+		}
+		k, ok := subIndex()
+		return ok && k == 0 && vr.IsSet()
+	}
 }
 
 // unsetElem unsets a single element of an indexed or associative array, like

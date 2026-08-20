@@ -1016,6 +1016,103 @@ var runTests = []runTest{
 		`declare -ai a=([0]="1")` + "\n",
 	},
 
+	// The array attribute is sticky (#378): a naked declare -a/-A
+	// declares an unset array that prints bare, a later scalar
+	// assignment fills element 0 instead of flattening to a scalar,
+	// converting a scalar keeps its value at element 0, and converting
+	// one array kind to the other is an error with the data kept.
+	{
+		`declare -a c; declare -p c`,
+		"declare -a c\n",
+	},
+	{
+		`declare -A m; declare -p m`,
+		"declare -A m\n",
+	},
+	{
+		`declare -a c; c=4; declare -p c`,
+		`declare -a c=([0]="4")` + "\n",
+	},
+	{
+		`declare -a r; r="(5)"; declare -p r`,
+		`declare -a r=([0]="(5)")` + "\n",
+	},
+	{
+		`x=5; declare -a x; declare -p x`,
+		`declare -a x=([0]="5")` + "\n",
+	},
+	{
+		`x=5; declare -A x; declare -p x`,
+		`declare -A x=([0]="5" )` + "\n",
+	},
+	{
+		`declare -a q=5; declare -p q`,
+		`declare -a q=([0]="5")` + "\n",
+	},
+	{
+		`declare -a x=(1); declare -A x; echo rc=$?; declare -p x`,
+		"declare: x: cannot convert indexed to associative array\nrc=1\n" +
+			`declare -a x=([0]="1")` + "\n #JUSTERR",
+	},
+	{
+		`declare -A m=([k]=v); declare -a m; echo rc=$?; declare -p m`,
+		"declare: m: cannot convert associative to indexed array\nrc=1\n" +
+			`declare -A m=([k]="v" )` + "\n #JUSTERR",
+	},
+	{
+		`declare -ia n; n=2+3; declare -p n`,
+		`declare -ai n=([0]="5")` + "\n",
+	},
+	{
+		`declare -a d; d[3]=x; declare -p d`,
+		`declare -a d=([3]="x")` + "\n",
+	},
+	{
+		`declare -a e; e+=(z); declare -p e`,
+		`declare -a e=([0]="z")` + "\n",
+	},
+	{
+		`a=(1 2); export a=5; declare -p a`,
+		`declare -ax a=([0]="5" [1]="2")` + "\n",
+	},
+	{
+		`declare -A f=([a]=b); declare f[qux]=assigned; echo "${f[qux]}-${f[a]}"`,
+		"assigned-b\n",
+	},
+	{
+		`declare -A m=([a]=b); m=x; echo "${m[0]}-${m[a]}"`,
+		"x-b\n",
+	},
+
+	// test -v on arrays (#378): a bare array name tests element 0, a
+	// subscript tests that element (@/* meaning any, except that they
+	// are ordinary keys for an associative array), and a scalar is
+	// element 0 of itself.
+	{
+		`typeset -A A; A[a]=1; [ -v A ] && echo set || echo unset`,
+		"unset\n",
+	},
+	{
+		`a[1]=1; [ -v a ] || echo unset; [ -v "a[1]" ] && echo e1; [ -v "a[@]" ] && echo any`,
+		"unset\ne1\nany\n",
+	},
+	{
+		`s=x; [ -v "s[0]" ] && echo s0; [ -v "s[@]" ] && echo sat; [ -v "s[1]" ] || echo no1`,
+		"s0\nsat\nno1\n",
+	},
+	{
+		`declare -A B; B[k]=v; [ -v "B[@]" ] || echo nokey; B[@]=x; [ -v "B[@]" ] && echo litkey`,
+		"nokey\nlitkey\n",
+	},
+	{
+		`a=(x y); [ -v "a[-1]" ] && echo neg`,
+		"neg\n",
+	},
+	{
+		`a=(x y); [ -v "a[-5]" ]`,
+		"a: bad array subscript\nexit status 1 #JUSTERR",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
