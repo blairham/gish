@@ -301,6 +301,13 @@ func (r *Runner) delVar(name string) {
 		r.exit.code = 1
 		return
 	}
+	if name == "GLOBIGNORE" {
+		// Unsetting GLOBIGNORE turns the dotglob option off — even when
+		// dotglob was set by hand, and even when GLOBIGNORE was never
+		// set. Measured against bash 5.3 (#375).
+		r.opts[optDotGlob] = false
+		r.updateExpandOpts()
+	}
 }
 
 func (r *Runner) setVarString(name, value string) {
@@ -315,6 +322,14 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
 		return
+	}
+	if name == "GLOBIGNORE" && vr.Kind == expand.String && vr.Str != "" {
+		// Assigning a non-null GLOBIGNORE turns the dotglob option on.
+		// bash mutates the real option — shopt reports it on and
+		// shopt -u turns it back off — where a null assignment changes
+		// nothing and unset turns it off. Measured against 5.3 (#375).
+		r.opts[optDotGlob] = true
+		r.updateExpandOpts()
 	}
 }
 

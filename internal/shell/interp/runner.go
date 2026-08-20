@@ -214,6 +214,7 @@ func (r *Runner) updateExpandOpts() {
 	r.ecfg.NoBraces = !r.opts[optBraceExpand]
 	r.ecfg.NoUnset = r.opts[optNoUnset]
 	r.ecfg.ExtGlob = r.opts[optExtGlob]
+	r.ecfg.FailGlob = r.opts[optFailGlob]
 }
 
 func (r *Runner) expandErr(err error) {
@@ -235,6 +236,12 @@ func (r *Runner) expandErr(err error) {
 		// An arithmetic error in an expansion is the same input-unit
 		// abandonment (#366): bash's `echo "${x:bad}"` loses the rest
 		// of the -c string and a script continues at the next line.
+		r.exit.code = 1
+		r.exit.aborting = true
+	case strings.HasPrefix(errMsg, "no match: "):
+		// failglob is the same abandonment shape (#375): -c loses the
+		// rest of the string and exits 1, a script file continues at
+		// the next line. Measured against 5.3.
 		r.exit.code = 1
 		r.exit.aborting = true
 	case errMsg == "invalid indirect expansion":

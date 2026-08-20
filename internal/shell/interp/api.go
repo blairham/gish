@@ -955,6 +955,11 @@ var bashOptsTable = [...]bashOpt{
 		supported:    true,
 	},
 	{
+		name:         "failglob",
+		defaultState: false,
+		supported:    true,
+	},
+	{
 		name:         "globstar",
 		defaultState: false,
 		supported:    true,
@@ -1015,7 +1020,6 @@ var bashOptsTable = [...]bashOpt{
 		name:         "extquote",
 		defaultState: true,
 	},
-	{name: "failglob"},
 	{
 		name:         "force_fignore",
 		defaultState: true,
@@ -1102,6 +1106,7 @@ const (
 	optExpandAliases
 	optExtDebug
 	optExtGlob
+	optFailGlob
 	optGlobStar
 	optLastPipe
 	optNoCaseGlob

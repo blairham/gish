@@ -272,6 +272,13 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			} else if _, ok := r.Funcs[arg]; ok && funcs {
 				delete(r.Funcs, arg)
 			}
+			if vars && arg == "GLOBIGNORE" {
+				// bash turns dotglob off on `unset GLOBIGNORE` even when
+				// the variable was never set (#375); delVar covers the
+				// set case, this covers the rest.
+				r.opts[optDotGlob] = false
+				r.updateExpandOpts()
+			}
 		}
 	case "echo":
 		newline, doExpand := true, false

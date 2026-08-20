@@ -4678,6 +4678,111 @@ done <<< 2`,
 		"ŀfoo\n",
 	},
 
+	// failglob aborts the input unit on a matchless pattern (#375): the
+	// -c string loses its remainder and exits 1, and it outranks
+	// nullglob; an invalid pattern stays a literal word instead.
+	{
+		"shopt -s failglob; echo missing-*; echo never",
+		"no match: missing-*\nexit status 1 #JUSTERR",
+	},
+	{
+		"shopt -s nullglob failglob; echo missing-* end; echo never",
+		"no match: missing-*\nexit status 1 #JUSTERR",
+	},
+	{
+		"shopt -s failglob; echo [x; echo after",
+		"[x\nafter\n",
+	},
+	// GLOBIGNORE filters glob results and implies dotglob while set
+	// (#375); patterns match the produced path string verbatim, so a
+	// basename ignore does not reach into subdirectories.
+	{
+		"touch a.h a.c; GLOBIGNORE='*.h'; echo *",
+		"a.c\n",
+	},
+	// Assigning a non-null GLOBIGNORE turns the real dotglob option on
+	// — shopt reports it and shopt -u undoes it — while unsetting
+	// GLOBIGNORE turns dotglob off even when it was set by hand.
+	{
+		"touch .h a.c; GLOBIGNORE=zz; echo *; unset GLOBIGNORE; echo *",
+		".h a.c\na.c\n",
+	},
+	{
+		"touch .h a.c; GLOBIGNORE=zz; shopt -u dotglob; echo *",
+		"a.c\n",
+	},
+	{
+		"touch .h a.c; GLOBIGNORE=zz; shopt dotglob | sed 's/[\t ][\t ]*/ /g'",
+		"dotglob on\n",
+	},
+	{
+		"touch .h a.c; shopt -s dotglob; unset GLOBIGNORE; echo *",
+		"a.c\n",
+	},
+	{
+		"mkdir d; touch d/b.h; GLOBIGNORE='*.h'; echo d/* | sed 's@\\\\@/@g'",
+		"d/b.h\n",
+	},
+	{
+		"mkdir d; touch d/b.h; GLOBIGNORE='*/*.h'; echo d/* | sed 's@\\\\@/@g'",
+		"d/*\n",
+	},
+	// GLOBSORT reorders glob results (#375): - reverses, ties fall back
+	// to name order inside the reversal, whole-string numbers sort
+	// numerically ahead of everything else, and an unrecognized key —
+	// its sign included — is a plain forward name sort.
+	{
+		"touch ga gb gc; GLOBSORT=-name; echo g*",
+		"gc gb ga\n",
+	},
+	{
+		"printf x >s1; printf xxx >s2; printf xx >s3; GLOBSORT=size; echo s*; GLOBSORT=-size; echo s*",
+		"s1 s3 s2\ns2 s3 s1\n",
+	},
+	{
+		"touch ga gb; GLOBSORT=-nonsense; echo g*",
+		"ga gb\n",
+	},
+	{
+		"touch 10 9 2x; GLOBSORT=numeric; echo *; GLOBSORT=-numeric; echo *",
+		"9 10 2x\n2x 10 9\n",
+	},
+	{
+		"touch za zb zc; GLOBSORT=size; echo z?; GLOBSORT=-size; echo z?",
+		"za zb zc\nzc zb za\n",
+	},
+	// A leading dot is only matched by a literal dot (#376): a bracket
+	// class never matches it, dotglob and GLOBIGNORE lift that.
+	{
+		"touch .h b; echo [!a]*",
+		"b\n",
+	},
+	{
+		"touch .h b; shopt -s dotglob; echo [!a]*",
+		".h b\n",
+	},
+	{
+		"touch .ha; echo .[gh]*",
+		".ha\n",
+	},
+	// A bracket expression broken by an unescaped slash makes the word
+	// not a pattern at all (#376, POSIX 2.13.3): it prints literally
+	// even under nullglob, where an escaped slash keeps the bracket
+	// valid — and unmatchable.
+	{
+		"shopt -s nullglob; echo [q/w] end",
+		"[q/w] end\n",
+	},
+	{
+		"shopt -s nullglob; echo [q\\/w] end",
+		"end\n",
+	},
+	// An extglob group is a pattern even with no *?[ in sight (#375).
+	{
+		"shopt -s extglob\ntouch ea eb; echo @(ea|zz); echo +(e)b",
+		"ea\neb\n",
+	},
+
 	// Extended globbing via the extglob option.
 	// Note how extglob affects Bash's own line-by-line parsing, so we set the option before a newline.
 	{

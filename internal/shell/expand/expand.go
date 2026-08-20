@@ -93,6 +93,10 @@ type Config struct {
 	// pattern matching features when performing pathname expansion (globbing).
 	ExtGlob bool
 
+	// FailGlob corresponds to the shell option which makes a pattern
+	// that matches nothing an error rather than its literal self (#375).
+	FailGlob bool
+
 	// LineOffset shifts what $LINENO reports. A trap action is parsed as
 	// its own little file whose positions start at line 1, while bash
 	// reports lines continuing from a base — the triggering command's
@@ -211,6 +215,10 @@ func (cfg *Config) strBuilder() *strings.Builder {
 }
 
 func (cfg *Config) envGet(name string) string {
+	if cfg.Env == nil {
+		// glob is reachable without prepareConfig in tests.
+		return ""
+	}
 	return cfg.Env.Get(name).String()
 }
 
@@ -564,10 +572,22 @@ func (cfg *Config) fieldJoin(parts []fieldPart) string {
 }
 
 func (cfg *Config) escapedGlobField(parts []fieldPart) (escaped string, glob bool) {
-	candidate := false
+	candidate, extCandidate := false, false
 	for _, part := range parts {
-		if part.quote == quoteNone && strings.ContainsAny(part.val, "*?[") {
+		if part.quote != quoteNone {
+			continue
+		}
+		if strings.ContainsAny(part.val, "*?[") {
 			candidate = true
+			break
+		}
+		// An extglob group is a pattern even with no *?[ in sight:
+		// @(a.c|a.h) must glob (#375). ?( and *( are already caught
+		// above. [pattern.HasMeta] below cannot see these either, so
+		// the flag also stands in for it.
+		if cfg.ExtGlob && (strings.Contains(part.val, "@(") ||
+			strings.Contains(part.val, "+(") || strings.Contains(part.val, "!(")) {
+			candidate, extCandidate = true, true
 			break
 		}
 	}
@@ -577,7 +597,11 @@ func (cfg *Config) escapedGlobField(parts []fieldPart) (escaped string, glob boo
 	sb := cfg.strBuilder()
 	for _, part := range parts {
 		if part.quote > quoteNone {
-			sb.WriteString(pattern.QuoteMeta(part.val, 0))
+			// Slashes are escaped too, though they are not pattern
+			// metas: [qwe\/qwe] is a valid bracket expression where
+			// [qwe/qwe] is not a pattern at all (POSIX 2.13.3), and
+			// only the escape can carry that distinction to glob.
+			sb.WriteString(strings.ReplaceAll(pattern.QuoteMeta(part.val, 0), "/", `\/`))
 		} else {
 			sb.WriteString(part.val)
 		}
@@ -585,7 +609,7 @@ func (cfg *Config) escapedGlobField(parts []fieldPart) (escaped string, glob boo
 	// Check the entire escaped word, as a bracket expression could span
 	// multiple unquoted parts, such as `[a$x` where x holds "]".
 	escaped = sb.String()
-	if pattern.HasMeta(escaped, 0) {
+	if extCandidate || pattern.HasMeta(escaped, 0) {
 		return escaped, true
 	}
 	return "", false
@@ -629,6 +653,13 @@ func FieldsSeq(cfg *Config, words ...*syntax.Word) iter.Seq2[string, error] {
 							yield("", err)
 							return true
 						}
+					} else if len(matches) == 0 && cfg.FailGlob {
+						// shopt -s failglob: a pattern with no matches is
+						// an error that abandons the input unit rather
+						// than a literal word, and it outranks nullglob
+						// when both are set — measured against 5.3 (#375).
+						yield("", fmt.Errorf("no match: %s", cfg.fieldJoin(field)))
+						return true
 					} else if len(matches) > 0 || cfg.NullGlob {
 						for _, m := range matches {
 							if !yield(m, nil) {
@@ -1600,12 +1631,57 @@ func pathJoin2(elem1, elem2 string) string {
 // pathSplit splits a file path into its elements, retaining empty ones. Before
 // splitting, slashes are replaced with [filepath.Separator], so that splitting
 // Unix paths on Windows works as well.
+//
+// An escaped slash splits too, its backslash consumed: a slash can never
+// occur in a filename, so bash treats \/ as a separator — ./tmp\/a/b/*
+// matches ./tmp/a/b/c, measured against 5.3. Escape pairs are walked so
+// an escaped backslash before a real slash stays with its component.
 func pathSplit(path string) []string {
-	path = filepath.FromSlash(path)
-	return strings.Split(path, string(filepath.Separator))
+	if filepath.Separator != '/' {
+		// On Windows the separator is itself a backslash, so the
+		// escape-aware walk below cannot apply; keep the historical
+		// split, which treats every slash either way as a separator.
+		path = filepath.FromSlash(path)
+		return strings.Split(path, string(filepath.Separator))
+	}
+	var parts []string
+	var sb strings.Builder
+	for i := 0; i < len(path); i++ {
+		switch c := path[i]; {
+		case c == '\\' && i+1 < len(path):
+			if path[i+1] == '/' {
+				parts = append(parts, sb.String())
+				sb.Reset()
+			} else {
+				sb.WriteByte(c)
+				sb.WriteByte(path[i+1])
+			}
+			i++
+		case c == '/':
+			parts = append(parts, sb.String())
+			sb.Reset()
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	return append(parts, sb.String())
 }
 
 func (cfg *Config) glob(base, pat string) ([]string, error) {
+	// Glob only when the pattern has something to act on: bash treats a
+	// word whose only glob character is a bracket broken by an unescaped
+	// slash as not a pattern at all, so [qwe/qwe] prints literally even
+	// under nullglob or failglob (POSIX 2.13.3, glob7.sub) — and a word
+	// carrying only escaped metas the same way. Measured against 5.3.
+	if !hasOperativeGlob(pat, cfg.ExtGlob) {
+		return nil, &pattern.SyntaxError{}
+	}
+	// A set, non-empty GLOBIGNORE filters the results below (#375). It
+	// does not itself imply dotglob here: bash implements that by
+	// mutating the real dotglob option on assignment — which shopt
+	// reports, and shopt -u undoes — so the interpreter owns it.
+	globIgnore := cfg.envGet("GLOBIGNORE")
+	dotGlob := cfg.DotGlob
 	parts := pathSplit(pat)
 	// Adjacent ** components collapse into one (#371): bash treats
 	// a/**/**/b as a/**/b, where expanding each independently
@@ -1627,7 +1703,14 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 		parts, gsDoubled = newParts, doubled
 	}
 	matches := []string{""}
-	if filepath.IsAbs(pat) {
+	// The leading separator of an absolute pattern may itself be escaped
+	// — a quoted "/us"* or a tilde expansion produces \/ — so the raw
+	// pattern string cannot answer absoluteness alone.
+	isAbs := filepath.IsAbs(pat)
+	if filepath.Separator == '/' && strings.HasPrefix(pat, `\/`) {
+		isAbs = true
+	}
+	if isAbs {
 		if parts[0] == "" {
 			// unix-like
 			matches[0] = string(filepath.Separator)
@@ -1655,11 +1738,29 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 		wantDir := i < len(parts)-1
 		switch {
 		case part == "", part == ".", part == "..":
-			for i, dir := range matches {
-				matches[i] = pathJoin2(dir, part)
+			var newMatches []string
+			for _, dir := range matches {
+				joined := pathJoin2(dir, part)
+				if part != "" {
+					// bash stat()s an explicit . or .. component: a
+					// directory without search permission matches */ but
+					// not */. — measured against 5.3 (#376). The path
+					// must keep its /. suffix; filepath.Join would clean
+					// it away and stat the directory itself, which
+					// succeeds on the parent's permissions alone.
+					statPath := joined
+					if !filepath.IsAbs(statPath) && base != "" {
+						statPath = base + string(filepath.Separator) + statPath
+					}
+					if _, err := os.Stat(statPath); err != nil {
+						continue
+					}
+				}
+				newMatches = append(newMatches, joined)
 			}
+			matches = newMatches
 			continue
-		case !pattern.HasMeta(part, 0):
+		case !pattern.HasMeta(part, 0) && !(cfg.ExtGlob && hasExtGlobOp(part)):
 			// A meta-free component may still carry pattern escapes —
 			// s\*d names the directory s*d (#372) — and the filesystem
 			// wants the real name.
@@ -1687,8 +1788,14 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 						// TODO: remove when the Go issue above is resolved.
 					} else if errors.Is(err, fs.ErrNotExist) {
 						continue // simply doesn't exist
-					}
-					if wantDir {
+					} else if fi, serr := os.Stat(match); serr != nil {
+						// bash stat()s a literal component (#376): an
+						// unreadable path is dropped only when it cannot
+						// even be stat'd, so a search-only directory in
+						// the middle of tmp/a/b/* still matches while a
+						// read-only one's contents do not.
+						continue
+					} else if wantDir && !fi.IsDir() {
 						continue // exists but not a directory
 					}
 				}
@@ -1715,6 +1822,21 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 				stack = append(stack, pathJoin2(match, ""))
 			}
 			sawMeta = true
+			// ** itself never crosses a symlink (bash 5+): a symlinked
+			// directory it finds is listed but not descended, and a
+			// component after the ** never searches under one — though
+			// a bare trailing slash still lists it. Measured against
+			// 5.3: with c -> a, ** answers c but not c/aa, **/aa
+			// answers a/aa only, **/ answers c/ too, and an explicit
+			// c/** still descends, so only discovered entries are
+			// checked, never the seeds.
+			listSymlinks := true
+			for _, p := range parts[i+1:] {
+				if p != "" {
+					listSymlinks = false
+					break
+				}
+			}
 			matches = matches[:0]
 			var newMatches []string // to reuse its capacity
 			for len(stack) > 0 {
@@ -1725,11 +1847,21 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 				// If dir is not a directory, we keep the stack as-is and continue.
 				newMatches = newMatches[:0]
 				rx := rxGlobStar.MatchString
-				if cfg.DotGlob {
+				if dotGlob {
 					rx = rxGlobStarDotGlob.MatchString
 				}
 				newMatches, _ = cfg.globDir(base, dir, rx, wantDir, newMatches)
 				for _, match := range slices.Backward(newMatches) {
+					full := match
+					if !filepath.IsAbs(full) {
+						full = filepath.Join(base, full)
+					}
+					if fi, err := os.Lstat(full); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+						if listSymlinks {
+							matches = append(matches, match)
+						}
+						continue
+					}
 					stack = append(stack, match)
 				}
 			}
@@ -1739,7 +1871,7 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 		if cfg.NoCaseGlob {
 			mode |= pattern.NoGlobCase
 		}
-		if cfg.DotGlob {
+		if dotGlob {
 			mode |= pattern.GlobLeadingDot
 		}
 		if cfg.ExtGlob {
@@ -1749,10 +1881,25 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		if !dotGlob && !strings.HasPrefix(part, ".") && !strings.HasPrefix(part, `\.`) {
+			// A leading dot is only matched by a literal dot (#376): the
+			// pattern package suppresses dotfiles for a leading * or ?,
+			// but a bracket class like [^a-c] still matched them.
+			inner := matcher
+			matcher = func(name string) bool {
+				return !strings.HasPrefix(name, ".") && inner(name)
+			}
+		}
 		var newMatches []string
 		for _, dir := range matches {
+			// A directory that cannot be read contributes no matches
+			// rather than failing the expansion: bash falls back to the
+			// literal word where an error here surfaced as a command
+			// failure (#376). Only that error is swallowed — a custom
+			// ReadDir handler's refusal still propagates. globDir
+			// returns the accumulated slice on error either way.
 			newMatches, err = cfg.globDir(base, dir, matcher, wantDir, newMatches)
-			if err != nil {
+			if err != nil && !errors.Is(err, fs.ErrPermission) {
 				return nil, err
 			}
 		}
@@ -1769,7 +1916,179 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 	if len(matches) > 0 && matches[0] == "" {
 		matches = matches[1:]
 	}
+	if globIgnore != "" {
+		matches = cfg.filterGlobIgnore(matches, globIgnore)
+	}
+	cfg.sortGlob(base, matches)
 	return matches, nil
+}
+
+// filterGlobIgnore removes matches that GLOBIGNORE names (#375). bash
+// matches each colon-separated pattern against the produced path string
+// verbatim — dir/b.h escapes an ignore of *.h, and so does ./a.h — with
+// slashes crossed only by a literal /, dotfiles matchable by *, and
+// extglob operators live only when the option is on; all measured
+// against 5.3.
+func (cfg *Config) filterGlobIgnore(matches []string, globIgnore string) []string {
+	mode := pattern.Filenames | pattern.EntireString | pattern.NoGlobStar | pattern.GlobLeadingDot
+	if cfg.NoCaseGlob {
+		mode |= pattern.NoGlobCase
+	}
+	if cfg.ExtGlob {
+		mode |= pattern.ExtendedOperators
+	}
+	var matchers []func(string) bool
+	for _, pat := range strings.Split(globIgnore, ":") {
+		if pat == "" {
+			continue
+		}
+		m, err := shinternal.ExtendedPatternMatcher(pat, mode)
+		if err != nil {
+			continue // an invalid ignore pattern ignores nothing
+		}
+		matchers = append(matchers, m)
+	}
+	if len(matchers) == 0 {
+		return matches
+	}
+	kept := matches[:0]
+	for _, match := range matches {
+		ignored := false
+		for _, m := range matchers {
+			if m(match) {
+				ignored = true
+				break
+			}
+		}
+		if !ignored {
+			kept = append(kept, match)
+		}
+	}
+	return kept
+}
+
+// sortGlob reorders name-sorted glob results per GLOBSORT (#375),
+// measured against bash 5.3: an optional +/- prefix with - reversing,
+// keys name, numeric, size, and the stat times; anything unrecognized —
+// its sign included — is a plain forward name sort, and nosort's sign
+// is ignored too. Ties fall back to name order inside the reversal, so
+// -size on equal sizes answers reverse name order.
+func (cfg *Config) sortGlob(base string, matches []string) {
+	spec := cfg.envGet("GLOBSORT")
+	key, reverse := spec, false
+	if len(spec) > 0 && (spec[0] == '+' || spec[0] == '-') {
+		key = spec[1:]
+		reverse = spec[0] == '-'
+	}
+	switch key {
+	case "nosort":
+		// bash returns readdir order here; ReadDir2 hands us sorted
+		// entries, so the name order we already have stands in.
+		return
+	case "numeric", "size", "mtime", "atime", "ctime", "blocks":
+	default: // "name", "", and anything invalid
+		if key == "name" && reverse {
+			slices.Reverse(matches)
+		}
+		return
+	}
+	keys := make(map[string]int64, len(matches))
+	for _, m := range matches {
+		keys[m] = cfg.globSortKey(base, key, m)
+	}
+	slices.SortStableFunc(matches, func(a, b string) int {
+		c := cmp.Compare(keys[a], keys[b])
+		if c == 0 {
+			c = strings.Compare(a, b)
+		}
+		if reverse {
+			c = -c
+		}
+		return c
+	})
+}
+
+func (cfg *Config) globSortKey(base, key, match string) int64 {
+	if key == "numeric" {
+		// Whole-string numbers sort ascending; everything else sorts
+		// after every number, by name — measured against 5.3.
+		if n, err := strconv.ParseInt(match, 10, 64); err == nil {
+			return n
+		}
+		return 1<<63 - 1
+	}
+	path := match
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(base, path)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	switch key {
+	case "size":
+		return fi.Size()
+	case "mtime":
+		return fi.ModTime().UnixNano()
+	default: // "atime", "ctime", "blocks"
+		return globStatExtra(fi, key)
+	}
+}
+
+// hasExtGlobOp reports whether s contains an unescaped extglob group
+// opener that [pattern.HasMeta] cannot see: @( +( or !( — ?( and *( are
+// already metas by their first byte.
+func hasExtGlobOp(s string) bool {
+	for i := 0; i+1 < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '@', '+', '!':
+			if s[i+1] == '(' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasOperativeGlob reports whether pat contains an unescaped glob
+// construct that can actually match: a * or ?, an extglob group when
+// the option is on, or a bracket that closes before an unescaped slash
+// invalidates it (POSIX 2.13.3).
+func hasOperativeGlob(pat string, extGlob bool) bool {
+	for i := 0; i < len(pat); i++ {
+		switch pat[i] {
+		case '\\':
+			i++
+		case '*', '?':
+			return true
+		case '@', '+', '!':
+			if extGlob && i+1 < len(pat) && pat[i+1] == '(' {
+				return true
+			}
+		case '[':
+			j := i + 1
+			if j < len(pat) && (pat[j] == '!' || pat[j] == '^') {
+				j++
+			}
+			if j < len(pat) && pat[j] == ']' {
+				j++ // a leading ] is a member, not the close
+			}
+		bracket:
+			for ; j < len(pat); j++ {
+				switch pat[j] {
+				case '\\':
+					j++
+				case '/':
+					break bracket // slash invalidates the bracket
+				case ']':
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (cfg *Config) globDir(base, dir string, matcher func(string) bool, wantDir bool, matches []string) ([]string, error) {
