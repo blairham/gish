@@ -919,6 +919,26 @@ func (r *Runner) posixOptByName(name string) (*bool, posixOpt) {
 	return nil, posixOpt{}
 }
 
+// IsSetOptionFlag reports whether c is a `set` single-letter option that
+// this interpreter knows — supported or not.
+//
+// The shell around it needs this to tell a set letter in argv from a
+// typo: bash accepts any of them there (`bash -euxc …`) and answers a
+// usage error with status 2 for anything else (#426). Knowing the letter
+// is the whole question here; whether koi can honor it is the
+// interpreter's business, and it says so itself when asked.
+func IsSetOptionFlag(c byte) bool {
+	if c == ' ' {
+		return false // the table's "no flag form" marker
+	}
+	for _, opt := range &posixOptsTable {
+		if opt.flag == c {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Runner) posixOptByFlag(flag byte) (*bool, posixOpt) {
 	for i, opt := range &posixOptsTable {
 		if opt.flag == flag && opt.flag != ' ' {
