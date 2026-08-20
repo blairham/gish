@@ -538,7 +538,7 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	}
 	prev.Set = true
 	if as.Value != nil {
-		s := r.literal(as.Value)
+		s := r.literalAssign(as.Value)
 		if !as.Append {
 			prev.Kind = expand.String
 			if valType == "-n" {

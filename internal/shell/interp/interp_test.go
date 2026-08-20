@@ -3545,6 +3545,19 @@ done <<< 2`,
 		"shopt: unsupported option \"-q\"\nexit status 2 #IGNORE",
 	},
 
+	// Tilde positions beyond the word start (#364): after each colon in
+	// an assignment value, after the = of an assignment-shaped argument,
+	// at a colon-terminated prefix — and ~+/~- read PWD/OLDPWD. Results
+	// are compared through $HOME so any machine confirms them.
+	{`p=/bin:~/bin; [ "$p" = "/bin:$HOME/bin" ] && echo ok`, "ok\n"},
+	{`[ "$(echo make FOO=~/mumble)" = "make FOO=$HOME/mumble" ] && echo ok`, "ok\n"},
+	{`[ "$(echo a:~)" = "a:~" ] && echo ok`, "ok\n"},
+	{`[ "$(echo ~:x)" = "$HOME:x" ] && echo ok`, "ok\n"},
+	{`[ "$(echo FOO=~:~)" = "FOO=$HOME:$HOME" ] && echo ok`, "ok\n"},
+	{`[ "$(echo 3foo=~)" = "3foo=~" ] && echo ok`, "ok\n"},
+	{`cd /usr; cd /tmp; [ "$(echo ~- ~+)" = "/usr $(pwd)" ] && echo ok`, "ok\n"},
+	{`p="pre ~"; q=x:$p:~; [ "$q" = "x:pre ~:$HOME" ] && echo ok`, "ok\n"},
+
 	// "$@" splits at element boundaries even with text attached (#361),
 	// and a quoted ${x+word} keeps that identity for a "$@" inside the
 	// word (#360).
