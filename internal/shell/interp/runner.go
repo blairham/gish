@@ -1432,6 +1432,13 @@ assignLoop:
 			case "-g":
 				global = true
 			case "-f", "-p", "-F":
+				// -p alongside -f is a modifier, not a replacement:
+				// `declare -f -p name` prints the function, where
+				// letting -p win looked for a *variable* by that name
+				// and answered "not found" (#386).
+				if flag == "-p" && (declQuery == "-f" || declQuery == "-F") {
+					break
+				}
 				declQuery = flag
 			default:
 				r.errf("%s: invalid option %q\n", variant, flag)
@@ -1756,11 +1763,7 @@ assignLoop:
 // printFuncDef prints a function's definition, as "declare -f" does. Note that
 // the layout differs from bash's, which indents the body over several lines.
 func (r *Runner) printFuncDef(name string, body *syntax.Stmt) {
-	r.outf("%s()\n", name)
-	printer := syntax.NewPrinter()
-	var buf bytes.Buffer
-	printer.Print(&buf, body)
-	r.outf("%s\n", buf.String())
+	r.out(printFuncCanonical(name, body, false))
 }
 
 // traceCommand publishes BASH_COMMAND and fires the DEBUG trap before a

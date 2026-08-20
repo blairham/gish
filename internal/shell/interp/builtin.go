@@ -504,11 +504,16 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				}
 				continue
 			}
-			if _, ok := r.Funcs[arg]; ok {
+			if body, ok := r.Funcs[arg]; ok {
 				if mode == "-t" {
 					r.out("function\n")
 				} else {
+					// bash prints the definition under the verdict,
+					// which is what `type` is for when the name is a
+					// function: naming it without showing it leaves the
+					// caller to run declare -f anyway (#386).
 					r.outf("%s is a function\n", arg)
+					r.printFuncDef(arg, body)
 				}
 				continue
 			}
