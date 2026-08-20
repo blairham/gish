@@ -308,7 +308,7 @@ func Format(cfg *Config, format string, args []string) (string, int, error) {
 	cfg = prepareConfig(cfg)
 	sb := cfg.strBuilder()
 
-	consumed, err := formatInto(sb, format, args)
+	consumed, err := formatInto(sb, format, args, false)
 	if err != nil {
 		return "", 0, err
 	}
@@ -316,7 +316,18 @@ func Format(cfg *Config, format string, args []string) (string, int, error) {
 	return sb.String(), consumed, err
 }
 
-func formatInto(sb *strings.Builder, format string, args []string) (int, error) {
+// formatDollar expands a $'...' body. It differs from a printf format
+// in two escapes bash gives only to dollar quotes (#365): \x{...}, the
+// brace form of hex, and \cX control-character notation — printf's own
+// \c means "stop output" in %b and stays literal in a format, so the
+// contexts cannot share one rule.
+func formatDollar(cfg *Config, s string) string {
+	sb := cfg.strBuilder()
+	formatInto(sb, s, nil, true) //nolint:errcheck // like Format's callers here, errors keep the text
+	return sb.String()
+}
+
+func formatInto(sb *strings.Builder, format string, args []string, dollarQuote bool) (int, error) {
 	var fmts []byte
 	initialArgs := len(args)
 
@@ -371,7 +382,52 @@ func formatInto(sb *strings.Builder, format string, args []string) (int, error) 
 				// if digits don't fit in 8 bits, 0xff via strconv
 				n, _ := strconv.ParseUint(digits, 8, 8)
 				sb.WriteByte(byte(n))
+			case 'c':
+				// $'\cX': the byte is toupper(X) ^ 0x40 — \ca is 0x01,
+				// \c? is DEL (#365). A trailing \c stays literal, and
+				// \c\\ consumes the doubled backslash as its X.
+				if !dollarQuote || i+1 >= len(format) {
+					sb.WriteString(`\c`)
+					break
+				}
+				i++
+				x := format[i]
+				if x == '\\' && i+1 < len(format) && format[i+1] == '\\' {
+					i++
+				}
+				if x >= 'a' && x <= 'z' {
+					x -= 'a' - 'A'
+				}
+				sb.WriteByte(x ^ 0x40)
 			case 'x', 'u', 'U':
+				if c == 'x' && dollarQuote && i+1 < len(format) && format[i+1] == '{' {
+					// $'\x{...}': bash 5.3's brace form (#365). Hex
+					// digits until the brace or the first non-hex byte
+					// — the closing brace is optional, measured — the
+					// value masked to one byte, and empty braces yield
+					// NUL, which truncates the string the way bash's
+					// does.
+					i += 2
+					j := i
+					for j < len(format) && isHexDigit(format[j]) {
+						j++
+					}
+					digits := format[i:j]
+					i = j
+					if i >= len(format) || format[i] != '}' {
+						i-- // no closing brace; the outer loop advances
+					}
+					if len(digits) == 0 {
+						sb.WriteByte(0)
+						break
+					}
+					if len(digits) > 2 {
+						digits = digits[len(digits)-2:]
+					}
+					n, _ := strconv.ParseUint(digits, 16, 8)
+					sb.WriteByte(byte(n))
+					break
+				}
 				i++
 				max := 2
 				switch c {
@@ -430,7 +486,7 @@ func formatInto(sb *strings.Builder, format string, args []string) (int, error) 
 					// Passing in nil for args ensures that % format
 					// strings aren't processed; only escape sequences
 					// will be handled.
-					_, err := formatInto(sb, arg, nil)
+					_, err := formatInto(sb, arg, nil, false)
 					if err != nil {
 						return 0, err
 					}
@@ -753,7 +809,7 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 			}
 			fp := fieldPart{quote: quoteSingle, val: wp.Value}
 			if wp.Dollar {
-				fp.val, _, _ = Format(cfg, fp.val, nil)
+				fp.val = formatDollar(cfg, fp.val)
 				fp.val, _, _ = strings.Cut(fp.val, "\x00") // cut the string if format included \x00
 			}
 			field = append(field, fp)
@@ -938,7 +994,7 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 			allowEmpty = true
 			fp := fieldPart{quote: quoteSingle, val: wp.Value}
 			if wp.Dollar {
-				fp.val, _, _ = Format(cfg, fp.val, nil)
+				fp.val = formatDollar(cfg, fp.val)
 				fp.val, _, _ = strings.Cut(fp.val, "\x00") // cut the string if format included \x00
 			}
 			curField = append(curField, fp)
@@ -1726,4 +1782,8 @@ func ReadFields(cfg *Config, s string, n int, raw bool) []string {
 		fields[i] = string(runes[p.start:p.end])
 	}
 	return fields
+}
+
+func isHexDigit(b byte) bool {
+	return b >= '0' && b <= '9' || b >= 'a' && b <= 'f' || b >= 'A' && b <= 'F'
 }

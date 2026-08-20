@@ -3545,6 +3545,18 @@ done <<< 2`,
 		"shopt: unsupported option \"-q\"\nexit status 2 #IGNORE",
 	},
 
+	// $'\x{...}' and $'\cX' (#365): the brace hex form (closing brace
+	// optional, value masked to a byte, empty braces a truncating NUL)
+	// and control-char notation. printf's own format keeps its rules.
+	{`x=$'ab\x{41}cd'; echo "$x"`, "abAcd\n"},
+	{`x=$'\ca'; [ "$x" = "$(printf '\001')" ] && echo ok`, "ok\n"},
+	{`x=$'\c?'; [ "$x" = "$(printf '\177')" ] && echo ok`, "ok\n"},
+	{`x=$'a\x{}b'; echo "[$x]"`, "[a]\n"},
+	{`x=$'a\x{4141}b'; echo "$x"`, "aAb\n"},
+	{`x=$'a\x{41 b'; echo "$x"`, "aA b\n"},
+	{`x=$'\c'; echo "$x"`, "\\c\n"},
+	{`x=$'\u{41}'; echo "$x"`, "\\u{41}\n"},
+
 	// Tilde positions beyond the word start (#364): after each colon in
 	// an assignment value, after the = of an assignment-shaped argument,
 	// at a colon-terminated prefix — and ~+/~- read PWD/OLDPWD. Results
