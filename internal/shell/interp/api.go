@@ -139,6 +139,10 @@ type Runner struct {
 	// binding is unwound afterwards.
 	declTempNames map[string]bool
 
+	// exportedFuncs holds the names `export -f` marked, which travel to
+	// children as BASH_FUNC_<name>%% environment entries (#387).
+	exportedFuncs map[string]bool
+
 	// localOpts holds the shell options `local -` saved in the running
 	// function, to be put back when it returns (#385).
 	localOpts *runnerOpts
@@ -1372,7 +1376,45 @@ func (r *Runner) Reset() {
 
 	r.dirStack = append(r.dirStack, r.Dir)
 
+	r.importEnvFuncs()
+
 	r.didReset = true
+}
+
+// importEnvFuncs defines the functions the environment carries, which is
+// how an exported function reaches a child shell (#387): bash writes
+// each one as BASH_FUNC_<name>%%="() { … }" and reads them back here.
+// A definition that does not parse is skipped rather than reported —
+// this is untrusted input from whoever built the environment, and the
+// shell has no business failing to start over it (the shape behind
+// CVE-2014-6271, where the parse continued past the definition).
+func (r *Runner) importEnvFuncs() {
+	const prefix, suffix = "BASH_FUNC_", "%%"
+	for name, vr := range r.Env.Each {
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		fname := name[len(prefix) : len(name)-len(suffix)]
+		if fname == "" {
+			continue
+		}
+		body := vr.String()
+		if !strings.HasPrefix(body, "()") {
+			continue
+		}
+		file, err := syntax.NewParser().Parse(strings.NewReader(fname+" "+body), "")
+		if err != nil || len(file.Stmts) != 1 {
+			continue
+		}
+		fn, ok := file.Stmts[0].Cmd.(*syntax.FuncDecl)
+		if !ok {
+			continue
+		}
+		if r.Funcs == nil {
+			r.Funcs = make(map[string]*syntax.Stmt, 1)
+		}
+		r.Funcs[fname] = fn.Body
+	}
 }
 
 // ExitStatus is a non-zero status code resulting from running a shell node.

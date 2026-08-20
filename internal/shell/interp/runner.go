@@ -330,10 +330,28 @@ func (e expandEnv) Each(fn func(name string, vr expand.Variable) bool) {
 var todoPos syntax.Pos // for handlerCtx callers where we don't yet have a position
 
 func (r *Runner) handlerCtx(ctx context.Context, kind handlerKind, pos syntax.Pos) context.Context {
+	env := &overlayEnviron{parent: r.writeEnv}
+	// An exported function travels to a child as bash spells it: an
+	// environment entry named BASH_FUNC_<name>%% holding the definition
+	// (#387). It is laid into the handler's overlay rather than the
+	// shell's own scope, so it reaches execEnv without appearing in any
+	// listing the session itself makes.
+	for name := range r.exportedFuncs {
+		body := r.Funcs[name]
+		if body == nil {
+			continue
+		}
+		var buf bytes.Buffer
+		syntax.NewPrinter().Print(&buf, body)            //nolint:errcheck // writing to a buffer
+		env.Set("BASH_FUNC_"+name+"%%", expand.Variable{ //nolint:errcheck // the overlay never errors here
+			Set: true, Exported: true, Kind: expand.String,
+			Str: "() " + buf.String(),
+		})
+	}
 	hc := HandlerContext{
 		runner:         r,
 		kind:           kind,
-		Env:            &overlayEnviron{parent: r.writeEnv},
+		Env:            env,
 		Dir:            r.Dir,
 		Pos:            pos,
 		Stdout:         r.stdout,
@@ -1398,7 +1416,16 @@ assignLoop:
 				}
 				r.saveLocalOpts()
 				continue assignLoop
-			case "-a", "-A", "-n":
+			case "-n":
+				// -n means two different things: a nameref for
+				// declare/local/typeset, and "remove the export
+				// attribute" for export, which is bash's (#387).
+				if variant == "export" {
+					modes = append(modes, "+x")
+					break
+				}
+				valType = flag
+			case "-a", "-A":
 				valType = flag
 			case "+n":
 				unref = true
@@ -1426,10 +1453,36 @@ assignLoop:
 				as.Index = &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: sub}}}
 			}
 		}
-		if !syntax.ValidName(name) {
+		// A function name is not a variable name: `foo-bar(){ :; }`
+		// defines and runs, so `export -f foo-bar` must not refuse it
+		// (#387). Only the variable paths validate.
+		if declQuery != "-f" && declQuery != "-F" && !syntax.ValidName(name) {
 			r.errf("%s: invalid name %q\n", variant, name)
 			r.exit.code = 1
 			return
+		}
+		if declQuery == "-f" || declQuery == "-F" {
+			// `export -f name` and `declare -xf name` export the
+			// function rather than printing it (#387); koi printed the
+			// body and left the child with a 127.
+			// +x is tested first: `export -nf f` carries both, since
+			// the export variant contributes -x of its own.
+			if slices.Contains(modes, "+x") {
+				delete(r.exportedFuncs, name)
+				continue
+			}
+			if slices.Contains(modes, "-x") {
+				if r.Funcs[name] == nil {
+					r.errf("%s: %s: not a function\n", variant, name)
+					r.exit.code = 1
+					continue
+				}
+				if r.exportedFuncs == nil {
+					r.exportedFuncs = map[string]bool{}
+				}
+				r.exportedFuncs[name] = true
+				continue
+			}
 		}
 		if declQuery == "-F" {
 			// declare -F name: print the name alone, which is how a
@@ -1671,16 +1724,30 @@ assignLoop:
 		// A bare "declare -f" or "declare -F" lists every function, sorted
 		// by name as bash does. Claude Code's shell snapshot uses the
 		// latter to carry the user's functions into an agent subshell.
+		// With -x the listing is filtered to the exported functions,
+		// where koi listed every one (#388) — which is why its
+		// func.tests output carried two full dumps of every function
+		// defined in the file.
+		onlyExported := slices.Contains(modes, "-x")
 		names := make([]string, 0, len(r.Funcs))
 		for name := range r.Funcs {
+			if onlyExported && !r.exportedFuncs[name] {
+				continue
+			}
 			names = append(names, name)
 		}
 		slices.Sort(names)
 		for _, name := range names {
-			if declQuery == "-F" {
-				r.outf("declare -f %s\n", name)
-			} else {
+			if declQuery == "-f" {
 				r.printFuncDef(name, r.Funcs[name])
+			}
+			switch {
+			case onlyExported:
+				// bash reports an exported function as `declare -fx`,
+				// after the body when the body was asked for.
+				r.outf("declare -fx %s\n", name)
+			case declQuery == "-F":
+				r.outf("declare -f %s\n", name)
 			}
 		}
 	}
