@@ -56,6 +56,14 @@ an unreadable construct on line 129 costs the lines after it rather than
 the whole file. It still costs them, which is why parsed is published
 beside the other two.
 
+**Parsed is asked directly**, with `+"`koi -n`"+` on each file, rather than
+inferred from whether the run reported a parse error. Inferring it was
+wrong in a way that only showed when behavior improved: a file whose run
+stopped early for a *runtime* reason never reached its parse gap and so
+counted as parsed, and fixing one such error made this number go **down**
+for a file koi had never been able to read. The number that moves when a
+fix lands should be the one the fix is about.
+
 `, s.Parsed-s.Passed, s.Files-s.Parsed)
 
 	gaps := ParseGaps(results)
