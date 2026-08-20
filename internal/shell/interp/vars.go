@@ -410,6 +410,25 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 		}
 		r.optState = getopts{argidx: n - 1}
 	}
+	switch name {
+	case "PATH", "SHELL", "ENV", "BASH_ENV":
+		if r.opts[optRestricted] {
+			// A restricted shell cannot change where commands come
+			// from, which bash spells as the variable being read-only
+			// (#398).
+			r.errf("%s: readonly variable\n", name)
+			r.exit.code = 1
+			// Fatal for a command string and not for a script file,
+			// which is bash's split and only visible by running both:
+			// `bash -c 'set -r; PATH=/x; echo after'` prints nothing
+			// after the refusal, while the same three lines in a file
+			// carry on.
+			if r.mainScript == "" {
+				r.exit.exiting = true
+			}
+			return
+		}
+	}
 	if hook := r.varHooks[name]; hook != nil {
 		// The shell around the interpreter asked to hear about this
 		// name: assigning it is an action rather than just a value
