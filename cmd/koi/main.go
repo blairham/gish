@@ -108,6 +108,8 @@ func run() int {
 
 	// The session reports this as KOI_VERSION (#120).
 	repl.Version = version
+	// `set` options given in argv apply to whatever session follows.
+	repl.SetSessionOptions(opts.setFlags)
 
 	if opts.rc != "" {
 		os.Setenv("KOI_RC", opts.rc) //nolint:errcheck // process-local

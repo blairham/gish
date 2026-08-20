@@ -234,6 +234,9 @@ func runEditor(ctx context.Context, login bool) error {
 	// What the shell answers to a feature probe (#120): set before any
 	// init script runs, since that is what those scripts branch on.
 	declareShellIdentity(ctx, runner)
+	// argv's `set` options are in force before the profile and rc run,
+	// which is bash's order (#426).
+	applySessionOptions(ctx, runner)
 	// Color-friendly defaults before anything is sourced, so an rc that
 	// disagrees simply arrives later and wins (#54).
 	applyColorDefaults(ctx, runner)
@@ -692,6 +695,9 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 	}
 	setSessionRunner(runner)
 	declareShellIdentity(ctx, runner)
+	// argv's `set` options are in force before the profile and rc run,
+	// which is bash's order (#426).
+	applySessionOptions(ctx, runner)
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -834,6 +840,9 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	}
 	setSessionRunner(runner)
 	declareShellIdentity(ctx, runner)
+	// argv's `set` options are in force before the profile and rc run,
+	// which is bash's order (#426).
+	applySessionOptions(ctx, runner)
 	// The names must resolve here too, so an unavailable builtin reports
 	// itself rather than looking like a missing program.
 	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))

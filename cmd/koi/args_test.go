@@ -103,10 +103,15 @@ func TestParseArgsShellForms(t *testing.T) {
 
 func TestParseArgsRejections(t *testing.T) {
 	t.Parallel()
+	// -x and -lx used to be rejections and are not: bash takes any
+	// `set` letter in argv and koi now passes them through (#426), so
+	// the unknown-short cases need a letter that is genuinely no
+	// option at all.
 	for _, args := range [][]string{
 		{"-c"},             // -c with nothing to run
-		{"-x", "echo hi"},  // unknown short
-		{"-lx", "echo hi"}, // unknown short inside a cluster
+		{"-Z", "echo hi"},  // unknown short
+		{"-lZ", "echo hi"}, // unknown short inside a cluster
+		{"+Z", "echo hi"},  // unknown short in a plus cluster
 		{"--nope"},         // unknown long
 		{"--sandbox"},      // long option missing its value
 		{"--version=yes"},  // long option given a value it has none for
@@ -121,5 +126,44 @@ func TestParseArgsHelp(t *testing.T) {
 	t.Parallel()
 	if _, err := parseArgs([]string{"--help"}); !errors.Is(err, errHelp) {
 		t.Errorf("--help = %v, want errHelp", err)
+	}
+}
+
+// The other half of #426: a `set` letter in argv is collected rather
+// than rejected, and it reaches the interpreter in `set`'s own spelling.
+// The rejection table above only proves koi still refuses a typo.
+func TestParseArgsCollectsSetOptions(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"-uc", "echo hi"}, []string{"-u"}},
+		{[]string{"-euxc", "echo hi"}, []string{"-eux"}},
+		{[]string{"-u", "-c", "echo hi"}, []string{"-u"}},
+		{[]string{"+u", "-c", "echo hi"}, []string{"+u"}},
+		{[]string{"-o", "posix", "-c", "echo hi"}, []string{"-o", "posix"}},
+		{[]string{"-lc", "echo hi"}, nil}, // koi's own flags are not set options
+	}
+	for _, tc := range cases {
+		got, err := parseArgs(tc.args)
+		if err != nil {
+			t.Errorf("parseArgs(%q): %v", tc.args, err)
+			continue
+		}
+		if len(got.setFlags) != len(tc.want) {
+			t.Errorf("parseArgs(%q).setFlags = %q, want %q", tc.args, got.setFlags, tc.want)
+			continue
+		}
+		for i := range tc.want {
+			if got.setFlags[i] != tc.want[i] {
+				t.Errorf("parseArgs(%q).setFlags = %q, want %q", tc.args, got.setFlags, tc.want)
+				break
+			}
+		}
+		// The command still has to survive the new parsing.
+		if !got.haveCommand || got.command != "echo hi" {
+			t.Errorf("parseArgs(%q) lost the command: %+v", tc.args, got)
+		}
 	}
 }

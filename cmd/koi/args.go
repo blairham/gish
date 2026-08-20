@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
 // A shell's argv is a POSIX contract, not a Go CLI (#217).
@@ -38,7 +40,11 @@ type shellArgs struct {
 	sandbox       string // --sandbox profile
 	rc            string // --rc file
 	restore       string // --restore id
-	operands      []string
+	// setFlags are the `set` options given in argv, in order, as `set`
+	// itself would take them: ["-u"], ["-e", "-x"], ["-o", "posix"].
+	// bash accepts any set option there and so must koi (#426).
+	setFlags []string
+	operands []string
 }
 
 // longOptions maps each long name to whether it takes a value. These are
@@ -64,8 +70,14 @@ func parseArgs(args []string) (shellArgs, error) {
 			i++
 			break
 		}
-		// A bare "-" is an operand (it means stdin), not an option.
-		if arg == "-" || !strings.HasPrefix(arg, "-") {
+		// A bare "-" is an operand (it means stdin), not an option; so
+		// is a bare "+". Otherwise a leading "+" is an option cluster
+		// too, because that is how `set` spells turning one off and
+		// bash takes the same spelling in argv (#426).
+		if arg == "-" || arg == "+" {
+			break
+		}
+		if !strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "+") {
 			break
 		}
 		name, value, hasValue := strings.Cut(strings.TrimLeft(arg, "-"), "=")
@@ -98,7 +110,34 @@ func parseArgs(args []string) (shellArgs, error) {
 			}
 			continue
 		}
-		// A cluster of short options: -l, -lc, -ilc.
+		// `-o name` / `+o name`, the long spelling of a set option.
+		if arg == "-o" || arg == "+o" {
+			if i+1 >= len(args) {
+				// bash with a bare -o prints the option table and
+				// carries on; koi keeps that in the interpreter by
+				// passing it through as `set -o`.
+				out.setFlags = append(out.setFlags, arg)
+				continue
+			}
+			i++
+			out.setFlags = append(out.setFlags, arg, args[i])
+			continue
+		}
+		// `+letters` is only ever a set option: koi's own flags have no
+		// plus form, so the whole cluster goes to the interpreter.
+		if strings.HasPrefix(arg, "+") {
+			for _, r := range arg[1:] {
+				if !interp.IsSetOptionFlag(byte(r)) {
+					return out, fmt.Errorf("unknown option %q in %q", string(r), arg)
+				}
+			}
+			out.setFlags = append(out.setFlags, arg)
+			continue
+		}
+		// A cluster of short options: -l, -lc, -ilc, and any `set`
+		// letter mixed in — `-euxc 'cmd'` is what CI files and Makefiles
+		// write, and rejecting it made koi unusable as their $SHELL.
+		var setLetters []rune
 		for _, r := range arg[1:] {
 			switch r {
 			case 'l':
@@ -113,8 +152,18 @@ func parseArgs(args []string) (shellArgs, error) {
 				// write (#233).
 				out.noexec = true
 			default:
-				return out, fmt.Errorf("unknown option %q in %q", string(r), arg)
+				// Not koi's own, so it is a `set` option or a typo. The
+				// interpreter owns that table, and it is also the thing
+				// that knows whether koi can honor the option — so the
+				// letter is only validated here, never interpreted.
+				if !interp.IsSetOptionFlag(byte(r)) {
+					return out, fmt.Errorf("unknown option %q in %q", string(r), arg)
+				}
+				setLetters = append(setLetters, r)
 			}
+		}
+		if len(setLetters) > 0 {
+			out.setFlags = append(out.setFlags, "-"+string(setLetters))
 		}
 	}
 	out.operands = args[i:]
