@@ -4086,6 +4086,16 @@ done <<< 2`,
 	{"f() { unset foo; }; foo=bar; f; echo $foo", "\n"},
 
 	// name references
+	// Writes through a nameref update the *target* (#277): before the
+	// assignment path resolved prev, an indexed write started from the
+	// nameref's own empty value and replaced the whole target array with
+	// one element, and += appended to nothing.
+	{`a=(1 3 5 7 9); declare -n r=a; r[2]=42; echo "${a[@]}"`, "1 3 42 7 9\n"},
+	{`a=hello; declare -n r=a; r+=X; echo "$a"`, "helloX\n"},
+	{`a=(1 2); declare -n r=a; r+=(3); echo "${a[@]}"`, "1 2 3\n"},
+	{`declare -A m=([k]=v); declare -n r=m; r[j]=w; echo "${m[j]}"`, "w\n"},
+	{`a=(1 2 3); declare -n r=a; unset "r[1]"; echo "${a[@]}"`, "1 3\n"},
+	{`declare -n r=newvar; r=5; echo "$newvar"`, "5\n"},
 	{"declare -n foo=bar; bar=etc; [[ -R foo ]]", ""},
 	{"declare -n foo=bar; bar=etc; [ -R foo ]", ""},
 	{"nameref foo=bar; bar=etc; [[ -R foo ]]", " #IGNORE"},

@@ -758,6 +758,15 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				name := as.Name.Value
 
 				prev := r.lookupVar(name)
+				// An assignment through a nameref updates the *target*, so
+				// both halves must resolve before anything reads prev: the
+				// write env already resolved the name, but prev stayed the
+				// nameref's own value, so `r[2]=42` through a nameref
+				// started from an empty array and replaced the target with
+				// a single element, and `r+=x` appended to nothing (#277).
+				if n, v := prev.Resolve(r.writeEnv); n != "" {
+					name, prev = n, v
+				}
 				// Here we have a naked "foo=bar", so if we inherited a local var from a parent
 				// function we want to signal that we are modifying the parent var rather than
 				// creating a new local var via "local foo=bar".
