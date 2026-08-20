@@ -20,6 +20,11 @@ func ExtendedPatternMatcher(pat string, mode pattern.Mode) (func(string) bool, e
 		panic("ExtendedOperators is only supported with EntireString")
 	}
 
+	// Collating symbols, equivalence classes, and bash's degrade rules
+	// for invalid class names resolve before the pattern package reads
+	// the expression (#374).
+	pat = NormalizeBrackets(pat)
+
 	// Extended pattern matching operators are always on outside of pathname expansion.
 	expr, err := pattern.Regexp(pat, mode)
 	if err != nil {

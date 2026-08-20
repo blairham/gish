@@ -3063,6 +3063,19 @@ var runTests = []runTest{
 		"a=b; echo $(($a))",
 		"0\n",
 	},
+	// Bracket-expression forms (#374): single-character collating
+	// symbols and equivalence classes resolve to the character — early
+	// enough to anchor a range — a closed invalid class contributes
+	// nothing, and an unclosed [: degrades to literal members.
+	{`case a in [[.a.]]) echo y;; *) echo n;; esac`, "y\n"},
+	{`case b in [[=b=]]) echo y;; *) echo n;; esac`, "y\n"},
+	{`case a in [[:alpha]) echo y;; *) echo n;; esac`, "y\n"},
+	{`case "[" in [[:alpha]) echo y;; *) echo n;; esac`, "y\n"},
+	{`case a in [abc[:foo:]]) echo y;; *) echo n;; esac`, "y\n"},
+	{`case : in [[:foo:]]) echo y;; *) echo n;; esac`, "n\n"},
+	{`case a in [[.ab.]]) echo y;; *) echo n;; esac`, "n\n"},
+	{`case c in [[.a.]-z]) echo y;; *) echo n;; esac`, "y\n"},
+
 	// Backslash quoting reaches the pattern matcher (#372): an escaped
 	// metacharacter never globs, an escaped name component resolves to
 	// the real file, and a trailing lone backslash is a literal one.

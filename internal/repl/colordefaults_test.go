@@ -3,6 +3,7 @@ package repl
 import (
 	"bytes"
 	"context"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -14,6 +15,19 @@ import (
 
 func colorRunner(t *testing.T) (*interp.Runner, *bytes.Buffer) {
 	t.Helper()
+	// The assertions read what applyColorDefaults declined to set, and
+	// the runner inherits this process's environment — where a colorful
+	// dev shell exports these very variables (#435). Hermetic means
+	// unsetting them, not hoping the machine is as bare as CI's; the
+	// t.Setenv first registers the restore.
+	for _, name := range []string{
+		"CLICOLOR", "LSCOLORS", "LS_COLORS",
+		"LESS_TERMCAP_md", "LESS_TERMCAP_me", "LESS_TERMCAP_us",
+		"LESS_TERMCAP_ue", "LESS_TERMCAP_so", "LESS_TERMCAP_se",
+	} {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
 	var out bytes.Buffer
 	r, err := interp.New(interp.StdIO(nil, &out, &out))
 	if err != nil {
