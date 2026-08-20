@@ -1084,6 +1084,48 @@ var runTests = []runTest{
 		"x-b\n",
 	},
 
+	// A temp-env assignment before a declaration utility (#380): the
+	// binding is what the utility sees, and when the utility declares
+	// the name — not merely queries it — the binding is promoted in
+	// its scope instead of unwound; a function-local declaration
+	// shadows the promoted scope, so the unwind lands underneath it.
+	{
+		`func(){ var=value declare -x var; echo -n "inside: "; declare -p var; }; var=one; func; echo -n "outside: "; declare -p var`,
+		`inside: declare -x var="value"` + "\noutside: " + `declare -- var="one"` + "\n",
+	},
+	{
+		`foo="" export foo; declare -p foo`,
+		`declare -x foo=""` + "\n",
+	},
+	{
+		`foo=bar declare -p foo; echo after: ${foo-unset}`,
+		`declare -x foo="bar"` + "\nafter: unset\n",
+	},
+	{
+		`tempvar1=foo declare -r tempvar1; declare -p tempvar1`,
+		`declare -rx tempvar1="foo"` + "\n",
+	},
+	{
+		`v=base; f(){ local v=fl; g; echo f:$v; }; g(){ v=temp declare -x v; echo g:$v; }; f; echo out:$v`,
+		"g:temp\nf:fl\nout:base\n",
+	},
+	{
+		`v=base; f(){ local v=fl; g; echo f:$v; }; g(){ v=temp export v; echo g:$v; }; f; echo out:$v`,
+		"g:temp\nf:temp\nout:base\n",
+	},
+	{
+		`v=base; f(){ local v=fl; g; echo f:$v; }; g(){ v=temp true; echo g:$v; }; f; echo out:$v`,
+		"g:fl\nf:fl\nout:base\n",
+	},
+	{
+		`ref=xxx typeset -p ref; echo ${ref-unset}`,
+		`declare -x ref="xxx"` + "\nunset\n",
+	},
+	{
+		`foo=bar :; echo colon:${foo-unset}`,
+		"colon:unset\n",
+	},
+
 	// declare -g writes the global scope through any local shadowing
 	// the name (#379); reads stay dynamically scoped, so both
 	// functions still see the local.

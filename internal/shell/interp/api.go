@@ -132,6 +132,13 @@ type Runner struct {
 	// track if a sourced script set positional parameters
 	sourceSetParams bool
 
+	// declTempNames, when non-nil, records the names a declaration
+	// builtin declared while a temp-env prefix assignment was in flight
+	// (#380): `var=value declare -x var`. The value is whether the
+	// declaration created a function-local, which decides how the temp
+	// binding is unwound afterwards.
+	declTempNames map[string]bool
+
 	// noErrExit prevents failing commands from triggering [optErrExit],
 	// such as the condition in a [syntax.IfClause].
 	noErrExit bool
