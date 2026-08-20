@@ -3054,8 +3054,28 @@ var runTests = []runTest{
 		"1\n",
 	},
 	{
-		"a=b b=a; echo $(($a))",
-		"0\n #IGNORE bash prints a warning",
+		// A name chase that cycles is an error, as 5.3's is; a chase
+		// that dead-ends stays 0.
+		"a=b b=a; echo $(($a)); echo next",
+		"b: expression recursion level exceeded\nexit status 1 #JUSTERR",
+	},
+	{
+		"a=b; echo $(($a))",
+		"0\n",
+	},
+	// A word in arithmetic context evaluates its string (#367): quoting
+	// no longer disables let and ((...)), and a value that is itself an
+	// expression evaluates through.
+	{`x=5; let "x *= 2"; echo "$? $x"`, "0 10\n"},
+	{`let "x=5+2"; echo "$? $x"`, "0 7\n"},
+	{`i=0; (( "i < 3" )); echo $?`, "0\n"},
+	{`i=0; n=0; for (( ; "i < 3" ; i++ )); do n=$((n+1)); done; echo $n`, "3\n"},
+	{`y=1+1; echo $((y))`, "2\n"},
+	// An invalid ${var:offset} is an arithmetic error that abandons the
+	// input unit, not a silent slice from 0 (#366).
+	{
+		"HOME2=/x; echo \"${HOME2:`echo \\}`}\"; echo never",
+		"}: arithmetic syntax error\nexit status 1 #JUSTERR",
 	},
 	{
 		"let x=3; let 3/0; ((3/0)); echo $((x/y)); let x/=0",

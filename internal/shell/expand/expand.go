@@ -139,6 +139,10 @@ type Config struct {
 	// (#364): p=/bin:~/bin reads the home directory. Set by
 	// [LiteralAssign] only.
 	assignValue bool
+
+	// arithStrDepth bounds arithmWordStr's re-evaluation (#366): x=y
+	// with y=x would otherwise chase names forever.
+	arithStrDepth int
 }
 
 // UnexpectedCommandError is returned if a command substitution is encountered

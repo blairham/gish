@@ -526,6 +526,12 @@ func (cfg *Config) varInd(vr Variable, idx syntax.ArithmExpr) (string, bool, err
 	}
 	switch vr.Kind {
 	case String:
+		// ${a[@]} and ${a[*]} on a scalar are the scalar, never an
+		// arithmetic index — @ would be a syntax error there (#366).
+		switch nodeLit(idx) {
+		case "*", "@":
+			return vr.Str, vr.IsSet(), nil
+		}
 		n, err := Arithm(cfg, idx)
 		if err != nil {
 			return "", false, err
