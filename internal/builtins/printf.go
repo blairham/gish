@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -122,7 +123,7 @@ func printfOnce(w, errw io.Writer, format string, args []string) (consumed int, 
 	for i := 0; i < len(format); i++ {
 		c := format[i]
 		if c == '\\' {
-			text, width, done := unescape(format[i:])
+			text, width, done := unescape(format[i:], false)
 			if done {
 				sb.WriteString(text)
 				_, werr := io.WriteString(w, sb.String())
@@ -139,6 +140,12 @@ func printfOnce(w, errw io.Writer, format string, args []string) (consumed int, 
 		spec, verb, width := parseSpec(format[i:])
 		if width == 0 {
 			return consumed, false, bad, fmt.Errorf("printf: `%s': invalid format", format[i:])
+		}
+		if err := checkSpecWidth(spec); err != nil {
+			// A width Go cannot represent made fmt write %!(NOVERB)
+			// noise to *stdout* and exit 0 (#400) — output that reads
+			// as a result. bash reports it and fails.
+			return consumed, false, bad, err
 		}
 		i += width - 1
 		if verb == '%' {
@@ -197,7 +204,7 @@ func writeVerb(
 	text := func() string { s, _ := next(); return s }
 
 	switch verb {
-	case 'c':
+	case 'c', 'C':
 		// One character, not a string: width still applies.
 		r := ""
 		for _, ch := range text() {
@@ -205,7 +212,9 @@ func writeVerb(
 			break
 		}
 		fmt.Fprintf(sb, spec+"s", r)
-	case 's':
+	case 's', 'S':
+		// %S is %s: the wide-character spellings say what type the
+		// argument has, which a shell does not track.
 		fmt.Fprintf(sb, spec+"s", text())
 	case 'b':
 		// The argument's own escapes are expanded, and its \c stops
@@ -215,10 +224,27 @@ func writeVerb(
 		if stopped {
 			return errStopOutput
 		}
-	case 'q':
+	case 'n':
+		// %n names a variable to store the character count in, which
+		// needs the shell rather than this builtin. The argument is
+		// consumed and nothing is printed, so a script that does not
+		// read the variable behaves as bash's does; a script that does
+		// is the residual, stated rather than hidden.
+		text()
+	case 'q', 'Q':
 		// Shell quoting, not Go quoting: the point of %q is that the
 		// result can be pasted back into a shell.
-		fmt.Fprintf(sb, spec+"s", shellQuote(text()))
+		fmt.Fprintf(sb, trimTimeFormat(spec)+"s", shellQuote(text()))
+	case 'T':
+		// %(fmt)T formats a time. bash reads -1 and -2 as "now", and
+		// anything else as seconds since the epoch (#400).
+		layout := strftimeLayout(timeFormat(spec))
+		secs := intArg()
+		when := time.Now()
+		if secs >= 0 {
+			when = time.Unix(secs, 0)
+		}
+		fmt.Fprintf(sb, trimTimeFormat(spec)+"s", when.Format(layout))
 	case 'd', 'i':
 		fmt.Fprintf(sb, spec+"d", intArg())
 	case 'u':
@@ -338,12 +364,145 @@ func parseSpec(s string) (spec string, verb byte, width int) {
 			i++
 		}
 	}
+	// C's length modifiers say what *type* the argument has, which a
+	// shell does not have to care about: bash accepts and ignores them
+	// (#400), where refusing them made `printf "%ld"` — an ordinary
+	// spelling in ported C — an error.
+	// `q` is deliberately not in this set: it is bash's quote verb, and
+	// treating it as C's quad-word modifier would eat %q entirely.
+	modStart := i
+	for i < len(s) && (s[i] == 'l' || s[i] == 'h' || s[i] == 'L' ||
+		s[i] == 'j' || s[i] == 'z' || s[i] == 't') {
+		i++
+	}
+	mods := s[modStart:i]
 	if i >= len(s) {
 		return "", 0, 0
 	}
+	// The time conversion carries its format between parentheses:
+	// %(%m/%d/%y)T. The whole parenthesized run belongs to the spec.
+	if s[i] == '(' {
+		close := strings.IndexByte(s[i:], ')')
+		if close < 0 || i+close+1 >= len(s) || s[i+close+1] != 'T' {
+			return "", 0, 0
+		}
+		return "%" + strings.ReplaceAll(s[1:modStart], "'", "") + s[i:i+close+1], 'T', i + close + 2
+	}
 	// `'` is a POSIX grouping flag Go does not know; drop it rather than
-	// hand fmt something it will render as an error string.
-	return "%" + strings.ReplaceAll(s[1:i], "'", ""), s[i], i + 1
+	// hand fmt something it will render as an error string, and the
+	// length modifiers go the same way — they carry no meaning here and
+	// fmt would render them as %!l(...).
+	_ = mods
+	return "%" + strings.ReplaceAll(s[1:modStart], "'", ""), s[i], i + 1
+}
+
+// checkSpecWidth refuses a width or precision too large to be a Go
+// field width, which is bash's "Value too large to be stored in data
+// type" rather than something for fmt to render into the output.
+func checkSpecWidth(spec string) error {
+	digits := 0
+	for i := 0; i < len(spec); i++ {
+		c := spec[i]
+		if c >= '0' && c <= '9' {
+			digits++
+			if digits > 9 {
+				return errors.New("printf: Value too large to be stored in data type")
+			}
+			continue
+		}
+		digits = 0
+	}
+	return nil
+}
+
+// timeFormat pulls the strftime format out of a %(…)T spec, and
+// trimTimeFormat gives back the spec without it so the flags and width
+// can be handed to fmt.
+func timeFormat(spec string) string {
+	open := strings.IndexByte(spec, '(')
+	if open < 0 || !strings.HasSuffix(spec, ")") {
+		return ""
+	}
+	return spec[open+1 : len(spec)-1]
+}
+
+func trimTimeFormat(spec string) string {
+	if open := strings.IndexByte(spec, '('); open >= 0 && strings.HasSuffix(spec, ")") {
+		return spec[:open]
+	}
+	return spec
+}
+
+// strftimeLayout converts the strftime format %(…)T carries into a Go
+// layout. bash hands the string to strftime(3); Go has no strftime, so
+// the specifiers scripts actually use are translated and anything
+// unrecognized is left as written rather than guessed at.
+func strftimeLayout(f string) string {
+	if f == "" {
+		// An empty format is bash's "%X": the locale's time.
+		f = "%X"
+	}
+	var sb strings.Builder
+	for i := 0; i < len(f); i++ {
+		if f[i] != '%' || i+1 >= len(f) {
+			sb.WriteByte(f[i])
+			continue
+		}
+		i++
+		switch f[i] {
+		case 'Y':
+			sb.WriteString("2006")
+		case 'y':
+			sb.WriteString("06")
+		case 'm':
+			sb.WriteString("01")
+		case 'd':
+			sb.WriteString("02")
+		case 'e':
+			sb.WriteString("_2")
+		case 'H':
+			sb.WriteString("15")
+		case 'I':
+			sb.WriteString("03")
+		case 'M':
+			sb.WriteString("04")
+		case 'S':
+			sb.WriteString("05")
+		case 'p':
+			sb.WriteString("PM")
+		case 'b', 'h':
+			sb.WriteString("Jan")
+		case 'B':
+			sb.WriteString("January")
+		case 'a':
+			sb.WriteString("Mon")
+		case 'A':
+			sb.WriteString("Monday")
+		case 'Z':
+			sb.WriteString("MST")
+		case 'z':
+			sb.WriteString("-0700")
+		case 'T', 'X':
+			sb.WriteString("15:04:05")
+		case 'D', 'x':
+			sb.WriteString("01/02/06")
+		case 'F':
+			sb.WriteString("2006-01-02")
+		case 'R':
+			sb.WriteString("15:04")
+		case 'c':
+			sb.WriteString("Mon Jan  2 15:04:05 2006")
+		case 'n':
+			sb.WriteString("\n")
+		case 't':
+			sb.WriteString("\t")
+		case '%':
+			sb.WriteString("%")
+		default:
+			sb.WriteString("%" + string(f[i]))
+		}
+	}
+	return sb.String()
 }
 
 // NumberError is a numeric argument bash would complain about. It is
@@ -498,7 +657,7 @@ func expandEscapes(s string) (string, bool) {
 			sb.WriteByte(s[i])
 			continue
 		}
-		text, width, stop := unescape(s[i:])
+		text, width, stop := unescape(s[i:], true)
 		if stop {
 			sb.WriteString(text)
 			return sb.String(), true
@@ -515,7 +674,11 @@ func expandEscapes(s string) (string, bool) {
 //
 // An unknown escape keeps its backslash, which is what both bash and the
 // interpreter do: printf '\q' prints \q rather than q.
-func unescape(s string) (text string, width int, stop bool) {
+// unescape reads one escape. keepQuoteEsc distinguishes the two escape
+// sets bash has: the *format string* turns \' into ' and \" into ",
+// while %b leaves both alone — measured, and the difference is visible
+// in printf.tests (#400).
+func unescape(s string, keepQuoteEsc bool) (text string, width int, stop bool) {
 	if len(s) < 2 {
 		return `\`, 1, false
 	}
@@ -540,10 +703,11 @@ func unescape(s string) (text string, width int, stop bool) {
 		return "\v", 2, false
 	case '\\':
 		return `\`, 2, false
-	case '"':
-		return `"`, 2, false
-	case '\'':
-		return "'", 2, false
+	case '"', '\'':
+		if keepQuoteEsc {
+			return `\` + string(s[1]), 2, false
+		}
+		return string(s[1]), 2, false
 	case '0', '1', '2', '3', '4', '5', '6', '7':
 		// Octal comes in two spellings and both are used in the wild:
 		// \0NNN (POSIX printf's format string) and \NNN (what people

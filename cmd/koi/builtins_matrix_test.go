@@ -80,7 +80,15 @@ var interpBuiltinCases = []builtinCase{
 		// line — the difference there would not be koi's.
 		name: "dirs", script: `cd "$HOME"; dirs; pushd /tmp >/dev/null; dirs -v; dirs -l | cut -d" " -f1; dirs +1`,
 	},
-	{name: "echo", script: `echo plain; echo -n no-newline; echo`},
+	{
+		// The clustered forms are #399: `-ne` was printed as an
+		// operand, which is the whole of strip.tests.
+		name: "echo", script: `echo plain; echo -n no-newline; echo
+echo -ne "ab\ncd"; echo END
+echo -en x; echo E
+echo -nx keeps-the-flag-as-a-word
+echo`,
+	},
 	{name: "eval", script: `eval 'echo evaluated'`},
 	{name: "exec", script: `(exec echo execed); echo after`},
 	{name: "exit", script: `(exit 3); echo "status=$?"`},
@@ -101,7 +109,13 @@ printf '\303\251' | wc -c | tr -d ' '
 printf '%b' '\303\251' | wc -c | tr -d ' '
 printf '\xc3\xa9' | wc -c | tr -d ' '
 [ "$(printf '\401')" = "$(printf '\001')" ] && echo wraps
-printf '%q\n' "$(printf 'B\315')" "$(printf 'a\tb')" 'a b'`,
+printf '%q\n' "$(printf 'B\315')" "$(printf 'a\tb')" 'a b'
+printf '%(%Y-%m-%d)T\n' 0
+printf '%ld %lld %ls\n' 5 6 ab
+printf '%Q\n' 'a b'
+printf -- '--%b--\n' '\\'"'"'abcd'
+printf 'fmt:\\'"'"'b\n'
+printf '%10000000000d\n' 1 2>/dev/null; echo "rc=$?"`,
 	},
 	{name: "pushd", script: `pushd /tmp >/dev/null && pwd | sed 's|/private||'`},
 	{name: "pwd", script: `cd /tmp && pwd | sed 's|/private||'`},
