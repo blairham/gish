@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -84,7 +85,15 @@ func ask(ctx context.Context, prompt string) (string, error) {
 	argv := agentArgv()
 	// nil runner: no terminal capability. This provider composes text
 	// for the user to read, and nothing here may execute.
-	client, err := acp.Start(ctx, argv, nil)
+	//
+	// The agent's diagnostics stay discarded here — this runs behind the
+	// prompt, where interleaving another process's stderr with the edit
+	// line is its own damage — unless KOI_DEBUG asks for them (#331).
+	var stderr io.Writer
+	if os.Getenv("KOI_DEBUG") != "" {
+		stderr = os.Stderr
+	}
+	client, err := acp.Start(ctx, argv, nil, stderr)
 	if err != nil {
 		return "", fmt.Errorf("starting %s: %w", strings.Join(argv, " "), err)
 	}

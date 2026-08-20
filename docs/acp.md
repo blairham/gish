@@ -107,6 +107,18 @@ export KOI_AI_PROVIDER=koi-acp
 export KOI_ACP_AGENT="claude-code-acp"     # or `gemini --acp`, …
 ```
 
+One trap worth naming, because this repo's own dogfooding setup walks
+into it: `claude-code-acp` refuses to start when the `CLAUDECODE`
+environment variable is set — its nested-session guard — so running
+`koi acp claude-code-acp` from a terminal *inside* a Claude Code
+session fails on the handshake. The refusal arrives on the agent's
+stderr (passed through to the session since #331) and the fix is to
+unset the guard for that one invocation:
+
+```sh
+env -u CLAUDECODE koi acp claude-code-acp
+```
+
 Sources: [agentclientprotocol.com/protocol/terminals](https://agentclientprotocol.com/protocol/terminals),
 [the v2 draft announcement](https://agentclientprotocol.com/announcements/acp-v2-draft),
 [ACP in Copilot CLI](https://github.blog/changelog/2026-01-28-acp-support-in-copilot-cli-is-now-in-public-preview/).

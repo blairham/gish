@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blairham/koi-shell/internal/acp"
@@ -78,7 +79,18 @@ func RunACP(ctx context.Context, in io.Reader, out, errOut io.Writer, args []str
 		return err
 	}
 
-	client, err := acp.Start(ctx, argv, runner)
+	// Both writers are fed from more than one goroutine below — errOut
+	// by the session's own messages and the agent's stderr copy loop,
+	// out by the prompt loop and the connection's reader goroutine
+	// delivering updates — and io.Writer promises nothing about that.
+	out = &syncWriter{w: out}
+	errOut = &syncWriter{w: errOut}
+
+	// The agent's stderr passes through to the session's (#331): this is
+	// a foreground session a human is watching, and stderr is frequently
+	// the only place an agent explains a refusal — claude-code-acp's
+	// nested-session error lives there and nowhere on the wire.
+	client, err := acp.Start(ctx, argv, runner, errOut)
 	if err != nil {
 		return err
 	}
@@ -120,6 +132,18 @@ func RunACP(ctx context.Context, in io.Reader, out, errOut io.Writer, args []str
 	fmt.Fprintf(errOut, "koi: hosting %s %s — commands run %s\n", info.Name, info.Version, describe)
 
 	return promptLoop(ctx, client, in, out, errOut)
+}
+
+// syncWriter serializes writes to a destination two goroutines share.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
 }
 
 // handshakeTimeout bounds initialize + session/new. Generous, because a

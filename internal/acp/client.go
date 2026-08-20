@@ -56,7 +56,13 @@ type AgentInfo struct {
 // runner executes the commands the agent asks for; passing nil declines
 // the terminal capability outright, which is the correct thing for a
 // caller that only wants text back.
-func Start(ctx context.Context, argv []string, runner Runner) (*Client, error) {
+//
+// stderr is where the agent's own diagnostics go; nil discards them.
+// They are never protocol — mixing them into stdout is how a JSON-RPC
+// stream gets corrupted by a warning — but they are frequently the only
+// place an agent explains a refusal (#331), so a foreground caller
+// should give them somewhere to land.
+func Start(ctx context.Context, argv []string, runner Runner, stderr io.Writer) (*Client, error) {
 	if len(argv) == 0 {
 		return nil, errors.New("acp: no agent command")
 	}
@@ -69,10 +75,10 @@ func Start(ctx context.Context, argv []string, runner Runner) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The agent's stderr is its own diagnostics; it is not protocol, and
-	// mixing it into the wire is how a JSON-RPC stream gets corrupted by
-	// a warning.
-	cmd.Stderr = io.Discard
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
