@@ -176,11 +176,16 @@ blocks demand) has never been gathered.
   policy, not a throttle to pace around** — do not go back to it. Its
   archive ended 2025-05-19 anyway, so the last fifteen months were never
   covered, and that window matters most for AI sentiment.
+- **The search-engine route is closed too** (measured 2026-08-19): web
+  search returns no reddit.com results even for `site:reddit.com`
+  queries — consistent with Reddit's exclusive indexing deal — so the
+  content cannot be reached through result snippets either.
 - The sanctioned route is Reddit's official OAuth API: a **script**-type
   app at reddit.com/prefs/apps, then client credentials against
   `oauth.reddit.com`, ~100 queries/min, free. **This needs credentials a
-  human creates** — there are none on this machine, which is where the
-  sweep stops.
+  human creates** — there are none on this machine, and with the
+  search-engine route ruled out it is now the *only* way in, not merely
+  the sanctioned one.
 
 ### What the censuses answered instead, and what they did not
 
@@ -210,3 +215,52 @@ they show the opposite.
 So the posture is unchanged, and now for a measured reason rather than a
 hedge: **inherit the stack rather than replace it** (#159). The answer to
 the sentiment question changes the marketing, not the architecture.
+
+### The proxy sweep (2026-08-19): what HN says while Reddit stays locked
+
+With Reddit unreachable, the same demand questions were run against the
+venues that are reachable — HN's comment corpus (2024–2026, via Algolia)
+and lobste.rs. **This is a proxy, not the Reddit sweep**: HN skews more
+professional and more security-minded than Reddit's shell subreddits,
+and the sample sizes are conversational, not corpus-scale. What it says,
+clearly labeled as such:
+
+- **The fatigue that exists is trust-shaped, not assembly-shaped.** The
+  sharpest fatigue quote in the corpus is not "assembling is tedious"
+  but *"I wish I could say that I audit every… nifty modern replacement
+  for some creaky GNU userland tool. But bat, zoxide, fzf, atuin,
+  starship, viddy, and about 100 more? Nah"* (2025-09). People are not
+  tired of installing the stack; they are uneasy about *vetting* it.
+  That lands on koi's trust posture (no phoning home, secret-free
+  history, sandboxed exec) rather than on bundling as such.
+- **Modular satisfaction dominates**, matching the popcon retention
+  numbers: *"Atuin for improved history search. Starship for an improved
+  shell prompt. zoxide — better cd… All of these are indispensable"*
+  (2024-12); *"these things are the new minimum"* (2025-06); lobste.rs
+  reads the same. And enhancement of the incumbent beats switching:
+  *"the zsh plugins… get me all the fish benefits with none of the
+  rough spots… zsh is 'good enough'"* (2025-05) — the behavioural
+  finding again, now in sentiment form.
+- **Blocks demand is real and separable from Warp.** Commenters praise
+  the blocks idea while leaving Warp over telemetry and click-to-focus:
+  *"the way they organize each command+response into blocks is also
+  cool for readability and copy/pasting"* (2024-11). Independent
+  support for #99's investment, from people who rejected the company
+  that shipped it first.
+- **AI-in-shell sentiment splits exactly along koi's design line**
+  (2025–2026): auto-execution is distrusted — commenters ask for
+  sandboxing, permission tiers, verification — while propose-for-review
+  is welcomed. One thread flags terminal output itself as a prompt
+  injection vector into agents (2026-04), which is worth carrying into
+  the ACP and blocks surfaces. #20's preview-before-execute and the #21
+  profiles are the shape this audience asks for unprompted.
+
+**Watch-list re-check, same day**: brush 2,162★ (flat since the census),
+`pushed_at` within a day but the release cadence unchanged (v0.4.0
+May 2026, v0.3.0 Nov 2025); IRIS 1,225★ (flat), pushed 2026-08-16 —
+both alive, neither accelerating.
+
+None of this closes the question — Reddit's demand half stays open until
+someone creates the script-app credential — but the proxy evidence points
+the same way the censuses do, with one addition the censuses could not
+see: the fatigue worth marketing to is about **trust**, not assembly.
