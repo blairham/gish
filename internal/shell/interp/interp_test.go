@@ -2418,6 +2418,52 @@ var runTests = []runTest{
 		"failed: false\ndone\n",
 	},
 	{
+		// Redirections are part of the command text (#445). koi rendered
+		// st.Cmd alone, so a trap matching on BASH_COMMAND saw a
+		// different string than bash's.
+		"trap 'echo D:[$BASH_COMMAND]' DEBUG; echo a >/dev/null",
+		"D:[echo a > /dev/null]\n",
+	},
+	{
+		// bash normalizes the spacing rather than quoting the source:
+		// both of these answer "> /dev/null".
+		"trap 'echo D:[$BASH_COMMAND]' DEBUG; echo b   >   /dev/null",
+		"D:[echo b > /dev/null]\n",
+	},
+	{
+		// A dup stays tight where a target takes a space, and several
+		// redirections keep their order.
+		"trap 'echo D:[$BASH_COMMAND]' DEBUG; echo c 2>&1 >/dev/null",
+		"D:[echo c 2>&1 > /dev/null]\n",
+	},
+	{
+		// The clobber and all-streams forms take a space too.
+		"trap 'echo D:[$BASH_COMMAND]' DEBUG; echo d >| /dev/null",
+		"D:[echo d >| /dev/null]\n",
+	},
+	{
+		// An fd number prefixes the operator, and a close is tight.
+		"trap 'echo D:[$BASH_COMMAND]' DEBUG; exec 4>&-",
+		"D:[exec 4>&-]\n",
+	},
+	{
+		// A here-string is a word, so it takes the space.
+		"trap 'echo D:[$BASH_COMMAND]' DEBUG; cat <<<hs >/dev/null",
+		"D:[cat <<< hs > /dev/null]\n",
+	},
+	{
+		// A here-document keeps its body and its terminator, with real
+		// newlines — measured, where the obvious guess is that bash
+		// prints the operator alone.
+		//
+		// The expansion is quoted here and unquoted above on purpose: an
+		// unquoted $BASH_COMMAND word-splits, so the newlines collapse to
+		// spaces and the case would pass against a rendering that never
+		// produced them.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; cat <<EOF >/dev/null\nbody line\nEOF\n",
+		"D:[cat <<EOF > /dev/null\nbody line\nEOF\n]\n",
+	},
+	{
 		// A function body is not traced without "functrace"; the call is.
 		"trap 'echo D' DEBUG; f() { echo in; }; f",
 		"D\nin\n",
