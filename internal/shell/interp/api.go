@@ -185,7 +185,11 @@ type Runner struct {
 
 	// Most scripts don't use pushd/popd, so make space for the initial PWD
 	// without requiring an extra allocation.
-	dirStack     []string
+	dirStack []string
+	// testCallName is the name the running test was invoked by --
+	// `test`, `[` or `[[` -- which is how bash addresses its operand
+	// diagnostics (#401).
+	testCallName string
 	dirBootstrap [1]string
 
 	optState getopts

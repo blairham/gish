@@ -1349,6 +1349,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 		}
 	case *syntax.TestClause:
+		r.testCallName = "[["
+		defer func() { r.testCallName = "" }()
 		if r.bashTest(ctx, cm.X, false) == "" && r.exit.ok() {
 			// to preserve exit status code 2 for regex errors, etc
 			r.exit.code = 1
@@ -3073,6 +3075,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		oldLocalOpts := r.localOpts
 		r.localOpts = nil
 
+		// The getopts scan position travels with a local OPTIND: a
+		// function that declares one gets its own scan and the caller
+		// resumes where it was (#403). Without this the recursive
+		// idiom in getopts8.sub never terminates.
+		oldOptState := r.optState
+
 		// A function is its own level for the ERR trap: bash runs it inside the
 		// function only with -E, and runs it again for the call either way.
 		oldErrTrapFired, oldErrTrapDepth := r.errTrapFired, r.errTrapDepth
@@ -3117,6 +3125,10 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
 		}
 
+		// Checked before the frame is popped, since that is when a
+		// local OPTIND is still visible.
+		hadLocalOptind := r.localInScope("OPTIND")
+
 		r.writeEnv = origEnv
 
 		r.errTrapFired, r.errTrapDepth = oldErrTrapFired, oldErrTrapDepth
@@ -3129,6 +3141,9 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			r.updateExpandOpts()
 		}
 		r.localOpts = oldLocalOpts
+		if hadLocalOptind {
+			r.optState = oldOptState
+		}
 		r.exit.returning = false
 		return
 	}

@@ -357,6 +357,18 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 		r.exit.code = 1
 		return
 	}
+	if name == "OPTIND" {
+		// Assigning OPTIND restarts the scan, including the position
+		// *within* a clustered word — which is what makes a recursive
+		// getopts work (#403). koi compared only the argument index, so
+		// `typeset OPTIND=1` in a function that was mid-cluster changed
+		// nothing and the recursion never terminated.
+		n, err := strconv.Atoi(vr.Str)
+		if err != nil || n < 1 {
+			n = 1
+		}
+		r.optState = getopts{argidx: n - 1}
+	}
 	if name == "GLOBIGNORE" && vr.Kind == expand.String && vr.Str != "" {
 		// Assigning a non-null GLOBIGNORE turns the dotglob option on.
 		// bash mutates the real option — shopt reports it on and

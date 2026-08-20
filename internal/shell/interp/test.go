@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"golang.org/x/term"
 
@@ -16,6 +18,22 @@ import (
 )
 
 // non-empty string is true, empty string is false
+// pushNotDown rewrites !(a && b) as (!a) && b, which is what bash's
+// precedence means. It recurses so `! a || b || c` negates only a, and
+// stops at anything that is not a logical operator.
+func pushNotDown(not *syntax.UnaryTest) (syntax.TestExpr, bool) {
+	bin, ok := not.X.(*syntax.BinaryTest)
+	if !ok || (bin.Op != syntax.AndTest && bin.Op != syntax.OrTest) {
+		return nil, false
+	}
+	inner := &syntax.UnaryTest{Op: syntax.TsNot, X: bin.X}
+	left := syntax.TestExpr(inner)
+	if pushed, ok := pushNotDown(inner); ok {
+		left = pushed
+	}
+	return &syntax.BinaryTest{Op: bin.Op, X: left, Y: bin.Y}, true
+}
+
 func (r *Runner) bashTest(ctx context.Context, expr syntax.TestExpr, classic bool) string {
 	switch x := expr.(type) {
 	case *syntax.Word:
@@ -45,12 +63,23 @@ func (r *Runner) bashTest(ctx context.Context, expr syntax.TestExpr, classic boo
 			}
 			return ""
 		}
-		if r.binTest(ctx, x.Op, r.bashTest(ctx, x.X, classic), r.bashTest(ctx, x.Y, classic)) {
+		if r.binTest(ctx, x.Op, r.bashTest(ctx, x.X, classic), r.bashTest(ctx, x.Y, classic), classic) {
 			return "1"
 		}
 		return ""
 	case *syntax.UnaryTest:
-		if r.unTest(ctx, x.Op, r.bashTest(ctx, x.X, classic)) {
+		if x.Op == syntax.TsNot {
+			// bash's `!` binds to the first term, not to the whole
+			// disjunction (#402): `[[ ! x || x ]]` is true. The parser
+			// gives us !(x || x), so the negation is pushed down to the
+			// leftmost operand of an && / || chain — and only there,
+			// since `[[ ! x = y ]]` negates the comparison and
+			// `[[ ! ( x || x ) ]]` negates what the parentheses group.
+			if pushed, ok := pushNotDown(x); ok {
+				return r.bashTest(ctx, pushed, classic)
+			}
+		}
+		if r.unTest(ctx, x.Op, r.bashTest(ctx, x.X, classic), classic) {
 			return "1"
 		}
 		return ""
@@ -58,7 +87,57 @@ func (r *Runner) bashTest(ctx context.Context, expr syntax.TestExpr, classic boo
 	return ""
 }
 
-func (r *Runner) binTest(ctx context.Context, op syntax.BinTestOperator, x, y string) bool {
+// testInt reads an operand for a numeric comparison. The two forms
+// disagree and both were wrong (#401, #402): `test` and `[` want a
+// plain integer and *diagnose* anything else at status 2 — koi
+// answered a silent 1, which flips an `if test` without a word — while
+// `[[ ]]` evaluates its operands arithmetically, so `[[ 4+3 -eq 7 ]]`
+// is true and an unset name is zero.
+func (r *Runner) testInt(val string, classic bool) (int64, bool) {
+	if !classic {
+		expr, err := syntax.NewParser().Arithmetic(strings.NewReader(val))
+		if err != nil || expr == nil {
+			if err != nil {
+				r.errf("%s: %s: arithmetic syntax error\n", r.testName(), val)
+				r.exit.code = 1
+			}
+			return 0, err == nil
+		}
+		return int64(r.arithm(expr)), true
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64)
+	if err != nil {
+		r.errf("%s: %s: integer expected\n", r.testName(), val)
+		r.exit.code = 2
+		return 0, false
+	}
+	return n, true
+}
+
+// testName is how the diagnostic addresses itself, which is the name
+// the test was *invoked* by: `test`, `[`, or `[[`.
+func (r *Runner) testName() string {
+	if r.testCallName == "" {
+		return "test"
+	}
+	return r.testCallName
+}
+
+// numCompare runs one numeric comparison after reading both operands,
+// which is where the diagnostic lives.
+func (r *Runner) numCompare(x, y string, classic bool, cmp func(a, b int64) bool) bool {
+	a, ok := r.testInt(x, classic)
+	if !ok {
+		return false
+	}
+	b, ok := r.testInt(y, classic)
+	if !ok {
+		return false
+	}
+	return cmp(a, b)
+}
+
+func (r *Runner) binTest(ctx context.Context, op syntax.BinTestOperator, x, y string, classic bool) bool {
 	switch op {
 	case syntax.TsReMatch:
 		re, err := regexp.Compile(y)
@@ -101,17 +180,17 @@ func (r *Runner) binTest(ctx context.Context, op syntax.BinTestOperator, x, y st
 		}
 		return os.SameFile(info1, info2)
 	case syntax.TsEql:
-		return atoi(x) == atoi(y)
+		return r.numCompare(x, y, classic, func(a, b int64) bool { return a == b })
 	case syntax.TsNeq:
-		return atoi(x) != atoi(y)
+		return r.numCompare(x, y, classic, func(a, b int64) bool { return a != b })
 	case syntax.TsLeq:
-		return atoi(x) <= atoi(y)
+		return r.numCompare(x, y, classic, func(a, b int64) bool { return a <= b })
 	case syntax.TsGeq:
-		return atoi(x) >= atoi(y)
+		return r.numCompare(x, y, classic, func(a, b int64) bool { return a >= b })
 	case syntax.TsLss:
-		return atoi(x) < atoi(y)
+		return r.numCompare(x, y, classic, func(a, b int64) bool { return a < b })
 	case syntax.TsGtr:
-		return atoi(x) > atoi(y)
+		return r.numCompare(x, y, classic, func(a, b int64) bool { return a > b })
 	case syntax.AndTest:
 		return x != "" && y != ""
 	case syntax.OrTest:
@@ -131,7 +210,7 @@ func (r *Runner) statMode(ctx context.Context, name string, mode os.FileMode) bo
 	return err == nil && info.Mode()&mode != 0
 }
 
-func (r *Runner) unTest(ctx context.Context, op syntax.UnTestOperator, x string) bool {
+func (r *Runner) unTest(ctx context.Context, op syntax.UnTestOperator, x string, classic bool) bool {
 	switch op {
 	case syntax.TsExists:
 		_, err := r.stat(ctx, x)
@@ -176,7 +255,17 @@ func (r *Runner) unTest(ctx context.Context, op syntax.UnTestOperator, x string)
 		info, err := r.stat(ctx, x)
 		return err == nil && info.Size() > 0
 	case syntax.TsFdTerm:
-		fd := atoi(x)
+		// -t takes a descriptor *number*, and anything else is a
+		// diagnostic at status 2 in both forms — koi answered a silent
+		// 1, so `test -t /dev/tty` looked like "not a terminal"
+		// (#401, #402).
+		n, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		if err != nil {
+			r.errf("%s: %s: integer expected\n", r.testName(), x)
+			r.exit.code = 2
+			return false
+		}
+		fd := int(n)
 		var f any
 		switch fd {
 		case 0:

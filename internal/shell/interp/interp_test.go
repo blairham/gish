@@ -1658,6 +1658,52 @@ var runTests = []runTest{
 	// implementation in expand.Format. The cases live in cmd/koi's
 	// builtins matrix, which runs the printf a user actually gets.
 
+	// test and [ support < and > for string comparison, which koi
+	// called invalid operators — status 2 on an ordinary sort check
+	// (#401).
+	{`test hello \> goodbye; echo gt=$?`, "gt=0\n"},
+	{`test a \< b; echo lt=$?`, "lt=0\n"},
+	// An operand that is not an integer is a *diagnostic* at status 2,
+	// not a silent false: `if test 4+3 -eq 7` took the else branch with
+	// nothing printed (#401). The message names the shell the way it
+	// was invoked.
+	{"test 4+3 -eq 7; echo $?", "test: 4+3: integer expected\n2\n #JUSTERR"},
+	{"test -t X; echo $?", "test: X: integer expected\n2\n #JUSTERR"},
+	{"[ -t 1x ]; echo $?", "[: 1x: integer expected\n2\n #JUSTERR"},
+	{"[[ -t X ]]; echo $?", "[[: X: integer expected\n2\n #JUSTERR"},
+	{`test " 7 " -eq 7; echo $?`, "0\n"},
+	// [[ ]] evaluates its numeric operands arithmetically, where test
+	// wants a plain integer (#402).
+	{"[[ 4+3 -eq 7 ]]; echo $?", "0\n"},
+	{"[[ x -eq 1 ]]; echo $?", "1\n"},
+	// `!` binds to the first term, not to the whole disjunction — the
+	// one that changes the truth value of real conditions (#402).
+	{"[[ ! x || x ]]; echo $?", "0\n"},
+	{`[[ ! x && "" ]]; echo $?`, "1\n"},
+	{`[[ ! "" && x ]]; echo $?`, "0\n"},
+	{"[[ ! x || x || x ]]; echo $?", "0\n"},
+	{"[[ ! ( x || x ) ]]; echo $?", "1\n"},
+	{"[[ ! x = y ]]; echo $?", "0\n"},
+	{`[[ ! -z "" && x ]]; echo $?`, "1\n"},
+	// getopts: OPTERR=0 silences the diagnostic, and `--` is consumed
+	// so OPTIND points past it (#403).
+	{
+		`OPTERR=0; while getopts ab opt -a -c b; do echo "opt=$opt"; done`,
+		"opt=a\nopt=?\n",
+	},
+	{
+		`set -- -a -- -b bval one; OPTIND=1; while getopts ab: opt; do :; done; shift $((OPTIND-1)); echo "rest: $@"`,
+		"rest: -b bval one\n",
+	},
+	{
+		// Assigning OPTIND restarts the scan *within* a clustered word
+		// too, and the position travels with a local OPTIND. koi
+		// compared only the argument index, so this recursion — the
+		// suite's getopts8.sub — never terminated (#403).
+		`f() { typeset OPTIND=1 o; while getopts ":abcxyz" o; do echo "opt: $o"; if [[ $o = y ]]; then f -abc; fi; done; }; f -xyz`,
+		"opt: x\nopt: y\nopt: a\nopt: b\nopt: c\nopt: z\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
