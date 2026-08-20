@@ -202,6 +202,9 @@ type Runner struct {
 	bashPIDValue int
 	// argv0 is BASH_ARGV0's writable view of $0.
 	argv0 string
+	// traceLine is the line of the statement being run, which PS4's
+	// $LINENO reports (#413).
+	traceLine uint
 	// disabledBuiltins are the names `enable -n` turned off, which fall
 	// through to PATH like any other command (#411).
 	disabledBuiltins map[string]bool
@@ -1181,6 +1184,13 @@ var bashOptsTable = [...]bashOpt{
 		supported:    true,
 	},
 	{
+		// A command substitution runs without errexit unless this asks
+		// for it (#412), so the option lands with the fix it governs.
+		name:         "inherit_errexit",
+		defaultState: false,
+		supported:    true,
+	},
+	{
 		// Off by default, as in bash — and until #277 it was effectively
 		// always on: the last pipeline stage ran in the current shell, so
 		// `cmd | read x` kept x and `cat f | while read l; do n=$((n+1));
@@ -1280,9 +1290,6 @@ var bashOptsTable = [...]bashOpt{
 	},
 	{name: "huponexit"},
 	{
-		name: "inherit_errexit",
-	},
-	{
 		name:         "interactive_comments",
 		defaultState: true,
 	},
@@ -1356,6 +1363,7 @@ const (
 	optExtGlob
 	optFailGlob
 	optGlobStar
+	optInheritErrExit
 	optLastPipe
 	optLocalVarInherit
 	optNoCaseGlob

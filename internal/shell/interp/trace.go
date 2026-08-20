@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,10 @@ type tracer struct {
 	printer   *syntax.Printer
 	output    io.Writer
 	needsPlus bool
+	// prefix is PS4, expanded per line. It was a hardcoded "+ ", so
+	// `PS4='+ $BASH_SOURCE:$LINENO: '` — the standard debugging recipe
+	// — produced nothing but plusses (#413).
+	prefix string
 }
 
 func (r *Runner) tracer() *tracer {
@@ -26,11 +31,61 @@ func (r *Runner) tracer() *tracer {
 		return nil
 	}
 
+	out := r.stderr
+	// BASH_XTRACEFD sends the trace somewhere other than stderr, which
+	// is how a script keeps its trace out of its own error output.
+	if fdStr := r.envGet("BASH_XTRACEFD"); fdStr != "" {
+		if fd, err := strconv.Atoi(fdStr); err == nil {
+			if w := r.fdWriter(fd); w != nil {
+				out = w
+			}
+		}
+	}
+
 	return &tracer{
 		printer:   syntax.NewPrinter(),
-		output:    r.stderr,
+		output:    out,
 		needsPlus: true,
+		prefix:    r.tracePrefix(),
 	}
+}
+
+// tracePS4 expands PS4's value the way a prompt string is expanded —
+// parameters, command substitutions and arithmetic — without word
+// splitting, since the result is one prefix rather than a list.
+func (r *Runner) tracePS4(val string) string {
+	word, err := syntax.NewParser().Document(strings.NewReader(val))
+	if err != nil {
+		// An unparsable PS4 is used literally rather than dropped: a
+		// broken prefix should not silence the trace.
+		return val
+	}
+	// The expansion must not itself be traced, which would recurse.
+	old := r.opts[optXTrace]
+	r.opts[optXTrace] = false
+	// $LINENO comes from the position of the expansion node, and PS4 is
+	// parsed on its own — so line 1 without this. `PS4='+ $LINENO: '`
+	// is the recipe the option exists for, and reporting 1 for every
+	// line of a script is worse than reporting nothing.
+	oldOffset := r.ecfg.LineOffset
+	if r.traceLine > 0 {
+		r.ecfg.LineOffset = uint64(r.traceLine) - 1
+	}
+	out := r.document(word)
+	r.ecfg.LineOffset = oldOffset
+	r.opts[optXTrace] = old
+	return out
+}
+
+// tracePrefix expands PS4 for one trace line. The first character is
+// repeated per nesting level in bash; koi has one level here, so the
+// string is used as written.
+func (r *Runner) tracePrefix() string {
+	vr := r.lookupVar("PS4")
+	if !vr.IsSet() {
+		return "+ "
+	}
+	return r.tracePS4(vr.String())
 }
 
 // string writes s to tracer.buf if tracer is non-nil,
@@ -41,7 +96,7 @@ func (t *tracer) string(s string) {
 	}
 
 	if t.needsPlus {
-		t.buf.WriteString("+ ")
+		t.buf.WriteString(t.plus())
 	}
 	t.needsPlus = false
 	t.buf.WriteString(s)
@@ -63,12 +118,20 @@ func (t *tracer) expr(x syntax.Node) {
 	}
 
 	if t.needsPlus {
-		t.buf.WriteString("+ ")
+		t.buf.WriteString(t.plus())
 	}
 	t.needsPlus = false
 	if err := t.printer.Print(&t.buf, x); err != nil {
 		panic(err)
 	}
+}
+
+// plus is the line's prefix, defaulting to bash's when PS4 is unset.
+func (t *tracer) plus() string {
+	if t.prefix == "" {
+		return "+ "
+	}
+	return t.prefix
 }
 
 // flush writes the contents of tracer.buf to the tracer.stdout.
@@ -134,11 +197,12 @@ func (t *tracer) call(cmd string, args ...string) {
 		// fields may be empty for function () {} declarations
 		t.string(cmd)
 	} else if IsBuiltin(cmd) {
-		if cmd == "set" {
-			// TODO: only first occurrence of set is not printed, succeeding calls are printed
-			return
-		}
-
+		// `set` used to be skipped entirely, which dropped every later
+		// `set` from the trace and still emitted the line's newline —
+		// a stray blank line in the middle of a trace (#413). The
+		// `set -x` that turns tracing *on* needs no special case: the
+		// tracer is built from the option as it stood before the
+		// command ran, so there is nothing to print from.
 		qs, err := syntax.Quote(s, syntax.LangBash)
 		if err != nil { // should never happen
 			panic(err)
