@@ -729,14 +729,18 @@ func stringIndex(index syntax.ArithmExpr) bool {
 
 // arithmStr evaluates a string as an arithmetic expression, as an assignment to
 // a variable declared with "declare -i" does. An empty value and a name which
-// is not set are both zero, matching bash. A value which does not parse is a
-// fatal error there, so it is one here too.
+// is not set are both zero, matching bash.
+//
+// A value which does not parse ends a command string and not a script
+// file (#529). The comment here used to say it was fatal "there, so it
+// is one here too", which is true of `-c` and measured wrong of a file:
+// bash reports it, sets status 1, and runs the next line.
 func (r *Runner) arithmStr(s string) string {
 	expr, err := syntax.NewParser().Arithmetic(strings.NewReader(s))
 	if err != nil {
 		r.errf("%s: arithmetic syntax error\n", s)
 		r.exit.code = 1
-		r.exit.exiting = true
+		r.exit.exiting = r.mainScript == ""
 		return "0"
 	}
 	if expr == nil {
@@ -864,12 +868,14 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 				w, ok := elem.Index.(*syntax.Word)
 				if !ok {
 					if elem.Index == nil {
-						// A bare word after a subscripted element is a
-						// fatal assignment error, ending the script.
+						// A bare word after a subscripted element is an
+						// assignment error. It ends a command string and
+						// not a script file (#529): bash reports it,
+						// sets status 1, and runs the next line.
 						r.errf("%s: %s: must use subscript when assigning associative array\n",
 							name, r.literal(elem.Value))
 						r.exit.code = 1
-						r.exit.exiting = true
+						r.exit.exiting = r.mainScript == ""
 						return name, prev
 					}
 					r.errf("%s: bad array subscript\n", name)
