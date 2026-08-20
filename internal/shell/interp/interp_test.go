@@ -1590,6 +1590,62 @@ var runTests = []runTest{
 		"/tmp\n",
 	},
 
+	// mapfile's remaining flags (#392): each was refused, which left
+	// the array never created — so a later loop over it printed
+	// nothing rather than failing.
+	{
+		`printf "a\nb\nc\n" | { mapfile -n 2 arr; declare -p arr; }`,
+		`declare -a arr=([0]=$'a\n' [1]=$'b\n')` + "\n",
+	},
+	{
+		`printf "a\nb\n" | { mapfile -O 5 -t arr; declare -p arr; }`,
+		`declare -a arr=([5]="a" [6]="b")` + "\n",
+	},
+	{
+		`printf "a\nb\nc\nd\n" | { mapfile -s 2 -t arr; declare -p arr; }`,
+		`declare -a arr=([0]="c" [1]="d")` + "\n",
+	},
+	{
+		`printf "a\nb\n" | { mapfile -t -C "echo cb:" -c 1 arr; declare -p arr; }`,
+		"cb: 0 a\ncb: 1 b\n" + `declare -a arr=([0]="a" [1]="b")` + "\n",
+	},
+	{
+		`printf "a\nb\n" | { mapfile -t -n 0 arr; declare -p arr; }`,
+		`declare -a arr=([0]="a" [1]="b")` + "\n",
+	},
+	{
+		`mapfile -n x arr; echo st=$?`,
+		"mapfile: x: invalid line count\nst=1\n #JUSTERR",
+	},
+	{
+		`mapfile -u x arr; echo st=$?`,
+		"mapfile: x: invalid file descriptor specification\nst=1\n #JUSTERR",
+	},
+	// A bare `set` lists the shell's variables and functions (#394),
+	// quoted the shortest way that reads back.
+	{
+		`FOO=bar; set | grep "^FOO="`,
+		"FOO=bar\n",
+	},
+	{
+		`V="a b"; set | grep "^V="`,
+		"V='a b'\n",
+	},
+	{
+		`V=$'a\nb'; set | grep "^V="`,
+		`V=$'a\nb'` + "\n",
+	},
+	{
+		`a=(1 2); set | grep "^a="`,
+		`a=([0]="1" [1]="2")` + "\n",
+	},
+	{
+		// The functions come after the variables, in the canonical
+		// form declare -f prints.
+		`f(){ echo hi; }; set | grep "^f ()"`,
+		"f () \n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

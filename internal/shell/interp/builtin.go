@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -210,6 +211,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		exit.exiting = true
 	case "set":
+		if len(args) == 0 {
+			// POSIX: bare `set` lists the shell's variables, and bash
+			// adds its functions after them. koi listed nothing and
+			// exited 1, so posix2.tests never reached the four cases
+			// that probe the *quoting* of this listing (#394).
+			r.setListing()
+			break
+		}
 		if err := Params(args...)(r); err != nil {
 			return failf(2, "set: %v\n", err)
 		}
@@ -1219,8 +1228,32 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 	case "readarray", "mapfile":
 		dropDelim := false
 		delim := "\n"
+		// The count/origin/skip trio and the callback pair were all
+		// refused with "invalid option", which left the array *never
+		// created* — so every later loop over it printed nothing with
+		// no sign of why (#392).
+		maxCount, origin, skip := 0, 0, 0
+		callback, quantum := "", 5000
+		fd, haveFd := 0, false
 		fp := flagParser{remaining: args}
+		// Each numeric option names what it was expecting when the
+		// value does not parse — bash's wording, and its status: 1
+		// rather than the 2 a usage error usually carries.
+		intArg := func(flag, what string) (int, bool) {
+			if len(fp.remaining) == 0 {
+				r.errf("%s: %s: option requires an argument\n", name, flag)
+				return 0, false
+			}
+			val := fp.value()
+			n, err := strconv.Atoi(val)
+			if err != nil || n < 0 {
+				r.errf("%s: %s: invalid %s\n", name, val, what)
+				return 0, false
+			}
+			return n, true
+		}
 		for fp.more() {
+			var ok bool
 			switch flag := fp.flag(); flag {
 			case "-t":
 				// Remove the delim from each line read
@@ -1235,6 +1268,35 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 					// string.
 					delim = "\x00"
 				}
+			case "-n":
+				if maxCount, ok = intArg(flag, "line count"); !ok {
+					return exitStatus{code: 1}
+				}
+			case "-O":
+				if origin, ok = intArg(flag, "array origin"); !ok {
+					return exitStatus{code: 1}
+				}
+			case "-s":
+				if skip, ok = intArg(flag, "line count"); !ok {
+					return exitStatus{code: 1}
+				}
+			case "-c":
+				if quantum, ok = intArg(flag, "callback quantum"); !ok {
+					return exitStatus{code: 1}
+				}
+				if quantum == 0 {
+					quantum = 5000
+				}
+			case "-C":
+				if len(fp.remaining) == 0 {
+					return failf(2, "%s: -C: option requires an argument\n", name)
+				}
+				callback = fp.value()
+			case "-u":
+				if fd, ok = intArg(flag, "file descriptor specification"); !ok {
+					return exitStatus{code: 1}
+				}
+				haveFd = true
 			default:
 				return failf(2, "%s: invalid option %q\n", name, flag)
 			}
@@ -1254,15 +1316,49 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			return failf(2, "%s: Only one array name may be specified, %v\n", name, args)
 		}
 
+		src := r.fdReader(fd)
+		if src == nil {
+			if haveFd {
+				return failf(1, "%s: %d: invalid file descriptor: Bad file descriptor\n", name, fd)
+			}
+			return failf(1, "%s: no stdin to read from\n", name)
+		}
+
 		var vr expand.Variable
-		vr.Kind = expand.Indexed
-		scanner := bufio.NewScanner(r.stdin)
+		vr.Kind, vr.Set = expand.Indexed, true
+		scanner := bufio.NewScanner(src)
 		scanner.Split(mapfileSplit(delim[0], dropDelim))
+		read := 0
 		for scanner.Scan() {
+			if skip > 0 {
+				// -s discards leading lines rather than storing them,
+				// so they do not count toward -n either.
+				skip--
+				continue
+			}
 			vr.List = append(vr.List, scanner.Text())
+			read++
+			if callback != "" && read%quantum == 0 {
+				// The callback is evaluated with the index the line
+				// landed at and the line itself, which is how a script
+				// reports progress over a long read.
+				idx := origin + len(vr.List) - 1
+				r.mapfileCallback(ctx, callback, idx, vr.List[len(vr.List)-1])
+			}
+			if maxCount > 0 && read >= maxCount {
+				break
+			}
 		}
 		if err := scanner.Err(); err != nil {
 			return failf(2, "%s: unable to read, %v\n", name, err)
+		}
+		if origin > 0 {
+			// -O stores the first line at that index, so the array is
+			// sparse from zero rather than shifted.
+			vr.Indexes = make([]int, len(vr.List))
+			for i := range vr.List {
+				vr.Indexes[i] = origin + i
+			}
 		}
 		r.setVar(arrayName, vr)
 
@@ -1436,6 +1532,99 @@ func orNull(s string) string {
 		return "NULL"
 	}
 	return s
+}
+
+// setListing prints what a bare `set` lists: every set variable as
+// name=value, then every function in the canonical form declare -f
+// prints. Both halves are sorted, which is bash's order.
+func (r *Runner) setListing() {
+	var names []string
+	r.writeEnv.Each(func(name string, vr expand.Variable) bool {
+		if vr.IsSet() && vr.Kind != expand.NameRef {
+			names = append(names, name)
+		}
+		return true
+	})
+	slices.Sort(names)
+	for _, name := range names {
+		vr := r.lookupVar(name)
+		switch vr.Kind {
+		case expand.Indexed:
+			// An array prints its elements the way declare -p does,
+			// without the declare prefix.
+			r.outf("%s=(", name)
+			for i, v := range vr.List {
+				if i > 0 {
+					r.out(" ")
+				}
+				idx := i
+				if vr.Indexes != nil {
+					idx = vr.Indexes[i]
+				}
+				r.outf("[%d]=%s", idx, declQuote(v))
+			}
+			r.out(")\n")
+		case expand.Associative:
+			r.outf("%s=(", name)
+			for _, k := range slices.Sorted(maps.Keys(vr.Map)) {
+				r.outf("[%s]=%s ", declQuoteKey(k), declQuote(vr.Map[k]))
+			}
+			r.out(")\n")
+		default:
+			r.outf("%s=%s\n", name, setQuote(vr.Str))
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.Funcs)) {
+		r.out(printFuncCanonical(name, r.Funcs[name], false))
+	}
+}
+
+// setQuote renders a value the shortest way that reads back, which is
+// what `set` prints: bare when nothing needs quoting, ANSI-C when a
+// control character does, and single quotes otherwise. declare -p's
+// always-double-quoted form is a different question and has its own
+// renderer.
+func setQuote(s string) string {
+	if s == "" {
+		return ""
+	}
+	safe := true
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '_', c == '.', c == '-', c == '/', c == ':', c == '+', c == '@', c == '%', c == ',', c == '=':
+		default:
+			safe = false
+		}
+		if !safe {
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	if strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return declQuote(s)
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// mapfileCallback runs mapfile's -C action, which bash evaluates with
+// the array index and the line appended as arguments (#392).
+func (r *Runner) mapfileCallback(ctx context.Context, callback string, index int, line string) {
+	src := callback + " " + strconv.Itoa(index) + " " + shellQuoteArg(line)
+	file, err := syntax.NewParser().Parse(strings.NewReader(src), "")
+	if err != nil {
+		return
+	}
+	r.stmts(ctx, file.Stmts)
+}
+
+// shellQuoteArg single-quotes a value so the callback receives it as
+// one word whatever it contains.
+func shellQuoteArg(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // mapfileSplit returns a suitable Split function for a [bufio.Scanner];
