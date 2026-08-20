@@ -253,7 +253,7 @@ var runTests = []runTest{
 	{"printf", "usage: printf format [arguments]\nexit status 2 #JUSTERR"},
 	{"break", "break is only useful in a loop\n #JUSTERR"},
 	{"continue", "continue is only useful in a loop\n #JUSTERR"},
-	{"cd a b", "usage: cd [dir]\nexit status 2 #JUSTERR"},
+	{"cd a b", "cd: too many arguments\nexit status 2 #JUSTERR"},
 	{"shift a", "usage: shift [n]\nexit status 2 #JUSTERR"},
 	{
 		"shouldnotexist",
@@ -1522,6 +1522,74 @@ var runTests = []runTest{
 		"1 3\n",
 	},
 
+	// The directory stack is bash's: entry 0 is the current directory,
+	// so cd moves it, dirs prints it first, and pushd/popd take +N/-N
+	// stack arguments (#390).
+	{
+		`cd /; pushd /usr >/dev/null; pushd /tmp >/dev/null; dirs; echo "DS:${DIRSTACK[@]}"`,
+		"/tmp /usr /\nDS:/tmp /usr /\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; cd /tmp; dirs`,
+		"/tmp /\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; pushd /tmp>/dev/null; pushd +2>/dev/null; dirs; pwd`,
+		"/ /tmp /usr\n/\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; popd>/dev/null; pwd`,
+		"/\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; dirs -v`,
+		" 0  /usr\n 1  /\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; dirs +1; dirs -1; dirs -c; dirs`,
+		"/\n/usr\n/usr\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; pushd /tmp>/dev/null; echo ~1 ~-1 ~0 ~+2`,
+		"/usr /usr /tmp /\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; pushd /tmp>/dev/null; popd +1>/dev/null; dirs`,
+		"/tmp /\n",
+	},
+	{
+		// -n pushes below the current directory and pops the entry
+		// below it, so the shell never moves.
+		`cd /; pushd /usr>/dev/null; pushd -n /tmp>/dev/null; dirs; pwd`,
+		"/usr /tmp /\n/usr\n",
+	},
+	{
+		`cd /; pushd /usr>/dev/null; pushd /tmp>/dev/null; popd -n; pwd`,
+		"/tmp /\n/tmp\n",
+	},
+	// cd takes -L and -P, and searches CDPATH for a relative operand
+	// (#391) — koi answered a usage error and never changed directory.
+	{
+		// -L keeps the path as written, -P resolves it. The symlink is
+		// built here rather than relying on /tmp, which is a symlink on
+		// darwin and a real directory on linux — a case that bakes that
+		// in passes on one platform and fails on the other.
+		`mkdir real; ln -s real link; cd -L link; [ "$(basename "$PWD")" = link ] && echo kept`,
+		"kept\n",
+	},
+	{
+		`mkdir real; ln -s real link; cd -P link; [ "$(basename "$PWD")" = real ] && echo resolved`,
+		"resolved\n",
+	},
+	{
+		`cd -P .; echo "st=$?"`,
+		"st=0\n",
+	},
+	{
+		`cd -- /tmp && pwd`,
+		"/tmp\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
@@ -1962,7 +2030,7 @@ var runTests = []runTest{
 	},
 	{"popd", "popd: directory stack empty\nexit status 1 #JUSTERR"},
 	{"popd -n", "popd: directory stack empty\nexit status 1 #JUSTERR"},
-	{"popd foo", "popd: invalid argument\nexit status 2 #JUSTERR"},
+	{"popd foo", "popd: foo: invalid argument\npopd: usage: popd [-n] [+N | -N]\nexit status 2 #JUSTERR"},
 	{"old=$(dirs); mkdir a; pushd a >/dev/null; set -- $(popd); echo $#", "1\n"},
 	{
 		`old=$(dirs); mkdir a; pushd a >/dev/null; popd >/dev/null; [[ $(dirs) == "$old" ]]`,

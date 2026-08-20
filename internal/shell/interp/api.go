@@ -609,13 +609,11 @@ func (r *Runner) Aliases() map[string]string {
 }
 
 // DirStack returns a copy of the pushd/popd stack, top (the current
-// directory) first — the order `dirs` prints.
+// directory) first — the order `dirs` prints, which is the order the
+// stack is now stored in (#390).
 func (r *Runner) DirStack() []string {
-	out := make([]string, 0, len(r.dirStack))
-	for _, dir := range slices.Backward(r.dirStack) {
-		out = append(out, dir)
-	}
-	return out
+	r.dirStackSync()
+	return slices.Clone(r.dirStack)
 }
 
 // OptionState is one named shell option and whether it is currently on.
