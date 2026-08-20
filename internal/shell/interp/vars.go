@@ -219,6 +219,16 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 			vr.Kind = expand.String
 			vr.Str = r.Params[i]
 		}
+	default:
+		// ${10} and beyond (#362): any all-digit name is a positional
+		// parameter. Only the braced form reaches here — the parser
+		// reads $10 as $1 followed by 0, as bash does.
+		if n, err := strconv.Atoi(name); err == nil && n >= 10 {
+			if n <= len(r.Params) {
+				vr.Kind = expand.String
+				vr.Str = r.Params[n-1]
+			}
+		}
 	}
 	if vr.Kind != expand.Unknown {
 		vr.Set = true

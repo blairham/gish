@@ -363,6 +363,9 @@ var runTests = []runTest{
 	{`count() { echo $#; }; count "${unset_var[@]}"`, "0\n"},
 	{`count() { echo $#; }; a=(""); count "${a[@]}"`, "1\n"},
 	{`echo $1 $3; set -- a b c; echo $1 $3`, "\na c\n"},
+	// ${10} and beyond are positional parameters (#362); bare $10 stays
+	// $1 followed by 0.
+	{`set -- 1 2 3 4 5 6 7 8 9 ten eleven; echo "[${10}][${11}][${12:-none}][$10]"`, "[ten][eleven][none][10]\n"},
 	{`[[ $0 == "bash" || $0 == "gosh" ]]`, ""},
 
 	// dollar quotes
