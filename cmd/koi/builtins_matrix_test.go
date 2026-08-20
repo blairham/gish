@@ -124,16 +124,21 @@ printf '%10000000000d\n' 1 2>/dev/null; echo "rc=$?"`,
 		// through read and field splitting untouched, a high byte works
 		// as -d's delimiter, and -n/-N count characters rather than
 		// bytes — five of абвгдежз is абвгд.
-		// The -n/-N counting runs under an explicit UTF-8 locale: in the
-		// C locale bash counts bytes, and the matrix env is scrubbed, so
-		// without the pin this would compare koi's UTF-8-always posture
-		// against bash's C-locale one (the residual half of #377).
+		// The counting is exercised in *both* locales now (#470): koi
+		// used to be UTF-8 always, so the -n/-N lines needed a UTF-8
+		// pin to avoid comparing that posture against bash's C-locale
+		// one. It follows the locale, so the pin is the test rather
+		// than a workaround.
 		name: "read", script: `printf 'one two\n' | { read a b; echo "$a|$b"; }
 printf 'B\315\n' | { IFS= read -r f; printf '%s' "$f" | wc -c | tr -d ' '; }
 printf 'ab\200cd' | { read -rd "$(printf '\200')" s; echo "$s"; }
 export LC_ALL=en_US.UTF-8
 read -n 5 foo <<< "абвгдежз"; echo "$foo"
-read -N 3 foo <<< "абвгд"; echo "$foo"`,
+read -N 3 foo <<< "абвгд"; echo "$foo"
+export LC_ALL=C
+read -n 5 foo <<< "абвгдежз"; printf '%s' "$foo" | wc -c | tr -d ' '
+a=$'\316\261'; echo "${#a}"
+case $a in ?) echo one;; ??) echo two;; esac`,
 	},
 	{name: "readarray", script: `printf 'x\ny\n' | { readarray -t arr; echo "${arr[1]}"; }`},
 	{
