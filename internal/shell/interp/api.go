@@ -1210,7 +1210,12 @@ var posixOptsTable = [...]posixOpt{
 	{' ', "emacs", false, false},
 	{' ', "vi", false, false},
 	{'v', "verbose", false, false},
-	{' ', "posix", false, false},
+	// POSIX mode (#395). koi refused it, which was honest and cost
+	// whole suite files: a script that opens with `set -o posix` got
+	// exit 2 and every later assertion diverged. What it changes here
+	// is what a script can observe — see the semantics keyed on
+	// optPosix — rather than every difference bash lists.
+	{' ', "posix", false, true},
 	{'h', "hashall", true, false},
 	{' ', "interactive-comments", true, false},
 	// keyword is implemented (#396): every assignment-shaped word goes

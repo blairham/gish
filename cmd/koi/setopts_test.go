@@ -55,16 +55,19 @@ func TestSetOListingMatchesBash(t *testing.T) {
 // An option koi does not implement is accepted when it is asked for the
 // state it is already in, because nothing needs to change for that to be
 // true. Asked for the other state it refuses, and that refusal is the
-// point: a shell that accepted `set -o posix` and carried on not being in
-// POSIX mode would be the failure this issue was opened about — a header
+// point: a shell that accepted an option and carried on not being in
+// that mode would be the failure this issue was opened about — a header
 // that produces no behavior — rather than a fix for it.
+//
+// `set -o posix` used to be the example here and is implemented now
+// (#395), which is the outcome the rule is aimed at: the way off this
+// list is to do the thing.
 func TestSetRefusesWhatItCannotDo(t *testing.T) {
 	t.Parallel()
 	koi := buildKoi(t)
 	dir := t.TempDir()
 
 	for _, tc := range []struct{ script, want string }{
-		{"set -o posix", "posix"},
 		{"set -m", "monitor"},
 		{"set -v", "verbose"},
 		{"set -H", "histexpand"},

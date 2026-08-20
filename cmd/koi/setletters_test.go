@@ -41,7 +41,7 @@ func runScriptArgv(t *testing.T, bin string, argv []string) (string, int) {
 //
 // stdout and exit status are compared against bash. stderr is not: koi
 // reports an option it does not implement rather than accepting it
-// silently (see the -o posix case below), which is a deliberate
+// silently (see the -o verbose case below), which is a deliberate
 // divergence in the direction of saying so.
 func TestSetOptionLettersInArgvMatchBash(t *testing.T) {
 	bashBin := requireBash(t)
@@ -80,9 +80,12 @@ func TestSetOptionLettersInArgvMatchBash(t *testing.T) {
 
 // `-o name` is the long spelling and reaches the interpreter the same
 // way. koi differs from bash on purpose for an option it does not
-// implement: bash accepts `-o posix` silently, koi runs the command and
-// says on stderr that it could not turn posix on. Saying so is the point
-// — the alternative is a shell that claims a mode it is not in.
+// implement: bash accepts it silently, koi runs the command and says on
+// stderr that it could not turn the option on. Saying so is the point —
+// the alternative is a shell that claims a mode it is not in.
+//
+// The example used to be `-o posix`, which is implemented now (#395);
+// `-o verbose` stands in for the same rule.
 func TestSetOptionLongFormInArgv(t *testing.T) {
 	koiBin := buildKoi(t)
 
@@ -93,14 +96,14 @@ func TestSetOptionLongFormInArgv(t *testing.T) {
 
 	// An unimplemented option is refused rather than silently accepted,
 	// and the refusal must not stop the command from running.
-	outErr, codeErr := runArgv(t, koiBin, []string{"-o", "posix", "-c", "echo hi"})
+	outErr, codeErr := runArgv(t, koiBin, []string{"-o", "verbose", "-c", "echo hi"})
 	if codeErr != 0 {
-		t.Errorf("-o posix exit status = %d, want 0: %q", codeErr, outErr)
+		t.Errorf("-o verbose exit status = %d, want 0: %q", codeErr, outErr)
 	}
 	if !strings.Contains(outErr, "hi") {
-		t.Errorf("-o posix did not run the command: %q", outErr)
+		t.Errorf("-o verbose did not run the command: %q", outErr)
 	}
-	if !strings.Contains(outErr, "posix") {
-		t.Errorf("-o posix was accepted silently: %q", outErr)
+	if !strings.Contains(outErr, "verbose") {
+		t.Errorf("-o verbose was accepted silently: %q", outErr)
 	}
 }

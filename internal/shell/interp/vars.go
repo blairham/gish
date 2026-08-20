@@ -410,6 +410,12 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 		}
 		r.optState = getopts{argidx: n - 1}
 	}
+	if name == "POSIXLY_CORRECT" {
+		// Assigning it turns POSIX mode on, whatever the value — the
+		// variable and the option are one state (#395).
+		r.opts[optPosix] = true
+		r.updateExpandOpts()
+	}
 	switch name {
 	case "PATH", "SHELL", "ENV", "BASH_ENV":
 		if r.opts[optRestricted] {

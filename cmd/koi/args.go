@@ -62,6 +62,8 @@ var longOptions = map[string]bool{
 	"restore":        true,
 	// bash's long spelling of -r (#398).
 	"restricted": false,
+	// bash's --posix (#395).
+	"posix": false,
 }
 
 // parseArgs reads a shell command line. The error is meant for the user:
@@ -104,6 +106,8 @@ func parseArgs(args []string) (shellArgs, error) {
 				out.login = true
 			case "restricted":
 				out.setFlags = append(out.setFlags, "-r")
+			case "posix":
+				out.setFlags = append(out.setFlags, "-o", "posix")
 			case "remote-session":
 				out.remoteSession = true
 			case "help":
