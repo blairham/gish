@@ -1646,6 +1646,18 @@ var runTests = []runTest{
 		"f () \n",
 	},
 
+	// echo's flag letters cluster (#399): -ne was printed as an
+	// operand, which is the whole of strip.tests.
+	{"echo -ne \"ab\\ncd\"; echo END", "ab\ncdEND\n"},
+	{"echo -en x; echo E", "xE\n"},
+	{"echo -nx word", "-nx word\n"},
+	{"echo -eE \"a\\tb\"", "a\\tb\n"},
+	// printf's missing conversions (#400) are not covered here: koi's
+	// printf is the native builtin in internal/builtins, reached
+	// through the CallHandler, and this package has its own older
+	// implementation in expand.Format. The cases live in cmd/koi's
+	// builtins matrix, which runs the printf a user actually gets.
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

@@ -293,15 +293,32 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		newline, doExpand := true, false
 	echoOpts:
 		for len(args) > 0 {
-			switch args[0] {
-			case "-n":
-				newline = false
-			case "-e":
-				doExpand = true
-			case "-E": // default
-			default:
+			// The letters cluster: `echo -ne` is -n and -e, and koi
+			// read only the exact spellings, so it printed "-ne" as an
+			// operand (#399) — which is the whole of strip.tests.
+			arg := args[0]
+			if len(arg) < 2 || arg[0] != '-' {
 				break echoOpts
 			}
+			// The whole cluster is read before any of it is applied: a
+			// cluster carrying any other letter is not an option at
+			// all, so `echo -nx` prints `-nx` *and* its newline. The
+			// first cut applied the n before rejecting the x, which the
+			// builtins matrix caught.
+			nextNewline, nextExpand := newline, doExpand
+			for i := 1; i < len(arg); i++ {
+				switch arg[i] {
+				case 'n':
+					nextNewline = false
+				case 'e':
+					nextExpand = true
+				case 'E':
+					nextExpand = false
+				default:
+					break echoOpts
+				}
+			}
+			newline, doExpand = nextNewline, nextExpand
 			args = args[1:]
 		}
 		// One logical line, one write. Background jobs are goroutines
