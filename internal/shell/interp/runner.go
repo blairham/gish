@@ -2786,6 +2786,14 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			r.closeFd(fd)
 			return nil, nil
 		}
+		// `>&N-` moves rather than copies: dup N onto this descriptor
+		// and then close N (#417). Without it the swizzle loops that
+		// hand a descriptor along leak every one they touch, which is
+		// how vredir6.sub ran koi out of descriptors.
+		moveSrc, move := strings.CutSuffix(arg, "-")
+		if move {
+			arg = moveSrc
+		}
 		src, err := strconv.Atoi(arg)
 		if err != nil {
 			// `>&file` with a word that is not a descriptor is csh's
@@ -2808,6 +2816,12 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			return nil, errBadFd
 		}
 		r.setFdWriter(fd, w)
+		if move && src != fd {
+			// Closing the source is the whole difference from a plain
+			// dup. `6>&6-` is a no-op rather than a self-close, which is
+			// why the descriptors are compared first.
+			r.closeFd(src)
+		}
 		r.setFdVar(fdVarName, fd)
 		return nil, nil
 	case syntax.RdrIn, syntax.RdrOut, syntax.AppOut,
@@ -2817,6 +2831,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		if arg == "-" {
 			r.closeFd(fd)
 			return nil, nil
+		}
+		// `<&N-` is the input side of the same move (#417).
+		moveSrc, move := strings.CutSuffix(arg, "-")
+		if move {
+			arg = moveSrc
 		}
 		src, err := strconv.Atoi(arg)
 		if err != nil {
@@ -2842,6 +2861,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			r.stdin = stdin
 		} else {
 			r.setFdFile(fd, rwc)
+		}
+		if move && src != fd {
+			r.closeFd(src) // the move's other half; see DplOut above
 		}
 		r.setFdVar(fdVarName, fd)
 		return nil, nil
