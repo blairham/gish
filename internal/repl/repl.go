@@ -41,6 +41,26 @@ const (
 // Run starts the interactive loop on stdin and blocks until EOF or exit.
 // The returned error is the session's exit status (an interp.ExitStatus)
 // when the user ran exit, or a real I/O/parse failure.
+// ignoredSignals is what the process was started with ignored,
+// captured once by CaptureIgnoredSignals before koi installs handlers
+// of its own (#441).
+var ignoredSignals []string
+
+// CaptureIgnoredSignals records the signals ignored at entry. It must be
+// called at the top of main: after koi installs a handler the answer
+// describes koi rather than what koi was handed.
+func CaptureIgnoredSignals() {
+	ignoredSignals = scanIgnoredSignals()
+}
+
+// ignoredSignalOptions passes the captured set to a runner.
+func ignoredSignalOptions() []interp.RunnerOption {
+	if len(ignoredSignals) == 0 {
+		return nil
+	}
+	return []interp.RunnerOption{interp.IgnoredSignals(ignoredSignals)}
+}
+
 func Run(ctx context.Context, login, interactive bool) error {
 	if term.IsTerminal(os.Stdin) {
 		return runEditor(ctx, login)
@@ -823,7 +843,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		return sessionVarOf(runner, name)
 	})
 	var err error
-	runner, err = interp.New(append(jsonTraceOptions(),
+	runner, err = interp.New(append(append(jsonTraceOptions(), ignoredSignalOptions()...),
 		// The "--" matters: without it a parameter that begins with a
 		// dash would be read as a shell option, so `koi script.sh -v`
 		// would try to set -v instead of passing it along.
@@ -907,7 +927,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
 		},
-		jsonTraceOptions()...),
+		append(jsonTraceOptions(), ignoredSignalOptions()...)...),
 		opts...,
 	)...)
 	if err != nil {

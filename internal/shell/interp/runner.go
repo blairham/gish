@@ -2096,6 +2096,11 @@ func (r *Runner) printTraps(names []string) {
 	// restores it.
 	for _, s := range signalList() {
 		callback, ok := r.sigListed[s.name]
+		if !ok && r.sigIgnoredAtEntry[s.name] {
+			// Inherited ignores are part of the listing: a script
+			// saving and restoring traps has to know about them.
+			callback, ok = "", true
+		}
 		if !ok || !want(s.name) {
 			continue
 		}
@@ -2228,6 +2233,14 @@ func stmtSource(st *syntax.Stmt) string {
 
 // setSignalTrap arms, ignores, or restores one real signal (#350).
 func (r *Runner) setSignalTrap(name string, sig os.Signal, action string, reset bool, setLine uint) {
+	if r.sigIgnoredAtEntry[name] {
+		// A signal ignored when the shell started can be neither
+		// trapped nor reset by a non-interactive shell — POSIX, and
+		// bash's behavior (#441). Silently, as bash does: the script
+		// asked for something the shell was told it may not do, and
+		// the listing keeps saying the signal is ignored.
+		return
+	}
 	if reset {
 		signal.Reset(sig)
 		delete(r.sigTraps, name)
