@@ -886,6 +886,22 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		}
 		var restores []restoreVar
 
+		// bash treats declaration utilities specially (#380): the temp
+		// binding is what the utility sees, and when the utility
+		// *declares* the name — not merely queries it with -p/-f/-F —
+		// the binding is promoted rather than unwound. declClause
+		// records what it declared into declTempNames.
+		isDeclUtility := false
+		switch fields[0] {
+		case "declare", "typeset", "local", "export", "readonly", "nameref":
+			isDeclUtility = len(cm.Assigns) > 0
+		}
+		var prevDeclTemp map[string]bool
+		if isDeclUtility {
+			prevDeclTemp = r.declTempNames
+			r.declTempNames = map[string]bool{}
+		}
+
 		for _, as := range cm.Assigns {
 			name := as.Name.Value
 			prev := r.lookupVar(name)
@@ -897,6 +913,12 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			name, vr := r.assignVal(name, prev, as, "")
 			// Inline command vars are always exported.
 			vr.Exported = true
+			// Like a plain assignment, the temp binding modifies the
+			// dynamically scoped variable rather than creating a local
+			// of the current function (#380): that is the scope a
+			// declaration utility promotes it in, and the unwind below
+			// writes the same way so the two stay symmetric.
+			vr.Local = false
 
 			restores = append(restores, restoreVar{name, prev})
 
@@ -911,11 +933,40 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		} else {
 			r.tracedCall(ctx, cm, fields)
 		}
+		declared := r.declTempNames
+		if isDeclUtility {
+			r.declTempNames = prevDeclTemp
+		}
 		for _, restore := range restores {
 			if restore.vr.ReadOnly {
 				// The assignment failed and was already reported, so there is
 				// nothing to put back and trying would report it a second time.
 				continue
+			}
+			// The unwind writes the same dynamic scope the temp binding
+			// landed in; carrying Local through would create a local of
+			// the current function instead (the overlay re-derives
+			// Local from the entry it lands on).
+			restore.vr.Local = false
+			if declaredLocal, ok := declared[restore.name]; ok {
+				// The declaration utility declared this name (#380),
+				// measured against bash 5.3. Non-locally — export,
+				// readonly, top-level declare — the temp binding is
+				// promoted: `foo="" export foo` keeps foo, so nothing
+				// is unwound. As a function-local, the new local
+				// shadows the scope the temp binding landed in, so the
+				// unwind writes one scope below it — restoring through
+				// setVar would clobber the local the declaration just
+				// made, which is exactly the inversion this fixes.
+				if !declaredLocal {
+					continue
+				}
+				if o, ok := r.writeEnv.(*overlayEnviron); ok && o.funcScope {
+					if w, ok := o.parent.(expand.WriteEnviron); ok {
+						w.Set(restore.name, restore.vr) //nolint:errcheck // best-effort unwind, like setVar
+						continue
+					}
+				}
 			}
 			r.setVar(restore.name, restore.vr)
 		}
@@ -1522,6 +1573,15 @@ assignLoop:
 			// implicit element 0 a scalar assignment to an array
 			// variable lands in.
 			r.setVarWithIndex(prev, name, as.Index, vr)
+		}
+		if r.declTempNames != nil {
+			// A temp-env prefix assignment is in flight (#380); tell
+			// the call site this name was declared, and whether this
+			// declaration created a function-local in the current
+			// scope — export/readonly inherit an outer local without
+			// creating one, and there the temp binding is promoted in
+			// place rather than unwound below a new shadow.
+			r.declTempNames[name] = local && !global
 		}
 	}
 	if !namedAny && valType == "-n" && declQuery == "" && !unref {
