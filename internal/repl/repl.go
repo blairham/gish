@@ -136,6 +136,7 @@ func runEditor(ctx context.Context, login bool) error {
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(execChain...),
 	}
+	runnerOpts = append(runnerOpts, jsonTraceOptions()...)
 	callBase := passthroughCall
 	// umask needs no shell state, so it is registered regardless of
 	// whether job control is available — tying it to jobs.Supported
@@ -659,12 +660,12 @@ func acceptWhen(text string) bool {
 // runPlain is the non-TTY loop (piped stdin).
 func runPlain(ctx context.Context, login bool) error {
 	registerSubstrateBuiltins()
-	runner, err := interp.New(
+	runner, err := interp.New(append(jsonTraceOptions(),
 		interp.Env(sessionEnv(sessionFlags{invocation: invokedStdin})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
-	)
+	)...)
 	if err != nil {
 		return err
 	}
@@ -779,7 +780,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		return sessionVarOf(runner, name)
 	})
 	var err error
-	runner, err = interp.New(
+	runner, err = interp.New(append(jsonTraceOptions(),
 		// The "--" matters: without it a parameter that begins with a
 		// dash would be read as a shell option, so `koi script.sh -v`
 		// would try to set -v instead of passing it along.
@@ -790,7 +791,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
-	)
+	)...)
 	if err != nil {
 		return err
 	}
@@ -850,13 +851,14 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 	rec := newHistoryRecorder(file, src.String(), func(name string) string {
 		return sessionVarOf(runner, name)
 	})
-	runner, err := interp.New(append(
+	runner, err := interp.New(append(append(
 		[]interp.RunnerOption{
 			interp.HistoryHook(rec.record),
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
 		},
+		jsonTraceOptions()...),
 		opts...,
 	)...)
 	if err != nil {

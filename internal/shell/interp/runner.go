@@ -906,7 +906,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		trace.call(fields[0], fields[1:]...)
 		trace.newLineFlush()
 
-		r.call(ctx, cm.Args[0].Pos(), fields)
+		if r.traceHook == nil {
+			r.call(ctx, cm.Args[0].Pos(), fields)
+		} else {
+			r.tracedCall(ctx, cm, fields)
+		}
 		for _, restore := range restores {
 			if restore.vr.ReadOnly {
 				// The assignment failed and was already reported, so there is
