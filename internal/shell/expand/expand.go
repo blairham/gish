@@ -1549,6 +1549,25 @@ func pathSplit(path string) []string {
 
 func (cfg *Config) glob(base, pat string) ([]string, error) {
 	parts := pathSplit(pat)
+	// Adjacent ** components collapse into one (#371): bash treats
+	// a/**/**/b as a/**/b, where expanding each independently
+	// cross-multiplies the matches — globstar2.sub's entire diff. A
+	// doubled ** also loses the literal-prefix trailing slash below:
+	// a/**/** answers "a" bare where a/** answers "a/", measured.
+	var gsDoubled []bool
+	if cfg.GlobStar {
+		newParts := make([]string, 0, len(parts))
+		doubled := make([]bool, 0, len(parts))
+		for _, p := range parts {
+			if p == "**" && len(newParts) > 0 && newParts[len(newParts)-1] == "**" {
+				doubled[len(doubled)-1] = true
+				continue
+			}
+			newParts = append(newParts, p)
+			doubled = append(doubled, false)
+		}
+		parts, gsDoubled = newParts, doubled
+	}
 	matches := []string{""}
 	if filepath.IsAbs(pat) {
 		if parts[0] == "" {
@@ -1570,6 +1589,7 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 	//    ReadDir2("/foo") to ensure that "/foo/" exists and only matches a directory
 	//    ReadDir2("/foo") glob "*"
 
+	sawMeta := false
 	for i, part := range parts {
 		// Keep around for debugging.
 		// log.Printf("matches %q part %d %q", matches, i, part)
@@ -1621,10 +1641,18 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 			// Since we pop from the back, we populate the stack backwards.
 			stack := make([]string, 0, len(matches))
 			for _, match := range slices.Backward(matches) {
-				// "a/**" should match "a/ a/b a/b/cfg ...";
-				// note how the zero-match case there has a trailing separator.
+				// "a/**" should match "a/ a/b a/b/cfg ..." — the
+				// zero-match case keeps a trailing separator when the
+				// prefix was written literally, and only then: measured
+				// against 5.3, **/a/** answers "a" bare where a/**
+				// answers "a/" (#371).
+				if sawMeta || gsDoubled[i] {
+					stack = append(stack, match)
+					continue
+				}
 				stack = append(stack, pathJoin2(match, ""))
 			}
+			sawMeta = true
 			matches = matches[:0]
 			var newMatches []string // to reuse its capacity
 			for len(stack) > 0 {
@@ -1667,6 +1695,10 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 			}
 		}
 		matches = newMatches
+		// Any pattern-derived prefix drops the later **'s zero-match
+		// slash too: */** answers bare names where a/** answers "a/",
+		// measured against 5.3.
+		sawMeta = true
 	}
 	// Note that the results need to be sorted.
 	// TODO: above we do a BFS; if we did a DFS, the matches would already be sorted.
