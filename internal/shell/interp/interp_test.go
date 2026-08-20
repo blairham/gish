@@ -3063,6 +3063,12 @@ var runTests = []runTest{
 		"a=b; echo $(($a))",
 		"0\n",
 	},
+	// A failing body command does not end a C-style loop (#369), and an
+	// empty update section is fine — the body's own ((i++)) answers
+	// status 1 on its first step, which used to stop the loop.
+	{`for (( i=0; i<3; )); do echo $i; ((i++)); done; echo st=$?`, "0\n1\n2\nst=0\n"},
+	{`for (( f=0; f<3; f++ )); do printf "%d " $f; false; done; echo end $?`, "0 1 2 end 1\n"},
+
 	// declare -i survives arithmetic assignment, and compound element
 	// values under it evaluate (#368).
 	{`declare -i j=8; let j=j+1; declare -p j`, "declare -i j=\"9\"\n"},
