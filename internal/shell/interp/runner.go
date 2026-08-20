@@ -229,6 +229,13 @@ func (r *Runner) expandErr(err error) {
 		// exit 1 both ways.
 		r.exit.code = 1
 		r.exit.exiting = true
+	case strings.HasSuffix(errMsg, "arithmetic syntax error"),
+		strings.HasSuffix(errMsg, "expression recursion level exceeded"):
+		// An arithmetic error in an expansion is the same input-unit
+		// abandonment (#366): bash's `echo "${x:bad}"` loses the rest
+		// of the -c string and a script continues at the next line.
+		r.exit.code = 1
+		r.exit.aborting = true
 	case errMsg == "invalid indirect expansion":
 		// An invalid indirect is the readonly-assignment shape (#308),
 		// not the nounset one: bash abandons the current input unit and
