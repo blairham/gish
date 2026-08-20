@@ -38,7 +38,7 @@ func TestFCRange(t *testing.T) {
 		{"zero means the newest entry", []string{"0"}, 20, 20},
 		{"zero to two lists newest-first", []string{"0", "18"}, 20, 18},
 	} {
-		first, last, err := fcRange(tc.args, n)
+		first, last, err := fcRange(tc.args, n, 0)
 		if err != nil {
 			t.Errorf("%s: %v", tc.name, err)
 			continue
@@ -48,10 +48,10 @@ func TestFCRange(t *testing.T) {
 		}
 	}
 
-	if _, _, err := fcRange([]string{"abc"}, n); err == nil {
+	if _, _, err := fcRange([]string{"abc"}, n, 0); err == nil {
 		t.Error("a non-numeric position was accepted")
 	}
-	if _, _, err := fcRange([]string{"1", "2", "3"}, n); err == nil {
+	if _, _, err := fcRange([]string{"1", "2", "3"}, n, 0); err == nil {
 		t.Error("three operands were accepted")
 	}
 }
@@ -61,7 +61,7 @@ func TestFCRange(t *testing.T) {
 func TestFCRangeShortHistory(t *testing.T) {
 	t.Parallel()
 
-	first, last, err := fcRange(nil, 3)
+	first, last, err := fcRange(nil, 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
