@@ -150,7 +150,12 @@ func TestCompleteRemotesThenBranches(t *testing.T) {
 }
 
 func TestCompleteChangedFiles(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel: changedFiles spawns git with the test process's own
+	// environment, so the user's gitconfig leaks in — CI failed on the
+	// untracked-directory collapse this way while a local config hid it.
+	// Setenv pins the config the subprocess sees (and forbids Parallel).
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
 	dir := completeRepo(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -185,7 +190,8 @@ func TestCompleteChangedFiles(t *testing.T) {
 // second NUL field; offering it would complete a file that no longer
 // exists under that name.
 func TestCompleteChangedFilesRename(t *testing.T) {
-	t.Parallel()
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null") // see TestCompleteChangedFiles
+	t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
 	dir := completeRepo(t)
 	gitIn(t, dir, "mv", "a.txt", "b.txt")
 

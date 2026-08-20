@@ -254,8 +254,14 @@ func remotes(gitDir string) []string {
 //
 // -z because file names are exactly the strings that contain newlines
 // and quotes; porcelain v1's unquoted-vs-quoted split is a parser trap.
+// -uall because by default git collapses an untracked directory to one
+// `?? dir/` record, and a completion candidate must be a path you can
+// hand to git — not a directory standing in for the files inside it.
+// (Found in CI, masked locally by a user gitconfig; this subprocess
+// inherits the session's config, which is right for the shell and a
+// hermeticity trap for tests.)
 func changedFiles(ctx context.Context, root, cwd string) []string {
-	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain", "-z")
+	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain", "-z", "-uall")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
