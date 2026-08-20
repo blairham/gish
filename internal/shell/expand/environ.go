@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Environ is the base interface for a shell's environment, allowing it to fetch
@@ -105,6 +107,16 @@ type Variable struct {
 	// values are evaluated as arithmetic expressions.
 	Integer bool
 
+	// CaseMod marks a variable declared with "declare -u", "-l" or "-c",
+	// whose assigned values are upper-cased, lower-cased or capitalized
+	// (#385). It holds that option's letter, or zero for none.
+	CaseMod byte
+
+	// Trace marks a variable declared with "declare -t". bash gives the
+	// attribute no meaning of its own for variables — it is carried so
+	// that declare -p reports it.
+	Trace bool
+
 	// Kind defines which of the value fields below should be used.
 	Kind ValueKind
 
@@ -129,7 +141,8 @@ func (v Variable) IsSet() bool {
 // Declared variables may not be set; `export foo` is exported but not set to a value,
 // and `declare -a foo` is an indexed array but not set to a value.
 func (v Variable) Declared() bool {
-	return v.Set || v.Local || v.Exported || v.ReadOnly || v.Integer || v.Kind != Unknown
+	return v.Set || v.Local || v.Exported || v.ReadOnly || v.Integer ||
+		v.CaseMod != 0 || v.Trace || v.Kind != Unknown
 }
 
 // Flags returns the variable's attribute flags in the order used by bash's
@@ -151,10 +164,36 @@ func (v Variable) Flags() string {
 	if v.ReadOnly {
 		flags = append(flags, 'r')
 	}
+	if v.Trace {
+		flags = append(flags, 't')
+	}
 	if v.Exported {
 		flags = append(flags, 'x')
 	}
+	// The case-modification letter comes last, which is bash's order:
+	// `declare -tux w` prints as -txu (#385).
+	if v.CaseMod != 0 {
+		flags = append(flags, v.CaseMod)
+	}
 	return string(flags)
+}
+
+// ApplyCaseMod returns s transformed by the variable's -u, -l or -c
+// attribute, which bash applies on every assignment (#385).
+func (v Variable) ApplyCaseMod(s string) string {
+	switch v.CaseMod {
+	case 'u':
+		return strings.ToUpper(s)
+	case 'l':
+		return strings.ToLower(s)
+	case 'c':
+		if s == "" {
+			return s
+		}
+		r, size := utf8.DecodeRuneInString(s)
+		return string(unicode.ToUpper(r)) + s[size:]
+	}
+	return s
 }
 
 // String returns the variable's value as a string. In general, this only makes

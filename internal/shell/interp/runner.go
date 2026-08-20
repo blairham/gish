@@ -1330,7 +1330,8 @@ func (r *Runner) declClause(variant string, args []*syntax.Assign) {
 	valType := ""
 	declQuery := "" // "-f", "-F" or "-p" for query mode
 	namedAny := false
-	unref := false // "+n": detach a nameref
+	unref := false   // "+n": detach a nameref
+	inherit := false // "-I": take the enclosing scope's value and attributes
 	switch variant {
 	case "declare", "typeset":
 		// When used in a function, "declare" acts as "local"
@@ -1368,8 +1369,35 @@ assignLoop:
 		sawFlag := fp.more()
 		for fp.more() {
 			switch flag := fp.flag(); flag {
-			case "-x", "-r", "-i", "+i":
+			case "-x", "-r", "-i", "+i", "-t", "+t", "+x":
 				modes = append(modes, flag)
+			case "+r":
+				// bash refuses to drop readonly — a variable cannot be
+				// made writable again — and says so per name below.
+				modes = append(modes, flag)
+			case "-u", "-l", "-c", "+u", "+l", "+c":
+				// Two case modifications cancel rather than stack:
+				// `declare -ul x` leaves neither, measured (#385).
+				if i := slices.IndexFunc(modes, isCaseMode); i >= 0 {
+					if modes[i][1] != flag[1] {
+						modes = slices.Delete(modes, i, i+1)
+						break
+					}
+					modes = slices.Delete(modes, i, i+1)
+				}
+				modes = append(modes, flag)
+			case "-I":
+				inherit = true
+			case "-":
+				// `local -` saves the shell options and restores them
+				// when the function returns.
+				if variant != "local" && !r.inFunc {
+					r.errf("%s: invalid option %q\n", variant, flag)
+					r.exit.code = 2
+					return
+				}
+				r.saveLocalOpts()
+				continue assignLoop
 			case "-a", "-A", "-n":
 				valType = flag
 			case "+n":
@@ -1442,7 +1470,7 @@ assignLoop:
 		}
 		vr := r.lookupVar(name)
 		freshLocal := false
-		if local && !global && !r.localInScope(name) && !r.declTempBound[name] {
+		if local && !global && !r.localInScope(name) && !r.declTempBound[name] && !inherit {
 			freshLocal = true
 			// A declaration that creates a *new* local starts from an
 			// unset variable rather than inheriting the outer one
@@ -1553,12 +1581,29 @@ assignLoop:
 			switch mode {
 			case "-x":
 				vr.Exported = true
+			case "+x":
+				vr.Exported = false
 			case "-r":
 				vr.ReadOnly = true
+			case "+r":
+				// A readonly variable can never be made writable
+				// again; bash reports it and carries on (#385).
+				if vr.ReadOnly {
+					r.errf("%s: %s: readonly variable\n", variant, name)
+					r.exit.code = 1
+				}
 			case "-i":
 				vr.Integer = true
 			case "+i":
 				vr.Integer = false
+			case "-t":
+				vr.Trace = true
+			case "+t":
+				vr.Trace = false
+			case "-u", "-l", "-c":
+				vr.CaseMod = mode[1]
+			case "+u", "+l", "+c":
+				vr.CaseMod = 0
 			}
 		}
 		if as.Naked {
@@ -1982,6 +2027,22 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	}
 	r.exit, r.lastExit = oldExit, oldLastExit // traps on EXIT or ERR should not modify the result
 	return code
+}
+
+// isCaseMode reports whether a declare mode is one of the -u/-l/-c
+// case modifications, in either polarity.
+func isCaseMode(mode string) bool {
+	return len(mode) == 2 && (mode[1] == 'u' || mode[1] == 'l' || mode[1] == 'c')
+}
+
+// saveLocalOpts implements `local -`: the shell options are restored
+// when the function returns, so a function may `set +e` without the
+// caller inheriting it (#385).
+func (r *Runner) saveLocalOpts() {
+	if r.localOpts == nil {
+		saved := r.opts
+		r.localOpts = &saved
+	}
 }
 
 // printDeclared writes one `declare -flags name=value` line, the form
@@ -2657,6 +2718,12 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		oldInFunc := r.inFunc
 		r.inFunc = true
 
+		// `local -` inside the body records the options to put back
+		// when it returns (#385); each call gets its own slot, so a
+		// nested function's save does not disturb this one's.
+		oldLocalOpts := r.localOpts
+		r.localOpts = nil
+
 		// A function is its own level for the ERR trap: bash runs it inside the
 		// function only with -E, and runs it again for the call either way.
 		oldErrTrapFired, oldErrTrapDepth := r.errTrapFired, r.errTrapDepth
@@ -2708,6 +2775,11 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		popFrame()
 		r.Params = oldParams
 		r.inFunc = oldInFunc
+		if r.localOpts != nil {
+			r.opts = *r.localOpts
+			r.updateExpandOpts()
+		}
+		r.localOpts = oldLocalOpts
 		r.exit.returning = false
 		return
 	}

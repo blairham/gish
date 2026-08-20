@@ -321,6 +321,27 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 	if r.opts[optAllExport] {
 		vr.Exported = true
 	}
+	if vr.CaseMod != 0 {
+		// -u/-l/-c transform on *every* assignment (#385), which is
+		// why this sits at the one point every path reaches rather
+		// than in the assignment code: a plain x=v, an append, and an
+		// element write all land here. The transforms are idempotent,
+		// so re-storing an unchanged variable is harmless.
+		switch vr.Kind {
+		case expand.Indexed:
+			vr.List = slices.Clone(vr.List)
+			for i, v := range vr.List {
+				vr.List[i] = vr.ApplyCaseMod(v)
+			}
+		case expand.Associative:
+			vr.Map = maps.Clone(vr.Map)
+			for k, v := range vr.Map {
+				vr.Map[k] = vr.ApplyCaseMod(v)
+			}
+		case expand.String:
+			vr.Str = vr.ApplyCaseMod(vr.Str)
+		}
+	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
