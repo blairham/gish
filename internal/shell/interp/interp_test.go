@@ -3545,6 +3545,20 @@ done <<< 2`,
 	// IFS
 	{`echo -n "$IFS"`, " \t\n"},
 	{`a="x:y:z"; IFS=:; echo $a`, "x y z\n"},
+	// A non-whitespace IFS delimiter delimits *empty* fields (#356):
+	// adjacent delimiters do not collapse, a leading one yields an empty
+	// first field, and only a trailing one yields nothing.
+	{`IFS=:; x=":a::b:"; set -- $x; echo "[$#]($1)($2)($3)($4)"`, "[4]()(a)()(b)\n"},
+	{`IFS=:; x=":"; set -- $x; echo "[$#]($1)"`, "[1]()\n"},
+	{`IFS=": "; x="a : : b"; set -- $x; echo "[$#]($1)($2)($3)"`, "[3](a)()(b)\n"},
+	{`IFS=": " read x y <<< ":a"; echo "($x)($y)"`, "()(a)\n"},
+	{`IFS=: read -a A <<< ":a::b:"; echo "n=${#A[@]} [${A[0]}][${A[1]}][${A[2]}][${A[3]}]"`, "n=4 [][a][][b]\n"},
+	{`IFS=: read x y z <<< "a::b"; echo "[$x][$y][$z]"`, "[a][][b]\n"},
+	// With more fields than names the last name takes the rest of the
+	// line as written; with the fields fitting, plain assignment strips
+	// the trailing delimiter with the field it closed.
+	{`IFS=: read x <<< "a:b:"; echo "[$x]"`, "[a:b:]\n"},
+	{`IFS=: read x <<< "a:"; echo "[$x]"`, "[a]\n"},
 	{`a=(x y z); IFS=-; echo ${a[*]}`, "x y z\n"},
 	{`a=(x y z); IFS=-; echo ${a[@]}`, "x y z\n"},
 	{`a=(x y z); IFS=-; echo "${a[*]}"`, "x-y-z\n"},
