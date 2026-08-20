@@ -5280,6 +5280,39 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 		`printf 'a\\bc' | { read -N 3 x; echo "[$x]"; }`,
 		"[abc]\n",
 	},
+	// Byte-cleanliness (#377): -n and -N count characters, not bytes; a
+	// byte that is not valid UTF-8 survives read and field splitting
+	// untouched; a high byte works as -d's delimiter; and printf's
+	// octal escapes are bytes on the wire, with overflow wrapping mod
+	// 256 the way bash's do.
+	{
+		`read -n 5 foo <<< "абвгдежз"; echo "$foo"`,
+		"абвгд\n",
+	},
+	{
+		`read -N 3 foo <<< "абвгд"; echo "$foo"`,
+		"абв\n",
+	},
+	{
+		`printf 'B\315\n' | { IFS= read -r f; printf '%s' "$f" | wc -c | tr -d ' '; }`,
+		"2\n",
+	},
+	{
+		`printf 'x B\315 y\n' | { read -r a f b; printf '%s' "$f" | wc -c | tr -d ' '; }`,
+		"2\n",
+	},
+	{
+		`printf 'ab\200cd' | { read -rd "$(printf '\200')" s; echo "$s"; }`,
+		"ab\n",
+	},
+	{
+		`printf '\303\251' | wc -c | tr -d ' '`,
+		"2\n",
+	},
+	{
+		`[ "$(printf '\401')" = "$(printf '\001')" ] && echo wraps`,
+		"wraps\n",
+	},
 	{
 		`printf 'abc\n' | { read -r -n 0 x; echo "$? [$x]"; }`,
 		"0 []\n",

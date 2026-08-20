@@ -89,10 +89,36 @@ var interpBuiltinCases = []builtinCase{
 	{name: "local", script: `f() { local v=inner; echo "$v"; }; v=outer; f; echo "$v"`},
 	{name: "mapfile", script: `printf 'a\nb\n' | { mapfile -t arr; echo "${arr[0]}-${arr[1]}"; }`},
 	{name: "popd", script: `pushd /tmp >/dev/null; popd >/dev/null; echo "status=$?"`},
-	{name: "printf", script: `printf '%s-%d-%05.2f\n' str 42 3.14159`},
+	{
+		// The byte cases pin #377: \NNN and \xHH are bytes on the wire,
+		// never code points re-encoded as UTF-8; overflow wraps mod 256;
+		// and %q renders a byte that is not valid UTF-8 as an octal
+		// escape inside $'...' rather than corrupting it to U+FFFD.
+		name: "printf", script: `printf '%s-%d-%05.2f\n' str 42 3.14159
+printf '\303\251' | wc -c | tr -d ' '
+printf '%b' '\303\251' | wc -c | tr -d ' '
+printf '\xc3\xa9' | wc -c | tr -d ' '
+[ "$(printf '\401')" = "$(printf '\001')" ] && echo wraps
+printf '%q\n' "$(printf 'B\315')" "$(printf 'a\tb')" 'a b'`,
+	},
 	{name: "pushd", script: `pushd /tmp >/dev/null && pwd | sed 's|/private||'`},
 	{name: "pwd", script: `cd /tmp && pwd | sed 's|/private||'`},
-	{name: "read", script: `printf 'one two\n' | { read a b; echo "$a|$b"; }`},
+	{
+		// The byte cases pin #377: a byte that is not valid UTF-8 passes
+		// through read and field splitting untouched, a high byte works
+		// as -d's delimiter, and -n/-N count characters rather than
+		// bytes — five of абвгдежз is абвгд.
+		// The -n/-N counting runs under an explicit UTF-8 locale: in the
+		// C locale bash counts bytes, and the matrix env is scrubbed, so
+		// without the pin this would compare koi's UTF-8-always posture
+		// against bash's C-locale one (the residual half of #377).
+		name: "read", script: `printf 'one two\n' | { read a b; echo "$a|$b"; }
+printf 'B\315\n' | { IFS= read -r f; printf '%s' "$f" | wc -c | tr -d ' '; }
+printf 'ab\200cd' | { read -rd "$(printf '\200')" s; echo "$s"; }
+export LC_ALL=en_US.UTF-8
+read -n 5 foo <<< "абвгдежз"; echo "$foo"
+read -N 3 foo <<< "абвгд"; echo "$foo"`,
+	},
 	{name: "readarray", script: `printf 'x\ny\n' | { readarray -t arr; echo "${arr[1]}"; }`},
 	{
 		// The one gap here with teeth: the value is protected either way,

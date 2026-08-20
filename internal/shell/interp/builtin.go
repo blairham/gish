@@ -1583,8 +1583,38 @@ func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim by
 
 	esc := false
 	// chars counts the characters that the line will hold once the escaping
-	// backslashes are dropped, which is what -n and -N count.
+	// backslashes are dropped, which is what -n and -N count. Characters,
+	// not bytes (#377): а is one toward -n 5. pending tracks a multibyte
+	// sequence in flight — its lead byte counts when the last
+	// continuation byte arrives, and a stray continuation byte counts
+	// alone, which is how bash's mbrtowc failure path treats it.
 	chars := 0
+	pending := 0
+	countByte := func(b byte) {
+		switch {
+		case b < 0x80:
+			chars++
+			pending = 0
+		case b >= 0xf8: // not a legal UTF-8 lead or continuation
+			chars++
+			pending = 0
+		case b >= 0xf0:
+			pending = 3
+		case b >= 0xe0:
+			pending = 2
+		case b >= 0xc0:
+			pending = 1
+		default: // continuation byte
+			if pending > 0 {
+				pending--
+				if pending == 0 {
+					chars++
+				}
+			} else {
+				chars++
+			}
+		}
+	}
 
 	// The deadline serves two callers at once: the context, which sets it to
 	// now to interrupt a blocked read, and -t, which sets it ahead. Whichever
@@ -1644,6 +1674,7 @@ func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim by
 				if !esc {
 					// A second backslash, so the pair is one character.
 					chars++
+					pending = 0
 				}
 			case !raw && !exactly && b == delim && esc && delim == '\n':
 				// line continuation; drop the trailing backslash
@@ -1656,7 +1687,7 @@ func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim by
 				// literal character rather than ending the line.
 				line = append(line, b)
 				esc = false
-				chars++
+				countByte(b)
 			}
 			if maxChars >= 0 && chars >= maxChars {
 				return line, false, nil

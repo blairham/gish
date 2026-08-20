@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // printf, implemented natively (#55).
@@ -559,8 +560,12 @@ func unescape(s string) (text string, width int, stop bool) {
 		if n == start {
 			return "\x00", 2, false // bare \0 is NUL
 		}
-		v, _ := strconv.ParseUint(s[start:n], 8, 32)
-		return string(rune(v)), n, false
+		// One byte, not a code point: printf '\303\251' must emit the
+		// two bytes 0303 0251, where encoding each as a rune re-encodes
+		// them into four bytes of UTF-8 (#377). Overflow wraps mod 256
+		// — bash answers \400 with NUL and \401 with 001, measured.
+		v, _ := strconv.ParseUint(s[start:n], 8, 16)
+		return string([]byte{byte(v)}), n, false
 	case 'x':
 		n := 2
 		for n < len(s) && n < 4 && isHex(s[n]) {
@@ -569,8 +574,10 @@ func unescape(s string) (text string, width int, stop bool) {
 		if n == 2 {
 			return `\x`, 2, false
 		}
-		v, _ := strconv.ParseUint(s[2:n], 16, 32)
-		return string(rune(v)), n, false
+		// A byte for the same reason as octal: bash's \xHH is at most
+		// two hex digits and always one byte on the wire (#377).
+		v, _ := strconv.ParseUint(s[2:n], 16, 8)
+		return string([]byte{byte(v)}), n, false
 	case 'u', 'U':
 		limit := 6
 		if s[1] == 'U' {
@@ -605,10 +612,24 @@ func shellQuote(s string) string {
 	if s == "" {
 		return "''"
 	}
-	if strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+	// A byte that is not part of a valid UTF-8 sequence forces the
+	// $'...' form and travels as an octal escape (#377): bash renders
+	// $'B\315', and ranging over the string as runes would corrupt the
+	// byte into U+FFFD before it could be printed.
+	needDollar := false
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r < 0x20 || r == 0x7f || (r == utf8.RuneError && size == 1) {
+			needDollar = true
+			break
+		}
+		i += size
+	}
+	if needDollar {
 		var sb strings.Builder
 		sb.WriteString("$'")
-		for _, r := range s {
+		for i := 0; i < len(s); {
+			r, size := utf8.DecodeRuneInString(s[i:])
 			switch r {
 			case '\n':
 				sb.WriteString(`\n`)
@@ -628,12 +649,16 @@ func shellQuote(s string) string {
 				sb.WriteByte('\\')
 				sb.WriteRune(r)
 			default:
-				if r < 0x20 || r == 0x7f {
+				switch {
+				case r == utf8.RuneError && size == 1:
+					fmt.Fprintf(&sb, `\%03o`, s[i])
+				case r < 0x20 || r == 0x7f:
 					fmt.Fprintf(&sb, `\%03o`, r)
-				} else {
-					sb.WriteRune(r)
+				default:
+					sb.WriteString(s[i : i+size])
 				}
 			}
+			i += size
 		}
 		sb.WriteString("'")
 		return sb.String()
