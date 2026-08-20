@@ -1819,6 +1819,51 @@ var runTests = []runTest{
 		"+ (( i=0 ))\n+ (( i<2 ))\n+ :\n+ (( i++ ))\n+ (( i<2 ))\n+ :\n+ (( i++ ))\n+ (( i<2 ))\n+ set +x\n",
 	},
 
+	// An alias is replacement *text*, spliced into the command line and
+	// re-parsed (#407). koi built a word list at definition time, so
+	// most real aliases were refused outright.
+	{
+		`shopt -s expand_aliases; alias run="echo one; echo two"
+run`,
+		"one\ntwo\n",
+	},
+	{
+		`shopt -s expand_aliases; alias ok="echo OK >&2"
+ok`,
+		"OK\n",
+	},
+	{
+		// The replacement is scanned for aliases again, which is what
+		// makes an alias built out of another one work.
+		`shopt -s expand_aliases; alias e=echo; alias v="e 123"
+echo $(v)`,
+		"123\n",
+	},
+	{
+		// A trailing blank asks for the next word to be expanded too.
+		`shopt -s expand_aliases; alias a="echo x "; alias b=hello
+a b`,
+		"x hello\n",
+	},
+	{
+		// A self-referential alias expands once and then means the
+		// command, rather than looping.
+		`shopt -s expand_aliases; alias echo="echo pre"
+echo hi`,
+		"pre hi\n",
+	},
+	{
+		`shopt -s expand_aliases; alias q="cat <<EOF
+inline
+EOF"
+q`,
+		"inline\n",
+	},
+	// unalias diagnoses; koi answered 0 for all three (#407).
+	{"unalias; echo rc=$?", "unalias: usage: unalias [-a] name [name ...]\nrc=2\n #IGNORE bash's usage line names the shell"},
+	{"unalias -x; echo rc=$?", "unalias: -x: invalid option\nunalias: usage: unalias [-a] name [name ...]\nrc=2\n #JUSTERR"},
+	{"unalias nosuch; echo rc=$?", "unalias: nosuch: not found\nrc=1\n #JUSTERR"},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
@@ -2330,7 +2375,8 @@ var runTests = []runTest{
 	// alias (note the input newlines)
 	{
 		"alias foo; alias foo=echo; alias foo; alias foo=; alias foo",
-		"alias: \"foo\" not found\nalias foo='echo'\nalias foo=''\n #IGNORE",
+		// bash's wording, and its status — koi answered 0 (#407).
+		"alias: foo: not found\nalias foo='echo'\nalias foo=''\n #JUSTERR",
 	},
 	{
 		"shopt -s expand_aliases; alias foo=echo\nfoo foo; foo bar",

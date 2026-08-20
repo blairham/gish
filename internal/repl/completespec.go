@@ -43,6 +43,14 @@ type completionSpec struct {
 	words    []string // -W
 	actions  []string // -A / -f -d -u -g, kept as compgen would name them
 	options  []string // -o nospace, filenames, default, bashdefault
+	// prefix, suffix, filter and glob are -P, -S, -X and -G. They are
+	// not applied yet, but they are *kept*, because `complete -p` is
+	// how a script saves and restores a spec (#406): dropping them
+	// made `eval "$(complete -p cmd)"` silently strip half of it.
+	prefix string
+	suffix string
+	filter string
+	glob   string
 }
 
 // completionSpecs maps command name to spec, plus the two catch-alls
@@ -134,8 +142,14 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 			names = append(names, "\x00default")
 		case "-E":
 			names = append(names, "\x00empty")
-		case "-P", "-S", "-X", "-G":
-			next() // prefix/suffix/filter/glob: parsed, not yet applied
+		case "-P":
+			target.prefix = next()
+		case "-S":
+			target.suffix = next()
+		case "-X":
+			target.filter = next()
+		case "-G":
+			target.glob = next()
 		default:
 			if strings.HasPrefix(a, "-") {
 				continue // an option we do not know is not a command name
@@ -145,6 +159,22 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 	}
 
 	switch {
+	case print && len(names) > 0:
+		// `complete -p name` prints just that spec, and says so when
+		// there is none — koi listed everything and answered 0.
+		missing := false
+		for _, n := range names {
+			if _, ok := completions.byCommand[n]; !ok {
+				fmt.Fprintf(errOut, "complete: %s: no completion specification\n", n)
+				missing = true
+				continue
+			}
+			printCompletions(out, n)
+		}
+		if missing {
+			return []string{"false"}
+		}
+		return []string{"true"}
 	case print, len(args) == 0:
 		// Bare `complete` lists, as bash does. fzf pipes exactly that
 		// into grep to decide whether to install its default handler,
@@ -181,25 +211,84 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 	return []string{"true"}
 }
 
-func printCompletions(out io.Writer) {
-	for _, name := range slices.Sorted(maps.Keys(completions.byCommand)) {
-		spec := completions.byCommand[name]
-		var b strings.Builder
-		b.WriteString("complete")
-		for _, o := range spec.options {
-			b.WriteString(" -o " + o)
+func printCompletions(out io.Writer, only ...string) bool {
+	names := slices.Sorted(maps.Keys(completions.byCommand))
+	if len(only) > 0 {
+		names = nil
+		for _, n := range only {
+			if _, ok := completions.byCommand[n]; ok {
+				names = append(names, n)
+			}
 		}
-		if spec.function != "" {
-			b.WriteString(" -F " + spec.function)
-		}
-		if spec.command != "" {
-			b.WriteString(" -C " + spec.command)
-		}
-		if len(spec.words) > 0 {
-			b.WriteString(" -W " + singleQuote(strings.Join(spec.words, " ")))
-		}
-		fmt.Fprintf(out, "%s %s\n", b.String(), name)
 	}
+	for _, name := range names {
+		fmt.Fprintf(out, "%s %s\n", completions.byCommand[name].commandLine(), name)
+	}
+	return len(names) == len(only) || len(only) == 0
+}
+
+// commandLine renders a spec as the `complete` call that would
+// recreate it, in bash's option order.
+func (spec completionSpec) commandLine() string {
+	var b strings.Builder
+	b.WriteString("complete")
+	for _, o := range spec.options {
+		b.WriteString(" -o " + o)
+	}
+	// The action letters come back as the letters they were written
+	// as; -A's long names are the exception bash spells out.
+	for _, a := range spec.actions {
+		switch a {
+		case "file":
+			b.WriteString(" -f")
+		case "directory":
+			b.WriteString(" -d")
+		case "command":
+			b.WriteString(" -c")
+		case "builtin":
+			b.WriteString(" -b")
+		case "user":
+			b.WriteString(" -u")
+		case "group":
+			b.WriteString(" -g")
+		case "job":
+			b.WriteString(" -j")
+		case "signal":
+			b.WriteString(" -s")
+		case "variable":
+			b.WriteString(" -v")
+		case "export":
+			b.WriteString(" -e")
+		case "alias":
+			b.WriteString(" -a")
+		case "keyword":
+			b.WriteString(" -k")
+		default:
+			b.WriteString(" -A " + a)
+		}
+	}
+	if spec.glob != "" {
+		b.WriteString(" -G " + singleQuote(spec.glob))
+	}
+	if spec.prefix != "" {
+		b.WriteString(" -P " + singleQuote(spec.prefix))
+	}
+	if spec.suffix != "" {
+		b.WriteString(" -S " + singleQuote(spec.suffix))
+	}
+	if spec.filter != "" {
+		b.WriteString(" -X " + singleQuote(spec.filter))
+	}
+	if spec.function != "" {
+		b.WriteString(" -F " + spec.function)
+	}
+	if spec.command != "" {
+		b.WriteString(" -C " + singleQuote(spec.command))
+	}
+	if len(spec.words) > 0 {
+		b.WriteString(" -W " + singleQuote(strings.Join(spec.words, " ")))
+	}
+	return b.String()
 }
 
 // runCompgen generates candidates the way bash's compgen does. It is a

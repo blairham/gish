@@ -888,23 +888,28 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		r2.exit.returning = false // nor return from the enclosing function (#422)
 		r.exit = r2.exit
 	case *syntax.CallExpr:
+		// An alias is replacement *text*, spliced into the command line
+		// and re-parsed (#407): that is what lets one hold a
+		// redirection, a `;`, a newline, or another alias. Building a
+		// word list out of it at definition time refused most real
+		// aliases outright.
+		if r.opts[optExpandAliases] && len(cm.Args) > 0 {
+			if stmts, name, ok := r.expandAlias(cm); ok {
+				// The guard has to hold while the spliced command
+				// *runs*, not while it is parsed: `alias ls='ls -d'`
+				// re-expands its own head otherwise, forever.
+				if r.expandingAlias == nil {
+					r.expandingAlias = map[string]bool{}
+				}
+				r.expandingAlias[name] = true
+				r.stmts(ctx, stmts)
+				delete(r.expandingAlias, name)
+				return
+			}
+		}
 		// Build new slices, to not modify the caller's AST
 		// nor the slices in the alias map.
 		args := cm.Args
-		for i := 0; i < len(args); {
-			if !r.opts[optExpandAliases] {
-				break
-			}
-			als, ok := r.alias[args[i].Lit()]
-			if !ok {
-				break
-			}
-			args = slices.Concat(args[:i], als.args, args[i+1:])
-			if !als.blank {
-				break
-			}
-			i += len(als.args)
-		}
 		assigns := cm.Assigns
 		if r.opts[optKeyword] && len(args) > 1 {
 			// `set -k` puts *every* assignment-shaped word into the
@@ -3155,6 +3160,66 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 		}
 	}
 	return false
+}
+
+// expandAlias splices an alias's text into the command it heads and
+// re-parses the result, which is how bash expands one. It answers
+// ok=false when the head is not an alias, so the ordinary path runs.
+//
+// The re-parse is what makes the rest of the issue fall out: the
+// replacement is scanned for aliases again (so `alias v="e 123"` finds
+// `e`), a trailing blank in the replacement asks for the *next* word
+// to be expanded too, and a newline inside the text terminates the
+// command rather than joining two words.
+func (r *Runner) expandAlias(cm *syntax.CallExpr) ([]*syntax.Stmt, string, bool) {
+	name := cm.Args[0].Lit()
+	als, ok := r.alias[name]
+	if !ok || r.expandingAlias[name] {
+		// A self-referential alias expands once and then stands for
+		// the command, which is how `alias ls='ls --color'` works at
+		// all.
+		return nil, "", false
+	}
+	var sb strings.Builder
+	for _, as := range cm.Assigns {
+		printNode(&sb, as)
+		sb.WriteString(" ")
+	}
+	sb.WriteString(als.text)
+	rest := cm.Args[1:]
+	// A replacement ending in a blank asks for the *next* word to be
+	// alias-expanded as well, which is the idiom behind
+	// `alias sudo='sudo '`.
+	for als.blank && len(rest) > 0 {
+		next, ok := r.alias[rest[0].Lit()]
+		if !ok || r.expandingAlias[rest[0].Lit()] {
+			break
+		}
+		sb.WriteString(" " + next.text)
+		rest, als = rest[1:], next
+	}
+	for _, w := range rest {
+		sb.WriteString(" ")
+		printNode(&sb, w)
+	}
+	// Redirections belong to the statement rather than to the call, so
+	// they are still in place around the spliced command and do not
+	// need re-printing here.
+	file, err := syntax.NewParser().Parse(strings.NewReader(sb.String()), "")
+	if err != nil {
+		// An alias whose text does not parse is a runtime error on the
+		// line that used it, which is where bash reports it too.
+		r.errf("%s\n", err)
+		r.exit.code = 1
+		return nil, name, true
+	}
+	return file.Stmts, name, true
+}
+
+// printNode renders one node back to source, which is how the spliced
+// command line is rebuilt from the tree koi parsed.
+func printNode(sb *strings.Builder, node syntax.Node) {
+	syntax.NewPrinter().Print(sb, node) //nolint:errcheck // writing to a strings.Builder
 }
 
 // splitKeywordAssigns separates the assignment-shaped words `set -k`
