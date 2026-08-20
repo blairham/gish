@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,18 +45,13 @@ import (
 // # The file forms, split where the honesty line falls
 //
 // `-r file` and `-w file` are stateless — read a plain text file into
-// the list, write the list out one command per line — so koi implements
-// them completely and they do exactly what a script asking for them
-// means. The first instinct was to refuse all four; that was wrong, and
-// refusing something koi can do is not the same virtue as refusing
-// something it cannot.
-//
-// `-a` and `-n` are the incremental pair: "append the lines *new since*
-// the last write", "read the lines *not yet read*". Both need a
-// per-file read position over a history that is one process's list. koi's
-// is a store shared live across sessions (#40), where "new since" has no
-// single answer, so those two report what they do not do — the same call
-// this file's neighbor `fc` makes about its editing forms.
+// the list, write the list out one command per line. `-a` and `-n` are
+// the incremental pair, and they refused until a script session had a
+// list of its own: both mean "the lines new since last time", which
+// needs a position over a per-process history rather than over a store
+// shared live across sessions (#40). Ambient recording (#277) supplied
+// that list, so all four now work on the script paths; the positions and
+// the $HISTFILE preload live in histfile.go (#432).
 //
 // With no operand, all of them need $HISTFILE. koi has no default for
 // it: bash falls back to ~/.bash_history, and silently writing a file
@@ -88,7 +82,40 @@ var (
 	// the substitute (measured: the -s invocations never appear in the
 	// listing, only what they stored).
 	histAmbientLast bool
+	// histAppendPos is where `history -a` starts writing, in the same
+	// absolute coordinate as the listing numbers (histBase + index)
+	// rather than as an index into the current slice. That is what makes
+	// it survive an HISTSIZE trim: the entries drop off the front, the
+	// base advances, and the position still names the same command —
+	// measured, since a stifled list appends exactly the two entries
+	// recorded since the last write, not whatever the raw index lands on.
+	histAppendPos int
+	// histFileLines is how many lines of the history file this session
+	// has accounted for: what the preload read, what `-a` wrote, and
+	// what `-n` has already consumed. bash keeps one counter for all
+	// three, which is why `-a` and `-n` interlock — appending two lines
+	// leaves `-n` with nothing to read, and a `-r` of *another* file
+	// resets it to that file's length (all measured).
+	histFileLines int
+	// histPreloaded records that the load-on-enable already happened.
+	// bash loads $HISTFILE once per shell, at the moment `set -o
+	// history` turns recording on: re-enabling does not reload, and a
+	// HISTFILE assigned afterwards is never read (measured).
+	histPreloaded bool
+	// histAmbientSession marks a session that records ambiently (#277) —
+	// the script paths, which are the ones with a per-process list for
+	// the file forms to have positions over. An interactive session's
+	// history is the shared store (#40) and must not be replaced by a
+	// file's contents when an rc happens to say `set -o history`.
+	histAmbientSession bool
 )
+
+// historyAmbientSession marks this session as one that records ambiently.
+func historyAmbientSession() {
+	histMu.Lock()
+	defer histMu.Unlock()
+	histAmbientSession = true
+}
 
 // historyAmbientLast reports whether the newest entry is the ambient
 // record of the currently running line. `fc` reads this to leave its own
@@ -234,6 +261,10 @@ operands:
 		// (measured against bash 5.3).
 		histMu.Lock()
 		histBase = 0
+		// The append position goes with it: nothing survives the clear
+		// for `-a` to have already written (measured — a `-c` then one
+		// command appends exactly that command).
+		histAppendPos = 0
 		histMu.Unlock()
 		return historyStatus(0)
 	}
@@ -340,50 +371,49 @@ func historyExpand(hc interp.HandlerContext, args []string) []string {
 	return historyStatus(status)
 }
 
-// historyFile serves -r and -w, and reports what -a and -n do not do.
+// historyFile serves the four file forms over the session list (#432).
 func historyFile(hc interp.HandlerContext, flag string, args []string) []string {
-	switch flag {
-	case "-a", "-n":
-		// See the package comment: both mean "the lines new since last
-		// time", which needs a read position over a per-process list.
-		fmt.Fprintf(hc.Stderr,
-			"history: %s: not implemented; it means \"the lines new since last time\", "+
-				"and koi's history is a store shared live across sessions (#40)\n", flag)
-		return historyStatus(1)
-	}
-
+	runner := sessionRunner()
 	path := ""
-	if len(args) > 0 {
+	switch {
+	case len(args) > 0:
 		path = args[0]
-	} else if path = os.Getenv("HISTFILE"); path == "" {
-		// bash falls back to ~/.bash_history. koi does not have one, and
-		// writing a file it never reads back would be the no-op that
-		// reports success this builtin exists to stop.
-		fmt.Fprintf(hc.Stderr, "history: %s: no file given and HISTFILE is unset\n", flag)
-		return historyStatus(1)
+	default:
+		// The live value, not os.Getenv: a script assigns HISTFILE as it
+		// goes, and the process environment never sees that.
+		path = sessionVarOf(runner, "HISTFILE")
+		if path == "" {
+			// bash falls back to ~/.bash_history. koi does not have one,
+			// and writing a file it never reads back would be the
+			// no-op that reports success this builtin exists to stop.
+			return historyNoFile(hc, flag)
+		}
 	}
 
-	// Relative to the *shell's* directory, not the Go process's. They
-	// are not the same after a `cd`, and resolving against the wrong one
-	// is a bug that only shows up in a script that changed directory —
-	// which is most of them.
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(hc.Dir, path)
-	}
-
-	if flag == "-r" {
-		data, err := os.ReadFile(path)
+	switch flag {
+	case "-a":
+		if err := historyAppendNew(hc, path); err != nil {
+			fmt.Fprintf(hc.Stderr, "history: %s: %v\n", path, err)
+			return historyStatus(1)
+		}
+		return historyStatus(0)
+	case "-n":
+		if err := historyReadNew(hc, path, runner); err != nil {
+			fmt.Fprintf(hc.Stderr, "history: %s: %v\n", path, err)
+			return historyStatus(1)
+		}
+		return historyStatus(0)
+	case "-r":
+		lines, err := historyFileLines(hc, path)
 		if err != nil {
 			fmt.Fprintf(hc.Stderr, "history: %s: %v\n", path, err)
 			return historyStatus(1)
 		}
-		lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
-		if len(lines) == 1 && lines[0] == "" {
-			lines = nil // an empty file adds nothing, rather than one empty entry
-		}
-		historyMutate(func(list []string) []string { return append(list, lines...) })
+		historyReadAll(lines, runner)
 		return historyStatus(0)
 	}
+
+	path = historyFilePath(hc, path)
 
 	var b strings.Builder
 	for _, cmd := range historyEntries() {

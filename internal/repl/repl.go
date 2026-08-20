@@ -158,7 +158,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// aliasTrackCallHandler is interactive-only and outermost: only this
 	// chain feeds the surfaces that consult the mirror, and observing
 	// before any rewrite means it sees the words as typed.
-	runnerOpts = append(runnerOpts, interp.CallHandler(aliasTrackCallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(callBase)))))))))))))))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(aliasTrackCallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(callBase))))))))))))))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -671,7 +671,7 @@ func runPlain(ctx context.Context, login bool) error {
 		interp.Env(sessionEnv(sessionFlags{invocation: invokedStdin})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
+		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
 	)...)
 	if err != nil {
 		return err
@@ -783,6 +783,9 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	// fires during Run, and HISTCONTROL/HISTIGNORE/HISTSIZE have to be
 	// read at record time because the script sets them as it goes.
 	var runner *interp.Runner
+	// This session records ambiently, so it has a per-process list for
+	// the $HISTFILE forms to hold positions over (#432).
+	historyAmbientSession()
 	rec := newHistoryRecorder(file, src.String(), func(name string) string {
 		return sessionVarOf(runner, name)
 	})
@@ -797,7 +800,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		interp.Env(sessionEnv(sessionFlags{interactive: interactive, invocation: inv})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
+		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
 	)...)
 	if err != nil {
 		return err
@@ -855,6 +858,9 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 	// path too: a script asks the same questions an interactive line does.
 	registerSubstrateBuiltins()
 	var runner *interp.Runner
+	// This session records ambiently, so it has a per-process list for
+	// the $HISTFILE forms to hold positions over (#432).
+	historyAmbientSession()
 	rec := newHistoryRecorder(file, src.String(), func(name string) string {
 		return sessionVarOf(runner, name)
 	})
@@ -863,7 +869,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 			interp.HistoryHook(rec.record),
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
+			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
 		},
 		jsonTraceOptions()...),
 		opts...,
