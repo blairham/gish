@@ -1864,6 +1864,15 @@ q`,
 	{"unalias -x; echo rc=$?", "unalias: -x: invalid option\nunalias: usage: unalias [-a] name [name ...]\nrc=2\n #JUSTERR"},
 	{"unalias nosuch; echo rc=$?", "unalias: nosuch: not found\nrc=1\n #JUSTERR"},
 
+	{
+		// Reading a process substitution a second time gives EOF rather
+		// than an error, because bash's are /dev/fd entries and koi's
+		// FIFO is gone by then (#420): the failed open answered nothing
+		// at all, so a line went missing rather than reading zero.
+		`f() { wc -l < $1; wc -l < $1; echo reached; }; f <(echo one); echo done=$?`,
+		"       1\n       0\nreached\ndone=0\n #IGNORE wc's column width varies by platform",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

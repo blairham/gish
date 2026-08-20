@@ -3419,7 +3419,17 @@ func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileM
 	dir, name := filepath.Split(path)
 	dir = strings.TrimSuffix(dir, "/")
 	if dir == r.tempDir && strings.HasPrefix(name, fifoNamePrefix) {
-		return os.OpenFile(path, flags, mode)
+		f, err := os.OpenFile(path, flags, mode)
+		if err != nil && os.IsNotExist(err) && flags&(os.O_WRONLY|os.O_RDWR) == 0 {
+			// bash's process substitutions are /dev/fd entries, so
+			// reading one a second time gives EOF rather than an error
+			// (#420): `f() { wc -l < $1; wc -l < $1; }` prints 1 then
+			// 0. koi's FIFO is gone by then, and the failed open
+			// answered nothing at all — a missing line rather than a
+			// zero.
+			return os.Open(os.DevNull)
+		}
+		return f, err
 	}
 
 	f, err := r.openHandler(r.handlerCtx(ctx, handlerKindOpen, todoPos), path, flags, mode)
