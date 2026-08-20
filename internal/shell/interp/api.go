@@ -320,6 +320,12 @@ type Runner struct {
 	// hook must be safe for concurrent use.
 	traceHook func(TraceEvent)
 
+	// varRedirFds are the descriptors a {varname} redirection allocated
+	// in the statement being run. They outlive it, unlike every other
+	// redirection, so the restore keeps them rather than dropping them
+	// with the rest of the table (#418).
+	varRedirFds []int
+
 	// pipeStatus collects the exit status of each stage of the pipeline being
 	// run, left to right, for [shellPipeStatusVar]. It is nil when the command
 	// is not a pipeline, in which case that variable holds just the one status.
@@ -1183,6 +1189,16 @@ var bashOptsTable = [...]bashOpt{
 		defaultState: false,
 		supported:    true,
 	},
+	{
+		// Off by default, as in bash: a {varname} redirection's
+		// descriptor outlives the command that opened it, and this is
+		// what asks for the other behavior (#418). Appended to the
+		// supported block rather than inserted, because the opt*
+		// constants below index this table positionally.
+		name:         "varredir_close",
+		defaultState: false,
+		supported:    true,
+	},
 	// unsupported options, sorted alphabetically by name
 	{name: "array_expand_once"},
 	{name: "assoc_expand_once"},
@@ -1274,7 +1290,6 @@ var bashOptsTable = [...]bashOpt{
 		name:         "sourcepath",
 		defaultState: true,
 	},
-	{name: "varredir_close"},
 	{name: "xpg_echo"},
 }
 
@@ -1323,6 +1338,7 @@ const (
 	optLocalVarInherit
 	optNoCaseGlob
 	optNullGlob
+	optVarRedirClose
 )
 
 // Reset returns a runner to its initial state, right before the first call to

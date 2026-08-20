@@ -2683,6 +2683,37 @@ var runTests = []runTest{
 		"D:[cat <<EOF > /dev/null\nbody line\nEOF\n]\n",
 	},
 	{
+		// A {varname} descriptor outlives the command that opened it —
+		// that is the whole point of the form (#418). koi undid it with
+		// every other redirection, so $fd named one that was already
+		// gone.
+		": {fd}>&1; echo redir2 >&$fd; echo \"stat=$?\"",
+		"redir2\nstat=0\n",
+	},
+	{
+		// The same for a real file rather than a dup, which is the case
+		// that also needed the closer suppressed.
+		": {fd}>vf; echo written >&$fd; exec {fd}>&-; cat vf",
+		"written\n",
+	},
+	{
+		// Through a nameref the descriptor lands on the target. koi
+		// wrote the reference variable itself, destroying the reference.
+		"declare -n ref=target; exec {ref}</dev/null; echo \"target=${target-unset}\"",
+		"target=10\n",
+	},
+	{
+		// varredir_close asks for the other behavior, and was refused
+		// outright before — so neither was reachable.
+		"shopt -s varredir_close; : {fd}>&1; ( echo x >&$fd ) 2>/dev/null; echo \"st=$?\"",
+		"st=1\n",
+	},
+	{
+		// An ordinary redirection is still undone with its command.
+		"exec 3>keep; { echo x; } 3>other; echo y >&3; exec 3>&-; cat keep",
+		"x\ny\n",
+	},
+	{
 		// A here-document takes a descriptor like any other input
 		// redirection (#414). koi assigned every body to fd 0 before
 		// the descriptor was even worked out, so fd 3 was never opened
