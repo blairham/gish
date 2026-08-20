@@ -168,8 +168,24 @@ read -N 3 foo <<< "абвгд"; echo "$foo"`,
 	// umask was "unsupported builtin" until #55, and it is the one where
 	// silence costs something concrete: `umask 077` before writing a key
 	// is how a script keeps the file from being world-readable.
-	{name: "umask", script: `umask 077; umask; umask -S; umask -p; umask 022; umask`},
-	{name: "kill", script: `kill -l >/dev/null; echo "list=$?"; kill 999999 2>/dev/null; echo "badpid=$?"; kill -BOGUS 1 2>/dev/null; echo "badsig=$?"`},
+	{
+		// Symbolic modes describe what to *allow*, so they are read
+		// against the mask in force and inverted (#411).
+		name: "umask", script: `umask 077; umask; umask -S; umask -p; umask 022; umask
+umask u=rwx,g=rwx,o=rx; umask
+umask 022; umask a-w; umask
+umask 022; umask =; umask
+umask 022; umask -S a=rwx; umask
+umask 022; umask g-rwx; umask`,
+	},
+	{
+		// -l with operands *translates* rather than listing, which is
+		// how a script turns an exit status above 128 into the signal
+		// that caused it (#411).
+		name: "kill", script: `kill -l >/dev/null; echo "list=$?"; kill 999999 2>/dev/null; echo "badpid=$?"; kill -BOGUS 1 2>/dev/null; echo "badsig=$?"
+kill -l 1; kill -l HUP; kill -l 9 15; kill -l 0
+kill -l 99 2>/dev/null; echo "badnum=$?"`,
+	},
 
 	// alias and unalias cannot be differential: koi expands aliases in
 	// interactive sessions only (#53/#163), and bash -c will not expand

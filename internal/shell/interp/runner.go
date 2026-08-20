@@ -3250,9 +3250,14 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		r.exit.returning = false
 		return
 	}
-	if IsBuiltin(name) {
+	if IsBuiltin(name) && !r.disabledBuiltins[name] {
 		r.exit = r.builtin(ctx, pos, name, args[1:])
 		return
+	}
+	if path, ok := r.hashTable[name]; ok {
+		// A hashed name runs the pinned program rather than whatever a
+		// PATH search would find (#411).
+		args = append([]string{path}, args[1:]...)
 	}
 	r.exec(ctx, pos, args)
 }

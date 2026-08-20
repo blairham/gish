@@ -108,7 +108,7 @@ var builtinNames = map[string]bool{
 	"dirs":      true,
 	"disown":    false,
 	"echo":      true, // TODO: surely this is POSIX? but why is it not in the main POSIX spec page?
-	"enable":    false,
+	"enable":    true,
 	"history":   false,
 	"help":      false,
 	"let":       true, // NOTE: our parser treats this as a keyword
@@ -370,6 +370,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		if name == "continue" {
 			enclosing = &r.contnEnclosing
 		}
+		// `--` ends the options, which every builtin taking arguments
+		// accepts and these two rejected with a usage error (#411).
+		if len(args) > 0 && args[0] == "--" {
+			args = args[1:]
+		}
 		switch len(args) {
 		case 0:
 			*enclosing = 1
@@ -506,11 +511,19 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 	case "type":
 		anyNotFound := false
 		mode := ""
+		all, noFuncs := false, false
 		fp := flagParser{remaining: args}
 		for fp.more() {
 			switch flag := fp.flag(); flag {
-			case "-a", "-f", "--help":
-				return failf(3, "type: NOT IMPLEMENTED\n")
+			case "-a":
+				// -a reports *every* match rather than the first, which
+				// is how a script sees that a builtin is shadowing the
+				// program it meant (#411). koi answered "NOT
+				// IMPLEMENTED" at status 3.
+				all = true
+			case "-f":
+				// -f suppresses the function lookup.
+				noFuncs = true
 			case "-p", "-P", "-t":
 				mode = flag
 			default:
@@ -520,20 +533,35 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		args := fp.args()
 		for _, arg := range args {
 			if mode == "-p" || mode == "-P" {
-				if path, err := LookPathDir(r.Dir, r.writeEnv, arg); err == nil {
-					r.outf("%s\n", path)
+				// -p prints the disk file only when the name is not
+				// something the shell would run instead; -P forces the
+				// PATH search. koi treated them as the same, so
+				// `type -p echo` named /bin/echo where bash — which
+				// would run its builtin — prints nothing (#411).
+				if mode == "-p" && (syntax.IsKeyword(arg) || IsBuiltin(arg) || r.Funcs[arg] != nil ||
+					(r.opts[optExpandAliases] && r.alias[arg].args != nil)) {
+					continue
+				}
+				if paths := r.lookPathAll(arg, all); len(paths) > 0 {
+					for _, path := range paths {
+						r.outf("%s\n", path)
+					}
 				} else {
 					anyNotFound = true
 				}
 				continue
 			}
+			found := false
 			if syntax.IsKeyword(arg) {
 				if mode == "-t" {
 					r.out("keyword\n")
 				} else {
 					r.outf("%s is a shell keyword\n", arg)
 				}
-				continue
+				if !all {
+					continue
+				}
+				found = true
 			}
 			if als, ok := r.alias[arg]; ok && r.opts[optExpandAliases] {
 				var buf bytes.Buffer
@@ -551,9 +579,12 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				} else {
 					r.outf("%s is aliased to `%s'\n", arg, &buf)
 				}
-				continue
+				if !all {
+					continue
+				}
+				found = true
 			}
-			if body, ok := r.Funcs[arg]; ok {
+			if body, ok := r.Funcs[arg]; ok && !noFuncs {
 				if mode == "-t" {
 					r.out("function\n")
 				} else {
@@ -564,22 +595,38 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 					r.outf("%s is a function\n", arg)
 					r.printFuncDef(arg, body)
 				}
-				continue
+				if !all {
+					continue
+				}
+				found = true
 			}
-			if IsBuiltin(arg) {
+			if IsBuiltin(arg) && !r.disabledBuiltins[arg] {
 				if mode == "-t" {
 					r.out("builtin\n")
 				} else {
 					r.outf("%s is a shell builtin\n", arg)
 				}
+				if !all {
+					continue
+				}
+				found = true
+			}
+			if paths := r.lookPathAll(arg, all); len(paths) > 0 {
+				for _, path := range paths {
+					switch {
+					case mode == "-t":
+						r.out("file\n")
+					case r.hashTable[arg] == path:
+						// bash says where a hashed name came from,
+						// which is how you see a `hash -p` pin.
+						r.outf("%s is hashed (%s)\n", arg, path)
+					default:
+						r.outf("%s is %s\n", arg, path)
+					}
+				}
 				continue
 			}
-			if path, err := LookPathDir(r.Dir, r.writeEnv, arg); err == nil {
-				if mode == "-t" {
-					r.out("file\n")
-				} else {
-					r.outf("%s is %s\n", arg, path)
-				}
+			if found {
 				continue
 			}
 			if mode != "-t" {
@@ -591,7 +638,125 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			exit.code = 1
 		}
 	case "hash":
-		// TODO: implement. for now, having this as a no-op is better than nothing.
+		// The table `hash -p` writes is consulted before a PATH search,
+		// which is how a script points a name at a specific program
+		// (#411). koi accepted the line and did nothing with it, so the
+		// name still resolved by PATH — or not at all.
+		reset, remember := false, ""
+		fp := flagParser{remaining: args}
+		for fp.more() {
+			switch flag := fp.flag(); flag {
+			case "-r":
+				reset = true
+			case "-p":
+				if len(fp.remaining) == 0 {
+					return failf(2, "hash: -p: option requires an argument\n")
+				}
+				remember = fp.value()
+			case "-l", "-t", "-d":
+				// Listing forms; the table koi keeps is only what -p
+				// put in it, so they answer from the same map.
+			default:
+				return failf(2, "hash: invalid option %q\n", flag)
+			}
+		}
+		args := fp.args()
+		if reset {
+			r.hashTable = nil
+			break
+		}
+		if remember != "" {
+			if len(args) == 0 {
+				return failf(2, "hash: usage: hash [-lr] [-p pathname] [-dt] [name ...]\n")
+			}
+			if r.hashTable == nil {
+				r.hashTable = map[string]string{}
+			}
+			for _, name := range args {
+				r.hashTable[name] = remember
+			}
+			break
+		}
+		if len(args) == 0 {
+			if len(r.hashTable) == 0 {
+				r.outf("hash: hash table empty\n")
+				break
+			}
+			r.outf("hits\tcommand\n")
+			for _, name := range slices.Sorted(maps.Keys(r.hashTable)) {
+				r.outf("   0\t%s\n", r.hashTable[name])
+			}
+			break
+		}
+		for _, name := range args {
+			// A bare `hash name` *records* the lookup rather than
+			// querying it, which is what makes `hash cmd` at the top of
+			// a script a cheap existence check.
+			if _, ok := r.hashTable[name]; ok {
+				continue
+			}
+			path, err := LookPathDir(r.Dir, r.writeEnv, name)
+			if err != nil {
+				r.errf("hash: %s: not found\n", name)
+				exit.code = 1
+				continue
+			}
+			if r.hashTable == nil {
+				r.hashTable = map[string]string{}
+			}
+			r.hashTable[name] = path
+		}
+
+	case "enable":
+		// `enable -n name` turns a builtin off, so the name resolves on
+		// PATH like any other command. koi refused the whole builtin,
+		// which made an ordinary line in a test script fatal (#411).
+		disable, listAll := false, false
+		fp := flagParser{remaining: args}
+		for fp.more() {
+			switch flag := fp.flag(); flag {
+			case "-n":
+				disable = true
+			case "-a":
+				listAll = true
+			case "-p":
+				// The default listing shape.
+			default:
+				return failf(2, "enable: invalid option %q\n", flag)
+			}
+		}
+		args := fp.args()
+		if len(args) == 0 {
+			for _, name := range ImplementedBuiltins() {
+				off := r.disabledBuiltins[name]
+				switch {
+				case listAll && off:
+					r.outf("enable -n %s\n", name)
+				case off:
+					// A plain listing shows what is enabled.
+				case disable:
+					// `enable -n` with no names lists the disabled set.
+				default:
+					r.outf("enable %s\n", name)
+				}
+			}
+			break
+		}
+		for _, name := range args {
+			if !IsBuiltin(name) {
+				r.errf("enable: %s: not a shell builtin\n", name)
+				exit.code = 1
+				continue
+			}
+			if disable {
+				if r.disabledBuiltins == nil {
+					r.disabledBuiltins = map[string]bool{}
+				}
+				r.disabledBuiltins[name] = true
+				continue
+			}
+			delete(r.disabledBuiltins, name)
+		}
 	case "eval":
 		src := strings.Join(args, " ")
 		// Read as bash reads (#276): what parsed before the error runs,
@@ -757,12 +922,21 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		r.execWith(ctx, pos, argv0, clearEnv, args)
 		exit = r.exit
 	case "command":
-		show := false
+		show, verbose, defPath := false, false, false
 		fp := flagParser{remaining: args}
 		for fp.more() {
 			switch flag := fp.flag(); flag {
 			case "-v":
 				show = true
+			case "-V":
+				// The prose form of -v, which is what a script prints
+				// when it wants to tell a human what it found (#411).
+				show, verbose = true, true
+			case "-p":
+				// Search the *default* PATH rather than the session's,
+				// which is how a script reaches the system tools when
+				// PATH may have been rewritten.
+				defPath = true
 			default:
 				return failf(2, "command: invalid option %q\n", flag)
 			}
@@ -770,6 +944,17 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		args := fp.args()
 		if len(args) == 0 {
 			break
+		}
+		if defPath {
+			// The default PATH stands in for confstr(_CS_PATH), which
+			// Go does not expose; it is the same set every system ships.
+			prev, had := r.writeEnv.Get("PATH"), true
+			r.setVarString("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+			defer func() {
+				if had {
+					r.setVar("PATH", prev)
+				}
+			}()
 		}
 		if !show {
 			if IsBuiltin(args[0]) {
@@ -782,12 +967,39 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		last := uint8(0)
 		for _, arg := range args {
 			last = 0
-			if r.Funcs[arg] != nil || IsBuiltin(arg) {
-				r.outf("%s\n", arg)
-			} else if path, err := LookPathDir(r.Dir, r.writeEnv, arg); err == nil {
-				r.outf("%s\n", path)
-			} else {
-				last = 1
+			switch {
+			case syntax.IsKeyword(arg):
+				if verbose {
+					r.outf("%s is a shell keyword\n", arg)
+				} else {
+					r.outf("%s\n", arg)
+				}
+			case r.Funcs[arg] != nil:
+				if verbose {
+					r.outf("%s is a function\n", arg)
+					r.printFuncDef(arg, r.Funcs[arg])
+				} else {
+					r.outf("%s\n", arg)
+				}
+			case IsBuiltin(arg):
+				if verbose {
+					r.outf("%s is a shell builtin\n", arg)
+				} else {
+					r.outf("%s\n", arg)
+				}
+			default:
+				if path, err := LookPathDir(r.Dir, r.writeEnv, arg); err == nil {
+					if verbose {
+						r.outf("%s is %s\n", arg, path)
+					} else {
+						r.outf("%s\n", path)
+					}
+				} else {
+					if verbose {
+						r.errf("command: %s: not found\n", arg)
+					}
+					last = 1
+				}
 			}
 		}
 		exit.code = last
@@ -1781,6 +1993,40 @@ func shoptState(on bool) string {
 		return "-s"
 	}
 	return "-u"
+}
+
+// lookPathAll finds a name on PATH: the first match, or every match
+// when `type -a` asked for all of them (#411).
+func (r *Runner) lookPathAll(name string, all bool) []string {
+	// `hash -p` pins a name to a path, and that pin is consulted before
+	// PATH — which is the point of it (#411).
+	if path, ok := r.hashTable[name]; ok {
+		return []string{path}
+	}
+	if !all {
+		if path, err := LookPathDir(r.Dir, r.writeEnv, name); err == nil {
+			return []string{path}
+		}
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, dir := range filepath.SplitList(r.envGet("PATH")) {
+		if dir == "" {
+			dir = "."
+		}
+		cand := filepath.Join(r.absPath(dir), name)
+		if seen[cand] {
+			continue
+		}
+		info, err := os.Stat(cand)
+		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		seen[cand] = true
+		out = append(out, cand)
+	}
+	return out
 }
 
 func (r *Runner) printOptLine(name string, column int, enabled, supported bool) {

@@ -201,7 +201,13 @@ type Runner struct {
 	// rather than a real pid.
 	bashPIDValue int
 	// argv0 is BASH_ARGV0's writable view of $0.
-	argv0        string
+	argv0 string
+	// disabledBuiltins are the names `enable -n` turned off, which fall
+	// through to PATH like any other command (#411).
+	disabledBuiltins map[string]bool
+	// hashTable is `hash -p`'s name-to-path map, consulted before a
+	// PATH search.
+	hashTable    map[string]string
 	dirBootstrap [1]string
 
 	optState getopts
@@ -1703,28 +1709,30 @@ func (r *Runner) subshell(background bool) *Runner {
 	// Keep in sync with the Runner type. Manually copy fields, to not copy
 	// sensitive ones like [errgroup.Group], and to do deep copies of slices.
 	r2 := &Runner{
-		Dir:            r.Dir,
-		startTime:      r.startTime,
-		secondsBase:    r.secondsBase,
-		bashPIDValue:   nextBashPID(),
-		argv0:          r.argv0,
-		tempDir:        r.tempDir,
-		Params:         r.Params,
-		callHandler:    r.callHandler,
-		execHandler:    r.execHandler,
-		openHandler:    r.openHandler,
-		readDirHandler: r.readDirHandler,
-		statHandler:    r.statHandler,
-		accessHandler:  r.accessHandler,
-		stdin:          r.stdin,
-		stdout:         r.stdout,
-		stderr:         r.stderr,
-		bgWriteMu:      r.bgWriteMu,
-		filename:       r.filename,
-		opts:           r.opts,
-		usedNew:        r.usedNew,
-		exit:           r.exit,
-		lastExit:       r.lastExit,
+		Dir:              r.Dir,
+		startTime:        r.startTime,
+		secondsBase:      r.secondsBase,
+		bashPIDValue:     nextBashPID(),
+		argv0:            r.argv0,
+		disabledBuiltins: maps.Clone(r.disabledBuiltins),
+		hashTable:        maps.Clone(r.hashTable),
+		tempDir:          r.tempDir,
+		Params:           r.Params,
+		callHandler:      r.callHandler,
+		execHandler:      r.execHandler,
+		openHandler:      r.openHandler,
+		readDirHandler:   r.readDirHandler,
+		statHandler:      r.statHandler,
+		accessHandler:    r.accessHandler,
+		stdin:            r.stdin,
+		stdout:           r.stdout,
+		stderr:           r.stderr,
+		bgWriteMu:        r.bgWriteMu,
+		filename:         r.filename,
+		opts:             r.opts,
+		usedNew:          r.usedNew,
+		exit:             r.exit,
+		lastExit:         r.lastExit,
 
 		origStdout: r.origStdout, // used for process substitutions
 
