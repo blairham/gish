@@ -762,6 +762,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		r.extraFiles = maps.Clone(r.extraFiles)
 	}
 	var closers []io.Closer
+	r.varRedirFds = nil
 	for _, rd := range st.Redirs {
 		cls, err := r.redir(ctx, rd)
 		if err != nil {
@@ -810,7 +811,34 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		r.keepRedirs = false
 	} else if len(st.Redirs) > 0 {
 		r.stdin, r.stdout, r.stderr = oldIn, oldOut, oldErr
+		// A descriptor a {varname} redirection allocated outlives the
+		// command that opened it — that is the whole point of the form,
+		// and bash only closes it under "varredir_close" (#418). koi
+		// undid it with every other redirection, so `: {fd}>&1` left
+		// $fd naming a descriptor that was already gone.
+		var keep map[int]io.ReadWriteCloser
+		for _, fd := range r.varRedirFds {
+			if r.opts[optVarRedirClose] {
+				break // the option asks for them to be closed after all
+			}
+			if f, ok := r.extraFiles[fd]; ok {
+				if keep == nil {
+					keep = make(map[int]io.ReadWriteCloser, len(r.varRedirFds))
+				}
+				keep[fd] = f
+			}
+		}
 		r.extraFiles = oldExtraFiles
+		if len(keep) > 0 {
+			// Cloned rather than written through: oldExtraFiles is the
+			// enclosing scope's map, not this statement's copy.
+			r.extraFiles = maps.Clone(r.extraFiles)
+			if r.extraFiles == nil {
+				r.extraFiles = make(map[int]io.ReadWriteCloser, len(keep))
+			}
+			maps.Copy(r.extraFiles, keep)
+		}
+		r.varRedirFds = nil
 		for _, cls := range closers {
 			cls.Close()
 		}
@@ -2775,6 +2803,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			return nil, err
 		}
 		r.setFdVar(fdVarName, fd)
+		if fdVarName != "" {
+			return nil, nil // see the tail of this function
+		}
 		return pr, nil
 	}
 
@@ -2830,6 +2861,9 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			pw.WriteString("\n")
 			pw.Close()
 		}()
+		if fdVarName != "" {
+			return nil, nil // see the tail of this function
+		}
 		return pr, nil
 	case syntax.DplOut:
 		if arg == "-" {
@@ -2974,6 +3008,13 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		return nil, fmt.Errorf("unhandled redirect op: %v", rd.Op)
 	}
 	r.setFdVar(fdVarName, fd)
+	if fdVarName != "" {
+		// Handing back no closer is the other half of keeping the
+		// descriptor open (#418): the statement closes what it is given,
+		// and a {varname} file must outlive it. It is closed by an
+		// explicit `{fd}>&-`, or when the shell exits.
+		return nil, nil
+	}
 	return f, nil
 }
 
@@ -2981,6 +3022,18 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 func (r *Runner) setFdVar(name string, fd int) {
 	if name == "" {
 		return
+	}
+	// Remember it for the statement's restore, which is what keeps the
+	// descriptor open past the command (#418).
+	r.varRedirFds = append(r.varRedirFds, fd)
+	// Through a nameref the descriptor lands on the *target*, the way
+	// any other assignment does (#418). koi wrote the reference variable
+	// itself, so `declare -n ref=target; exec {ref}</dev/null` clobbered
+	// ref and left target unset — the reference destroyed rather than
+	// followed.
+	prev := r.lookupVar(name)
+	if target, _ := prev.Resolve(r.writeEnv); target != "" {
+		name = target
 	}
 	r.setVarString(name, strconv.Itoa(fd))
 }
