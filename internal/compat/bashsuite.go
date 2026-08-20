@@ -192,7 +192,23 @@ func RunBashSuite(ctx context.Context, bashBin, koiBin, dir, helpers string) ([]
 		r.BashOut, r.BashCode = runSuiteFile(ctx, bashBin, dir, helpers, f)
 		r.KoiOut, r.KoiCode = runSuiteFile(ctx, koiBin, dir, helpers, f)
 
-		r.ParseError = ParseErrorFor(f, r.KoiOut)
+		// Parse coverage is asked *directly*, with `koi -n` (#233),
+		// rather than inferred from the run.
+		//
+		// Inferring it was wrong in a way that only showed when
+		// behavior improved: a file whose run stopped early for a
+		// runtime reason never reached its parse gap, so it counted as
+		// parsed. Fixing the fatal assignment error in #530 let
+		// assoc.tests run far enough to reach a construct koi has never
+		// been able to read, and the published number went *down* for a
+		// fix — which is the metric being wrong, not the shell.
+		r.ParseError = parseCheck(ctx, koiBin, dir, f)
+		if r.ParseError == "" {
+			// A construct the run reported and the check did not is
+			// still a gap: `source` and `eval` re-parse inside the
+			// interpreter, where -n cannot see them.
+			r.ParseError = ParseErrorFor(f, r.KoiOut)
+		}
 		r.Parsed = r.ParseError == ""
 		r.Pass = r.BashOut == r.KoiOut && r.BashCode == r.KoiCode
 		r.BashLines, r.Matched = agreement(r.BashOut, r.KoiOut)
@@ -354,6 +370,26 @@ type ParseGap struct {
 // so koi correctly reporting a parse error for an intentionally-bad
 // sub-invocation appears in the same output; charging those against the
 // file under test put the parse rate at 67% when it is 78%.
+// parseCheck asks koi whether it can read the whole file, which is what
+// `koi -n` answers: it parses and runs nothing. The message is the same
+// shape the run produces, so the gap table reads the same either way.
+func parseCheck(ctx context.Context, koiBin, dir, file string) string {
+	cmd := exec.CommandContext(ctx, koiBin, "-n", file)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return ""
+	}
+	if msg := ParseErrorFor(file, string(out)); msg != "" {
+		return msg
+	}
+	// -n reports with the plain file name rather than ./name.
+	if m := koiParseErr.FindStringSubmatch(string(out)); m != nil {
+		return strings.TrimSpace(m[2])
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func ParseErrorFor(file, out string) string {
 	for _, m := range koiParseErr.FindAllStringSubmatch(out, -1) {
 		if m[1] == "./"+file || m[1] == file {

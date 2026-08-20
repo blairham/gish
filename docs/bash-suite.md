@@ -7,8 +7,8 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 | measure | result | what it answers |
 | --- | --- | --- |
 | **strict** | **17/83 files (20%)** | identical output *and* exit status for a whole file |
-| parsed | 66/83 files (79%) | koi can read the file at all |
-| line agreement | 7537/13655 lines (55%) | how much of bash's output koi reproduced exactly |
+| parsed | 65/83 files (78%) | koi can read the file at all |
+| line agreement | 7553/13655 lines (55%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -19,7 +19,7 @@ denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
 directions. **Strict is a file count, and runtime behavior dominates
-it**: 49 files parse perfectly and then behave differently, against 17
+it**: 48 files parse perfectly and then behave differently, against 18
 koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
@@ -29,6 +29,14 @@ before the syntax error run, and the error is reported where it is — so
 an unreadable construct on line 129 costs the lines after it rather than
 the whole file. It still costs them, which is why parsed is published
 beside the other two.
+
+**Parsed is asked directly**, with `koi -n` on each file, rather than
+inferred from whether the run reported a parse error. Inferring it was
+wrong in a way that only showed when behavior improved: a file whose run
+stopped early for a *runtime* reason never reached its parse gap and so
+counted as parsed, and fixing one such error made this number go **down**
+for a file koi had never been able to read. The number that moves when a
+fix lands should be the one the fix is about.
 
 ## What the parser cannot read
 
@@ -48,6 +56,7 @@ bash code uses them.
 | a command can only contain words and redirects; encountered `(` | extglob.tests |
 | array element values must be words | array.tests |
 | not a valid arithmetic operator: `sh_352` | comsub-posix.tests |
+| not a valid arithmetic operator: `world` | assoc.tests |
 | not a valid parameter expansion operator: `*` | cond.tests |
 | not a valid parameter expansion operator: `~` | casemod.tests |
 | reached EOF without closing quote `"` | posixexp2.tests |
