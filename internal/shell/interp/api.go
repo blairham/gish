@@ -205,6 +205,9 @@ type Runner struct {
 	// traceLine is the line of the statement being run, which PS4's
 	// $LINENO reports (#413).
 	traceLine uint
+	// expandingAlias guards against an alias that names itself, which
+	// expands once and then means the command (#407).
+	expandingAlias map[string]bool
 	// disabledBuiltins are the names `enable -n` turned off, which fall
 	// through to PATH like any other command (#411).
 	disabledBuiltins map[string]bool
@@ -478,8 +481,14 @@ type bgProc struct {
 	reported bool
 }
 
+// alias holds what bash holds: the replacement *text*, spliced into
+// the command line and re-parsed at expansion time (#407). koi parsed
+// the value when the alias was defined, as a standalone command, so
+// most real aliases were refused outright — `alias ok='echo OK >&2'`
+// is not a word list, and neither is anything with a `;` or a
+// newline in it.
 type alias struct {
-	args  []*syntax.Word
+	text  string
 	blank bool
 }
 
@@ -622,19 +631,8 @@ func (r *Runner) LookupVar(name string) expand.Variable {
 // means.
 func (r *Runner) Aliases() map[string]string {
 	out := make(map[string]string, len(r.alias))
-	printer := syntax.NewPrinter()
 	for name, als := range r.alias {
-		var sb strings.Builder
-		for i, w := range als.args {
-			if i > 0 {
-				sb.WriteString(" ")
-			}
-			_ = printer.Print(&sb, w)
-		}
-		if als.blank {
-			sb.WriteString(" ")
-		}
-		out[name] = sb.String()
+		out[name] = als.text
 	}
 	return out
 }

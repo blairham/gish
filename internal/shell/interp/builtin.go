@@ -539,7 +539,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				// `type -p echo` named /bin/echo where bash — which
 				// would run its builtin — prints nothing (#411).
 				if mode == "-p" && (syntax.IsKeyword(arg) || IsBuiltin(arg) || r.Funcs[arg] != nil ||
-					(r.opts[optExpandAliases] && r.alias[arg].args != nil)) {
+					(r.opts[optExpandAliases] && r.alias[arg].text != "")) {
 					continue
 				}
 				if paths := r.lookPathAll(arg, all); len(paths) > 0 {
@@ -564,20 +564,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				found = true
 			}
 			if als, ok := r.alias[arg]; ok && r.opts[optExpandAliases] {
-				var buf bytes.Buffer
-				if len(als.args) > 0 {
-					printer := syntax.NewPrinter()
-					printer.Print(&buf, &syntax.CallExpr{
-						Args: als.args,
-					})
-				}
-				if als.blank {
-					buf.WriteByte(' ')
-				}
+				buf := als.text
 				if mode == "-t" {
 					r.out("alias\n")
 				} else {
-					r.outf("%s is aliased to `%s'\n", arg, &buf)
+					r.outf("%s is aliased to `%s'\n", arg, buf)
 				}
 				if !all {
 					continue
@@ -1389,58 +1380,77 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 
 	case "alias":
 		show := func(name string, als alias) {
-			var buf bytes.Buffer
-			if len(als.args) > 0 {
-				printer := syntax.NewPrinter()
-				printer.Print(&buf, &syntax.CallExpr{
-					Args: als.args,
-				})
-			}
-			if als.blank {
-				buf.WriteByte(' ')
-			}
-			r.outf("alias %s='%s'\n", name, &buf)
+			// The listing is single-quoted the way bash spells it, and
+			// the text is what was defined rather than a re-print of a
+			// parse — an alias may not be a command at all.
+			r.outf("alias %s='%s'\n", name, strings.ReplaceAll(als.text, "'", `'\''`))
 		}
 
-		if len(args) == 0 {
-			for name, als := range r.alias {
-				show(name, als)
+		fp := flagParser{remaining: args}
+		for fp.more() {
+			switch flag := fp.flag(); flag {
+			case "-p":
+				// The listing form; koi read it as an alias named -p.
+			default:
+				r.errf("alias: %s: invalid option\n", flag)
+				r.errf("alias: usage: alias [-p] [name[=value] ... ]\n")
+				return exitStatus{code: 2}
 			}
 		}
-	argsLoop:
+		args := fp.args()
+
+		if len(args) == 0 {
+			for _, name := range slices.Sorted(maps.Keys(r.alias)) {
+				show(name, r.alias[name])
+			}
+		}
 		for _, arg := range args {
 			name, src, ok := strings.Cut(arg, "=")
 			if !ok {
 				als, ok := r.alias[name]
 				if !ok {
-					r.errf("alias: %q not found\n", name)
+					r.errf("alias: %s: not found\n", name)
+					exit.code = 1
 					continue
 				}
 				show(name, als)
 				continue
 			}
 
-			// TODO: parse any CallExpr perhaps, or even any Stmt
-			parser := syntax.NewParser()
-			var words []*syntax.Word
-			for w, err := range parser.WordsSeq(strings.NewReader(src)) {
-				if err != nil {
-					r.errf("alias: could not parse %q: %v\n", src, err)
-					continue argsLoop
-				}
-				words = append(words, w)
-			}
-
 			if r.alias == nil {
 				r.alias = make(map[string]alias)
 			}
 			r.alias[name] = alias{
-				args:  words,
+				text: src,
+				// A trailing blank asks for the *next* word to be
+				// alias-expanded too.
 				blank: strings.TrimRight(src, " \t") != src,
 			}
 		}
 	case "unalias":
-		for _, name := range args {
+		// bash diagnoses all three of these; koi answered 0 for every
+		// one (#407).
+		if len(args) == 0 {
+			return failf(2, "unalias: usage: unalias [-a] name [name ...]\n")
+		}
+		fp := flagParser{remaining: args}
+		for fp.more() {
+			switch flag := fp.flag(); flag {
+			case "-a":
+				r.alias = nil
+				return exit
+			default:
+				r.errf("unalias: %s: invalid option\n", flag)
+				r.errf("unalias: usage: unalias [-a] name [name ...]\n")
+				return exitStatus{code: 2}
+			}
+		}
+		for _, name := range fp.args() {
+			if _, ok := r.alias[name]; !ok {
+				r.errf("unalias: %s: not found\n", name)
+				exit.code = 1
+				continue
+			}
 			delete(r.alias, name)
 		}
 
