@@ -1329,6 +1329,80 @@ var runTests = []runTest{
 		`declare -- v="1"` + "\n",
 	},
 
+	// declare's remaining option surface (#385): -u/-l/-c transform on
+	// every assignment, two of them cancel rather than stack, +x/+r/+t
+	// remove attributes (readonly refusing to be removed), -I inherits
+	// the enclosing scope, and `local -` restores the shell options
+	// when the function returns.
+	{
+		`declare -u u; u=abc; echo $u; declare -p u`,
+		"ABC\n" + `declare -u u="ABC"` + "\n",
+	},
+	{
+		`declare -l l=ABC; echo $l; declare -p l`,
+		"abc\n" + `declare -l l="abc"` + "\n",
+	},
+	{
+		`declare -c c=hello_world; echo $c; declare -c d="hello world"; echo $d`,
+		"Hello_world\nHello world\n",
+	},
+	{
+		`declare -u a=(x y); declare -p a`,
+		`declare -au a=([0]="X" [1]="Y")` + "\n",
+	},
+	{
+		`declare -A m; declare -u m; m[k]=vv; declare -p m`,
+		`declare -Au m=([k]="VV" )` + "\n",
+	},
+	{
+		`declare -u u=abc; u+=def; echo $u`,
+		"ABCDEF\n",
+	},
+	{
+		`declare -u u; u=abc; declare +u u; echo $u; u=xyz; echo $u`,
+		"ABC\nxyz\n",
+	},
+	{
+		`declare -ul x=ABC; declare -p x`,
+		`declare -- x="ABC"` + "\n",
+	},
+	{
+		`declare -u u=a; declare -l u; declare -p u; u=QQ; echo $u`,
+		`declare -l u="A"` + "\nqq\n",
+	},
+	{
+		`export V=1; declare +x V; declare -p V`,
+		`declare -- V="1"` + "\n",
+	},
+	{
+		`readonly V=1; declare +r V; declare -p V`,
+		"declare: V: readonly variable\n" + `declare -r V="1"` + "\n #JUSTERR",
+	},
+	{
+		`declare -tux w=v; declare -p w`,
+		`declare -txu w="V"` + "\n",
+	},
+	{
+		`declare -irtx z=5; declare -p z`,
+		`declare -irtx z="5"` + "\n",
+	},
+	{
+		`V=out; f(){ local V=in; g; }; g(){ local -I V; echo "${V-unset}"; }; f`,
+		"in\n",
+	},
+	{
+		`unset Z; f(){ local -I Z; echo "${Z-unset}"; }; f`,
+		"unset\n",
+	},
+	{
+		`set -e; f(){ local -; set +e; case $- in *e*) echo in-e;; *) echo in-noe;; esac; }; f; case $- in *e*) echo out-e;; esac`,
+		"in-noe\nout-e\n",
+	},
+	{
+		`f(){ local -; set -u; case $- in *u*) echo in-u;; esac; }; f; case $- in *u*) echo out-u;; *) echo no-u;; esac`,
+		"in-u\nno-u\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

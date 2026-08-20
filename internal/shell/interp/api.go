@@ -139,6 +139,10 @@ type Runner struct {
 	// binding is unwound afterwards.
 	declTempNames map[string]bool
 
+	// localOpts holds the shell options `local -` saved in the running
+	// function, to be put back when it returns (#385).
+	localOpts *runnerOpts
+
 	// declTempBound holds the names that temp-env prefix carries, so a
 	// declaration can tell that the value it is looking at is the
 	// binding rather than an outer variable — a new local takes the
