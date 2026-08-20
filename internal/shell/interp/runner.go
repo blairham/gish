@@ -301,6 +301,17 @@ func (e expandEnv) Get(name string) expand.Variable {
 }
 
 func (e expandEnv) Set(name string, vr expand.Variable) error {
+	// A readonly write from inside an expansion — $((xx++)), ${x:=v} —
+	// is fatal to the input unit in bash (#370): the command aborts with
+	// status 1 and a script continues at its next line. export's and a
+	// temp-env's violations only cost status 1, so the raise lives on
+	// this path rather than in setVar.
+	if prev := e.r.writeEnv.Get(name); prev.ReadOnly {
+		e.r.errf("%s: readonly variable\n", name)
+		e.r.exit.code = 1
+		e.r.exit.aborting = true
+		return nil
+	}
 	e.r.setVar(name, vr)
 	return nil // TODO: return any errors
 }
