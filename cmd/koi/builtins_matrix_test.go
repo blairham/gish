@@ -111,6 +111,11 @@ var interpBuiltinCases = []builtinCase{
 	{name: "source", script: `echo 'echo sourced' > "$TMPD/s.sh"; . "$TMPD/s.sh"`},
 	{name: "test", script: `test -d /tmp && echo isdir; test -z "" && echo empty`},
 	{name: "trap", script: `trap 'echo trapped' EXIT; echo body`},
+	// The ignore form and its listing live here rather than in interp's
+	// table: signal.Ignore is process-global and inherited by children,
+	// so an in-process case contaminates every bash oracle the test
+	// binary spawns after it. A subprocess per shell cannot.
+	{name: "trap", script: `trap "" USR2; trap; trap 'echo h' HUP; trap -p SIGHUP`},
 	{name: "true", script: `true; echo "status=$?"`},
 	{name: "type", script: `type cd >/dev/null && echo type-ok`},
 	{name: "unset", script: `V=set; unset V; echo "[${V:-gone}]"`},

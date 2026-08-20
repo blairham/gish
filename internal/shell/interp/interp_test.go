@@ -5149,12 +5149,13 @@ var runTestsUnix = []runTest{
 		"trap 'echo t; exit 3' ALRM; /bin/kill -ALRM $$; sleep 0.1; echo unreachable",
 		"t\nexit status 3",
 	},
-	{
-		// `trap '' SIG` ignores the signal and lists as exactly what
-		// restores it.
-		`trap "" USR2; trap`,
-		"trap -- '' SIGUSR2\n",
-	},
+	// `trap '' SIG` ignoring a signal and listing as `trap -- '' SIG...`
+	// is covered in cmd/koi's builtin matrix, NOT here: signal.Ignore is
+	// process-global and inherited by children, so a case ignoring a
+	// signal in this shared test process makes every bash oracle spawned
+	// after it list the inherited ignore — a cross-test flake that hit CI
+	// on the first day (#352's PR). Subprocess tests cannot contaminate
+	// each other that way.
 	{
 		// Signal traps are listed between EXIT and the pseudo-signals,
 		// under their SIG names, and `trap -p` accepts any spec spelling.
