@@ -711,6 +711,25 @@ func (t *Table) Commands() []string {
 	return out
 }
 
+// Snapshot returns the job table as data (#473): the `jobs` builtin
+// prints to a terminal, and a consumer that had to parse that output
+// back apart would re-derive what the table already knows.
+func (t *Table) Snapshot() []JobInfo {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]JobInfo, 0, len(t.jobs))
+	for _, j := range t.jobs {
+		state, _ := j.snapshot()
+		out = append(out, JobInfo{
+			ID:      j.ID,
+			Pgid:    j.Pgid,
+			Command: j.Command,
+			State:   state.String(),
+		})
+	}
+	return out
+}
+
 // isTerminal reports whether f is a terminal, the test for whether
 // capture should stand in for it. x/term rather than a raw ioctl: the
 // termios request differs between Linux and the BSDs, and this file

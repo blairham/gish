@@ -312,6 +312,29 @@ func (s *Store) RecentEntries(n int) []Entry {
 	return out
 }
 
+// SearchEntries returns up to n distinct entries containing query,
+// newest first, with their metadata — the MCP history tool (#473): an
+// agent asking "what ran and did it work" needs the exit status and
+// cwd, not just the command text. An empty query matches everything,
+// which makes it RecentEntries with a filter rather than a second
+// vocabulary.
+func (s *Store) SearchEntries(query string, n int) []Entry {
+	s.reload()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]Entry, 0, n)
+	seen := make(map[string]struct{})
+	for i := len(s.entries) - 1; i >= 0 && len(out) < n; i-- {
+		e := s.entries[i]
+		if _, dup := seen[e.Command]; dup || !strings.Contains(e.Command, query) {
+			continue
+		}
+		seen[e.Command] = struct{}{}
+		out = append(out, e)
+	}
+	return out
+}
+
 // scan walks entries newest-first, deduplicating so each command is
 // offered once, at its most recent position.
 func (s *Store) scan(n int, match func(string) bool) (string, bool) {

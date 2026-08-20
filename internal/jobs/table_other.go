@@ -51,6 +51,9 @@ func (t *Table) Count() int { return 0 }
 // Commands is the no-job-control stub; see table_unix.go.
 func (t *Table) Commands() []string { return nil }
 
+// Snapshot is the no-job-control stub; see table_unix.go.
+func (t *Table) Snapshot() []JobInfo { return nil }
+
 // Capture is unix-only for now; these keep the shell building elsewhere.
 func (t *Table) EnableCapture(int)           {}
 func (t *Table) DisableCapture()             {}
