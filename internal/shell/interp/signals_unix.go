@@ -3,7 +3,10 @@
 package interp
 
 import (
+	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -30,6 +33,26 @@ var signalTable = map[string]syscall.Signal{
 	"USR1": syscall.SIGUSR1, "USR2": syscall.SIGUSR2, "CHLD": syscall.SIGCHLD,
 	"CONT": syscall.SIGCONT, "STOP": syscall.SIGSTOP, "TSTP": syscall.SIGTSTP,
 	"TTIN": syscall.SIGTTIN, "TTOU": syscall.SIGTTOU, "WINCH": syscall.SIGWINCH,
+}
+
+// lookupSignal resolves a trap signal spec — a name with or without the
+// SIG prefix, in any case, or a signal number — to the table's bare name
+// and the signal itself (#350, #351). EXIT-as-0 and the fake traps are
+// the caller's business; this answers only for real signals.
+func lookupSignal(spec string) (string, os.Signal, bool) {
+	if n, err := strconv.Atoi(spec); err == nil {
+		for name, sig := range signalTable {
+			if int(sig) == n {
+				return name, sig, true
+			}
+		}
+		return "", nil, false
+	}
+	name := strings.TrimPrefix(strings.ToUpper(spec), "SIG")
+	if sig, ok := signalTable[name]; ok {
+		return name, sig, true
+	}
+	return "", nil, false
 }
 
 type signalEntry struct {

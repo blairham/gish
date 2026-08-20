@@ -5,9 +5,11 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 )
@@ -126,6 +128,16 @@ func (t *Table) signalTarget(target string, sig syscall.Signal) error {
 	}
 	if err := syscall.Kill(pid, sig); err != nil {
 		return fmt.Errorf("(%d): %v", pid, err)
+	}
+	// A signal the shell sends itself is pending before kill(2) returns,
+	// and bash's handler has run before the next command starts — which is
+	// what `trap 'echo t' USR1; kill -USR1 $$; echo after` relies on for
+	// its order. Go forwards signals to os/signal channels from a separate
+	// goroutine, so without a pause the next statement's trap check runs
+	// before the signal has crossed (#350). The pause is only for signals
+	// aimed at this process; signaling anything else stays instant.
+	if pid == os.Getpid() || pid == 0 {
+		time.Sleep(5 * time.Millisecond)
 	}
 	return nil
 }

@@ -3607,7 +3607,8 @@ done <<< 2`,
 	{"trap 'echo on_err' ERR; false || true; echo OK", "OK\n"},
 	{"trap 'echo at_exit' EXIT; trap - EXIT; echo OK", "OK\n"},
 	{"set -e; trap 'echo A' ERR EXIT; false; echo FAIL", "A\nA\nexit status 1"},
-	{"trap 'foobar' UNKNOWN", "trap: UNKNOWN: invalid signal specification\nexit status 2 #JUSTERR"},
+	{"trap 'foobar' UNKNOWN", "trap: UNKNOWN: invalid signal specification\nexit status 1 #JUSTERR"},
+	{"trap 'foobar' 99; echo st=$?", "trap: 99: invalid signal specification\nst=1\n #JUSTERR"},
 	// TODO: our builtin appears to not receive the piped bytes?
 	// {"trap 'echo on_err' ERR; trap | grep -q '.*echo on_err.*'", "trap -- \"echo on_err\" ERR\n"},
 	{"trap 'false' ERR EXIT; false", "exit status 1"},
@@ -5092,6 +5093,47 @@ var runTestsUnix = []runTest{
 		// Whatever arrived before the timeout is still assigned here too.
 		"mkfifo p; exec 9<> p; printf par >&9; read -r -u 9 -t 0.1 x; echo \"st=$? x=[$x]\"",
 		"st=142 x=[par]\n",
+	},
+
+	// Traps on real OS signals (#350). Each case uses a signal no other
+	// case fires: these tests share one process, and a Notify fans a
+	// delivery out to every runner armed for that signal. /bin/kill
+	// rather than kill, which the interpreter leaves to the shell above.
+	// The sleep gives Go's asynchronous signal forwarding a boundary to
+	// land before; bash runs the trap before the sleep, so the visible
+	// order is the same either way.
+	{
+		"trap 'echo t' USR1; /bin/kill -USR1 $$; sleep 0.1; echo after",
+		"t\nafter\n",
+	},
+	{
+		// The shell survives a trapped TERM instead of dying 143.
+		"trap 'echo caught' TERM; /bin/kill -TERM $$; sleep 0.1; echo alive",
+		"caught\nalive\n",
+	},
+	{
+		// Control flow raised inside a signal trap propagates: this is
+		// what lets `trap 'return' SIG` break a busy loop.
+		"trap 'echo t; exit 3' ALRM; /bin/kill -ALRM $$; sleep 0.1; echo unreachable",
+		"t\nexit status 3",
+	},
+	{
+		// `trap '' SIG` ignores the signal and lists as exactly what
+		// restores it.
+		`trap "" USR2; trap`,
+		"trap -- '' SIGUSR2\n",
+	},
+	{
+		// Signal traps are listed between EXIT and the pseudo-signals,
+		// under their SIG names, and `trap -p` accepts any spec spelling.
+		"trap 'echo x' hup; trap 'echo bye' 0; trap -p SIGHUP; trap",
+		"trap -- 'echo x' SIGHUP\ntrap -- 'echo bye' EXIT\ntrap -- 'echo x' SIGHUP\nbye\n",
+	},
+	{
+		// Numeric specs resolve to the signal, and `trap - N` restores
+		// the default.
+		"trap 'echo z' 2; trap -p INT; trap - 2; trap -p INT; echo done",
+		"trap -- 'echo z' SIGINT\ndone\n",
 	},
 	{
 		"[[ -p a ]] && echo x; mkfifo a; [[ -p a ]] && echo y",

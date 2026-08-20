@@ -180,6 +180,21 @@ type Runner struct {
 	callbackDebug  string
 	callbackReturn string
 
+	// Real-signal traps (#350). sigTraps holds what runs, keyed by the
+	// signal table's bare name; an empty action means the signal is
+	// ignored. sigListed mirrors it for `trap -p` and, like listed, is
+	// inherited by subshells unconditionally, while the handlers follow
+	// bash's rule and are not: a subshell resets signal traps to their
+	// defaults. The channel is armed lazily on the first handler and
+	// shared by every signal, with sigNames mapping a delivery back to
+	// its name; it is drained at statement boundaries, which is bash's
+	// granularity — a signal arriving mid-command runs its trap after
+	// that command, before the next one.
+	sigTraps  map[string]string
+	sigListed map[string]string
+	sigChan   chan os.Signal
+	sigNames  map[os.Signal]string
+
 	// returnTrapOff disables the RETURN trap for the frame being run,
 	// which is the whole of how bash's inheritance rule works (#295).
 	//
@@ -1264,6 +1279,11 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
 	// Running an entire file implies an exit; a statement or command
 	// only exits the shell via the exit builtin, errexit, and so on.
 	if _, ok := node.(*syntax.File); ok || r.exit.exiting {
+		// A signal that arrived during the last command has had no
+		// statement boundary to fire at, so give it one — dropping a
+		// trap because its signal came in the script's final moment
+		// would make `kill -X $$` on the last line a silent no-op.
+		r.runPendingSignalTraps(ctx)
 		r.trapCallback(ctx, r.callbackExit, "exit")
 	}
 	maps.Insert(r.Vars, r.writeEnv.Each)
@@ -1367,6 +1387,7 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2.callbackReturn = r.callbackReturn
 	r2.returnTrapOff = r.returnTrapOff
 	r2.listed = r.listed
+	r2.sigListed = maps.Clone(r.sigListed)
 	// The frame stack crosses into a subshell, because `$(caller 0)` and
 	// `$(trap -p)` are how a script asks these questions at all — a
 	// command substitution that reported an empty stack would answer
