@@ -230,6 +230,54 @@ The line editor and prompt engine consume both tiers through one internal interf
   every other — a trap for whoever edits it next, bought for six
   characters.
 
+- **Other prompt-config dialects are bridged, not converted** (2026-08,
+  [#185](https://github.com/blairham/koi-shell/issues/185)): koi reads no
+  prompt format beyond its own two dialects (#134). `starship.toml`,
+  oh-my-posh's JSON/YAML/TOML, powerline-shell's JSON, and oh-my-zsh
+  `.zsh-theme`s are rendered by their own tools, not reimplemented.
+
+  The formats split, and the split is most of the answer. The imperative
+  ones are zsh *programs* — agnoster defines functions, forks git, hooks
+  `precmd`, calls omz library functions — and converting "any omz theme"
+  means implementing zsh plus omz's lib, the compat surface this file
+  already rules out. There, the answer is **named presets, no
+  converter**: hand-built looks for the popular themes (#186) beat a
+  general translator that half-works, and `koi migrate` already does the
+  honest thing — names the theme and points at the nearest built-in.
+
+  The declarative ones *could* be translated mechanically, the way
+  `prompt import` takes a `.p10k.zsh` (304 of 310 settings, the six it
+  cannot take named — docs/prompt.md). They are not, for the koi-atuin
+  reason: **bridge the thing whose own ecosystem is why people trust
+  it.** Someone with a tuned `starship.toml` wants starship's exact
+  output, and a 95%-faithful reimplementation is worse than a subprocess
+  — they see the difference every three seconds, and koi owns it
+  forever. The #171 evidence says the same from the user side: the stack
+  is retained (starship holds a 62% popcon use rate), and the fatigue
+  that exists is about trusting tools, not about running them. The
+  bridges already exist and are verified, not presumed:
+  `KOI_THEME=starship` renders through the user's binary, budgeted with
+  a stale fallback (#45), and oh-my-posh arrives the way its own init
+  ships — a PROMPT_COMMAND hook that sets PS1, which koi renders as a
+  theme (#159). Measured under a real pty against oh-my-posh 30.6: the
+  eval installs the hook and the next prompt is omp's own render, git
+  segment included.
+
+  Reading a declarative format *live* was rejected on sight: starship's
+  `custom.*` modules run shell commands, and no-segment-forks-ever is
+  the invariant `internal/promptengine` exists to protect — reading the
+  format would import the exact problem the package was designed
+  around, along with the `*_version` module family that is deliberately
+  unimplemented for the same reason. An offline `starship import` in
+  the `prompt import` shape — translate what maps, name what does not,
+  never approximate silently — stays available as a later step if
+  demand shows up; nothing here forecloses it, and nothing today
+  justifies building it.
+
+  The two real populations are served without reading anyone's config:
+  *want the look* → a native preset; *want my config* → the real
+  renderer, bridged.
+
 - **Structured data uses `test`'s operator vocabulary, or not at all**
   (2026-08, [#104](https://github.com/blairham/koi-shell/issues/104),
   docs/structured.md): the exploration turned up that the shape everyone
