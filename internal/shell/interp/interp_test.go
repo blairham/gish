@@ -3542,6 +3542,19 @@ done <<< 2`,
 		"shopt: unsupported option \"-q\"\nexit status 2 #IGNORE",
 	},
 
+	// The word in an unquoted ${param op word} expands in the caller's
+	// context (#358): quoted nulls make fields, quoted spaces are
+	// protected, and an inner "$@" splits into the parameters — the flat
+	// string loses all three.
+	{`n(){ echo $#; }; x=x; n ${x:+""}`, "1\n"},
+	{`n(){ echo $#; }; x=x; n ${x:+'' ''}`, "2\n"},
+	{`n(){ echo $#; }; x=x; set -- "" ""; n ${x+"$@"}`, "2\n"},
+	{`n(){ echo "$#:$1:$2"; }; unset u; n ${u:-"a b" c}`, "2:a b:c\n"},
+	{`n(){ echo $#; }; unset u; n ${u:-}`, "0\n"},
+	{`x=x; echo pre${x:+a b}post`, "prea bpost\n"},
+	{`n(){ echo "$#:$1"; }; x=x; n "${x:+a b}"`, "1:a b\n"},
+	{`IFS=:; x=x; n(){ echo "$#:$1:$2"; }; n ${x:+:a}`, "2::a\n"},
+
 	// Backslash quote removal outside command words (#357): an unquoted
 	// \X in an assignment value, a ${...} word, a case subject, or a
 	// redirect target reads back as X — while a *pattern*'s backslash

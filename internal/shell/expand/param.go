@@ -239,6 +239,14 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// markWord tells the caller its answer is the operator's word;
+		// see [Config.wordResult]. An absent word — ${x:-} — has nothing
+		// to re-expand and stays the flat empty string.
+		markWord := func() {
+			if pe.Exp.Word != nil {
+				cfg.wordResult, cfg.wordResultPe = pe.Exp.Word, pe
+			}
+		}
 		switch op := pe.Exp.Op; op {
 		case syntax.AlternateUnsetOrNull:
 			if str == "" {
@@ -248,6 +256,7 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		case syntax.AlternateUnset:
 			if set {
 				str = arg
+				markWord()
 			}
 		case syntax.DefaultUnset:
 			if set {
@@ -257,6 +266,7 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		case syntax.DefaultUnsetOrNull:
 			if str == "" {
 				str = arg
+				markWord()
 			}
 		case syntax.ErrorUnset:
 			if set {
@@ -277,10 +287,15 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			fallthrough
 		case syntax.AssignUnsetOrNull:
 			if str == "" {
+				// The *assigned* value is the flat expansion; what the
+				// caller's word sees is the word in its own context, as
+				// bash splits ${a:=a\ b} into two fields while a itself
+				// reads "a b".
 				if err := cfg.assignElem(name, vr, index, arg); err != nil {
 					return "", err
 				}
 				str = arg
+				markWord()
 			}
 		case syntax.RemSmallPrefix, syntax.RemLargePrefix,
 			syntax.RemSmallSuffix, syntax.RemLargeSuffix:

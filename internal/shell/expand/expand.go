@@ -109,6 +109,17 @@ type Config struct {
 	// A pointer to a parameter expansion node, if we're inside one.
 	// Necessary for ${LINENO}.
 	curParam *syntax.ParamExp
+
+	// wordResult records that a paramExp's answer was the operator's own
+	// word — ${x:+word}, ${x-word}, ${x:=word} — so a caller that is
+	// expanding a word can re-expand it in its own quoting context: the
+	// flat string paramExp returns loses quoted nulls and inner "$@"
+	// (#358). Keyed by the expansion node, so a *nested* expansion's
+	// marker can never be mistaken for the outer one; readers clear the
+	// pair, call paramExp, and only trust a marker naming the node they
+	// passed.
+	wordResult   *syntax.Word
+	wordResultPe *syntax.ParamExp
 }
 
 // UnexpectedCommandError is returned if a command substitution is encountered
@@ -684,8 +695,25 @@ func (cfg *Config) cmdSubst(cs *syntax.CmdSubst) (string, error) {
 }
 
 func (cfg *Config) wordFields(wps []syntax.WordPart) ([][]fieldPart, error) {
-	fields := cfg.fieldsAlloc[:0]
-	curField := cfg.fieldAlloc[:0]
+	return cfg.wordFieldsBuf(wps, true, false)
+}
+
+// wordFieldsBuf is [Config.wordFields] with two knobs for expanding a
+// ${x:+word}'s word (#358). The buffer reuse is optional because the
+// shared per-Config field buffers cannot back two live calls at once,
+// and that expansion recurses while the outer call's slices still alias
+// them. splitLits makes literal text split like an expansion's result:
+// inside ${...} a word may carry literal whitespace, and bash splits the
+// operator's answer wherever it was not quoted — including at a
+// backslash-escaped space, which quote removal has already unescaped by
+// the time splitting looks (measured: ${a:=a\ b} yields two fields).
+func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool) ([][]fieldPart, error) {
+	var fields [][]fieldPart
+	var curField []fieldPart
+	if useAlloc {
+		fields = cfg.fieldsAlloc[:0]
+		curField = cfg.fieldAlloc[:0]
+	}
 	allowEmpty := false
 	flush := func() {
 		if len(curField) == 0 {
@@ -748,10 +776,12 @@ func (cfg *Config) wordFields(wps []syntax.WordPart) ([][]fieldPart, error) {
 			s := wp.Value
 			if i == 0 {
 				prefix, rest := cfg.expandUser(s, len(wps) > 1)
-				curField = append(curField, fieldPart{
-					quote: quoteSingle,
-					val:   prefix,
-				})
+				if prefix != "" || !splitLits {
+					curField = append(curField, fieldPart{
+						quote: quoteSingle,
+						val:   prefix,
+					})
+				}
 				s = rest
 			}
 			if strings.Contains(s, "\\") {
@@ -768,6 +798,10 @@ func (cfg *Config) wordFields(wps []syntax.WordPart) ([][]fieldPart, error) {
 					sb.WriteByte(b)
 				}
 				s = sb.String()
+			}
+			if splitLits {
+				splitAdd(s)
+				continue
 			}
 			curField = append(curField, fieldPart{val: s})
 		case *syntax.SglQuoted:
@@ -820,9 +854,34 @@ func (cfg *Config) wordFields(wps []syntax.WordPart) ([][]fieldPart, error) {
 				}
 				continue
 			}
+			cfg.wordResult, cfg.wordResultPe = nil, nil
 			val, err := cfg.paramExp(wp)
 			if err != nil {
 				return nil, err
+			}
+			if cfg.wordResultPe == wp {
+				// The answer is the operator's word: re-expand it in this
+				// unquoted context so quoted nulls survive as empty
+				// fields and an inner "$@" splits into parameters (#358)
+				// — the flat string loses both.
+				w := cfg.wordResult
+				cfg.wordResult, cfg.wordResultPe = nil, nil
+				subFields, err := cfg.wordFieldsBuf(w.Parts, false, true)
+				if err != nil {
+					return nil, err
+				}
+				for j, sf := range subFields {
+					if j > 0 {
+						flush()
+					}
+					if len(sf) == 0 {
+						// A quoted null came back as a field with no
+						// parts; keep it a field, or flush drops it.
+						sf = []fieldPart{{quote: quoteDouble}}
+					}
+					curField = append(curField, sf...)
+				}
+				continue
 			}
 			splitAdd(val)
 		case *syntax.CmdSubst:
