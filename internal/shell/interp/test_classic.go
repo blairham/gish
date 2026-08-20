@@ -201,6 +201,14 @@ func testBinaryOp(val string) syntax.BinTestOperator {
 		return syntax.TsLss
 	case "-gt":
 		return syntax.TsGtr
+	case "<":
+		// POSIX leaves these to the XSI string comparison; bash
+		// implements them in test and [ and koi called them invalid
+		// operators (#401), which turned an ordinary sort check into a
+		// status 2.
+		return syntax.TsBefore
+	case ">":
+		return syntax.TsAfter
 	default:
 		return illegalTok
 	}

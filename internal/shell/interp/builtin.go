@@ -702,7 +702,17 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			exit.code = 2
 			return exit
 		}
-		exit.oneIf(r.bashTest(ctx, expr, true) == "")
+		r.testCallName = name
+		falsy := r.bashTest(ctx, expr, true) == ""
+		r.testCallName = ""
+		// An operand error is status 2 and outranks the true/false
+		// answer: `test 4+3 -eq 7` is neither true nor false (#401).
+		if r.exit.code == 2 {
+			exit.code = 2
+			r.exit.code = 0
+			return exit
+		}
+		exit.oneIf(falsy)
 	case "exec":
 		// TODO: Consider unix.Exec, i.e. actually replacing
 		// the process. It's in theory what a shell should do,
@@ -1018,7 +1028,10 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		if len(args) == 0 {
 			args = r.Params
 		}
-		diagnostics := !strings.HasPrefix(optstr, ":")
+		// A leading colon in the optstring asks for silent mode, and so
+		// does OPTERR=0 — which koi ignored, so a script that set it
+		// still got koi's diagnostics in its output (#403).
+		diagnostics := !strings.HasPrefix(optstr, ":") && r.envGet("OPTERR") != "0"
 
 		opt, optarg, done := r.optState.next(optstr, args)
 
@@ -2078,6 +2091,14 @@ type getopts struct {
 
 func (g *getopts) next(optstr string, args []string) (opt rune, optarg string, done bool) {
 	if len(args) == 0 || g.argidx >= len(args) {
+		return '?', "", true
+	}
+	if args[g.argidx] == "--" {
+		// `--` ends the options and is itself consumed, so OPTIND
+		// points *past* it: koi left it in place and a script's
+		// `shift $((OPTIND-1))` then kept the -- as an operand (#403).
+		g.argidx++
+		g.runeidx = 0
 		return '?', "", true
 	}
 	arg := []rune(args[g.argidx])
