@@ -2615,6 +2615,50 @@ var runTests = []runTest{
 		"D:[cat <<EOF > /dev/null\nbody line\nEOF\n]\n",
 	},
 	{
+		// A redirection's word is expanded like any other and must come
+		// out as exactly one field (#415). Two fields is ambiguous, and
+		// koi used to open a file literally named "a b" — creating it,
+		// on the output side.
+		"z=\"a b\"; cat < $z; echo st=$?",
+		"$z: ambiguous redirect\nst=1\n #JUSTERR",
+	},
+	{
+		"z=\"a b\"; echo hi > $z; echo st=$?",
+		"$z: ambiguous redirect\nst=1\n #JUSTERR",
+	},
+	{
+		// Quoting makes it one field again, which is the escape hatch.
+		"z=\"a b\"; echo hi > \"$z\"; cat \"a b\"",
+		"hi\n",
+	},
+	{
+		// Zero fields is ambiguous too, not an empty filename.
+		"unset u; echo hi > $u; echo st=$?",
+		"$u: ambiguous redirect\nst=1\n #JUSTERR",
+	},
+	{
+		// Globbing happens: one match is used...
+		"echo one > g1; cat < g*",
+		"one\n",
+	},
+	{
+		// ...and two is ambiguous.
+		"touch f1 f2; cat < f*; echo st=$?",
+		"f*: ambiguous redirect\nst=1\n #JUSTERR",
+	},
+	{
+		// A word matching nothing stays literal, so creating a new file
+		// still works.
+		"echo hi > newfile; cat newfile",
+		"hi\n",
+	},
+	{
+		// A here-string is content, not a filename: no splitting and no
+		// globbing.
+		"z=\"a b\"; cat <<< $z; touch h1 h2; cat <<< h*",
+		"a b\nh*\n",
+	},
+	{
 		// `>&file` is csh's "both streams to this file" (#416). It used
 		// to be dropped silently: no message, no file, the output on the
 		// terminal and the script reading a file that was never made.
