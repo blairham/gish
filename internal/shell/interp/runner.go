@@ -1118,6 +1118,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		if isDeclUtility {
 			r.declTempNames, r.declTempBound = prevDeclTemp, prevDeclBound
 		}
+		if r.opts[optPosix] && isSpecialBuiltin(fields[0]) {
+			// POSIX says a temp assignment on a *special* builtin
+			// outlives the command, which is why `v=1 export v2=2`
+			// leaves v set in posix mode and not otherwise (#395). The
+			// binding simply is not unwound.
+			restores = nil
+		}
 		for _, restore := range restores {
 			if restore.vr.ReadOnly {
 				// The assignment failed and was already reported, so there is
@@ -3309,6 +3316,19 @@ func (r *Runner) funSubst(ctx context.Context, w io.Writer, cs *syntax.CmdSubst)
 	_, err := io.WriteString(w, value)
 	return err
 }
+
+// specialBuiltins are POSIX's, whose temp assignments persist in posix
+// mode and whose failures are fatal there. The list is POSIX's rather
+// than a subset koi finds convenient, so that a script written to the
+// standard sees the standard's behavior.
+var specialBuiltins = map[string]bool{
+	"break": true, ":": true, "continue": true, ".": true, "eval": true,
+	"exec": true, "exit": true, "export": true, "readonly": true,
+	"return": true, "set": true, "shift": true, "times": true,
+	"trap": true, "unset": true, "source": true,
+}
+
+func isSpecialBuiltin(name string) bool { return specialBuiltins[name] }
 
 // splitKeywordAssigns separates the assignment-shaped words `set -k`
 // binds from the words that stay arguments, working on the parsed word

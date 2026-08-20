@@ -1977,6 +1977,29 @@ q`,
 		"set: invalid option: \"restricted\"\nrc=2\n #JUSTERR",
 	},
 
+	// POSIX mode (#395). koi refused it — honestly, and at the cost of
+	// whole suite files: a script opening with `set -o posix` got exit
+	// 2 and every later assertion diverged.
+	{"set -o posix; echo rc=$?", "rc=0\n"},
+	{
+		// The option and POSIXLY_CORRECT are two views of one state:
+		// setting the option sets the variable, turning it off unsets
+		// it, and assigning the variable turns the option on.
+		"set -o posix; echo $POSIXLY_CORRECT",
+		"y\n",
+	},
+	{"set -o posix; set +o posix; echo \"[$POSIXLY_CORRECT]\"", "[]\n"},
+	{"POSIXLY_CORRECT=1; set -o | grep posix | awk '{print $2}'", "on\n"},
+	{
+		// POSIX says a temp assignment on a *special* builtin outlives
+		// the command, which is why this leaves v set in posix mode
+		// and not otherwise.
+		`set -o posix; v=1 export v2=2; echo "v=[$v] v2=[$v2]"`,
+		"v=[1] v2=[2]\n",
+	},
+	{`v=1 export v2=2; echo "v=[$v] v2=[$v2]"`, "v=[] v2=[2]\n"},
+	{`set -o posix; v=9 echo hi; echo "v=[$v]"`, "hi\nv=[]\n"},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

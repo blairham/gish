@@ -211,6 +211,19 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		exit.exiting = true
 	case "set":
+		wasPosix := r.opts[optPosix]
+		defer func() {
+			if r.opts[optPosix] != wasPosix {
+				// POSIXLY_CORRECT and the option are two views of one
+				// state in bash: setting the option sets the variable
+				// to "y", and turning it off unsets it (#395).
+				if r.opts[optPosix] {
+					r.setVarString("POSIXLY_CORRECT", "y")
+				} else {
+					r.delVar("POSIXLY_CORRECT")
+				}
+			}
+		}()
 		if len(args) == 0 {
 			// POSIX: bare `set` lists the shell's variables, and bash
 			// adds its functions after them. koi listed nothing and

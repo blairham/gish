@@ -63,6 +63,13 @@ func SetSessionShoptOptions(flags [][]string) {
 // skipped rather than reported: the environment may come from a
 // different shell with options koi does not have.
 func importedOptionFlags() (setNames, shoptNames []string) {
+	if _, ok := os.LookupEnv("POSIXLY_CORRECT"); ok {
+		// POSIXLY_CORRECT in the environment starts the shell in POSIX
+		// mode, which is how a caller asks for it without a flag
+		// (#395). It goes first so an explicit `+o posix` in argv can
+		// still turn it off.
+		setNames = append(setNames, "posix")
+	}
 	for _, name := range strings.Split(os.Getenv("SHELLOPTS"), ":") {
 		if name != "" {
 			setNames = append(setNames, name)
