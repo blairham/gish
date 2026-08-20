@@ -666,19 +666,48 @@ func (cfg *Config) wordFields(wps []syntax.WordPart) ([][]fieldPart, error) {
 		fields = append(fields, curField)
 		curField = nil
 	}
+	// POSIX field splitting distinguishes IFS whitespace from the other
+	// IFS bytes (#356): whitespace runs collapse and never delimit empty
+	// fields, while each non-whitespace delimiter — together with any
+	// adjacent IFS whitespace — terminates exactly one field, which may
+	// be empty. So ":a::b:" under IFS=: splits into ("", a, "", b): the
+	// leading colon yields an empty first field, the doubled one an
+	// empty middle, and the trailing one nothing, because the end of the
+	// word never makes a field. delimPending tracks whether a
+	// non-whitespace delimiter arriving here would own an empty field —
+	// true at the start of the word and right after another such
+	// delimiter, false once IFS whitespace has closed a field with real
+	// content, since that whitespace and the delimiter merge into one
+	// separator.
+	delimPending := true
 	splitAdd := func(val string) {
 		fieldStart := -1
+		haveContent := func() bool { return fieldStart >= 0 || len(curField) > 0 }
+		closeField := func(end int) {
+			if fieldStart >= 0 {
+				curField = append(curField, fieldPart{val: val[fieldStart:end]})
+				fieldStart = -1
+			}
+			flush()
+		}
 		for i, r := range val {
-			if cfg.ifsRune(r) {
-				if fieldStart >= 0 { // ending a field
-					curField = append(curField, fieldPart{val: val[fieldStart:i]})
-					fieldStart = -1
-				}
-				flush()
-			} else {
+			switch {
+			case !cfg.ifsRune(r):
 				if fieldStart < 0 { // starting a new field
 					fieldStart = i
 				}
+			case cfg.ifsWhitespace(r):
+				if haveContent() {
+					closeField(i)
+					delimPending = false
+				}
+			default: // a non-whitespace IFS delimiter
+				if haveContent() {
+					closeField(i)
+				} else if delimPending {
+					fields = append(fields, []fieldPart{{}})
+				}
+				delimPending = true
 			}
 		}
 		if fieldStart >= 0 { // ending a field without IFS
@@ -1201,20 +1230,36 @@ func ReadFields(cfg *Config, s string, n int, raw bool) []string {
 	}
 	var fpos []pos
 
+	// The same POSIX rule wordFields applies (#356): IFS whitespace runs
+	// collapse and never delimit empty fields, while each non-whitespace
+	// delimiter — with its adjacent IFS whitespace — terminates exactly
+	// one field, possibly empty, and the end of the line never makes one.
 	runes := make([]rune, 0, len(s))
 	infield := false
 	esc := false
+	delimPending := true
 	for _, r := range s {
-		if infield {
-			if cfg.ifsRune(r) && (raw || !esc) {
-				fpos[len(fpos)-1].end = len(runes)
-				infield = false
-			}
-		} else {
-			if !cfg.ifsRune(r) && (raw || !esc) {
+		isIFS := cfg.ifsRune(r) && (raw || !esc)
+		switch {
+		case !isIFS:
+			if !infield {
 				fpos = append(fpos, pos{start: len(runes), end: -1})
 				infield = true
 			}
+		case cfg.ifsWhitespace(r):
+			if infield {
+				fpos[len(fpos)-1].end = len(runes)
+				infield = false
+				delimPending = false
+			}
+		default: // a non-whitespace IFS delimiter
+			if infield {
+				fpos[len(fpos)-1].end = len(runes)
+				infield = false
+			} else if delimPending {
+				fpos = append(fpos, pos{start: len(runes), end: len(runes)})
+			}
+			delimPending = true
 		}
 		if r == '\\' {
 			if raw || esc {
@@ -1233,22 +1278,25 @@ func ReadFields(cfg *Config, s string, n int, raw bool) []string {
 		fpos[len(fpos)-1].end = len(runes)
 	}
 
-	switch {
-	case n == 1:
-		// The single field spans the whole line minus leading and trailing
-		// IFS whitespace; anything outside the fields is already IFS.
-		lo, hi := 0, len(runes)
-		for lo < fpos[0].start && cfg.ifsWhitespace(runes[lo]) {
-			lo++
-		}
+	// With more fields than names, the last name takes the rest of the
+	// line as written — separators included — trimmed of leading and
+	// trailing IFS *whitespace* only: `IFS=: read x <<< "a:b:"` leaves
+	// x as `a:b:`, while `IFS=: read x <<< "a:"` leaves it as `a`,
+	// because there the field count fits the names and the plain field
+	// is assigned. Both measured against 5.3.
+	if n != -1 && n < len(fpos) {
+		hi := len(runes)
 		for hi > fpos[len(fpos)-1].end && cfg.ifsWhitespace(runes[hi-1]) {
 			hi--
 		}
-		fpos[0].start, fpos[0].end = lo, hi
-		fpos = fpos[:1]
-	case n != -1 && n < len(fpos):
-		// combine to max n fields
-		fpos[n-1].end = fpos[len(fpos)-1].end
+		if n == 1 {
+			lo := 0
+			for lo < fpos[0].start && cfg.ifsWhitespace(runes[lo]) {
+				lo++
+			}
+			fpos[0].start = lo
+		}
+		fpos[n-1].end = hi
 		fpos = fpos[:n]
 	}
 
