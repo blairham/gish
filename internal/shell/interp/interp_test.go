@@ -2547,6 +2547,39 @@ var runTests = []runTest{
 		"D:[cat <<EOF > /dev/null\nbody line\nEOF\n]\n",
 	},
 	{
+		// `>&file` is csh's "both streams to this file" (#416). It used
+		// to be dropped silently: no message, no file, the output on the
+		// terminal and the script reading a file that was never made.
+		"{ echo out; echo err >&2; } >&f; cat f",
+		"out\nerr\n",
+	},
+	{
+		// The `exec` form, which is what service scripts write.
+		"exec 3>&1 4>&2; exec >&eo; echo out; echo err >&2; exec 1>&3 2>&4; cat eo",
+		"out\nerr\n",
+	},
+	{
+		// The word is expanded first, so a variable names the file.
+		"v=of; { echo x; } >&$v; cat of",
+		"x\n",
+	},
+	{
+		// With an explicit descriptor there is no csh form: bash calls
+		// it ambiguous, and so does koi now.
+		"{ echo x 2>&o; }; echo st=$?",
+		"o: ambiguous redirect\nst=1\n #JUSTERR",
+	},
+	{
+		// There is no csh form on the input side at all.
+		"cat <&o; echo st=$?",
+		"o: ambiguous redirect\nst=1\n #JUSTERR",
+	},
+	{
+		// A numeric dup is untouched by any of this.
+		"echo x 2>&1 | cat",
+		"x\n",
+	},
+	{
 		// A subshell is still inside its function, so `return` ends the
 		// subshell with that status instead of refusing (#422).
 		"f(){ (return 5); echo st=$?; }; f",
