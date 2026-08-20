@@ -6,9 +6,9 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 
 | measure | result | what it answers |
 | --- | --- | --- |
-| **strict** | **14/83 files (16%)** | identical output *and* exit status for a whole file |
+| **strict** | **17/83 files (20%)** | identical output *and* exit status for a whole file |
 | parsed | 66/83 files (79%) | koi can read the file at all |
-| line agreement | 7039/13655 lines (51%) | how much of bash's output koi reproduced exactly |
+| line agreement | 7537/13655 lines (55%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -19,7 +19,7 @@ denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
 directions. **Strict is a file count, and runtime behavior dominates
-it**: 52 files parse perfectly and then behave differently, against 17
+it**: 49 files parse perfectly and then behave differently, against 17
 koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
@@ -55,9 +55,48 @@ bash code uses them.
 | reached `)` without matching `((` with `))` | parser.tests |
 | unclosed here-document `` | heredoc.tests |
 
+### Constructs the file census does not name
+
+The table above is keyed on the *first* error in a file, so a file that
+stops early hides everything after it. These were found by reading the
+sub-files the suite sources (#428) and are published here so the census
+stays honest about what is known rather than only about what was
+reached. bash parses all of them, erroring at most per command at run
+time.
+
+| construct | where |
+| --- | --- |
+| `<<-'	END'` — a quoted heredoc delimiter with a leading tab never matches | heredoc3.sub:53 |
+| backslash-newline is not joined before the delimiter check, so a delimiter split across two lines does not close its heredoc | heredoc.tests |
+| a heredoc delimiter containing a command substitution | heredoc4.sub:1 |
+| a heredoc left unterminated at the close of `$( )` is fatal where bash warns and recovers | heredoc7.sub:26, heredoc.tests:181 |
+| backquotes inside a pattern substitution | comsub2.sub:8 |
+| `case` patterns closing with `)` inside `$( )` | comsub5.sub:24, comsub6.sub:27 |
+| `$'...'` in a parameter-expansion operator position | posixexp7.sub:58 |
+| `$` in a function name, `function sys$read { ...; }` | func5.sub:28 |
+
+All of them are the tokenizer's, which is the one substrate layer koi
+still consumes from upstream — so closing them means pinning the module
+to a commit that has the fix or lifting `syntax` the way `interp` and
+`expand` were lifted, rather than a change in this repository.
+
+### An oracle note, not a koi bug
+
+Homebrew's bash 5.3 keeps the *startup* `HOME` for `~` until after the
+first fork:
+
+```
+bash -c 'HOME=/x; echo ~; /usr/bin/true; echo ~'
+```
+
+prints two different values. Several tilde.tests and tilde2.tests lines
+diverge for that reason rather than koi's — koi's behavior there matches
+bash 5.2 and POSIX. Verify against a Linux bash 5.3 before treating
+those lines as failures.
+
 ## Files that pass strictly
 
-`extglob2.tests`, `extglob3.tests`, `glob-bracket.tests`, `globstar.tests`, `herestr.tests`, `ifs-posix.tests`, `invert.tests`, `iquote.tests`, `lastpipe.tests`, `nquote2.tests`, `nquote3.tests`, `nquote4.tests`, `nquote5.tests`, `precedence.tests`
+`extglob2.tests`, `extglob3.tests`, `glob-bracket.tests`, `globstar.tests`, `herestr.tests`, `ifs-posix.tests`, `ifs.tests`, `invert.tests`, `iquote.tests`, `lastpipe.tests`, `nquote1.tests`, `nquote2.tests`, `nquote3.tests`, `nquote4.tests`, `nquote5.tests`, `precedence.tests`, `strip.tests`
 
 ## Why the suite is not in this repository
 
