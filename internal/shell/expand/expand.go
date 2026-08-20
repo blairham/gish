@@ -411,8 +411,9 @@ func formatInto(sb *strings.Builder, format string, args []string, dollarQuote b
 				sb.WriteByte(c)
 			case '0', '1', '2', '3', '4', '5', '6', '7':
 				digits := readDigits(3, false)
-				// if digits don't fit in 8 bits, 0xff via strconv
-				n, _ := strconv.ParseUint(digits, 8, 8)
+				// Overflow wraps mod 256: bash answers \400 with NUL
+				// and \401 with 001, measured against 5.3 (#377).
+				n, _ := strconv.ParseUint(digits, 8, 16)
 				sb.WriteByte(byte(n))
 			case 'c':
 				// $'\cX': the byte is toupper(X) ^ 0x40 — \ca is 0x01,
@@ -2141,48 +2142,58 @@ func ReadFields(cfg *Config, s string, n int, raw bool) []string {
 	// collapse and never delimit empty fields, while each non-whitespace
 	// delimiter — with its adjacent IFS whitespace — terminates exactly
 	// one field, possibly empty, and the end of the line never makes one.
-	runes := make([]rune, 0, len(s))
+	//
+	// The buffer holds bytes, not runes: read hands over whatever came
+	// off the wire, and a byte that is not valid UTF-8 must land in the
+	// field untouched rather than become U+FFFD (#377). Decoding is
+	// still per rune so a multibyte IFS member delimits correctly; an
+	// invalid byte is never IFS.
+	buf := make([]byte, 0, len(s))
 	infield := false
 	esc := false
 	delimPending := true
-	for _, r := range s {
-		isIFS := cfg.ifsRune(r) && (raw || !esc)
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		seg := s[i : i+size]
+		i += size
+		invalid := r == utf8.RuneError && size == 1
+		isIFS := !invalid && cfg.ifsRune(r) && (raw || !esc)
 		switch {
 		case !isIFS:
 			if !infield {
-				fpos = append(fpos, pos{start: len(runes), end: -1})
+				fpos = append(fpos, pos{start: len(buf), end: -1})
 				infield = true
 			}
 		case cfg.ifsWhitespace(r):
 			if infield {
-				fpos[len(fpos)-1].end = len(runes)
+				fpos[len(fpos)-1].end = len(buf)
 				infield = false
 				delimPending = false
 			}
 		default: // a non-whitespace IFS delimiter
 			if infield {
-				fpos[len(fpos)-1].end = len(runes)
+				fpos[len(fpos)-1].end = len(buf)
 				infield = false
 			} else if delimPending {
-				fpos = append(fpos, pos{start: len(runes), end: len(runes)})
+				fpos = append(fpos, pos{start: len(buf), end: len(buf)})
 			}
 			delimPending = true
 		}
 		if r == '\\' {
 			if raw || esc {
-				runes = append(runes, r)
+				buf = append(buf, '\\')
 			}
 			esc = !esc
 			continue
 		}
-		runes = append(runes, r)
+		buf = append(buf, seg...)
 		esc = false
 	}
 	if len(fpos) == 0 {
 		return nil
 	}
 	if infield {
-		fpos[len(fpos)-1].end = len(runes)
+		fpos[len(fpos)-1].end = len(buf)
 	}
 
 	// With more fields than names, the last name takes the rest of the
@@ -2192,14 +2203,22 @@ func ReadFields(cfg *Config, s string, n int, raw bool) []string {
 	// because there the field count fits the names and the plain field
 	// is assigned. Both measured against 5.3.
 	if n != -1 && n < len(fpos) {
-		hi := len(runes)
-		for hi > fpos[len(fpos)-1].end && cfg.ifsWhitespace(runes[hi-1]) {
-			hi--
+		hi := len(buf)
+		for hi > fpos[len(fpos)-1].end {
+			r, size := utf8.DecodeLastRune(buf[:hi])
+			if !cfg.ifsWhitespace(r) {
+				break
+			}
+			hi -= size
 		}
 		if n == 1 {
 			lo := 0
-			for lo < fpos[0].start && cfg.ifsWhitespace(runes[lo]) {
-				lo++
+			for lo < fpos[0].start {
+				r, size := utf8.DecodeRune(buf[lo:])
+				if !cfg.ifsWhitespace(r) {
+					break
+				}
+				lo += size
 			}
 			fpos[0].start = lo
 		}
@@ -2209,7 +2228,7 @@ func ReadFields(cfg *Config, s string, n int, raw bool) []string {
 
 	fields := make([]string, len(fpos))
 	for i, p := range fpos {
-		fields[i] = string(runes[p.start:p.end])
+		fields[i] = string(buf[p.start:p.end])
 	}
 	return fields
 }
