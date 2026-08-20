@@ -1557,9 +1557,12 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}
 			depth = n
 		}
-		// Outside a function there is nothing to report, whatever the
-		// depth: `caller` exists to name the caller of a function.
-		if !r.inFunction() || depth >= len(frames) {
+		// Bare `caller` answers at the top level too, with `0 NULL`
+		// (#410): that shape is how a dbg script asks "am I in a
+		// function?" and koi printed nothing, so the probe read as an
+		// error. `caller N` still needs a function frame, because it
+		// names one.
+		if depth >= len(frames) || (len(args) > 0 && !r.inFunction()) {
 			exit.code = 1
 			break
 		}

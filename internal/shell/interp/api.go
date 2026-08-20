@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
@@ -190,6 +191,17 @@ type Runner struct {
 	// `test`, `[` or `[[` -- which is how bash addresses its operand
 	// diagnostics (#401).
 	testCallName string
+
+	// startTime and secondsBase back SECONDS, which counts from the
+	// shell's start unless a script assigns it (#408).
+	startTime   time.Time
+	secondsBase int
+	// bashPIDValue distinguishes subshells for BASHPID: koi runs a
+	// subshell in the same process, so the number is per-context
+	// rather than a real pid.
+	bashPIDValue int
+	// argv0 is BASH_ARGV0's writable view of $0.
+	argv0        string
 	dirBootstrap [1]string
 
 	optState getopts
@@ -1475,6 +1487,11 @@ func (r *Runner) Reset() {
 
 	r.importEnvFuncs()
 
+	// SECONDS counts from here, and BASHPID reports the real pid until
+	// a subshell takes its own number (#408).
+	r.startTime, r.secondsBase = time.Now(), 0
+	r.bashPIDValue = os.Getpid()
+
 	r.didReset = true
 }
 
@@ -1647,6 +1664,38 @@ func (r *Runner) Subshell() *Runner {
 // subshell is like [Runner.subshell], but allows skipping some allocations and copies
 // when creating subshells which will not be used concurrently with the parent shell.
 // TODO(v4): we should expose this, e.g. SubshellForeground and SubshellBackground.
+// nextBashPID hands each subshell a number of its own. koi runs a
+// subshell in the same process, so BASHPID cannot report a real pid —
+// what a script tests with it is whether it is in a different
+// execution context, and distinct numbers answer that.
+var bashPIDCounter atomic.Int32
+
+func nextBashPID() int {
+	return int(bashPIDCounter.Add(1)) + os.Getpid()
+}
+
+// bashPID reports this context's BASHPID.
+func (r *Runner) bashPID() int {
+	if r.bashPIDValue == 0 {
+		return os.Getpid()
+	}
+	return r.bashPIDValue
+}
+
+// groupsList reports the caller's group ids, which GROUPS publishes.
+// bash discards writes to it, so it is read-only here.
+func (r *Runner) groupsList() []string {
+	gids, err := os.Getgroups()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(gids))
+	for _, gid := range gids {
+		out = append(out, strconv.Itoa(gid))
+	}
+	return out
+}
+
 func (r *Runner) subshell(background bool) *Runner {
 	if !r.didReset {
 		r.Reset()
@@ -1655,6 +1704,10 @@ func (r *Runner) subshell(background bool) *Runner {
 	// sensitive ones like [errgroup.Group], and to do deep copies of slices.
 	r2 := &Runner{
 		Dir:            r.Dir,
+		startTime:      r.startTime,
+		secondsBase:    r.secondsBase,
+		bashPIDValue:   nextBashPID(),
+		argv0:          r.argv0,
 		tempDir:        r.tempDir,
 		Params:         r.Params,
 		callHandler:    r.callHandler,

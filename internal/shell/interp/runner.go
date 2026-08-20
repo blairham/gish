@@ -973,6 +973,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				}
 				trace.newLineFlush()
 			}
+			// An assignment-only command clears `$_` rather than
+			// leaving the previous command's last argument (#408).
+			r.setVarString("_", "")
 			// If interpreting the last expansion like $(foo) failed,
 			// and the expansion and assignments otherwise succeeded,
 			// we need to surface that last exit code.
@@ -1039,6 +1042,14 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		} else {
 			r.tracedCall(ctx, cm, fields)
 		}
+		// `$_` is the last argument of the command that just ran, or
+		// the command's own name when it had none (#408). It was the
+		// shell's path forever, which flips every `${_+word}` probe.
+		last := fields[0]
+		if len(fields) > 1 {
+			last = fields[len(fields)-1]
+		}
+		r.setVarString("_", last)
 		declared := r.declTempNames
 		if isDeclUtility {
 			r.declTempNames, r.declTempBound = prevDeclTemp, prevDeclBound
@@ -1234,6 +1245,14 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		switch y := cm.Loop.(type) {
 		case *syntax.WordIter:
 			name := y.Name.Value
+			if !syntax.ValidName(name) {
+				// Assigning to `1` is nonsense bash refuses up front,
+				// where koi ran the loop and quietly shadowed the
+				// positional parameter (#409).
+				r.errf("`%s': not a valid identifier\n", name)
+				r.exit.code = 1
+				return
+			}
 			items := r.Params // for i; do ...
 
 			inToken := y.InPos.IsValid()
