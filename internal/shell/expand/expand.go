@@ -235,7 +235,7 @@ func Pattern(cfg *Config, word *syntax.Word) (string, error) {
 		return "", nil
 	}
 	cfg = prepareConfig(cfg)
-	field, err := cfg.wordField(word.Parts, quoteNone)
+	field, err := cfg.wordFieldMode(word.Parts, quoteNone, true)
 	if err != nil {
 		return "", err
 	}
@@ -556,6 +556,17 @@ const (
 )
 
 func (cfg *Config) wordField(wps []syntax.WordPart, ql quoteLevel) ([]fieldPart, error) {
+	return cfg.wordFieldMode(wps, ql, false)
+}
+
+// wordFieldMode is [Config.wordField] with the backslash question made
+// explicit. In an unquoted word, `\X` is a quoting: quote removal drops
+// the backslash and keeps X literal, so an assignment value or a case
+// subject written `a\;b` reads back `a;b` (#357). A *pattern* is the one
+// consumer that must keep the backslash — there `\*` means a literal
+// star at match time, and stripping it here would turn it into a glob —
+// so [Pattern] passes keepEscapes and everything else does not.
+func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscapes bool) ([]fieldPart, error) {
 	var field []fieldPart
 	for i, wp := range wps {
 		switch wp := wp.(type) {
@@ -583,6 +594,23 @@ func (cfg *Config) wordField(wps []syntax.WordPart, ql quoteLevel) ([]fieldPart,
 							i++
 							b = s[i] // write the special char, skipping the backslash
 						}
+					}
+					sb.WriteByte(b)
+				}
+				s = sb.String()
+			} else if ql == quoteNone && !keepEscapes && strings.Contains(s, "\\") {
+				// Unquoted: the backslash quotes the next byte, and quote
+				// removal drops it — the same pass wordFields applies to
+				// command words (#357).
+				sb := cfg.strBuilder()
+				for i := 0; i < len(s); i++ {
+					b := s[i]
+					if b == '\\' {
+						if i++; i >= len(s) {
+							sb.WriteByte(b)
+							break
+						}
+						b = s[i]
 					}
 					sb.WriteByte(b)
 				}

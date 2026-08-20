@@ -3542,6 +3542,18 @@ done <<< 2`,
 		"shopt: unsupported option \"-q\"\nexit status 2 #IGNORE",
 	},
 
+	// Backslash quote removal outside command words (#357): an unquoted
+	// \X in an assignment value, a ${...} word, a case subject, or a
+	// redirect target reads back as X — while a *pattern*'s backslash
+	// survives to mean a literal match.
+	{`T=a\;b; echo "$T"`, "a;b\n"},
+	{`unset a; printf "[%s]\n" ${a:=a\ b}; echo "a=[$a]"`, "[a]\n[b]\na=[a b]\n"},
+	{`v=1; echo ${v/1/\'}`, "'\n"},
+	{`case \x in \x) echo m;; *) echo n;; esac`, "m\n"},
+	{`case \* in \*) echo star;; *) echo other;; esac`, "star\n"},
+	{`case x in \*) echo wrong;; *) echo right;; esac`, "right\n"},
+	{`echo hi > a\ b; cat "a b"`, "hi\n"},
+
 	// IFS
 	{`echo -n "$IFS"`, " \t\n"},
 	{`a="x:y:z"; IFS=:; echo $a`, "x y z\n"},

@@ -50,12 +50,9 @@ var substrateGaps = []substrateGap{
 		koiWant:  "a-b-c",
 		upstream: "same as the prefix form",
 	},
-	{
-		name:     "single quote escaped inside an assignment",
-		script:   `x='a'\''b'; printf '%s' "$x"`,
-		koiWant:  `a\'b`,
-		upstream: "the `'\\''` form is correct in a command word and wrong in an assignment",
-	},
+	// "single quote escaped inside an assignment" lived here until #357:
+	// quote removal now runs on unquoted backslashes in assignment
+	// values, so `x='a'\''b'` assigns `a'b` as bash does.
 }
 
 func TestSubstrateGapsAreStillThere(t *testing.T) {
