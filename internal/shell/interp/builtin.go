@@ -1191,20 +1191,33 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			r.printTraps(args)
 			break
 		}
+		// `trap SIG` and `trap - SIG` restore the default; `trap '' SIG`
+		// ignores the signal. The fake traps have no default to restore,
+		// so resetting and ignoring are the same operation for them —
+		// for a real signal they are not (#350).
+		reset := false
 		switch len(args) {
 		case 1:
-			// assume it's a signal, the default will be restored
+			reset = true
 		default:
 			callback = args[0]
 			args = args[1:]
+			if callback == "-" {
+				callback, reset = "", true
+			}
 		}
-		// For now, treat both empty and - the same since these have no
-		// default callback.
 		if callback == "-" {
 			callback = ""
 		}
 		for _, arg := range args {
-			switch arg {
+			// Specs are case-insensitive, and 0 is EXIT (#351):
+			// `trap 'rm -f $tmp' 0` is the cleanup idiom in decades of
+			// scripts.
+			spec := strings.ToUpper(arg)
+			if spec == "0" {
+				spec = "EXIT"
+			}
+			switch spec {
 			case "ERR":
 				r.callbackErr, r.listed.err = callback, callback
 			case "EXIT":
@@ -1220,7 +1233,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				r.callbackReturn, r.listed.ret = callback, callback
 				r.returnTrapOff = false
 			default:
-				return failf(2, "trap: %s: invalid signal specification\n", arg)
+				name, sig, ok := lookupSignal(arg)
+				if !ok {
+					return failf(1, "trap: %s: invalid signal specification\n", arg)
+				}
+				r.setSignalTrap(name, sig, callback, reset)
 			}
 		}
 

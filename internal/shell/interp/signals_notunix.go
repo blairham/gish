@@ -2,6 +2,12 @@
 
 package interp
 
+import "os"
+
+// lookupSignal knows no real signals off unix, so every spec that is not
+// one of the fake traps is refused the way an unknown name is.
+func lookupSignal(string) (string, os.Signal, bool) { return "", nil, false }
+
 type signalEntry struct {
 	name string
 	num  int

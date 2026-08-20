@@ -16,6 +16,7 @@ import (
 	"math"
 	mathrand "math/rand/v2"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -464,6 +465,7 @@ func (r *Runner) stop(ctx context.Context) bool {
 }
 
 func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
+	r.runPendingSignalTraps(ctx)
 	if r.stop(ctx) {
 		return
 	}
@@ -1492,8 +1494,41 @@ type listedTraps struct{ exit, err, debug, ret string }
 // listing that sorts differently from the shell it is imitating is a
 // gratuitous diff in anything comparing the two.
 func (r *Runner) printTraps(names []string) {
+	// The filter takes the same spellings a spec does: case-insensitive,
+	// with or without the SIG prefix, numeric, 0 for EXIT.
+	norm := make([]string, 0, len(names))
+	for _, n := range names {
+		if name, _, ok := lookupSignal(n); ok {
+			norm = append(norm, name)
+			continue
+		}
+		u := strings.ToUpper(n)
+		if u == "0" {
+			u = "EXIT"
+		}
+		norm = append(norm, u)
+	}
+	want := func(name string) bool {
+		return len(norm) == 0 || slices.Contains(norm, name)
+	}
+	print := func(name, callback string) {
+		r.outf("trap -- %s %s\n", singleQuote(callback), name)
+	}
+	if r.listed.exit != "" && want("EXIT") {
+		print("EXIT", r.listed.exit)
+	}
+	// Real signals in number order, between EXIT (bash's signal 0) and
+	// the pseudo-signals after the real ones. An ignored signal is
+	// listed with its empty action: `trap -- '' SIGUSR2` is exactly what
+	// restores it.
+	for _, s := range signalList() {
+		callback, ok := r.sigListed[s.name]
+		if !ok || !want(s.name) {
+			continue
+		}
+		r.outf("trap -- %s SIG%s\n", singleQuote(callback), s.name)
+	}
 	set := []struct{ name, callback string }{
-		{"EXIT", r.listed.exit},
 		{"DEBUG", r.listed.debug},
 		{"ERR", r.listed.err},
 		{"RETURN", r.listed.ret},
@@ -1502,10 +1537,10 @@ func (r *Runner) printTraps(names []string) {
 		if tr.callback == "" {
 			continue
 		}
-		if len(names) > 0 && !slices.Contains(names, tr.name) {
+		if !want(tr.name) {
 			continue
 		}
-		r.outf("trap -- %s %s\n", singleQuote(tr.callback), tr.name)
+		print(tr.name, tr.callback)
 	}
 }
 
@@ -1553,7 +1588,74 @@ func stmtSource(st *syntax.Stmt) string {
 	return strings.TrimSuffix(sb.String(), "\n")
 }
 
+// setSignalTrap arms, ignores, or restores one real signal (#350).
+func (r *Runner) setSignalTrap(name string, sig os.Signal, action string, reset bool) {
+	if reset {
+		signal.Reset(sig)
+		delete(r.sigTraps, name)
+		delete(r.sigListed, name)
+		return
+	}
+	if r.sigTraps == nil {
+		r.sigTraps = make(map[string]string)
+	}
+	if r.sigListed == nil {
+		r.sigListed = make(map[string]string)
+	}
+	r.sigTraps[name] = action
+	r.sigListed[name] = action
+	if action == "" {
+		// `trap '' SIG` ignores the signal — for this shell, and, since
+		// an ignored disposition survives exec, for its children too.
+		// Ignore also undoes any earlier Notify for the signal.
+		signal.Ignore(sig)
+		return
+	}
+	if r.sigChan == nil {
+		r.sigChan = make(chan os.Signal, 32)
+		r.sigNames = make(map[os.Signal]string)
+	}
+	r.sigNames[sig] = name
+	signal.Notify(r.sigChan, sig)
+}
+
+// runPendingSignalTraps fires the handlers for any real signals that
+// arrived since the last statement boundary (#350). That boundary is
+// bash's granularity: a signal arriving mid-command runs its trap after
+// that command finishes, before the next one starts. A signal arriving
+// while nothing is armed for it — the handler was reset after Notify —
+// is dropped, which is also what the default disposition would often
+// have done by now.
+func (r *Runner) runPendingSignalTraps(ctx context.Context) {
+	if r.sigChan == nil || r.handlingTrap {
+		return
+	}
+	for {
+		select {
+		case sig := <-r.sigChan:
+			if cb := r.sigTraps[r.sigNames[sig]]; cb != "" {
+				r.signalTrapCallback(ctx, cb, r.sigNames[sig])
+			}
+		default:
+			return
+		}
+	}
+}
+
 func (r *Runner) trapCallback(ctx context.Context, callback, name string) {
+	r.runTrapCallback(ctx, callback, name, false)
+}
+
+// signalTrapCallback runs a real signal's handler. It differs from the
+// fake traps' in what survives it: `trap 'return' USR1` breaking a busy
+// loop out of a function is a documented idiom (bash's own suite uses
+// it), so a return, exit, or abort raised inside the handler propagates
+// instead of being rolled back with the exit status.
+func (r *Runner) signalTrapCallback(ctx context.Context, callback, name string) {
+	r.runTrapCallback(ctx, callback, name, true)
+}
+
+func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, keepFlow bool) {
 	if callback == "" {
 		return // nothing to do
 	}
@@ -1588,6 +1690,12 @@ func (r *Runner) trapCallback(ctx context.Context, callback, name string) {
 	r.pipeStatusSet, r.pipeStatus = oldPipeStatusSet, oldPipeStatus
 	if oldPipeStatusVar.Set {
 		r.setVar(shellPipeStatusVar, oldPipeStatusVar)
+	}
+	if keepFlow && (r.exit.returning || r.exit.exiting || r.exit.aborting) {
+		// A real signal's handler may redirect control — see
+		// [Runner.signalTrapCallback] — and rolling that back would trap
+		// the shell in the loop the handler exists to break out of.
+		return
 	}
 	r.exit, r.lastExit = oldExit, oldLastExit // traps on EXIT or ERR should not modify the result
 }

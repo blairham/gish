@@ -115,11 +115,19 @@ func trapHandler(next interp.CallHandlerFunc, ownDebug bool) interp.CallHandlerF
 		}
 		args = normalizeSignalNames(args)
 		if !ownDebug || !slices.Contains(args, "DEBUG") {
-			if rest, handled := recordSignalTraps(args); handled {
-				if rest == nil {
-					return []string{"true"}, nil
+			// Only the interactive loop records anything here, and only
+			// the two signals it delivers itself. The interpreter
+			// implements real signal traps now (#350), so the script
+			// paths get out of its way entirely — the same correction
+			// #268 made for DEBUG, where recording a trap that nothing
+			// would ever fire was the silent failure.
+			if ownDebug {
+				if rest, handled := recordSignalTraps(args); handled {
+					if rest == nil {
+						return []string{"true"}, nil
+					}
+					args = rest
 				}
-				args = rest
 			}
 			return next(ctx, args)
 		}
@@ -196,16 +204,12 @@ func recordSignalTraps(args []string) ([]string, bool) {
 	return append([]string{"trap", action}, theirs...), true
 }
 
-// knownSignal reports whether the name is a signal koi is willing to
-// record. The list is bash's, minus the ones that cannot be caught.
-func knownSignal(name string) bool {
-	switch name {
-	case "INT", "TERM", "HUP", "QUIT", "WINCH", "USR1", "USR2", "ALRM",
-		"CHLD", "CONT", "TSTP", "TTIN", "TTOU", "PIPE", "IO", "PROF", "VTALRM":
-		return true
-	}
-	return false
-}
+// knownSignal reports whether the interactive loop claims the signal:
+// exactly the two it delivers itself (see firedSignals). Every other
+// signal belongs to the interpreter, which arms and fires real traps for
+// them (#350) — recording one here would silence it, which is the #268
+// failure shape.
+func knownSignal(name string) bool { return firedSignals[name] }
 
 // applyDebugTrap records or clears the DEBUG trap.
 //
