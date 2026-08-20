@@ -1439,6 +1439,50 @@ var runTests = []runTest{
 		`declare -- V="1"` + "\n",
 	},
 
+	// The canonical function printer (#386): bash re-renders the parse
+	// tree in one fixed shape rather than echoing source text, `type`
+	// prints the definition under its verdict, and -p alongside -f is a
+	// modifier rather than a replacement.
+	{
+		`f(){ echo hi; }; type f`,
+		"f is a function\nf () \n{ \n    echo hi\n}\n",
+	},
+	{
+		`f(){ echo hi; }; declare -f -p f; echo rc=$?`,
+		"f () \n{ \n    echo hi\n}\nrc=0\n",
+	},
+	{
+		`f(){ if [ 1 ]; then echo a; else echo b; fi; }; declare -f f`,
+		"f () \n{ \n    if [ 1 ]; then\n        echo a;\n    else\n        echo b;\n    fi\n}\n",
+	},
+	{
+		`f(){ for i in 1 2; do echo $i; done; }; declare -f f`,
+		"f () \n{ \n    for i in 1 2;\n    do\n        echo $i;\n    done\n}\n",
+	},
+	{
+		`f(){ while :; do break; done; }; declare -f f`,
+		"f () \n{ \n    while :; do\n        break;\n    done\n}\n",
+	},
+	{
+		`f(){ case $x in a) :;; *) :;; esac; }; declare -f f`,
+		"f () \n{ \n    case $x in \n        a)\n            :\n        ;;\n        *)\n            :\n        ;;\n    esac\n}\n",
+	},
+	{
+		// elif renders as a nested else-if, and a duplicating
+		// redirection grows its default descriptor.
+		`f(){ if a; then b; elif c; then d; else e; fi; echo x >&2; }; declare -f f`,
+		"f () \n{ \n    if a; then\n        b;\n    else\n        if c; then\n            d;\n        else\n            e;\n        fi;\n    fi;\n    echo x 1>&2\n}\n",
+	},
+	{
+		// A nested declaration gains bash's `function` keyword.
+		`f(){ g(){ echo inner; }; g; }; declare -f f`,
+		"f () \n{ \n    function g () \n    { \n        echo inner\n    };\n    g\n}\n",
+	},
+	{
+		`f(){ a=(1 2); x=$((1+2)); echo "${a[@]}$x"; }; declare -f f`,
+		"f () \n{ \n    a=(1 2);\n    x=$((1+2));\n    echo \"${a[@]}$x\"\n}\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
@@ -1475,7 +1519,7 @@ var runTests = []runTest{
 	// declare -f and declare -p
 	{
 		`f() { echo hello; }; declare -f f`,
-		"f()\n{ echo hello; }\n #IGNORE output format differs from bash",
+		"f () \n{ \n    echo hello\n}\n",
 	},
 	{
 		`declare -f nonexistent 2>/dev/null; echo "exit: $?"`,
