@@ -675,6 +675,15 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	// [5]=x resets our index counter, which otherwise advances for every
 	// value, starting after the maximum index of the base array.
 	index := shinternal.IndexedMax(list, indexes) + 1
+	// Under declare -i, each element value is an arithmetic expression
+	// (#368): typeset -i x; x=([0]=7+11) stores 18, exactly as a scalar
+	// assignment under the attribute would.
+	elemVal := func(val string) string {
+		if prev.Integer {
+			return r.arithmStr(val)
+		}
+		return val
+	}
 	for _, elem := range elems {
 		if elem.Index != nil {
 			// Index resets our index with a literal value.
@@ -687,12 +696,12 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 					break
 				}
 			}
-			list, indexes = shinternal.SetIndexedElem(list, indexes, index, r.literal(elem.Value))
+			list, indexes = shinternal.SetIndexedElem(list, indexes, index, elemVal(r.literal(elem.Value)))
 			index++
 		} else {
 			// Implicit index, advancing for every word.
 			for _, val := range r.fields(elem.Value) {
-				list, indexes = shinternal.SetIndexedElem(list, indexes, index, val)
+				list, indexes = shinternal.SetIndexedElem(list, indexes, index, elemVal(val))
 				index++
 			}
 		}

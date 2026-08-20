@@ -3063,6 +3063,14 @@ var runTests = []runTest{
 		"a=b; echo $(($a))",
 		"0\n",
 	},
+	// declare -i survives arithmetic assignment, and compound element
+	// values under it evaluate (#368).
+	{`declare -i j=8; let j=j+1; declare -p j`, "declare -i j=\"9\"\n"},
+	{`declare -i j=8; ((j=j+2)); declare -p j; j="j+5"; declare -p j`, "declare -i j=\"10\"\ndeclare -i j=\"15\"\n"},
+	{`declare -ix e=3; let e=e+1; declare -p e`, "declare -ix e=\"4\"\n"},
+	{`typeset -i x; x=([0]=7+11); echo ${x[@]}`, "18\n"},
+	{`typeset -i y; y=(1+1 2+2); echo "${y[@]}"`, "2 4\n"},
+
 	// A word in arithmetic context evaluates its string (#367): quoting
 	// no longer disables let and ((...)), and a value that is itself an
 	// expression evaluates through.
