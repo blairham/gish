@@ -44,7 +44,10 @@ type shellArgs struct {
 	// itself would take them: ["-u"], ["-e", "-x"], ["-o", "posix"].
 	// bash accepts any set option there and so must koi (#426).
 	setFlags []string
-	operands []string
+	// shoptFlags are the `-O name` / `+O name` pairs, in order, as
+	// `shopt` itself would take them: ["-s", "nullglob"] (#427).
+	shoptFlags [][]string
+	operands   []string
 }
 
 // longOptions maps each long name to whether it takes a value. These are
@@ -108,6 +111,24 @@ func parseArgs(args []string) (shellArgs, error) {
 			case "restore":
 				out.restore = value
 			}
+			continue
+		}
+		// `-O name` / `+O name` are shopt's invocation form, the way an
+		// option like nullglob is set before the first line runs
+		// (#427). koi rejected the letter outright, and for the plus
+		// form tried to open "+O" as a script.
+		if arg == "-O" || arg == "+O" {
+			state := "-s"
+			if arg == "+O" {
+				state = "-u"
+			}
+			if i+1 >= len(args) {
+				// A bare -O lists the shopt table, as bash does.
+				out.shoptFlags = append(out.shoptFlags, []string{})
+				continue
+			}
+			i++
+			out.shoptFlags = append(out.shoptFlags, []string{state, args[i]})
 			continue
 		}
 		// `-o name` / `+o name`, the long spelling of a set option.

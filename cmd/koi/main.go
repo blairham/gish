@@ -114,6 +114,7 @@ func run() int {
 	repl.Version = version
 	// `set` options given in argv apply to whatever session follows.
 	repl.SetSessionOptions(opts.setFlags)
+	repl.SetSessionShoptOptions(opts.shoptFlags)
 
 	if opts.rc != "" {
 		os.Setenv("KOI_RC", opts.rc) //nolint:errcheck // process-local

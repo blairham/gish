@@ -26,6 +26,7 @@ package repl
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
@@ -39,11 +40,61 @@ var sessionSetFlags []string
 // SetSessionOptions records the `set` options parsed from argv.
 func SetSessionOptions(flags []string) { sessionSetFlags = append([]string(nil), flags...) }
 
+// sessionShoptFlags are the `-O name` / `+O name` pairs from argv.
+var sessionShoptFlags [][]string
+
+// SetSessionShoptOptions records shopt's invocation form, which is how
+// an option like nullglob is set before the first line runs (#427).
+func SetSessionShoptOptions(flags [][]string) {
+	sessionShoptFlags = append([][]string(nil), flags...)
+}
+
 // applySessionOptions runs them in the session. Failures are the
 // interpreter's to report: it has already written its refusal to stderr,
 // and a shell that would not start because of one is the bug this
 // replaces.
+// importedOptionFlags turns SHELLOPTS and BASHOPTS from the
+// environment into the `set -o` and `shopt -s` calls that reproduce
+// them (#427). bash reads both at startup, which is how a parent hands
+// a shell its options — koi ignored them entirely.
+//
+// The variables themselves are read-only in the running shell, so this
+// is the only path they take effect through, and an unknown name is
+// skipped rather than reported: the environment may come from a
+// different shell with options koi does not have.
+func importedOptionFlags() (setNames, shoptNames []string) {
+	for _, name := range strings.Split(os.Getenv("SHELLOPTS"), ":") {
+		if name != "" {
+			setNames = append(setNames, name)
+		}
+	}
+	for _, name := range strings.Split(os.Getenv("BASHOPTS"), ":") {
+		if name != "" {
+			shoptNames = append(shoptNames, name)
+		}
+	}
+	return setNames, shoptNames
+}
+
 func applySessionOptions(ctx context.Context, runner *interp.Runner) {
+	// The environment's options come first: argv is the more specific
+	// instruction and must be able to override them.
+	setNames, shoptNames := importedOptionFlags()
+	for _, name := range setNames {
+		_ = runHookSource(ctx, runner, "set -o "+singleQuote(name)+" 2>/dev/null")
+	}
+	for _, name := range shoptNames {
+		_ = runHookSource(ctx, runner, "shopt -s "+singleQuote(name)+" 2>/dev/null")
+	}
+	for _, pair := range sessionShoptFlags {
+		var b strings.Builder
+		b.WriteString("shopt")
+		for _, f := range pair {
+			b.WriteString(" ")
+			b.WriteString(singleQuote(f))
+		}
+		_ = runHookSource(ctx, runner, b.String())
+	}
 	if len(sessionSetFlags) == 0 {
 		return
 	}

@@ -1920,6 +1920,15 @@ q`,
 		"T\nx\n #IGNORE koi's DEBUG granularity differs (#268)",
 	},
 
+	{
+		// A non-login shell refuses, naming the command that does work
+		// (#427). koi answered "unsupported builtin", which reads as a
+		// missing builtin rather than as the shell not being a login
+		// shell — and the two want different fixes.
+		"logout; echo rc=$?",
+		"logout: not login shell: use `exit'\nrc=1\n #JUSTERR",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"slices"
 	"strings"
@@ -804,6 +805,19 @@ func RunCommand(ctx context.Context, src string, login, interactive bool, operan
 // positional parameter; $0 is the path itself.
 func RunFile(ctx context.Context, path string, login, interactive bool, params ...string) error {
 	f, err := os.Open(path)
+	if err != nil && !strings.ContainsRune(path, os.PathSeparator) {
+		// A script operand with no slash is searched for on PATH, the
+		// way bash does — which is what makes `koi somescript` work
+		// from anywhere (#427). koi answered "no such file", so a
+		// script on PATH could be run by name in bash and not in koi.
+		if found, lerr := exec.LookPath(path); lerr == nil {
+			if f2, oerr := os.Open(found); oerr == nil {
+				f, err = f2, nil
+				// $0 stays as written, which is what bash reports and
+				// what a usage message should print.
+			}
+		}
+	}
 	if err != nil {
 		return err
 	}
