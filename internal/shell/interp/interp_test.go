@@ -1403,6 +1403,42 @@ var runTests = []runTest{
 		"in-u\nno-u\n",
 	},
 
+	// export -f marks a function for export rather than printing it
+	// (#387), and an -x listing is filtered to the exported ones
+	// (#388) where koi listed every function it had.
+	{
+		`a(){ :; }; b(){ :; }; export -f a; declare -xF; echo end`,
+		"declare -fx a\nend\n",
+	},
+	{
+		`a(){ :; }; b(){ :; }; declare -xF; echo end`,
+		"end\n",
+	},
+	{
+		`f(){ :; }; export -f f; export -nf f; declare -xF; echo end`,
+		"end\n",
+	},
+	{
+		`f(){ echo body; }; declare -xf f; echo ---; declare -xF`,
+		"---\ndeclare -fx f\n",
+	},
+	{
+		`export -f nope`,
+		"export: nope: not a function\nexit status 1 #JUSTERR",
+	},
+	{
+		// A function name is not a variable name, so a dashed name
+		// exports rather than being refused.
+		`foo-bar(){ :; }; export -f foo-bar; echo rc=$?`,
+		"rc=0\n",
+	},
+	{
+		// `export -n` removes the export attribute; it is a nameref
+		// only for declare/local/typeset.
+		`V=1; export V; export -n V; declare -p V`,
+		`declare -- V="1"` + "\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
