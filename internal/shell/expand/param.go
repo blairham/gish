@@ -85,6 +85,22 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		vr = cfg.Env.Get(name)
 	}
 	orig := vr
+	// A nameref may point at an array *element*: `declare -n b="a[1]"`
+	// (#389). The subscript is evaluated at each use rather than when
+	// the reference was declared — `a[i]` follows i — so the expansion
+	// is restated as one on the target with that index and re-run,
+	// which is also how the indirection cases below reach an operator.
+	if vr.Kind == NameRef && pe.Index == nil {
+		if base, sub, ok := cutNameRefSubscript(vr.Str); ok {
+			idx, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
+			if err == nil && idx != nil {
+				pe2 := *pe
+				pe2.Param = &syntax.Lit{Value: base}
+				pe2.Index = idx
+				return cfg.paramExp(&pe2)
+			}
+		}
+	}
 	if n, v := vr.Resolve(cfg.Env); n != "" {
 		name, vr = n, v
 	}
@@ -164,10 +180,15 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		switch {
 		case pe.Names != 0:
 			strs = cfg.namesByPrefix(pe.Param.Value)
-		case orig.Kind == NameRef:
+		case orig.Kind == NameRef && pe.Index == nil:
 			// An operator after a nameref's ${!r} applies to the target's
 			// *name* in bash (${!r//v/X} rewrites the string), which this
 			// does not implement; the plain form is what scripts use.
+			//
+			// A *subscript* is the other case entirely: ${!r[@]} asks for
+			// the keys of what r points at, not for its name (#389), so
+			// it falls through to the index cases below on the resolved
+			// target.
 			strs = append(strs, orig.Str)
 		case pe.Index != nil && vr.Kind == Indexed:
 			strs = vr.indexedKeys()
@@ -643,4 +664,14 @@ func (cfg *Config) namesByPrefix(prefix string) []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// cutNameRefSubscript splits a nameref target that names an array
+// element, like `a[1]`, into the array's name and the subscript text.
+func cutNameRefSubscript(target string) (name, sub string, ok bool) {
+	i := strings.IndexByte(target, '[')
+	if i > 0 && strings.HasSuffix(target, "]") && syntax.ValidName(target[:i]) {
+		return target[:i], target[i+1 : len(target)-1], true
+	}
+	return "", "", false
 }

@@ -1483,6 +1483,45 @@ var runTests = []runTest{
 		"f () \n{ \n    a=(1 2);\n    x=$((1+2));\n    echo \"${a[@]}$x\"\n}\n",
 	},
 
+	// Nameref residuals (#389): a reference may name an array element,
+	// its target is validated, a self reference is refused, a nameref
+	// loop variable is re-targeted rather than written through, and
+	// ${!ref[@]} asks for the target's keys rather than its name.
+	{
+		`a=("" x); declare -n b="a[1]"; echo "[$b]"; b="foo bar"; declare -p a`,
+		"[x]\n" + `declare -a a=([0]="" [1]="foo bar")` + "\n",
+	},
+	{
+		`declare -A m=([k]=v); declare -n r="m[k]"; echo "[$r]"; r=new; declare -p m`,
+		"[v]\n" + `declare -A m=([k]="new" )` + "\n",
+	},
+	{
+		// The subscript is evaluated at each use, not when the
+		// reference was declared.
+		`a=(p q); i=0; declare -n r="a[i]"; echo $r; i=1; echo $r`,
+		"p\nq\n",
+	},
+	{
+		`declare -n foo=12345; echo rc=$?`,
+		"declare: `12345': invalid variable name for name reference\nrc=1\n #JUSTERR",
+	},
+	{
+		`declare -n v=v; echo rc=$?`,
+		"declare: v: nameref variable self references not allowed\nrc=1\n #JUSTERR",
+	},
+	{
+		`one=1 two=2; declare -n ref; for ref in one two; do echo "${!ref}=$ref"; done`,
+		"one=1\ntwo=2\n",
+	},
+	{
+		`x=1; declare -n r=x; for r in 5 6; do :; done; echo "$x"`,
+		"`5': not a valid identifier\n1\n #JUSTERR",
+	},
+	{
+		`a=([1]=x [3]=y); declare -n r=a; echo "${!r[@]}"`,
+		"1 3\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
