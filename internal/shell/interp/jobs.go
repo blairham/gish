@@ -85,6 +85,10 @@ func (r *Runner) jobsBuiltin(args []string) exitStatus {
 		job := &r.bgProcs[i]
 		running := !job.finished()
 		switch {
+		case job.disowned:
+			// `disown` forgot it, so it is not in the table any more
+			// (#397).
+			continue
 		case onlyRunning && !running:
 			continue
 		case !running && job.reported && len(specs) == 0:
