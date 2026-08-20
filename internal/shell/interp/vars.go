@@ -208,6 +208,16 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		cryptorand.Read(p[:])
 		n := binary.NativeEndian.Uint32(p[:])
 		vr.Kind, vr.Str = expand.String, strconv.FormatUint(uint64(n), 10)
+	case "SHELLOPTS":
+		// The "is this option on?" probe every portable script writes,
+		// and it was simply absent — under `set -u` an unbound-variable
+		// error (#396). Rendered on read from the live table, like $-,
+		// so it cannot go stale.
+		vr.Kind, vr.Str = expand.String, r.shellOptsList()
+		vr.ReadOnly = true
+	case "BASHOPTS":
+		vr.Kind, vr.Str = expand.String, r.bashOptsList()
+		vr.ReadOnly = true
 	case "DIRSTACK":
 		vr.Kind, vr.List = expand.Indexed, r.dirStack
 	case "0":

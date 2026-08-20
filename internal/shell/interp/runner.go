@@ -837,6 +837,25 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 			i += len(als.args)
 		}
+		assigns := cm.Assigns
+		if r.opts[optKeyword] && len(args) > 1 {
+			// `set -k` puts *every* assignment-shaped word into the
+			// command's environment, not just the ones before the
+			// command name (#396): `echo hi c=7` runs `echo hi` with c
+			// bound. koi refused the option outright, so varenv.tests
+			// stopped at the refusal.
+			//
+			// The split has to happen on the *word*, before expansion:
+			// bash decides from what was written, so `echo "x=1"` is an
+			// argument and a value that merely expands to something
+			// containing `=` is too. Splitting expanded fields ate
+			// `echo "after=[$c]"`.
+			var kw []*syntax.Assign
+			args, kw = splitKeywordAssigns(args)
+			if len(kw) > 0 {
+				assigns = append(slices.Clone(cm.Assigns), kw...)
+			}
+		}
 		r.lastExpandExit = exitStatus{}
 		fields := r.fields(args...)
 		if len(fields) == 0 {
@@ -932,19 +951,19 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		isDeclUtility := false
 		switch fields[0] {
 		case "declare", "typeset", "local", "export", "readonly", "nameref":
-			isDeclUtility = len(cm.Assigns) > 0
+			isDeclUtility = len(assigns) > 0
 		}
 		var prevDeclTemp, prevDeclBound map[string]bool
 		if isDeclUtility {
 			prevDeclTemp, prevDeclBound = r.declTempNames, r.declTempBound
 			r.declTempNames = map[string]bool{}
-			r.declTempBound = make(map[string]bool, len(cm.Assigns))
-			for _, as := range cm.Assigns {
+			r.declTempBound = make(map[string]bool, len(assigns))
+			for _, as := range assigns {
 				r.declTempBound[as.Name.Value] = true
 			}
 		}
 
-		for _, as := range cm.Assigns {
+		for _, as := range assigns {
 			name := as.Name.Value
 			prev := r.lookupVar(name)
 			// Resolve any nameref so we can restore the original final value later on.
@@ -2970,6 +2989,39 @@ func (r *Runner) loopStmtsBroken(ctx context.Context, stmts []*syntax.Stmt) bool
 		}
 	}
 	return false
+}
+
+// splitKeywordAssigns separates the assignment-shaped words `set -k`
+// binds from the words that stay arguments, working on the parsed word
+// so that quoting decides: an assignment's name must be written as a
+// bare literal, which is what makes `echo "x=1"` an argument.
+//
+// The command name is never a candidate; a leading assignment is
+// already an Assign in the tree rather than an argument.
+func splitKeywordAssigns(args []*syntax.Word) ([]*syntax.Word, []*syntax.Assign) {
+	rest := args[:1:1]
+	var kw []*syntax.Assign
+	for _, word := range args[1:] {
+		lit, ok := word.Parts[0].(*syntax.Lit)
+		if !ok {
+			rest = append(rest, word)
+			continue
+		}
+		name, value, found := strings.Cut(lit.Value, "=")
+		if !found || !syntax.ValidName(name) {
+			rest = append(rest, word)
+			continue
+		}
+		// The value keeps every part after the `=`, so `c=$x` and
+		// `c="a b"` expand as they would in a leading assignment.
+		parts := []syntax.WordPart{&syntax.Lit{Value: value}}
+		parts = append(parts, word.Parts[1:]...)
+		kw = append(kw, &syntax.Assign{
+			Name:  &syntax.Lit{Value: name},
+			Value: &syntax.Word{Parts: parts},
+		})
+	}
+	return rest, kw
 }
 
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
