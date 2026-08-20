@@ -1126,6 +1126,66 @@ var runTests = []runTest{
 		"colon:unset\n",
 	},
 
+	// A new local starts unset rather than inheriting the outer
+	// variable (#381): only the export attribute carries over, a
+	// readonly outer refuses the declaration, and a second `local` in
+	// the same scope keeps what the first one holds. `typeset` is
+	// declare's synonym and localizes with it (#382).
+	{
+		`V=abc; f(){ local V; echo "${V-unset}"; }; f`,
+		"unset\n",
+	},
+	{
+		`V=abc; f(){ declare V; echo "${V-unset}"; declare -p V; }; f`,
+		"unset\ndeclare -- V\n",
+	},
+	{
+		`f() { typeset v=inner; :; }; v=outer; f; echo "v=$v"`,
+		"v=outer\n",
+	},
+	{
+		`V=abc; f(){ typeset V; echo "${V-unset}"; }; f; echo $V`,
+		"unset\nabc\n",
+	},
+	{
+		// A leaked `typeset IFS=:` poisons every later expansion in
+		// the file, which is how ifs.tests found this.
+		`f(){ typeset IFS=:; }; f; x="a b"; set -- $x; echo $#`,
+		"2\n",
+	},
+	{
+		`f(){ local V=1; local V; echo "${V-unset}"; }; f`,
+		"1\n",
+	},
+	{
+		`V=out; f(){ local V=fl; g; }; g(){ local V; echo "${V-unset}"; }; f`,
+		"unset\n",
+	},
+	{
+		`declare -x V=abc; f(){ local V; declare -p V; }; f`,
+		"declare -x V\n",
+	},
+	{
+		`declare -i V=5; f(){ local V; declare -p V; V=2+2; declare -p V; }; f`,
+		"declare -- V\n" + `declare -- V="2+2"` + "\n",
+	},
+	{
+		`declare -a V=(1); f(){ local V; declare -p V; }; f`,
+		"declare -- V\n",
+	},
+	{
+		`declare -r V=5; f(){ local V W=ok; declare -p W; }; f`,
+		"local: V: readonly variable\n" + `declare -- W="ok"` + "\n #JUSTERR",
+	},
+	{
+		`shopt -s localvar_inherit; V=abc; f(){ local V; echo "${V-unset}"; }; f`,
+		"abc\n",
+	},
+	{
+		`shopt -s localvar_inherit; declare -x V=abc; f(){ local -x V; declare -p V; }; f`,
+		`declare -x V="abc"` + "\n",
+	},
+
 	// declare -g writes the global scope through any local shadowing
 	// the name (#379); reads stay dynamically scoped, so both
 	// functions still see the local.
