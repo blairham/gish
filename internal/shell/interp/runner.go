@@ -1355,6 +1355,12 @@ func (r *Runner) declClause(variant string, args []*syntax.Assign) {
 	}
 assignLoop:
 	for as := range r.flattenAssigns(args) {
+		if as.Naked && as.Name.Value == "--" {
+			// The end-of-options marker is not a variable name: bare
+			// `declare --` lists like bare `declare` (#384), and
+			// `declare -- v=1` declares v.
+			continue assignLoop
+		}
 		fp := flagParser{remaining: []string{as.Name.Value}}
 		// Note that this consumes every flag clustered into the one
 		// argument before moving on; "declare -ri" is -r and -i, and
@@ -1427,55 +1433,7 @@ assignLoop:
 				r.exit.code = 1
 				continue
 			}
-			flags := vr.Flags()
-			if flags == "" {
-				flags = "-"
-			}
-			switch vr.Kind {
-			case expand.Indexed:
-				// Declared but never set prints bare — `declare -a c`
-				// answers `declare -a c`, not `=()` (#378).
-				if !vr.Set {
-					r.outf("declare -%s %s\n", flags, name)
-					continue
-				}
-				r.outf("declare -%s %s=(", flags, name)
-				for i, v := range vr.List {
-					if i > 0 {
-						r.out(" ")
-					}
-					idx := i
-					if vr.Indexes != nil {
-						idx = vr.Indexes[i]
-					}
-					r.outf("[%d]=%q", idx, v)
-				}
-				r.out(")\n")
-			case expand.Associative:
-				if !vr.Set {
-					r.outf("declare -%s %s\n", flags, name)
-					continue
-				}
-				// Keys are sorted for determinism where bash prints its
-				// hash order, and each element carries bash's trailing
-				// space: ([one]="1" [two]="2" ).
-				r.outf("declare -%s %s=(", flags, name)
-				for _, k := range slices.Sorted(maps.Keys(vr.Map)) {
-					r.outf("[%s]=%q ", k, vr.Map[k])
-				}
-				r.out(")\n")
-			default:
-				// Declared but never set prints bare: `declare -n foo`
-				// and `declare -x foo`, not `... foo=""`. The two are
-				// the same rule, and it turns on Set rather than on
-				// the value being empty — `foo=` *is* set, and bash
-				// prints `declare -- foo=""` for it.
-				if !vr.Set {
-					r.outf("declare -%s %s\n", flags, name)
-					continue
-				}
-				r.outf("declare -%s %s=%q\n", flags, name, vr.Str)
-			}
+			r.printDeclared(name, vr)
 			continue
 		}
 		if unref {
@@ -1623,19 +1581,45 @@ assignLoop:
 			r.declTempNames[name] = local && !global
 		}
 	}
-	if !namedAny && valType == "-n" && declQuery == "" && !unref {
-		// A bare `declare -n` lists the namerefs, the way a bare
-		// `declare -f` lists the functions. Sorted, as bash sorts.
+	if !namedAny && declQuery != "-f" && declQuery != "-F" && !unref && variant != "local" {
+		// An attribute flag with no operands lists the variables that
+		// carry it, and a bare `declare -p` lists them all (#384) —
+		// `declare -A` after `declare -A f` prints f. Bare `declare`
+		// and `declare --` instead print POSIX name=value pairs, which
+		// is bash's other listing shape.
+		match := func(vr expand.Variable) bool { return true }
+		switch {
+		case valType == "-n":
+			match = func(vr expand.Variable) bool { return vr.Kind == expand.NameRef }
+		case valType == "-a":
+			match = func(vr expand.Variable) bool { return vr.Kind == expand.Indexed }
+		case valType == "-A":
+			match = func(vr expand.Variable) bool { return vr.Kind == expand.Associative }
+		case slices.Contains(modes, "-x"):
+			match = func(vr expand.Variable) bool { return vr.Exported }
+		case slices.Contains(modes, "-r"):
+			match = func(vr expand.Variable) bool { return vr.ReadOnly }
+		case slices.Contains(modes, "-i"):
+			match = func(vr expand.Variable) bool { return vr.Integer }
+		case declQuery != "-p":
+			// Bare `declare`, with no attribute to filter on.
+			match = nil
+		}
 		var names []string
 		r.writeEnv.Each(func(name string, vr expand.Variable) bool {
-			if vr.Kind == expand.NameRef {
+			if vr.Declared() && (match == nil || match(vr)) {
 				names = append(names, name)
 			}
 			return true
 		})
 		slices.Sort(names)
 		for _, name := range names {
-			r.outf("declare -n %s=%q\n", name, r.lookupVar(name).Str)
+			vr := r.lookupVar(name)
+			if match == nil {
+				r.outf("%s=%s\n", name, vr.String())
+				continue
+			}
+			r.printDeclared(name, vr)
 		}
 	}
 	if !namedAny && (declQuery == "-f" || declQuery == "-F") {
@@ -1998,6 +1982,123 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	}
 	r.exit, r.lastExit = oldExit, oldLastExit // traps on EXIT or ERR should not modify the result
 	return code
+}
+
+// printDeclared writes one `declare -flags name=value` line, the form
+// declare -p exists to produce: re-evaluable output (#383).
+func (r *Runner) printDeclared(name string, vr expand.Variable) {
+	flags := vr.Flags()
+	if flags == "" {
+		flags = "-"
+	}
+	// Declared but never set prints bare — `declare -a c` answers
+	// `declare -a c`, not `=()`, and the same for a scalar or a
+	// nameref (#378). The rule turns on Set rather than on the value
+	// being empty: `foo=` *is* set, and prints `declare -- foo=""`.
+	if !vr.Set {
+		r.outf("declare -%s %s\n", flags, name)
+		return
+	}
+	switch vr.Kind {
+	case expand.Indexed:
+		r.outf("declare -%s %s=(", flags, name)
+		for i, v := range vr.List {
+			if i > 0 {
+				r.out(" ")
+			}
+			idx := i
+			if vr.Indexes != nil {
+				idx = vr.Indexes[i]
+			}
+			r.outf("[%d]=%s", idx, declQuote(v))
+		}
+		r.out(")\n")
+	case expand.Associative:
+		// Keys are sorted for determinism where bash prints its hash
+		// order, and each element carries bash's trailing space:
+		// ([one]="1" [two]="2" ).
+		r.outf("declare -%s %s=(", flags, name)
+		for _, k := range slices.Sorted(maps.Keys(vr.Map)) {
+			r.outf("[%s]=%s ", declQuoteKey(k), declQuote(vr.Map[k]))
+		}
+		r.out(")\n")
+	default:
+		r.outf("declare -%s %s=%s\n", flags, name, declQuote(vr.Str))
+	}
+}
+
+// declQuote renders a value the way bash's declare -p does, which is
+// the whole point of that builtin: the output has to survive being
+// re-read (#383). A control character forces ANSI-C quoting, since
+// "a\nb" in double quotes is the two characters \ and n; otherwise the
+// value is double-quoted with the four characters that would still
+// expand — $ ` " \ — escaped, so `declare -p` of `$$` re-reads as the
+// two dollars rather than the shell's pid.
+func declQuote(s string) string {
+	if strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		var sb strings.Builder
+		sb.WriteString("$'")
+		for _, r := range s {
+			switch r {
+			case '\a':
+				sb.WriteString(`\a`)
+			case '\b':
+				sb.WriteString(`\b`)
+			case '\f':
+				sb.WriteString(`\f`)
+			case '\n':
+				sb.WriteString(`\n`)
+			case '\r':
+				sb.WriteString(`\r`)
+			case '\t':
+				sb.WriteString(`\t`)
+			case '\v':
+				sb.WriteString(`\v`)
+			case '\\', '\'':
+				sb.WriteByte('\\')
+				sb.WriteRune(r)
+			default:
+				if r < 0x20 || r == 0x7f {
+					fmt.Fprintf(&sb, `\%03o`, r)
+				} else {
+					sb.WriteRune(r)
+				}
+			}
+		}
+		sb.WriteString("'")
+		return sb.String()
+	}
+	var sb strings.Builder
+	sb.WriteByte('"')
+	for i := range len(s) {
+		switch c := s[i]; c {
+		case '$', '`', '"', '\\':
+			sb.WriteByte('\\')
+			sb.WriteByte(c)
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	sb.WriteByte('"')
+	return sb.String()
+}
+
+// declQuoteKey renders an associative array key: bash leaves an
+// ordinary key bare and quotes one that would not re-read as itself,
+// so [a] stays [a] while [a b] becomes ["a b"].
+func declQuoteKey(k string) string {
+	plain := k != ""
+	for i := range len(k) {
+		if c := k[i]; !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
+			c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.' || c == '/') {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		return k
+	}
+	return declQuote(k)
 }
 
 // globalVar reads name from the global scope, skipping every function

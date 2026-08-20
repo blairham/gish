@@ -1271,6 +1271,64 @@ var runTests = []runTest{
 		"a: bad array subscript\nexit status 1 #JUSTERR",
 	},
 
+	// declare -p output has to re-read as the value it printed (#383):
+	// a control character forces ANSI-C quoting, and the characters
+	// that would still expand inside double quotes are escaped.
+	{
+		`v=$'a\nb'; declare -p v`,
+		`declare -- v=$'a\nb'` + "\n",
+	},
+	{
+		`export FOO='$$'; declare -p FOO`,
+		`declare -x FOO="\$\$"` + "\n",
+	},
+	{
+		`v='` + "`c`" + `'; declare -p v`,
+		`declare -- v="\` + "`c\\`" + `"` + "\n",
+	},
+	{
+		`v=$'\t\\'; declare -p v`,
+		`declare -- v=$'\t\\'` + "\n",
+	},
+	{
+		`v="it's"; declare -p v`,
+		`declare -- v="it's"` + "\n",
+	},
+	{
+		`a=(x $'p\nq'); declare -p a`,
+		`declare -a a=([0]="x" [1]=$'p\nq')` + "\n",
+	},
+	{
+		`declare -A m=([k$]=$'v\n'); declare -p m`,
+		`declare -A m=(["k\$"]=$'v\n' )` + "\n",
+	},
+	// An attribute flag with no operands lists the variables carrying
+	// it (#384); bare declare prints POSIX name=value pairs instead.
+	{
+		`declare -A f; f[a]=1; declare -A | grep '^declare -A f'`,
+		`declare -A f=([a]="1" )` + "\n",
+	},
+	{
+		`declare -i n=1; declare -i | grep ' n='`,
+		`declare -i n="1"` + "\n",
+	},
+	{
+		`zz=1; declare | grep '^zz'`,
+		"zz=1\n",
+	},
+	{
+		`zz=1; declare -- | grep '^zz'`,
+		"zz=1\n",
+	},
+	{
+		`zz=1; declare -p | grep ' zz='`,
+		`declare -- zz="1"` + "\n",
+	},
+	{
+		`declare -- v=1; declare -p v`,
+		`declare -- v="1"` + "\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

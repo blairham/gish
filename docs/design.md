@@ -124,6 +124,17 @@ The line editor and prompt engine consume both tiers through one internal interf
   find them. Even then, the curated list is the first answer, not the
   service.
 
+  **Re-raised 2026-08-20; re-affirmed unchanged.** Nothing in the
+  reasoning moved, and the gate did its job — answering took three
+  checks rather than a re-litigation. All three fail: koi has zero tags
+  and zero releases (the v0.0.0 tag was pulled 2026-08-17), so post-1.0
+  is not close; every plugin that exists is first-party in `cmd/`, so
+  there are no third-party plugins; and
+  with none to find, no user can be failing to find them. There is no
+  demand data because there is not yet a population that could generate
+  it. The next re-proposal should open with those three numbers having
+  changed, not with the idea.
+
 - **No cross-shell components** (2026-08): koi does not
   ship its highlighting, autosuggestions or prompt engine as add-ons for
   bash and zsh. The pieces stay in the shell.

@@ -115,24 +115,35 @@ func TestHistoryFileFormsMatchBash(t *testing.T) {
 
 // `-a` and `-n` are the incremental pair — "the lines new since last
 // time" — which needs a per-file read position over a per-process list.
-// koi's history is a store shared live across sessions (#40), so they
-// report what they do not do rather than succeeding without doing it.
-// This is a deliberate divergence from bash, which is why it is asserted
-// against koi alone rather than differentially.
-func TestHistoryIncrementalFormsRefuseWithAReason(t *testing.T) {
+// They used to refuse, because koi's history was a store shared live
+// across sessions (#40) where "new since" had no single answer; ambient
+// recording (#277) gave a script session a list of its own, so they now
+// work (#432).
+//
+// This is the inverse of the test that used to stand here, kept as the
+// guard against a silent return to refusing. The semantics themselves
+// are pinned against bash in histfile_test.go.
+func TestHistoryIncrementalFormsWork(t *testing.T) {
 	koiBin := buildKoi(t)
-	dir := t.TempDir()
 
 	for _, flag := range []string{"-a", "-n"} {
 		t.Run(flag, func(t *testing.T) {
-			out, code := runArgv(t, koiBin, []string{"-c", "history " + flag + " " + filepath.Join(dir, "f")})
-			if code != 1 {
-				t.Errorf("exit status = %d, want 1", code)
+			dir := t.TempDir()
+			file := filepath.Join(dir, "f")
+			// The file has to exist: bash answers 1 for `-n` on a
+			// missing one too (measured), so an absent file would test
+			// the error path rather than the form working.
+			if err := os.WriteFile(file, []byte("prior\n"), 0o600); err != nil {
+				t.Fatal(err)
 			}
-			// A refusal has to say why, or it is indistinguishable from a
-			// bug — the whole complaint #277 makes about this surface.
-			if !strings.Contains(out, "not implemented") || !strings.Contains(out, "#40") {
-				t.Errorf("refusal does not explain itself: %q", out)
+			out, code := runArgv(t, koiBin, []string{
+				"-c", "set -o history\necho one >/dev/null\nhistory " + flag + " " + file,
+			})
+			if code != 0 {
+				t.Errorf("exit status = %d, want 0 (output %q)", code, out)
+			}
+			if strings.Contains(out, "not implemented") {
+				t.Errorf("%s is refused again: %q", flag, out)
 			}
 		})
 	}
