@@ -1121,12 +1121,22 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			if y.Init != nil {
 				r.arithm(y.Init)
 			}
+			// A failing body command does not end the loop (#369):
+			// `for ((f=0; f<3; f++)); do …; false; done` runs all three
+			// iterations in bash, and ((i++)) from zero answers status 1
+			// on its first step, which used to stop a loop whose update
+			// lived in its body. Only control flow ends it early — and
+			// an arithmetic error in the update, which raises exactly
+			// that.
 			for y.Cond == nil || r.arithm(y.Cond) != 0 {
-				if !r.exit.ok() || r.loopStmtsBroken(ctx, cm.Do) {
+				if r.loopStmtsBroken(ctx, cm.Do) {
 					break
 				}
 				if y.Post != nil {
 					r.arithm(y.Post)
+				}
+				if r.exit.exiting || r.exit.returning || r.exit.aborting {
+					break
 				}
 			}
 		}
