@@ -77,6 +77,14 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 				f.Close()
 				return err
 			}
+			if cs.TempFile || cs.ReplyVar {
+				// bash 5.3's funsubs exist to run in the *current*
+				// shell (#421): `x=${ v=inside; }` is how a script gets
+				// a value out of a command *and* keeps what it did.
+				// koi ran them in a subshell like an ordinary
+				// substitution, so nothing they changed survived.
+				return r.funSubst(ctx, w, cs)
+			}
 			r2 := r.subshell(false)
 			// A command substitution sees the caller's jobs. bash
 			// draws the line here rather than at "is this a
@@ -3220,6 +3228,45 @@ func (r *Runner) expandAlias(cm *syntax.CallExpr) ([]*syntax.Stmt, string, bool)
 // command line is rebuilt from the tree koi parsed.
 func printNode(sb *strings.Builder, node syntax.Node) {
 	syntax.NewPrinter().Print(sb, node) //nolint:errcheck // writing to a strings.Builder
+}
+
+// funSubst runs a bash 5.3 function substitution in this shell.
+//
+// The two spellings differ in where the value comes from, which is also
+// why `${| …; }` does not capture: `${ …; }` is the command's output,
+// while `${| …; }` is whatever the body left in REPLY, with the
+// caller's REPLY saved and restored around it — measured.
+func (r *Runner) funSubst(ctx context.Context, w io.Writer, cs *syntax.CmdSubst) error {
+	// The value is written *last*, into a writer the expander hands us
+	// that is a buffer it reuses. An ordinary substitution runs in a
+	// subshell with its own expansion config, so it can write as it
+	// goes; a funsub runs here, where a nested expansion resets the
+	// very buffer being written to — which is how `${ echo a; echo b; }`
+	// first came out as "bb".
+	value := ""
+	if cs.ReplyVar {
+		prev := r.lookupVar("REPLY")
+		r.delVar("REPLY")
+		r.stmts(ctx, cs.Stmts)
+		value = r.envGet("REPLY")
+		if prev.IsSet() {
+			r.setVar("REPLY", prev)
+		} else {
+			r.delVar("REPLY")
+		}
+	} else {
+		var buf bytes.Buffer
+		oldStdout := r.stdout
+		r.stdout = &buf
+		r.stmts(ctx, cs.Stmts)
+		r.stdout = oldStdout
+		value = buf.String()
+	}
+	if sb, ok := w.(*strings.Builder); ok {
+		sb.Reset()
+	}
+	_, err := io.WriteString(w, value)
+	return err
 }
 
 // splitKeywordAssigns separates the assignment-shaped words `set -k`
