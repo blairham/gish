@@ -38,6 +38,9 @@ func defaultForeground(segment string) string {
 		return "yellow"
 	case "background_jobs":
 		return "cyan"
+	case "ip", "vpn_ip":
+		// Upstream renders both cyan on the surface color.
+		return "cyan"
 	case "context":
 		return "yellow"
 	case "time":

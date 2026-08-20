@@ -226,10 +226,22 @@ An unavailable metric renders nothing, which is what an absent reading
 should look like; `vm_stat` and `pmset` would answer the last two, and a
 prompt that forks twice is exactly what this engine exists not to be.
 
-Still absent: the network group (`public_ip`, `vpn_ip`, `nordvpn`) and
-the task trackers (`taskwarrior`, `timewarrior`), along with the
-`*_version` family that shells out to each tool — the version *managers*
-cover most of that need by reading pin files. The mechanism they would
+`ip` and `vpn_ip` are in (#132): enumerating interfaces forks nothing
+and dials nothing, but one enumeration costs more than the whole lean
+prompt (~51µs on darwin — N+1 routing-table dumps), so both read a
+5-second TTL cache rather than the kernel per prompt; upstream itself
+computes this table in an async worker. Selection is upstream's:
+`POWERLEVEL9K_IP_INTERFACE` (default `.*`) and
+`POWERLEVEL9K_VPN_IP_INTERFACE` (default wireguard/tun/tailscale/
+zerotier) are anchored regexes over interface names, first match wins,
+`VPN_IP_SHOW_ALL` shows every match. IPv4 only, as upstream's parsers
+are.
+
+Still absent: the dialing half of the network group (`public_ip`,
+`nordvpn`) and the task trackers (`taskwarrior`, `timewarrior`), along
+with the `*_version` family that shells out to each tool — the version
+*managers* cover most of that need by reading pin files. The mechanism
+they would
 need is the one the git counters use: something else computes, the
 prompt renders what is known and marks it stale. Wiring them to it is a
 decision about how much a prompt should quietly be doing in the
