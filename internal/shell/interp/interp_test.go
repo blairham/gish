@@ -1789,6 +1789,36 @@ var runTests = []runTest{
 	{"hash -p /bin/echo myecho; myecho hi", "hi\n"},
 	{"hash; echo rc=$?", "hash: hash table empty\nrc=0\n"},
 
+	// A command substitution runs without errexit unless
+	// inherit_errexit asks for it (#412): koi passed it down, so the
+	// body stopped at the false and the caller carried on with an
+	// empty value.
+	{`set -e; echo $(false; echo ok); echo after`, "ok\nafter\n"},
+	{`set -e; shopt -s inherit_errexit; echo $(false; echo ok); echo after`, "\nafter\n"},
+	{
+		// The suppression has to be in force *while* the negated
+		// statement runs: koi applied the negation afterwards, so this
+		// took the shell down inside eval and truncated the script.
+		`set -e; ! eval false; echo ok1`,
+		"ok1\n",
+	},
+	// xtrace fidelity (#413): PS4 is expanded, an append is traced as
+	// an append rather than its result, `set` after the first is
+	// traced rather than dropped as a blank line, and an arithmetic
+	// for header is traced evaluation by evaluation.
+	{`PS4="+[x] "; set -x; :; set +x`, "+[x] :\n+[x] set +x\n"},
+	{
+		// PS4's $LINENO is the *traced* line, not the line of the PS4
+		// string — which is parsed on its own and would always be 1.
+		`PS4="[\$LINENO] "; set -x; :; set +x`,
+		"[1] :\n[1] set +x\n",
+	},
+	{`set -x; foo=one; foo+=two; set +x`, "+ foo=one\n+ foo+=two\n+ set +x\n"},
+	{
+		`set -x; for ((i=0;i<2;i++)); do :; done; set +x`,
+		"+ (( i=0 ))\n+ (( i<2 ))\n+ :\n+ (( i++ ))\n+ (( i<2 ))\n+ :\n+ (( i++ ))\n+ (( i<2 ))\n+ set +x\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
@@ -4567,9 +4597,12 @@ done <<< 2`,
 	{"shopt extglob | grep 'off' | wc -l | tr -d ' '", "1\n"},
 	{
 		// off by default, as in bash 5.3 — koi had it on (#393), and a
-		// default is as visible to a script as a setting.
+		// default is as visible to a script as a setting. Settable
+		// since #412, which is the fix it governs.
+		// The column width is koi's deliberate divergence (see
+		// setOptColumn), so this one cannot be bash-confirmed.
 		"shopt inherit_errexit",
-		"inherit_errexit\toff\t(\"on\" not supported)\nexit status 1 #JUSTERR",
+		"inherit_errexit\toff\nexit status 1 #IGNORE bash pads the shopt listing to twenty columns",
 	},
 	{
 		"shopt -o -s pipefail; shopt -o pipefail | grep -q 'on$'",

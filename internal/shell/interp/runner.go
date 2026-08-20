@@ -85,6 +85,14 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 			// that every bounded parallel loop is built out of
 			// (#302). They arrive non-waitable; see bgProc.inherited.
 			r2.bgProcs = inheritedJobs(r.bgProcs)
+			// A command substitution runs *without* errexit unless
+			// inherit_errexit asks for it (#412). koi passed it down,
+			// so `echo $(false; echo ok)` under `set -e` printed
+			// nothing where bash prints ok — the body stopped at the
+			// false and the caller carried on with an empty value.
+			if !r.opts[optInheritErrExit] {
+				r2.opts[optErrExit] = false
+			}
 			r2.stdout = w
 			r2.stmts(ctx, cs.Stmts)
 			r2.runSubshellExitTrap(ctx)
@@ -754,6 +762,8 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		return
 	}
 
+	r.traceLine = st.Pos().Line()
+
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	// The descriptor table is modified in place, so a statement with its own
 	// redirections gets a copy to modify and the original is put back after.
@@ -774,7 +784,20 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		}
 	}
 	if r.exit.ok() && st.Cmd != nil {
-		r.cmd(ctx, st.Cmd)
+		if st.Negated {
+			// A negated statement is immune to errexit, and the
+			// suppression has to be in force *while it runs*: koi
+			// applied the negation afterwards, so `! eval false` under
+			// set -e took the shell down inside eval before the `!`
+			// was ever considered (#412), truncating the rest of the
+			// script.
+			oldNoErrExit := r.noErrExit
+			r.noErrExit = true
+			r.cmd(ctx, st.Cmd)
+			r.noErrExit = oldNoErrExit
+		} else {
+			r.cmd(ctx, st.Cmd)
+		}
 	}
 	// Note that this must come before the negation below, as PIPESTATUS holds
 	// the statuses the commands actually exited with; "! false" leaves $? as 0
@@ -969,7 +992,19 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					if err != nil { // should never happen
 						panic(err)
 					}
-					trace.stringf("%s=%s", name, val)
+					if as.Append {
+						// An append is traced as the append, not as
+						// its result: koi printed `foo=onetwo` where
+						// bash prints `foo+=two`, which reads as a
+						// different assignment (#413).
+						appended, qerr := syntax.Quote(r.literal(as.Value), syntax.LangBash)
+						if qerr == nil {
+							val = appended
+						}
+						trace.stringf("%s+=%s", name, val)
+					} else {
+						trace.stringf("%s=%s", name, val)
+					}
 				}
 				trace.newLineFlush()
 			}
@@ -1322,7 +1357,26 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				}
 			}
 		case *syntax.CStyleLoop:
+			// Each evaluation in the header is traced, which is how a
+			// trace of a counting loop reads as a loop at all: koi
+			// traced only the body, so three iterations looked like
+			// three unrelated commands (#413).
+			traceArithm := func(x syntax.ArithmExpr) {
+				t := r.tracer()
+				if t == nil {
+					return
+				}
+				// The compact printer #386 built for `declare -f` is
+				// what renders this: syntax.Printer takes commands
+				// rather than bare expressions, and printing an
+				// ArithmCmd wraps the header in line breaks and
+				// re-spaces it — `(( i = 0 ))` where bash echoes what
+				// was written.
+				t.stringf("(( %s ))", printArithm(x))
+				t.newLineFlush()
+			}
 			if y.Init != nil {
+				traceArithm(y.Init)
 				r.arithm(y.Init)
 			}
 			// A failing body command does not end the loop (#369):
@@ -1332,11 +1386,18 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// lived in its body. Only control flow ends it early — and
 			// an arithmetic error in the update, which raises exactly
 			// that.
-			for y.Cond == nil || r.arithm(y.Cond) != 0 {
+			for {
+				if y.Cond != nil {
+					traceArithm(y.Cond)
+					if r.arithm(y.Cond) == 0 {
+						break
+					}
+				}
 				if r.loopStmtsBroken(ctx, cm.Do) {
 					break
 				}
 				if y.Post != nil {
+					traceArithm(y.Post)
 					r.arithm(y.Post)
 				}
 				if r.exit.exiting || r.exit.returning || r.exit.aborting {

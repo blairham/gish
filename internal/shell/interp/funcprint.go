@@ -398,6 +398,16 @@ func indentAfterFirst(s string, depth int) string {
 // reproduce: `$(( 1  +  2 ))` keeps its double spaces there. Compact is
 // the spelling scripts actually write, so it is what matches most
 // often; the residual is stated rather than hidden.
+// printArithm renders an arithmetic expression the compact way the
+// source spells it, which is what an xtrace line shows (#413).
+func printArithm(x syntax.ArithmExpr) string {
+	// wp is what renders leaves, so it has to be there even when only
+	// the arithmetic half of the printer is used.
+	p := &funcPrinter{wp: syntax.NewPrinter()}
+	p.arithm(x)
+	return p.sb.String()
+}
+
 func (p *funcPrinter) arithm(x syntax.ArithmExpr) {
 	switch e := x.(type) {
 	case nil:
