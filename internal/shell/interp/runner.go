@@ -2737,7 +2737,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		orig = &r.stderr
 	}
 	arg := r.literal(rd.Word)
-	switch rd.Op {
+	// op is what the redirection *means*, which is not always what was
+	// written: `>&file` is csh's "send both streams to this file", so it
+	// becomes RdrAll below and takes the ordinary file path from there.
+	op := rd.Op
+	switch op {
 	case syntax.WordHdoc:
 		pr, pw, err := os.Pipe()
 		if err != nil {
@@ -2759,7 +2763,19 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		}
 		src, err := strconv.Atoi(arg)
 		if err != nil {
-			return nil, fmt.Errorf("unhandled %v arg: %q", rd.Op, arg)
+			// `>&file` with a word that is not a descriptor is csh's
+			// both-streams form, and only without an explicit fd:
+			// `ls >&out` writes stdout and stderr to out, while
+			// `ls 2>&out` is ambiguous. Both measured (#416). koi used
+			// to answer neither — the redirection was dropped with no
+			// message and no file, so the output went to the terminal
+			// and the script read a file that was never created.
+			if rd.N == nil {
+				op = syntax.RdrAll
+				break
+			}
+			r.errf("%s: ambiguous redirect\n", arg)
+			return nil, errAmbiguousRedirect
 		}
 		w := r.fdWriter(src)
 		if w == nil {
@@ -2779,7 +2795,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		}
 		src, err := strconv.Atoi(arg)
 		if err != nil {
-			return nil, fmt.Errorf("unhandled %v arg: %q", rd.Op, arg)
+			// There is no csh form on the input side: `<&word` is
+			// ambiguous whatever the fd, which is also the answer for
+			// `exec 3<&$fd` with fd unset (#415's dup half).
+			r.errf("%s: ambiguous redirect\n", arg)
+			return nil, errAmbiguousRedirect
 		}
 		rwc, ok := r.extraFiles[src]
 		if !ok {
@@ -2808,7 +2828,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	// which does not exist yet is always allowed. Note that bash only protects
 	// regular files, so ">/dev/null" keeps working.
 	if r.opts[optNoClobber] {
-		switch rd.Op {
+		switch op {
 		case syntax.RdrOut, syntax.RdrAll:
 			if info, err := r.stat(ctx, arg); err == nil && info.Mode().IsRegular() {
 				// Note that the errors which [Runner.redir] returns are not
@@ -2820,7 +2840,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		}
 	}
 	mode := os.O_RDONLY
-	switch rd.Op {
+	switch op {
 	case syntax.AppOut, syntax.AppAll:
 		mode = os.O_WRONLY | os.O_CREATE | os.O_APPEND
 	case syntax.RdrOut, syntax.RdrAll, syntax.RdrClob:
@@ -2833,7 +2853,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	if err != nil {
 		return nil, err
 	}
-	switch rd.Op {
+	switch op {
 	case syntax.RdrIn, syntax.RdrInOut:
 		if fd == 0 {
 			stdin, err := stdinFile(f)
@@ -2867,6 +2887,10 @@ func (r *Runner) setFdVar(name string, fd int) {
 	}
 	r.setVarString(name, strconv.Itoa(fd))
 }
+
+// errAmbiguousRedirect is returned when a redirection's word cannot name
+// a descriptor. Like errBadFd it is already reported when it is returned.
+var errAmbiguousRedirect = errors.New("ambiguous redirect")
 
 // errBadFd is returned when a redirection names a descriptor which is not open.
 // It is already reported when it is returned, unlike the other errors here.
