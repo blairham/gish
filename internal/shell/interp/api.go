@@ -291,6 +291,14 @@ type Runner struct {
 	// sourcing line, not the sourced file's contents.
 	historyHook func(*syntax.Stmt)
 
+	// traceHook is called with a [TraceEvent] after each simple command
+	// the runner executes (#474). Unlike historyHook it follows execution
+	// everywhere — functions, subshells, pipeline stages, `source` and
+	// `eval` — because a trace that skipped the sourced file would miss
+	// the command that failed. Pipeline stages run concurrently, so the
+	// hook must be safe for concurrent use.
+	traceHook func(TraceEvent)
+
 	// pipeStatus collects the exit status of each stage of the pipeline being
 	// run, left to right, for [shellPipeStatusVar]. It is nil when the command
 	// is not a pipeline, in which case that variable holds just the one status.
@@ -564,6 +572,44 @@ func (r *Runner) LookupVar(name string) expand.Variable {
 func HistoryHook(fn func(*syntax.Stmt)) RunnerOption {
 	return func(r *Runner) error {
 		r.historyHook = fn
+		return nil
+	}
+}
+
+// TraceEvent describes one simple command the runner executed, handed to
+// the hook installed by [TraceHook] after the command returns. The
+// timing/exit field names match the shell's history JSONL entries
+// (started_unix_ms, duration_ms, and so on) so the two streams join.
+type TraceEvent struct {
+	// Src is the file the command's line lives in — the innermost
+	// source/function frame's file, or the parse name at the top level.
+	Src string `json:"src,omitempty"`
+	// Line and Col are the command's parsed position within Src.
+	Line uint `json:"line"`
+	Col  uint `json:"col,omitempty"`
+	// Cmd is the command as written, printed from the parse tree before
+	// expansion — `$URL` stays `$URL`, which is what makes a trace
+	// greppable against the script that produced it.
+	Cmd string `json:"cmd"`
+	// Expanded is the argv the command actually ran with.
+	Expanded []string `json:"expanded"`
+	// Func names the enclosing function, when the command ran inside one.
+	Func          string `json:"func,omitempty"`
+	Exit          int    `json:"exit"`
+	StartedUnixMs int64  `json:"started_unix_ms"`
+	DurationMs    int64  `json:"duration_ms"`
+}
+
+// TraceHook installs fn to be called after every simple command the
+// runner executes, with its position, unexpanded text, expanded argv,
+// exit status and duration (#474). It is independent of `set -x` and of
+// every other shell option: nothing a script does can turn it on or off,
+// which is what lets the shell offer tracing that is invisible to
+// bash-compatible scripts. fn may be called from concurrent pipeline
+// stages and must be safe for that.
+func TraceHook(fn func(TraceEvent)) RunnerOption {
+	return func(r *Runner) error {
+		r.traceHook = fn
 		return nil
 	}
 }
@@ -1188,9 +1234,10 @@ func (r *Runner) Reset() {
 		// forgot it would empty BASH_SOURCE at the top level (#266).
 		mainScript: r.mainScript,
 
-		// Constructor state too: the hook is installed once by the shell
+		// Constructor state too: the hooks are installed once by the shell
 		// and must survive the Reset that Run performs on first use.
 		historyHook: r.historyHook,
+		traceHook:   r.traceHook,
 
 		dirStack: r.dirStack[:0],
 		usedNew:  r.usedNew,
@@ -1418,6 +1465,10 @@ func (r *Runner) subshell(background bool) *Runner {
 	if r.opts[optFuncTrace] {
 		r2.callbackDebug = r.callbackDebug
 	}
+	// The trace hook crosses unconditionally: it is the shell's own
+	// instrumentation, not a script's trap, so no shell option governs
+	// whether a subshell or pipeline stage is traced (#474).
+	r2.traceHook = r.traceHook
 	// A subshell is the same frame as far as RETURN is concerned: it is
 	// not a function call, so nothing about it changes reachability.
 	r2.callbackReturn = r.callbackReturn
