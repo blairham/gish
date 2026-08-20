@@ -186,7 +186,7 @@ func run() int {
 	case len(opts.operands) > 0:
 		err = repl.RunFile(ctx, opts.operands[0], login, opts.interactive, opts.operands[1:]...)
 	default:
-		err = repl.Run(ctx, login)
+		err = repl.Run(ctx, login, opts.interactive)
 	}
 	if err == nil {
 		return 0

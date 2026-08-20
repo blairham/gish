@@ -41,11 +41,11 @@ const (
 // Run starts the interactive loop on stdin and blocks until EOF or exit.
 // The returned error is the session's exit status (an interp.ExitStatus)
 // when the user ran exit, or a real I/O/parse failure.
-func Run(ctx context.Context, login bool) error {
+func Run(ctx context.Context, login, interactive bool) error {
 	if term.IsTerminal(os.Stdin) {
 		return runEditor(ctx, login)
 	}
-	return runPlain(ctx, login)
+	return runPlain(ctx, login, interactive)
 }
 
 // runEditor is the interactive path: the line editor owns the terminal
@@ -665,7 +665,21 @@ func acceptWhen(text string) bool {
 }
 
 // runPlain is the non-TTY loop (piped stdin).
-func runPlain(ctx context.Context, login bool) error {
+//
+// It prints no prompt to stdout, ever (#425). bash suppresses PS1
+// entirely when stdin is not a terminal, and under a forced `-i` writes
+// it to *stderr* — measured, and the reason matters: `koi < script` and
+// `echo cmd | koi` are how tools drive a shell, and a prompt on stdout
+// silently corrupts the output they read back. koi printed `koi$ ` there
+// on every iteration plus a trailing newline at EOF.
+//
+// Under `-i` the prompts go to stderr so a human piping into an
+// interactive shell still sees them. koi deliberately does not follow
+// bash's other two stderr artifacts on that path — echoing the input
+// line back, and printing `exit` at EOF — because both are readline's
+// doing rather than the shell's, and koi keeps its own diagnostic shapes
+// (#120).
+func runPlain(ctx context.Context, login, interactive bool) error {
 	registerSubstrateBuiltins()
 	runner, err := interp.New(append(jsonTraceOptions(),
 		interp.Env(sessionEnv(sessionFlags{invocation: invokedStdin})),
@@ -683,8 +697,19 @@ func runPlain(ctx context.Context, login bool) error {
 	}
 	parser := syntax.NewParser()
 
+	// nil when no prompt is wanted at all, which is the common case.
+	var promptOut io.Writer
+	if interactive {
+		promptOut = os.Stderr
+	}
+	showPrompt := func(p string) {
+		if promptOut != nil {
+			fmt.Fprint(promptOut, p)
+		}
+	}
+
 	var exitErr error
-	fmt.Fprint(os.Stdout, prompt)
+	showPrompt(prompt)
 loop:
 	for stmts, err := range parser.InteractiveSeq(os.Stdin) {
 		if err != nil {
@@ -694,7 +719,7 @@ loop:
 			return err
 		}
 		if parser.Incomplete() {
-			fmt.Fprint(os.Stdout, contPrompt)
+			showPrompt(contPrompt)
 			continue
 		}
 		for _, stmt := range stmts {
@@ -711,9 +736,11 @@ loop:
 				}
 			}
 		}
-		fmt.Fprint(os.Stdout, prompt)
+		showPrompt(prompt)
 	}
-	fmt.Fprintln(os.Stdout)
+	if promptOut != nil {
+		fmt.Fprintln(promptOut)
+	}
 	return exitErr
 }
 
