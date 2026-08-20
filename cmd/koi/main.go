@@ -12,6 +12,7 @@ import (
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 
+	"github.com/blairham/koi-shell/internal/mcpserve"
 	"github.com/blairham/koi-shell/internal/repl"
 	"github.com/blairham/koi-shell/internal/sandbox"
 	"github.com/blairham/koi-shell/internal/term"
@@ -48,6 +49,21 @@ func run() int {
 	if len(os.Args) >= 2 && os.Args[1] == "acp" {
 		if err := repl.RunACP(context.Background(), os.Stdin, os.Stdout, os.Stderr, os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "koi acp:", err)
+			return 1
+		}
+		return 0
+	}
+	// `koi mcp` bridges an MCP client's stdio to the newest session's
+	// state socket (#473). A subcommand because agent harnesses spawn a
+	// command and speak over its pipes — there is nowhere to put a
+	// builtin in that contract.
+	if len(os.Args) >= 2 && os.Args[1] == "mcp" {
+		socket, err := mcpserve.FindSocket()
+		if err == nil {
+			err = mcpserve.Proxy(socket, os.Stdin, os.Stdout)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "koi mcp:", err)
 			return 1
 		}
 		return 0

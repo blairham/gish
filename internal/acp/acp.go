@@ -109,6 +109,15 @@ type Conn struct {
 	// agent's terminal requests.
 	onNotify func(Message)
 
+	// syncRequests answers requests inline on the reader goroutine
+	// instead of concurrently. Wrong for the ACP client — an agent's
+	// terminal request can take as long as the command it runs — and
+	// right for a server whose handlers are fast reads (the MCP state
+	// server, #473): inline answering means every request read before
+	// EOF is answered before Serve returns, so a client that sends one
+	// request and half-closes still gets its response.
+	syncRequests bool
+
 	closed atomic.Bool
 	done   chan struct{}
 	err    error
@@ -131,6 +140,11 @@ func NewConn(in io.Reader, out io.Writer, handler Handler) *Conn {
 // OnNotification sets the inline notification handler. It must be set
 // before Serve starts, and it must not block.
 func (c *Conn) OnNotification(fn func(Message)) { c.onNotify = fn }
+
+// SyncRequests makes this connection answer requests inline rather than
+// on their own goroutines; see the field for when that is the right
+// trade. It must be set before Serve starts.
+func (c *Conn) SyncRequests() { c.syncRequests = true }
 
 // Serve reads until the connection ends. It returns the read error, or
 // nil on a clean EOF.
@@ -161,6 +175,10 @@ func (c *Conn) dispatch(ctx context.Context, line []byte) {
 	}
 	switch {
 	case msg.Method != "" && len(msg.ID) > 0:
+		if c.syncRequests {
+			c.answer(ctx, msg)
+			return
+		}
 		go c.answer(ctx, msg) // a request: answering may take as long as the command does
 	case msg.Method != "":
 		if c.onNotify != nil {

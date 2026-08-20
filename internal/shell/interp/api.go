@@ -554,6 +554,66 @@ func (r *Runner) LookupVar(name string) expand.Variable {
 	return r.Env.Get(name)
 }
 
+// Aliases returns the session's alias definitions rendered back to
+// source, name → replacement text (#473). The interpreter records an
+// alias as parsed words, so the text is a print of those words — which
+// is what `alias` itself would show — with the trailing space that marks
+// a blank-continuing alias preserved, since it changes what the alias
+// means.
+func (r *Runner) Aliases() map[string]string {
+	out := make(map[string]string, len(r.alias))
+	printer := syntax.NewPrinter()
+	for name, als := range r.alias {
+		var sb strings.Builder
+		for i, w := range als.args {
+			if i > 0 {
+				sb.WriteString(" ")
+			}
+			_ = printer.Print(&sb, w)
+		}
+		if als.blank {
+			sb.WriteString(" ")
+		}
+		out[name] = sb.String()
+	}
+	return out
+}
+
+// DirStack returns a copy of the pushd/popd stack, top (the current
+// directory) first — the order `dirs` prints.
+func (r *Runner) DirStack() []string {
+	out := make([]string, 0, len(r.dirStack))
+	for _, dir := range slices.Backward(r.dirStack) {
+		out = append(out, dir)
+	}
+	return out
+}
+
+// OptionState is one named shell option and whether it is currently on.
+type OptionState struct {
+	Name string
+	Set  bool
+}
+
+// Options lists every supported named shell option — the `set -o` and
+// `shopt` tables both — with its live state (#473). Unsupported rows are
+// skipped: an option that can never leave its default is a fact about
+// koi, not about this session.
+func (r *Runner) Options() []OptionState {
+	out := make([]OptionState, 0, len(r.opts))
+	for i, opt := range posixOptsTable {
+		if opt.supported {
+			out = append(out, OptionState{opt.name, r.opts[i]})
+		}
+	}
+	for i, opt := range bashOptsTable {
+		if opt.supported {
+			out = append(out, OptionState{opt.name, r.opts[len(posixOptsTable)+i]})
+		}
+	}
+	return out
+}
+
 // HistoryHook installs fn to be called with each top-level statement the
 // runner is about to execute while `set -o history` is on (#277). It fires
 // *before* the statement runs, which is bash's order — `history` lists

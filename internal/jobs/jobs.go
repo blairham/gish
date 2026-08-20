@@ -27,6 +27,16 @@ func RewriteCall(_ context.Context, args []string) ([]string, error) {
 	return args, nil
 }
 
+// JobInfo is one job table row as data, for consumers that are not a
+// terminal (#473). State is the State's String form so the type works
+// on platforms whose stub table has no jobs to report.
+type JobInfo struct {
+	ID      int    `json:"id"`
+	Pgid    int    `json:"pgid"`
+	Command string `json:"command"`
+	State   string `json:"state"`
+}
+
 // Range is the source span of one backgrounded statement, in byte
 // offsets into the command line about to run.
 //

@@ -269,6 +269,10 @@ func runEditor(ctx context.Context, login bool) error {
 	// meaningful and when the shell is idle.
 	sessionMgr = newSessionRecorder(sessionID, runner, table.Commands)
 	defer sessionMgr.close()
+	// The MCP surface (#473) snapshots at the prompt for the same
+	// reason session recording does.
+	mcpMgr := newMCPManager(table)
+	defer mcpMgr.close()
 	if id := os.Getenv("KOI_RESTORE_SESSION"); id != "" {
 		os.Unsetenv("KOI_RESTORE_SESSION") //nolint:errcheck // consume it once
 		if detail, ok := restoreOnStart(id, runner); ok {
@@ -299,6 +303,9 @@ func runEditor(ctx context.Context, login bool) error {
 		} else {
 			table.DisableCapture()
 		}
+		// MCP (#473) is re-read each prompt too, and its snapshot is
+		// taken here — the runner is idle, so the reads race nothing.
+		mcpMgr.atPrompt(runner)
 		// Signal traps the loop delivers (#159): a WINCH noted while a
 		// command ran, and an INT from the command that was just
 		// interrupted, both fire here, where the runner is ours.

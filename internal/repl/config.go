@@ -47,6 +47,7 @@ var configSettings = []configSetting{
 	{"highlight", "KOI_HIGHLIGHT", []string{"on", "quiet", "off"}, "syntax highlighting — quiet drops the unknown-command color"},
 	{"suggest", "KOI_SUGGEST", []string{"on", "off"}, "history ghost text (#39)"},
 	{"editmode", "KOI_EDIT_MODE", []string{"emacs", "vi"}, "line editor dialect — `set -o vi` sets it too"},
+	{"mcp", "KOI_MCP", []string{"on", "off"}, "serve shell state to agents over MCP (#473) — off by default"},
 	{"welcome", "KOI_WELCOME", []string{"on", "off"}, "the first-run notice that says how to uninstall (#212)"},
 	{"update.notify", "KOI_UPDATE_NOTIFY", []string{"on", "off"}, "say when the package manager already knows of a newer koi (#210)"},
 }
@@ -88,6 +89,7 @@ settings:
   highlight  on | quiet | off       (KOI_HIGHLIGHT)
   suggest    on | off               (KOI_SUGGEST)
   editmode   emacs | vi             (KOI_EDIT_MODE)
+  mcp        on | off               (KOI_MCP)
   welcome    on | off               (KOI_WELCOME)
   update.notify on | off            (KOI_UPDATE_NOTIFY)
   theme.segments    ordered ids — built-ins dir git pins jobs duration
