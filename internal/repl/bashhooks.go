@@ -340,7 +340,22 @@ func shoptPrintArgs(args []string) ([]string, bool) {
 	return names, sawP
 }
 
+// shoptCallHandler is the *interactive* chain's shopt seam: it claims
+// extdebug so the loop's per-line DEBUG hook can honor its cancel
+// semantics (#159), the way trapCallHandler claims DEBUG itself.
 func shoptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
+	return shoptHandler(next, true)
+}
+
+// scriptShoptCallHandler is the same seam for the non-interactive paths,
+// where extdebug passes through: the interpreter implements the option
+// and its skip rule itself now (#355), and recording it in a hook only
+// the interactive loop reads was the #268 silent-acceptance shape.
+func scriptShoptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
+	return shoptHandler(next, false)
+}
+
+func shoptHandler(next interp.CallHandlerFunc, ownExtdebug bool) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
 		if args[0] == "shopt" {
 			if names, ok := shoptPrintArgs(args); ok {
@@ -355,7 +370,7 @@ func shoptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 				args = rest
 			}
 		}
-		if args[0] != "shopt" || !slices.Contains(args, "extdebug") {
+		if args[0] != "shopt" || !ownExtdebug || !slices.Contains(args, "extdebug") {
 			return next(ctx, args)
 		}
 		set := slices.Contains(args, "-s")

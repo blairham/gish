@@ -3644,6 +3644,29 @@ done <<< 2`,
 	// TODO: our builtin appears to not receive the piped bytes?
 	// {"trap 'echo on_err' ERR; trap | grep -q '.*echo on_err.*'", "trap -- \"echo on_err\" ERR\n"},
 	{"trap 'false' ERR EXIT; false", "exit status 1"},
+	// extdebug: a DEBUG trap answering nonzero cancels the command, the
+	// mechanism a debugger's step/skip is built on (#355). The skipped
+	// command leaves $? as 0, and its redirections never open.
+	{
+		"shopt -s extdebug\nskip(){ return 2; }\ntrap 'skip' DEBUG\nx=2\necho \"x is ${x:-unset}\"",
+		"",
+	},
+	{
+		"shopt -s extdebug\nskip(){ case \"$BASH_COMMAND\" in echo\\ skipme*) return 2;; esac; return 0; }\ntrap 'skip' DEBUG\nfalse\necho skipme > x1of\necho \"st=$? file=$([ -e x1of ] && echo yes || echo no)\"",
+		"st=0 file=no\n",
+	},
+	{
+		// Without extdebug, a nonzero DEBUG trap changes nothing.
+		"skip(){ return 2; }\ntrap 'skip' DEBUG\necho runs",
+		"runs\n",
+	},
+	// A `return` inside a function the trap action calls ends that
+	// function — it must not be suppressed until the action runs out of
+	// statements, or a trailing `return 0` overwrites the answer.
+	{
+		"f(){ echo a; return 2; echo b; return 0; }\ntrap 'f' DEBUG\ntrue\ntrap - DEBUG",
+		"a\na\n #IGNORE bash also fires DEBUG for the trap builtin itself",
+	},
 	// An ERR trap set inside a subshell or a function fires for failures
 	// in that scope (#354): "not inherited" restricts a parent's trap,
 	// never the one the scope itself set.
