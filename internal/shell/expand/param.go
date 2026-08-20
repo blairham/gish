@@ -144,6 +144,11 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 	if !indexAllElements {
 		elems = []string{str}
 	}
+	if name == "@" || name == "*" {
+		// $@ and $* count as unset with no positional parameters:
+		// ${*-x} answers x (#360).
+		set = len(elems) > 0
+	}
 
 	switch {
 	case pe.Length:
