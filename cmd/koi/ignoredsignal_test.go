@@ -1,3 +1,5 @@
+//go:build unix
+
 package main
 
 import (
@@ -6,6 +8,9 @@ import (
 	"testing"
 )
 
+// The whole file is unix-only: an inherited signal disposition is a
+// POSIX concept, and the test harness it uses is built there too.
+//
 // TestSignalIgnoredAtEntryIsListedAndUntrappable pins #441: a shell
 // started with a signal ignored reports it, and a script cannot trap or
 // reset it — POSIX's rule for a non-interactive shell, and bash's
