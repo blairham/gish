@@ -596,7 +596,10 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 		switch wp := wp.(type) {
 		case *syntax.Lit:
 			s := wp.Value
-			if i == 0 && ql == quoteNone {
+			// No tilde expansion inside a quoted ${x+word}: "${u:-~}"
+			// prints a literal tilde in bash (#360), while the unquoted
+			// form expands it.
+			if i == 0 && ql == quoteNone && cfg.paramQuoteCtx == quoteNone {
 				if prefix, rest := cfg.expandUser(s, len(wps) > 1); prefix != "" {
 					// TODO: return two separate fieldParts,
 					// like in wordFields?
@@ -855,33 +858,174 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 			}
 			curField = append(curField, fp)
 		case *syntax.DblQuoted:
-			if len(wp.Parts) == 1 {
-				pe, _ := wp.Parts[0].(*syntax.ParamExp)
-				elems, err := cfg.quotedElemFields(pe)
-				if err != nil {
-					return nil, err
-				}
-				if elems != nil {
-					for i, elem := range elems {
-						if i > 0 {
-							flush()
+			// Each part is processed on its own, because a "$@"-style
+			// list splits fields at its element boundaries even with
+			// text attached — "x $@ y" is "x 1" "2 y", and "$@$@" is
+			// three fields with the middle one joined (#361) — where
+			// flattening the whole quoted string joined everything into
+			// one word. hadNonList decides whether an all-empty result
+			// may still be one empty field: "" is, "$@" with no
+			// parameters is zero fields.
+			hadNonList := len(wp.Parts) == 0
+			var processQuoted func(parts []syntax.WordPart) error
+			processQuoted = func(parts []syntax.WordPart) error {
+				for _, part := range parts {
+					if inner, ok := part.(*syntax.DblQuoted); ok {
+						// Nested quotes inside a re-expanded ${x+word}
+						// keep the same context.
+						if err := processQuoted(inner.Parts); err != nil {
+							return err
 						}
-						curField = append(curField, fieldPart{
-							quote: quoteDouble,
-							val:   elem,
-						})
+						continue
 					}
-					continue
+					if pe, ok := part.(*syntax.ParamExp); ok {
+						// The default/alternate/error family on a list
+						// expansion decides by the list, measured against
+						// 5.3: an empty array counts as unset even for
+						// the plain forms, ("") is null for the colon
+						// forms, a not-taken default keeps the elements
+						// one per field, and a not-taken alternate is
+						// zero fields.
+						var wordOp syntax.ParExpOperator
+						if pe.Exp != nil {
+							switch pe.Exp.Op {
+							case syntax.DefaultUnset, syntax.DefaultUnsetOrNull,
+								syntax.AlternateUnset, syntax.AlternateUnsetOrNull,
+								syntax.ErrorUnset, syntax.ErrorUnsetOrNull:
+								wordOp = pe.Exp.Op
+							}
+						}
+						if wordOp != 0 {
+							elems, star, ok := cfg.listElems(pe)
+							if !ok && nodeLit(pe.Index) == "@" && !cfg.Env.Get(pe.Param.Value).IsSet() {
+								// An unset name[@] is the empty list.
+								elems, star, ok = nil, false, true
+							}
+							if ok {
+								set := len(elems) > 0
+								null := strings.Join(elems, "") == ""
+								colon := wordOp == syntax.DefaultUnsetOrNull ||
+									wordOp == syntax.AlternateUnsetOrNull ||
+									wordOp == syntax.ErrorUnsetOrNull
+								alternate := wordOp == syntax.AlternateUnset ||
+									wordOp == syntax.AlternateUnsetOrNull
+								taken := !set || (colon && null)
+								if alternate {
+									taken = !taken
+								}
+								switch {
+								case !taken && alternate:
+									continue // zero fields
+								case !taken && star:
+									curField = append(curField, fieldPart{
+										quote: quoteDouble,
+										val:   cfg.ifsJoin(elems),
+									})
+									continue
+								case !taken:
+									for j, elem := range elems {
+										if j > 0 {
+											flush()
+										}
+										curField = append(curField, fieldPart{
+											quote: quoteDouble,
+											val:   elem,
+										})
+									}
+									continue
+								case wordOp == syntax.ErrorUnset || wordOp == syntax.ErrorUnsetOrNull:
+									msg, err := Literal(cfg, pe.Exp.Word)
+									if err != nil {
+										return err
+									}
+									return UnsetParameterError{Node: pe, Message: msg}
+								case pe.Exp.Word == nil:
+									continue
+								default:
+									// The word, inside these quotes.
+									if err := processQuoted(pe.Exp.Word.Parts); err != nil {
+										return err
+									}
+									hadNonList = true
+									continue
+								}
+							}
+						}
+						elems, err := cfg.quotedElemFields(pe)
+						if err != nil {
+							return err
+						}
+						if elems != nil {
+							for j, elem := range elems {
+								if j > 0 {
+									flush()
+								}
+								curField = append(curField, fieldPart{
+									quote: quoteDouble,
+									val:   elem,
+								})
+							}
+							continue
+						}
+						// A ${x+word} whose answer is the word re-expands
+						// inside these quotes, keeping "$@" identity
+						// (#360): "${1+$@}" is "$@".
+						cfg.wordResult, cfg.wordResultPe = nil, nil
+						oldOuter := cfg.paramOuterQuote
+						cfg.paramOuterQuote = quoteDouble
+						val, err := cfg.paramExp(pe)
+						cfg.paramOuterQuote = oldOuter
+						if err != nil {
+							return err
+						}
+						if cfg.wordResultPe == pe {
+							w := cfg.wordResult
+							cfg.wordResult, cfg.wordResultPe = nil, nil
+							if err := processQuoted(w.Parts); err != nil {
+								return err
+							}
+							continue
+						}
+						hadNonList = true
+						curField = append(curField, fieldPart{quote: quoteDouble, val: val})
+						continue
+					}
+					hadNonList = true
+					// A single-quoted part can only arrive here through a
+					// re-expanded ${x+word}, where #359's rule applies:
+					// the quotes are literal and their content still
+					// expands, exactly as the flat path reads them.
+					ql := quoteDouble
+					if _, ok := part.(*syntax.SglQuoted); ok {
+						oldCtx := cfg.paramQuoteCtx
+						cfg.paramQuoteCtx = quoteDouble
+						wfield, err := cfg.wordFieldMode([]syntax.WordPart{part}, quoteNone, false)
+						cfg.paramQuoteCtx = oldCtx
+						if err != nil {
+							return err
+						}
+						for _, fp := range wfield {
+							fp.quote = quoteDouble
+							curField = append(curField, fp)
+						}
+						continue
+					}
+					wfield, err := cfg.wordField([]syntax.WordPart{part}, ql)
+					if err != nil {
+						return err
+					}
+					for _, fp := range wfield {
+						fp.quote = quoteDouble
+						curField = append(curField, fp)
+					}
 				}
+				return nil
 			}
-			allowEmpty = true
-			wfield, err := cfg.wordField(wp.Parts, quoteDouble)
-			if err != nil {
+			if err := processQuoted(wp.Parts); err != nil {
 				return nil, err
 			}
-			for _, part := range wfield {
-				part.quote = quoteDouble
-				curField = append(curField, part)
+			if hadNonList {
+				allowEmpty = true
 			}
 		case *syntax.ParamExp:
 			if elems, ok := cfg.unquotedElemFields(wp); ok {
@@ -993,11 +1137,34 @@ func (cfg *Config) listElems(pe *syntax.ParamExp) (elems []string, star, ok bool
 // unquotedElemFields returns the elements of an unquoted "*" or "@" list
 // expansion like $* or ${foo[@]}; ok is false for any other expansion.
 func (cfg *Config) unquotedElemFields(pe *syntax.ParamExp) ([]string, bool) {
-	if pe.Excl || pe.Length || pe.Width || pe.IsSet || pe.Repl != nil || pe.Exp != nil {
+	if pe.Excl || pe.Length || pe.Width || pe.IsSet {
 		return nil, false
 	}
+	// Per-element operators keep the one-field-per-element shape: with
+	// an empty IFS, ${*##} joining its elements first would collapse
+	// them into one word (#361). The default/alternate family stays on
+	// the flat path, whose word re-expansion has its own rules.
+	if pe.Exp != nil {
+		switch pe.Exp.Op {
+		case syntax.RemSmallPrefix, syntax.RemLargePrefix,
+			syntax.RemSmallSuffix, syntax.RemLargeSuffix,
+			syntax.UpperFirst, syntax.UpperAll,
+			syntax.LowerFirst, syntax.LowerAll:
+		default:
+			return nil, false
+		}
+	}
 	elems, _, ok := cfg.listElems(pe)
-	return elems, ok
+	if !ok {
+		return nil, false
+	}
+	if pe.Repl != nil || pe.Exp != nil {
+		var err error
+		if elems, err = cfg.perElemOps(pe, elems); err != nil {
+			return nil, false
+		}
+	}
+	return elems, true
 }
 
 // quotedElemFields returns the list of elements resulting from a quoted

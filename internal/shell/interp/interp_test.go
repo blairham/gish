@@ -3542,6 +3542,26 @@ done <<< 2`,
 		"shopt: unsupported option \"-q\"\nexit status 2 #IGNORE",
 	},
 
+	// "$@" splits at element boundaries even with text attached (#361),
+	// and a quoted ${x+word} keeps that identity for a "$@" inside the
+	// word (#360).
+	{`n(){ printf "<%s>" "$@"; echo; }; set -- 1 2; n "x $@ y"`, "<x 1><2 y>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set -- 1 2; n "$@$@"`, "<1><21><2>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set --; n "x $@ y"`, "<x  y>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; a=(p q); n "x ${a[@]} y"`, "<x p><q y>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set -- "a b" c; n "${1+$@}"`, "<a b><c>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set -- "a b" c; n "${1+"$@"}"`, "<a b><c>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set -- 1 2; IFS=:; n "x $* y"`, "<x 1:2 y>\n"},
+	// A quoted ${x+word} does not tilde-expand; $* and $@ are unset with
+	// no positional parameters; empty IFS keeps per-element fields for
+	// unquoted list expansions and their per-element operators (#360,
+	// #361).
+	{`n(){ printf "<%s>" "$@"; echo; }; unset u123; n "${u123:-~}"`, "<~>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set --; n ${*-x}`, "<x>\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set -- " A " " B "; IFS=; n $*`, "< A >< B >\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; set -- " A " " B "; IFS=; n ${*##}`, "< A >< B >\n"},
+	{`n(){ printf "<%s>" "$@"; echo; }; unset u; n "${u:-'x'}"`, "<'x'>\n"},
+
 	// Single quotes inside a double-quoted ${x+word} are literal text
 	// (#359), and what sits between them still expands; $'..' expands
 	// there, a heredoc's ${x+word} keeps the span as written, and a
