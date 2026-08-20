@@ -1864,6 +1864,18 @@ q`,
 	{"unalias -x; echo rc=$?", "unalias: -x: invalid option\nunalias: usage: unalias [-a] name [name ...]\nrc=2\n #JUSTERR"},
 	{"unalias nosuch; echo rc=$?", "unalias: nosuch: not found\nrc=1\n #JUSTERR"},
 
+	{
+		// Reading a process substitution a second time gives EOF rather
+		// than an error, because bash's are /dev/fd entries and koi's
+		// FIFO is gone by then (#420): the failed open answered nothing
+		// at all, so a line went missing rather than reading zero.
+		// Written with `read` rather than `wc -l`, whose column
+		// padding differs between platforms — which is what CI
+		// reported when it was.
+		`f() { read -r x < $1; echo "1:[$x]"; read -r y < $1; echo "2:[$y] rc=$?"; echo reached; }; f <(echo one); echo done=$?`,
+		"1:[one]\n2:[] rc=1\nreached\ndone=0\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
