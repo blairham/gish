@@ -128,9 +128,18 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 		return []string{"false"}
 	}
 
-	idx := make([]int, 0, last-first+1)
-	for i := first; i <= last; i++ {
+	// first > last is a listing direction (see fcRange): walk the range
+	// in the order the operands gave it, then let -r invert that.
+	step := 1
+	if first > last {
+		step = -1
+	}
+	idx := make([]int, 0, (last-first)*step+1)
+	for i := first; ; i += step {
 		idx = append(idx, i)
+		if i == last {
+			break
+		}
 	}
 	if reverse {
 		for i, j := 0, len(idx)-1; i < j; i, j = i+1, j-1 {
@@ -182,17 +191,21 @@ func fcRange(args []string, n int) (first, last int, err error) {
 	default:
 		return 0, 0, fmt.Errorf("too many arguments")
 	}
-	if first < 1 {
-		first = 1
+	// bash's out-of-range rule, measured against 5.3 rather than assumed:
+	// any spec outside [1, n] switches to the *whole* list, oldest first
+	// — `fc -l 25` over twenty entries lists all twenty, not a default
+	// window and not an error. The previous version clamped before it
+	// swapped a reversed pair, so `fc -l 4` over two entries carried 4
+	// into `last` after the ceiling check had already run — the caller
+	// indexed entries[3] and panicked, and under the panic guard that
+	// abandoned the rest of the input (#277: history.tests lost 368 of
+	// its 410 lines to this one crash).
+	if first < 1 || first > n || last < 1 || last > n {
+		return 1, n, nil
 	}
-	if last > n {
-		last = n
-	}
-	if first > last {
-		// A reversed range is a request for newest-first in bash; here it
-		// would print nothing, which reads as a broken command.
-		first, last = last, first
-	}
+	// An in-range reversed pair keeps its order: `fc -l 3 1` prints
+	// 3, 2, 1 in bash, so first > last is a listing direction, not a
+	// mistake to normalize away.
 	return first, last, nil
 }
 
@@ -203,6 +216,11 @@ func fcIndex(s string, n int) (int, error) {
 	}
 	if v < 0 {
 		return n + v + 1, nil
+	}
+	if v == 0 {
+		// `fc -l 0` lists the newest entry in bash — zero resolves to
+		// the end of the list, not to an out-of-range position.
+		return n, nil
 	}
 	return v, nil
 }
