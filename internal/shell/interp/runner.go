@@ -896,10 +896,14 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		case "declare", "typeset", "local", "export", "readonly", "nameref":
 			isDeclUtility = len(cm.Assigns) > 0
 		}
-		var prevDeclTemp map[string]bool
+		var prevDeclTemp, prevDeclBound map[string]bool
 		if isDeclUtility {
-			prevDeclTemp = r.declTempNames
+			prevDeclTemp, prevDeclBound = r.declTempNames, r.declTempBound
 			r.declTempNames = map[string]bool{}
+			r.declTempBound = make(map[string]bool, len(cm.Assigns))
+			for _, as := range cm.Assigns {
+				r.declTempBound[as.Name.Value] = true
+			}
 		}
 
 		for _, as := range cm.Assigns {
@@ -935,7 +939,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		}
 		declared := r.declTempNames
 		if isDeclUtility {
-			r.declTempNames = prevDeclTemp
+			r.declTempNames, r.declTempBound = prevDeclTemp, prevDeclBound
 		}
 		for _, restore := range restores {
 			if restore.vr.ReadOnly {
@@ -1328,9 +1332,12 @@ func (r *Runner) declClause(variant string, args []*syntax.Assign) {
 	namedAny := false
 	unref := false // "+n": detach a nameref
 	switch variant {
-	case "declare":
+	case "declare", "typeset":
 		// When used in a function, "declare" acts as "local"
-		// unless the "-g" option is used.
+		// unless the "-g" option is used. typeset is its synonym and
+		// was missing here, so a typeset inside a function wrote the
+		// global and leaked (#382) — `typeset IFS=:` poisoned every
+		// later expansion in a file.
 		local = r.inFunc
 	case "local":
 		if !r.inFunc {
@@ -1476,6 +1483,29 @@ assignLoop:
 			continue
 		}
 		vr := r.lookupVar(name)
+		freshLocal := false
+		if local && !global && !r.localInScope(name) && !r.declTempBound[name] {
+			freshLocal = true
+			// A declaration that creates a *new* local starts from an
+			// unset variable rather than inheriting the outer one
+			// (#381): `V=abc; f(){ local V; echo "${V-unset}"; }`
+			// answers unset, and inheritance is only bash's
+			// localvar_inherit. Attributes do not carry either, with
+			// one measured exception — an exported outer variable
+			// keeps its local shadow exported — while a readonly one
+			// refuses the declaration and leaves the outer in place.
+			if vr.ReadOnly {
+				r.errf("%s: %s: readonly variable\n", variant, name)
+				r.exit.code = 1
+				continue
+			}
+			vr = expand.Variable{Exported: vr.Exported}
+			if r.opts[optLocalVarInherit] {
+				vr = r.lookupVar(name)
+				vr.Local = false
+				freshLocal = false
+			}
+		}
 		if global {
 			// -g reads and writes the global scope through any local
 			// shadowing the name (#379): with f's `local v` in scope,
@@ -1527,6 +1557,15 @@ assignLoop:
 			switch valType {
 			case "-a", "-A":
 				// The kind is already applied; the value stands.
+			case "":
+				if freshLocal {
+					// The reset above is the value: a new local is
+					// declared-but-unset, so KeepValue below — which
+					// asks the store to keep the outer variable's
+					// value — is exactly what must not happen (#381).
+					break
+				}
+				vr.Kind = expand.KeepValue
 			case "-n":
 				// `declare -n foo` with no value *promotes* an
 				// existing variable: bash reads foo's current value

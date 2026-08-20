@@ -139,6 +139,12 @@ type Runner struct {
 	// binding is unwound afterwards.
 	declTempNames map[string]bool
 
+	// declTempBound holds the names that temp-env prefix carries, so a
+	// declaration can tell that the value it is looking at is the
+	// binding rather than an outer variable — a new local takes the
+	// temp value instead of starting unset (#380 with #381).
+	declTempBound map[string]bool
+
 	// noErrExit prevents failing commands from triggering [optErrExit],
 	// such as the condition in a [syntax.IfClause].
 	noErrExit bool
@@ -1091,6 +1097,14 @@ var bashOptsTable = [...]bashOpt{
 		supported:    true,
 	},
 	{
+		// A new local starts unset rather than inheriting the outer
+		// variable's value (#381); this option is how bash asks for
+		// the inheritance, so it lands with the fix it governs.
+		name:         "localvar_inherit",
+		defaultState: false,
+		supported:    true,
+	},
+	{
 		name:         "nocaseglob",
 		defaultState: false,
 		supported:    true,
@@ -1156,7 +1170,6 @@ var bashOptsTable = [...]bashOpt{
 		defaultState: true,
 	},
 	{name: "lithist"},
-	{name: "localvar_inherit"},
 	{name: "localvar_unset"},
 	{name: "login_shell"},
 	{name: "mailwarn"},
@@ -1222,6 +1235,7 @@ const (
 	optFailGlob
 	optGlobStar
 	optLastPipe
+	optLocalVarInherit
 	optNoCaseGlob
 	optNullGlob
 )

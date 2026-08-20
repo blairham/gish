@@ -429,6 +429,19 @@ func cutElemSubscript(arg string) (name, sub string, ok bool) {
 	return "", "", false
 }
 
+// localInScope reports whether name is already a local of the function
+// scope currently being run — which is what makes a second `local x`
+// in the same function keep its value where the first one dropped the
+// outer variable's (#381).
+func (r *Runner) localInScope(name string) bool {
+	o, ok := r.writeEnv.(*overlayEnviron)
+	if !ok || !o.funcScope {
+		return false
+	}
+	_, ok = o.values[o.normalize(name)]
+	return ok
+}
+
 // varIsSet answers test's -v the way bash does (#378): a subscripted
 // name tests that element — with @ or * meaning "any element" — and a
 // bare array name tests element 0 (key "0" for an associative array),
