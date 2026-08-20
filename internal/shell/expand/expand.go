@@ -557,11 +557,65 @@ func FieldsSeq(cfg *Config, words ...*syntax.Word) iter.Seq2[string, error] {
 					yield("", err)
 					return
 				}
+				mergeBraceParams(w)
 				if expandWord(w) {
 					return
 				}
 			}
 		}
+	}
+}
+
+// mergeBraceParams rejoins a short-form $var with a literal glued to it
+// by brace expansion (#363): bash expands braces before parameters,
+// textually, so $var{x,y} means $varx $vary — the brace suffix extends
+// the variable's *name*. The parser necessarily bound $var first, so
+// after the split a short-form parameter followed by name characters
+// re-reads as the longer name. ${var}{x,y} keeps its boundary, and a
+// special parameter like $1 cannot be extended, since $1x never was a
+// name. Nodes are replaced, never edited: the parts may be shared with
+// other brace alternatives.
+func mergeBraceParams(w *syntax.Word) {
+	cloned := false
+	for i := 0; i+1 < len(w.Parts); i++ {
+		pe, ok := w.Parts[i].(*syntax.ParamExp)
+		if !ok || !pe.Short || pe.Param == nil || !syntax.ValidName(pe.Param.Value) {
+			continue
+		}
+		lit, ok := w.Parts[i+1].(*syntax.Lit)
+		if !ok {
+			continue
+		}
+		j := 0
+		for j < len(lit.Value) {
+			b := lit.Value[j]
+			if b == '_' || b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' {
+				j++
+				continue
+			}
+			break
+		}
+		if j == 0 {
+			continue
+		}
+		if !cloned {
+			// The parts slice may share its backing with other brace
+			// alternatives; never write into it.
+			w.Parts = slices.Clone(w.Parts)
+			cloned = true
+		}
+		pe2 := *pe
+		param := *pe.Param
+		param.Value += lit.Value[:j]
+		pe2.Param = &param
+		w.Parts[i] = &pe2
+		if j == len(lit.Value) {
+			w.Parts = slices.Delete(w.Parts, i+1, i+2)
+			continue
+		}
+		lit2 := *lit
+		lit2.Value = lit.Value[j:]
+		w.Parts[i+1] = &lit2
 	}
 }
 
