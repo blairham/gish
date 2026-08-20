@@ -205,6 +205,10 @@ type Runner struct {
 	// traceLine is the line of the statement being run, which PS4's
 	// $LINENO reports (#413).
 	traceLine uint
+	// preRedirStderr is where an expansion error is reported: the
+	// stderr in force before the current statement's own redirections
+	// (#469).
+	preRedirStderr io.Writer
 	// expandingAlias guards against an alias that names itself, which
 	// expands once and then means the command (#407).
 	expandingAlias map[string]bool
@@ -1756,6 +1760,12 @@ func (r *Runner) subshell(background bool) *Runner {
 	if r.opts[optFuncTrace] {
 		r2.callbackDebug = r.callbackDebug
 	}
+	// Being *inside* a trap action crosses too (#496). A pipeline stage
+	// inherits the DEBUG callback so the whole pipeline is traced, and
+	// without this a trap action that is itself a pipeline fires the
+	// trap again from its own stages — which produced no output at all,
+	// and took the command that triggered the trap with it.
+	r2.handlingTrap = r.handlingTrap
 	// The trace hook crosses unconditionally: it is the shell's own
 	// instrumentation, not a script's trap, so no shell option governs
 	// whether a subshell or pipeline stage is traced (#474).

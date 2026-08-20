@@ -1890,6 +1890,36 @@ q`,
 	},
 	{`REPLY=old; y=${| :; }; echo "y=[$y] REPLY=[$REPLY]"`, "y=[] REPLY=[old]\n"},
 
+	// Word expansion happens before a command's own redirections, so an
+	// expansion error is reported to the stderr that was in force
+	// before them (#469): koi applied the redirections first, so the
+	// diagnostic went into /dev/null and the script stopped mid-unit
+	// with nothing said.
+	{
+		`set -u; echo $nope 2>/dev/null; echo after`,
+		"nope: unbound variable\nexit status 1 #JUSTERR",
+	},
+	{
+		// An enclosing block's redirection is still in force, which is
+		// why this is per statement rather than the shell's original
+		// stderr.
+		`set -u; { echo $nope; } 2>/dev/null; echo after`,
+		"exit status 1 #JUSTERR",
+	},
+	{
+		`shopt -s failglob; echo nomatch* 2>/dev/null; echo after`,
+		"no match: nomatch*\nexit status 1 #JUSTERR",
+	},
+	{
+		// A trap action that is itself a pipeline fired the trap again
+		// from its own stages, which produced no output at all and took
+		// the command that triggered it along (#496).
+		// One DEBUG here where bash fires two: the granularity
+		// divergence recorded in #268, not this fix.
+		`trap "echo T | cat" DEBUG; echo x`,
+		"T\nx\n #IGNORE koi's DEBUG granularity differs (#268)",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
