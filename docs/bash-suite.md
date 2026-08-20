@@ -6,9 +6,9 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 
 | measure | result | what it answers |
 | --- | --- | --- |
-| **strict** | **7/83 files (8%)** | identical output *and* exit status for a whole file |
-| parsed | 65/83 files (78%) | koi can read the file at all |
-| line agreement | 5663/13655 lines (41%) | how much of bash's output koi reproduced exactly |
+| **strict** | **14/83 files (16%)** | identical output *and* exit status for a whole file |
+| parsed | 66/83 files (79%) | koi can read the file at all |
+| line agreement | 7039/13655 lines (51%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -19,7 +19,7 @@ denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
 directions. **Strict is a file count, and runtime behavior dominates
-it**: 58 files parse perfectly and then behave differently, against 18
+it**: 52 files parse perfectly and then behave differently, against 17
 koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
@@ -48,7 +48,6 @@ bash code uses them.
 | a command can only contain words and redirects; encountered `(` | extglob.tests |
 | array element values must be words | array.tests |
 | not a valid arithmetic operator: `sh_352` | comsub-posix.tests |
-| not a valid arithmetic operator: `world` | assoc.tests |
 | not a valid parameter expansion operator: `*` | cond.tests |
 | not a valid parameter expansion operator: `~` | casemod.tests |
 | reached EOF without closing quote `"` | posixexp2.tests |
@@ -58,7 +57,7 @@ bash code uses them.
 
 ## Files that pass strictly
 
-`extglob3.tests`, `glob-bracket.tests`, `invert.tests`, `lastpipe.tests`, `nquote2.tests`, `nquote3.tests`, `precedence.tests`
+`extglob2.tests`, `extglob3.tests`, `glob-bracket.tests`, `globstar.tests`, `herestr.tests`, `ifs-posix.tests`, `invert.tests`, `iquote.tests`, `lastpipe.tests`, `nquote2.tests`, `nquote3.tests`, `nquote4.tests`, `nquote5.tests`, `precedence.tests`
 
 ## Why the suite is not in this repository
 
