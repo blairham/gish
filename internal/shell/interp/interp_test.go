@@ -3907,6 +3907,38 @@ done <<< 2`,
 		"b b b\n",
 	},
 	{
+		// bash 5.1+: bare words pair up as key/value.
+		`declare -A a=(one 1 two 2); for e in "${!a[@]}"; do echo "$e=${a[$e]}"; done | sort`,
+		"one=1\ntwo=2\n",
+	},
+	{
+		// An odd word out keys the empty string.
+		`declare -A a=(one 1 two); echo "${a[one]}-${a[two]}."`,
+		"1-.\n",
+	},
+	{
+		`declare -A a=([k]=v); a+=(b c d e); for e in "${!a[@]}"; do echo "$e=${a[$e]}"; done | sort`,
+		"b=c\nd=e\nk=v\n",
+	},
+	{
+		`declare -A a=(one 1); a+=([one]=x [two]=y); echo ${a[one]} ${a[two]}`,
+		"x y\n",
+	},
+	{
+		`declare -A a=(one 1); a=(two 2); echo "${a[one]}${a[two]}"`,
+		"2\n",
+	},
+	{
+		// A bare word after a subscripted element is a fatal assignment error.
+		`declare -A a=([k]=v one 1); echo after`,
+		"a: one: must use subscript when assigning associative array\nexit status 1 #JUSTERR",
+	},
+	{
+		// An empty key is skipped with a complaint; the rest still lands.
+		`declare -A a=("" e one 1); echo st=$?; echo ${a[one]}`,
+		"'': bad array subscript\nst=0\n1\n #IGNORE bash prints the error but continues identically",
+	},
+	{
 		`a=(['x']=b); echo ${a['y']}`,
 		"\n #IGNORE bash requires -A",
 	},

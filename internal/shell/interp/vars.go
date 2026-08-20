@@ -577,22 +577,67 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	elems := as.Array.Elems
 	if valType == "" {
 		valType = "-a" // indexed
-		if len(elems) > 0 && stringIndex(elems[0].Index) {
-			valType = "-A" // associative
+		if prev.Kind == expand.Associative {
+			// name=(...) and name+=(...) on an existing associative
+			// array stay associative; bare words pair as key/value.
+			valType = "-A"
+		} else if len(elems) > 0 && stringIndex(elems[0].Index) {
+			valType = "-A"
 		}
 	}
 	if valType == "-A" {
-		amap := make(map[string]string, len(elems))
-		for _, elem := range elems {
-			k := r.literal(elem.Index.(*syntax.Word))
-			amap[k] = r.literal(elem.Value)
+		var amap map[string]string
+		if as.Append && prev.Kind == expand.Associative {
+			amap = maps.Clone(prev.Map)
 		}
-		if !as.Append {
-			prev.Kind = expand.Associative
-			prev.Map = amap
-			return name, prev
+		if amap == nil {
+			amap = make(map[string]string, len(elems))
 		}
-		// TODO
+		if len(elems) > 0 && elems[0].Index == nil {
+			// bash 5.1+: when the first element has no [key], the words
+			// pair up as alternating key/value, an odd word out keying
+			// the empty string. A later [k]=v element is not special in
+			// this mode — it reads back as the literal word it was.
+			var words []string
+			for _, elem := range elems {
+				if w, ok := elem.Index.(*syntax.Word); ok {
+					words = append(words, "["+r.literal(w)+"]="+r.literal(elem.Value))
+					continue
+				}
+				words = append(words, r.literal(elem.Value))
+			}
+			for i := 0; i < len(words); i += 2 {
+				if words[i] == "" {
+					r.errf("'': bad array subscript\n")
+					continue
+				}
+				val := ""
+				if i+1 < len(words) {
+					val = words[i+1]
+				}
+				amap[words[i]] = val
+			}
+		} else {
+			for _, elem := range elems {
+				w, ok := elem.Index.(*syntax.Word)
+				if !ok {
+					if elem.Index == nil {
+						// A bare word after a subscripted element is a
+						// fatal assignment error, ending the script.
+						r.errf("%s: %s: must use subscript when assigning associative array\n",
+							name, r.literal(elem.Value))
+						r.exit.code = 1
+						r.exit.exiting = true
+						return name, prev
+					}
+					r.errf("%s: bad array subscript\n", name)
+					continue
+				}
+				amap[r.literal(w)] = r.literal(elem.Value)
+			}
+		}
+		prev.Kind = expand.Associative
+		prev.Map = amap
 		return name, prev
 	}
 	// The base array which the new elements are set on; empty unless
