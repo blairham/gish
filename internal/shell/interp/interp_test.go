@@ -3063,6 +3063,18 @@ var runTests = []runTest{
 		"a=b; echo $(($a))",
 		"0\n",
 	},
+	// A readonly violation inside an arithmetic expansion is fatal to
+	// the input unit (#370): the command aborts with status 1 and a
+	// script continues at its next line.
+	{
+		"readonly xx=1\ncase 1 in $((xx++)) ) echo hi1 ;; *) echo hi2; esac\necho ${xx}.$?",
+		"xx: readonly variable\n1.1\n #JUSTERR",
+	},
+	{
+		"readonly xx=1; echo $((xx++)); echo same-line",
+		"xx: readonly variable\nexit status 1 #JUSTERR",
+	},
+
 	// A failing body command does not end a C-style loop (#369), and an
 	// empty update section is fine — the body's own ((i++)) answers
 	// status 1 on its first step, which used to stop the loop.

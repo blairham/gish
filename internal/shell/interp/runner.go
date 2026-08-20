@@ -229,7 +229,8 @@ func (r *Runner) expandErr(err error) {
 		// exit 1 both ways.
 		r.exit.code = 1
 		r.exit.exiting = true
-	case strings.HasSuffix(errMsg, "arithmetic syntax error"),
+	case strings.HasSuffix(errMsg, "readonly variable"),
+		strings.HasSuffix(errMsg, "arithmetic syntax error"),
 		strings.HasSuffix(errMsg, "expression recursion level exceeded"):
 		// An arithmetic error in an expansion is the same input-unit
 		// abandonment (#366): bash's `echo "${x:bad}"` loses the rest

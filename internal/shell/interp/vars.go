@@ -314,6 +314,14 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 	if err := r.writeEnv.Set(name, vr); err != nil {
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
+		// A readonly violation is fatal wherever the write came from —
+		// an arithmetic xx++ inside an expansion included (#370) — with
+		// the same input-unit abandonment as a plain assignment (#308):
+		// the command aborts with status 1 and a script continues at
+		// its next line.
+		if strings.HasSuffix(err.Error(), "readonly variable") {
+			r.exit.aborting = true
+		}
 		return
 	}
 }
