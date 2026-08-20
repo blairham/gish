@@ -990,6 +990,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 					val = values[i]
 				}
 				r.setVarString(name, val)
+				// A readonly target *aborts* the assignment list at
+				// status 2, per POSIX: koi reported the error, skipped
+				// that name, assigned the rest, and answered 0 — so a
+				// script guarding on read's status was told it worked
+				// (#404).
+				if r.exit.code != 0 {
+					r.exit.code = 0
+					return exitStatus{code: 2}
+				}
 			}
 		}
 
@@ -2074,6 +2083,16 @@ func (p *flagParser) flag() string {
 }
 
 func (p *flagParser) value() string {
+	if p.current != "" {
+		// The value may be attached to its flag inside a cluster:
+		// `read -ru3` is -r, -u, and the fd 3 (#405). Only the spaced
+		// form worked, so the *variable name* was read as the
+		// descriptor — and read.tests and procsub.tests run that inside
+		// a loop, turning one parse bug into hundreds of error lines.
+		val := p.current[1:]
+		p.current = ""
+		return val
+	}
 	if len(p.remaining) == 0 {
 		return ""
 	}

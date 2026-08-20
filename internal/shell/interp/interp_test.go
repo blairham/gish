@@ -1704,6 +1704,29 @@ var runTests = []runTest{
 		"opt: x\nopt: y\nopt: a\nopt: b\nopt: c\nopt: z\n",
 	},
 
+	// A readonly target aborts read's assignment list at status 2, per
+	// POSIX (#404): koi reported the error, skipped that name,
+	// assigned the rest, and answered 0.
+	{
+		`readonly b; read a b c <<< "1 2 3"; echo "a=$a b=$b c=$c stat=$?"`,
+		"b: readonly variable\na=1 b= c= stat=2\n #JUSTERR",
+	},
+	// An option's value may be attached inside a cluster (#405): only
+	// the spaced form worked, so `read -ru3` read the *variable name*
+	// as the descriptor.
+	{
+		`echo hello > f; exec 3<f; read -ru3 x; echo "clustered:$?:$x"`,
+		"clustered:0:hello\n",
+	},
+	{
+		`echo hello > f; exec 3<f; read -u3 x; echo "u3:$?:$x"`,
+		"u3:0:hello\n",
+	},
+	{
+		`printf "a\nb\n" | { read -n1 x; echo "n1=[$x]"; }`,
+		"n1=[a]\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
