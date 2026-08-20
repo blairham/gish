@@ -52,6 +52,14 @@ func (t *Table) Kill(_ context.Context, hc interp.HandlerContext, args []string)
 	for len(args) > 0 && strings.HasPrefix(args[0], "-") && args[0] != "-" {
 		switch {
 		case args[0] == "-l" || args[0] == "-L":
+			// With operands, -l *translates* rather than listing: a
+			// number becomes a name and a name becomes a number, which
+			// is how a script turns an exit status above 128 into the
+			// signal that caused it. koi dumped the whole table and
+			// ignored the arguments (#411).
+			if rest := args[1:]; len(rest) > 0 {
+				return translateSignals(hc, rest)
+			}
 			listSignals(hc)
 			return nil
 		case args[0] == "-s" && len(args) > 1:
@@ -162,6 +170,53 @@ func parseSignal(spec string) (syscall.Signal, bool) {
 
 // listSignals prints the names kill accepts, sorted by number so the
 // listing reads like kill -l everywhere else.
+// translateSignals implements `kill -l NAME|NUMBER ...`.
+func translateSignals(hc interp.HandlerContext, args []string) error {
+	failed := false
+	for _, arg := range args {
+		if n, err := strconv.Atoi(arg); err == nil {
+			// A status above 128 is 128+signal, which is the form a
+			// caller most often has.
+			if n > 128 {
+				n -= 128
+			}
+			if n == 0 {
+				fmt.Fprintln(hc.Stdout, "EXIT")
+				continue
+			}
+			name := signalName(syscall.Signal(n))
+			if name == "" {
+				fmt.Fprintf(hc.Stderr, "kill: %s: invalid signal specification\n", arg)
+				failed = true
+				continue
+			}
+			fmt.Fprintln(hc.Stdout, name)
+			continue
+		}
+		sig, ok := parseSignal(arg)
+		if !ok {
+			fmt.Fprintf(hc.Stderr, "kill: %s: invalid signal specification\n", arg)
+			failed = true
+			continue
+		}
+		fmt.Fprintln(hc.Stdout, int(sig))
+	}
+	if failed {
+		return interp.ExitStatus(1)
+	}
+	return nil
+}
+
+// signalName is the reverse of the killSignals table.
+func signalName(sig syscall.Signal) string {
+	for name, num := range killSignals {
+		if num == sig {
+			return name
+		}
+	}
+	return ""
+}
+
 func listSignals(hc interp.HandlerContext) {
 	type entry struct {
 		name string

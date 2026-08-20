@@ -1755,6 +1755,40 @@ var runTests = []runTest{
 		"`1': not a valid identifier\nrc=1\n #JUSTERR",
 	},
 
+	// The builtin option surface (#411): each of these was a usage
+	// error or a wrong answer, and together they are most of
+	// builtins.tests' remaining diff.
+	{"command -p echo hi; echo rc=$?", "hi\nrc=0\n"},
+	{"command -V echo", "echo is a shell builtin\n"},
+	{"f(){ :; }; command -V f | head -1", "f is a function\n"},
+	{"for i in 1 2; do break --; done; echo rc=$?", "rc=0\n"},
+	{"for i in 1 2; do continue --; done; echo rc=$?", "rc=0\n"},
+	// kill -l's translation and umask's symbolic modes are koi
+	// builtins rather than interpreter ones, so their cases live in
+	// cmd/koi's builtins matrix where the real implementations run.
+	// -a reports every match rather than the first, so a script can
+	// see that a builtin is shadowing the program it meant.
+	{"type -a echo | head -1", "echo is a shell builtin\n"},
+	{"type -p echo; echo rc=$?", "rc=0\n"},
+	{
+		// -P forces the PATH search where -p answers about what the
+		// shell would run. The path itself differs by platform
+		// (/bin/echo on darwin, /usr/bin/echo on linux), so the case
+		// asserts that something executable was named.
+		`[ -x "$(type -P echo)" ] && echo executable`,
+		"executable\n",
+	},
+	// `enable -n` really turns the builtin off, so the name resolves
+	// on PATH like any other command.
+	{"enable -n test; type -t test", "file\n"},
+	{"enable -n test; enable test; type -t test", "builtin\n"},
+	{"enable nosuchxyz; echo rc=$?", "enable: nosuchxyz: not a shell builtin\nrc=1\n #JUSTERR"},
+	// `hash -p` pins a name to a path, and the pin is consulted before
+	// PATH — koi accepted the line and did nothing with it.
+	{"hash -p /bin/ls myls; type myls", "myls is hashed (/bin/ls)\n"},
+	{"hash -p /bin/echo myecho; myecho hi", "hi\n"},
+	{"hash; echo rc=$?", "hash: hash table empty\nrc=0\n"},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
