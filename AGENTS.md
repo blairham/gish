@@ -317,7 +317,7 @@ the `KOI_SEMANTIC_MARKS=off` fallback.
 
 ## CI/CD
 
-- **ci.yml**: `test` (ubuntu + macos matrix, `make test`), `lint` (golangci-lint-action), then `build` — on push to main and PRs
+- **ci.yml**: `test` (ubuntu + macos matrix, `make test`), `lint` (golangci-lint-action), then `build` — on push to main and PRs. A leading `changes` job skips all of them on prose-only diffs (docs, root markdown, LICENSE) — at the *job* level, because the branch policy requires these checks by name and a job skipped by `if:` satisfies it where workflow `paths-ignore` would block the merge as "Expected" forever. The docs CI itself reads (compat.md, bash-suite.md, agents.md, interactive-compat.md, bench.md) still count as code; anything unrecognized does too, so a wrong classification errs toward running the tests
 - **goreleaser.yml**: GoReleaser on version tags (`v*`) or manual dispatch; publishes to `blairham/homebrew-tap`
 - **Pre-commit hooks** (`pre-commit install`): trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files, check-merge-conflict, detect-private-key, go-mod-tidy-repo, `check-go-version-sync`, `golangci-lint-fmt` + `golangci-lint` (changed-since-HEAD only; whole-repo lint stays in CI), gitleaks
 

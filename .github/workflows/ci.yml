@@ -10,7 +10,55 @@ on:
     branches: [ main ]
 
 jobs:
+  # Decides whether the expensive jobs run at all: prose-only changes (docs,
+  # root markdown, LICENSE) skip the test matrix, lint and build.
+  #
+  # Two rules keep this honest. Skipping happens at the *job* level, never via
+  # workflow-level `paths-ignore`: the branch policy requires these checks by
+  # name, and a check that never starts blocks the merge as "Expected" forever,
+  # while a job skipped by an `if:` reports "skipped", which satisfies it. And
+  # the docs CI itself consumes stay "code": docs/compat.md is compat-check's
+  # threshold, docs/bash-suite.md, docs/agents.md and docs/interactive-compat.md
+  # carry generated regions the harnesses compare against, and docs/bench.md is
+  # the published measurement — hand-editing any of them must face the gate
+  # that reads it. Anything unrecognized counts as code, so when this
+  # classification is wrong it is wrong in the direction of running the tests.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0 # the diff needs the base commit, not just HEAD
+
+    - name: Classify changed files
+      id: classify
+      env:
+        BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+      run: |
+        code=false
+        if ! git cat-file -e "$BASE" 2>/dev/null; then
+          # A force push or an event with no usable base sha: nothing to
+          # diff against, so the safe answer is to run everything.
+          code=true
+        else
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            case "$f" in
+              docs/compat.md|docs/bash-suite.md|docs/agents.md|docs/interactive-compat.md|docs/bench.md)
+                code=true; break ;; # CI reads these; editing one must face the gate
+              *.md|LICENSE) ;; # prose
+              *) code=true; break ;;
+            esac
+          done <<<"$(git diff --name-only "$BASE"...HEAD)"
+        fi
+        echo "code=$code" >> "$GITHUB_OUTPUT"
+        echo "changed files are $([ "$code" = true ] && echo "code — full run" || echo "prose only — skipping tests, lint and build")"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     # A cap, not a budget: the job normally finishes in 2-3 minutes. It
     # exists so a hung step fails visibly instead of burning the 360-minute
@@ -119,6 +167,8 @@ jobs:
   # unix-only surfaces (job control, sandbox enforcement, pty tests)
   # are build-tagged out; porting their test suites tracks in #47.
   test-windows:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v6
@@ -149,6 +199,8 @@ jobs:
       run: go test -race ./internal/term/ ./internal/complete/ ./internal/editor/ ./internal/history/ ./internal/envtrust/ ./internal/tools/ ./internal/sandbox/ ./internal/pluginhost/ ./internal/repl/ ./internal/builtins/ ./internal/remote/ ./internal/session/ ./internal/capture/ ./internal/blocks/ ./internal/promptengine/ ./internal/gitstatus/ ./internal/dirjump/ ./internal/manifest/ ./internal/ui/ ./internal/jobs/ ./cmd/koi-aws/ ./cmd/koi-atuin/ ./cmd/koi-claude/ ./cmd/koi-direnv/ ./internal/migrate/
 
   lint:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
@@ -166,6 +218,8 @@ jobs:
         version: latest
         args: --timeout=10m
 
+  # No `if:` needed here: when `changes` skips test and lint, a job that
+  # `needs` them is skipped by default — and skipped satisfies the policy.
   build:
     runs-on: ubuntu-latest
     needs: [ test, lint ]
