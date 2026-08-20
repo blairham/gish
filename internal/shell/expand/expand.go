@@ -93,6 +93,14 @@ type Config struct {
 	// pattern matching features when performing pathname expansion (globbing).
 	ExtGlob bool
 
+	// LineOffset shifts what $LINENO reports. A trap action is parsed as
+	// its own little file whose positions start at line 1, while bash
+	// reports lines continuing from a base — the triggering command's
+	// line for DEBUG and ERR, the line the trap was set on for EXIT and
+	// signal traps (#352). The offset is that base minus one; zero means
+	// positions report as written, which is every non-trap expansion.
+	LineOffset uint64
+
 	bufferAlloc strings.Builder
 	fieldAlloc  [4]fieldPart
 	fieldsAlloc [4][]fieldPart
