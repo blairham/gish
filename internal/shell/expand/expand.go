@@ -308,7 +308,14 @@ func Pattern(cfg *Config, word *syntax.Word) (string, error) {
 			sb.WriteString(part.val)
 		}
 	}
-	return sb.String(), nil
+	// A trailing lone backslash is a literal backslash in bash's
+	// matcher — var='ab\'; [[ $var = $var ]] holds (#372) — where the
+	// pattern engine would read it as quoting nothing.
+	s := sb.String()
+	if n := len(s) - len(strings.TrimRight(s, `\`)); n%2 == 1 {
+		s += `\`
+	}
+	return s, nil
 }
 
 // Format expands a format string with a number of arguments, following the
@@ -659,6 +666,24 @@ func FieldsSeq(cfg *Config, words ...*syntax.Word) iter.Seq2[string, error] {
 	}
 }
 
+// unescapePattern removes the backslash quoting a pattern byte, keeping
+// a trailing lone backslash as itself.
+func unescapePattern(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var sb strings.Builder
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b == '\\' && i+1 < len(s) {
+			i++
+			b = s[i]
+		}
+		sb.WriteByte(b)
+	}
+	return sb.String()
+}
+
 // mergeBraceParams rejoins a short-form $var with a literal glued to it
 // by brace expansion (#363): bash expands braces before parameters,
 // textually, so $var{x,y} means $varx $vary — the brace suffix extends
@@ -987,23 +1012,56 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 					s = s[:eq+1] + cfg.expandTildesAfterColons(s[eq+1:], true)
 				}
 			}
-			if strings.Contains(s, "\\") {
-				sb := cfg.strBuilder()
-				for i := 0; i < len(s); i++ {
-					b := s[i]
-					if b == '\\' {
-						if i++; i >= len(s) {
-							sb.WriteByte(b)
-							break
-						}
-						b = s[i]
-					}
-					sb.WriteByte(b)
-				}
-				s = sb.String()
-			}
 			if splitLits {
+				// A ${x+word} sub-expansion: quote removal has already
+				// happened by the time bash splits, so the stripped
+				// string splits at formerly-escaped whitespace too
+				// (#358, measured).
+				if strings.Contains(s, "\\") {
+					sb := cfg.strBuilder()
+					for i := 0; i < len(s); i++ {
+						b := s[i]
+						if b == '\\' {
+							if i++; i >= len(s) {
+								sb.WriteByte(b)
+								break
+							}
+							b = s[i]
+						}
+						sb.WriteByte(b)
+					}
+					s = sb.String()
+				}
 				splitAdd(s)
+				continue
+			}
+			if strings.Contains(s, "\\") {
+				// The backslash quotes the next byte for the pattern
+				// matcher too (#372): `echo \*` must not glob. Each
+				// escaped byte becomes its own quoted part, so
+				// escapedGlobField sees the quoting the way it sees a
+				// single-quoted character.
+				runStart := 0
+				for i := 0; i < len(s); i++ {
+					if s[i] != '\\' {
+						continue
+					}
+					if i > runStart {
+						curField = append(curField, fieldPart{val: s[runStart:i]})
+					}
+					if i+1 >= len(s) {
+						// A trailing lone backslash stays itself.
+						curField = append(curField, fieldPart{quote: quoteSingle, val: `\`})
+						runStart = len(s)
+						break
+					}
+					curField = append(curField, fieldPart{quote: quoteSingle, val: s[i+1 : i+2]})
+					i++
+					runStart = i + 1
+				}
+				if runStart < len(s) {
+					curField = append(curField, fieldPart{val: s[runStart:]})
+				}
 				continue
 			}
 			curField = append(curField, fieldPart{val: s})
@@ -1602,6 +1660,10 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 			}
 			continue
 		case !pattern.HasMeta(part, 0):
+			// A meta-free component may still carry pattern escapes —
+			// s\*d names the directory s*d (#372) — and the filesystem
+			// wants the real name.
+			part = unescapePattern(part)
 			var newMatches []string
 			for _, dir := range matches {
 				match := dir
