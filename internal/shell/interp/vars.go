@@ -872,3 +872,32 @@ func (r *Runner) unsetNameRef(name string, as *syntax.Assign) {
 	}
 	r.setVar(name, self)
 }
+
+// setLoopVar assigns a for or select loop's variable, following a
+// nameref the way an ordinary assignment does (#389): with `declare -n
+// ref` in scope, `for ref in one two` sets *one* and *two* rather than
+// overwriting the reference cell with the literal names.
+func (r *Runner) setLoopVar(name, value string) bool {
+	prev := r.lookupVar(name)
+	if prev.Kind != expand.NameRef {
+		r.setVarString(name, value)
+		return true
+	}
+	// A nameref loop variable is *re-targeted* rather than assigned
+	// through: `declare -n ref; for ref in one two` walks ref over the
+	// two variables, so ${!ref} names each and $ref reads its value.
+	// Each item is therefore a name, and one that is not an identifier
+	// is bash's error — measured, where koi wrote the literal through
+	// the reference and corrupted the target (#389).
+	if !syntax.ValidName(value) {
+		// bash reports the first bad item and abandons the loop rather
+		// than reporting each one.
+		r.errf("`%s': not a valid identifier\n", value)
+		r.exit.code = 1
+		return false
+	}
+	prev.Set = true
+	prev.Str = value
+	r.setVar(name, prev)
+	return true
+}

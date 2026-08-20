@@ -840,6 +840,16 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				// nameref's own value, so `r[2]=42` through a nameref
 				// started from an empty array and replaced the target with
 				// a single element, and `r+=x` appended to nothing (#277).
+				if prev.Kind == expand.NameRef && as.Index == nil {
+					// The reference may name an array *element* (#389):
+					// `declare -n b="a[1]"; b=v` writes that element,
+					// where following the name alone wrote a variable
+					// literally called "a[1]" and lost the assignment.
+					if base, sub, ok := r.nameRefElem(prev.Str); ok {
+						name, as = base, withIndex(as, sub)
+						prev = r.lookupVar(base)
+					}
+				}
 				if n, v := prev.Resolve(r.writeEnv); n != "" {
 					name, prev = n, v
 				}
@@ -1184,9 +1194,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					r.setVarString(shellReplyVar, reply)
 
 					if c, _ := strconv.Atoi(reply); c > 0 && c <= len(items) {
-						r.setVarString(name, items[c-1])
-					} else {
-						r.setVarString(name, "")
+						if !r.setLoopVar(name, items[c-1]) {
+							break
+						}
+					} else if !r.setLoopVar(name, "") {
+						break
 					}
 
 					// execute commands until break or return is encountered
@@ -1198,7 +1210,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 
 			for _, field := range items {
-				r.setVarString(name, field)
+				if !r.setLoopVar(name, field) {
+					break
+				}
 				trace.stringf("for %s in", y.Name.Value)
 				if inToken {
 					for _, item := range y.Items {
@@ -1527,6 +1541,28 @@ assignLoop:
 		if unref {
 			r.unsetNameRef(name, as)
 			continue
+		}
+		if valType == "-n" && as.Value != nil {
+			// A nameref's target must be a name, optionally with a
+			// subscript, and may not be the reference itself (#389).
+			// Both were accepted silently, so `declare -n foo=12345`
+			// made a reference to nothing and every later read of foo
+			// answered empty rather than saying why.
+			target := r.literalAssign(as.Value)
+			if !validNameRefTarget(target) {
+				if target == "" {
+					r.errf("%s: `%s': not a valid identifier\n", variant, target)
+				} else {
+					r.errf("%s: `%s': invalid variable name for name reference\n", variant, target)
+				}
+				r.exit.code = 1
+				continue
+			}
+			if target == name {
+				r.errf("%s: %s: nameref variable self references not allowed\n", variant, name)
+				r.exit.code = 1
+				continue
+			}
 		}
 		vr := r.lookupVar(name)
 		freshLocal := false
@@ -2097,6 +2133,39 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	}
 	r.exit, r.lastExit = oldExit, oldLastExit // traps on EXIT or ERR should not modify the result
 	return code
+}
+
+// nameRefElem splits a nameref target that names an array element into
+// the array's name and its subscript, parsed as arithmetic.
+func (r *Runner) nameRefElem(target string) (string, syntax.ArithmExpr, bool) {
+	base, sub, ok := cutElemSubscript(target)
+	if !ok {
+		return "", nil, false
+	}
+	idx, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
+	if err != nil || idx == nil {
+		return "", nil, false
+	}
+	return base, idx, true
+}
+
+// withIndex restates an assignment as one to an array element.
+func withIndex(as *syntax.Assign, index syntax.ArithmExpr) *syntax.Assign {
+	out := *as
+	out.Index = index
+	return &out
+}
+
+// validNameRefTarget reports whether a nameref may point at target: a
+// plain name, or a name with a subscript. Measured against bash 5.3 —
+// `a[1]`, `a[$i]` and `a[@]` are all accepted, `a.b` and `foo bar` are
+// not (#389).
+func validNameRefTarget(target string) bool {
+	if syntax.ValidName(target) {
+		return true
+	}
+	base, _, ok := cutElemSubscript(target)
+	return ok && syntax.ValidName(base)
 }
 
 // isCaseMode reports whether a declare mode is one of the -u/-l/-c
