@@ -2041,6 +2041,28 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	}
 	name := args[0]
 	if body := r.Funcs[name]; body != nil {
+		// FUNCNEST bounds how deep function calls may nest (#349). The
+		// violation is the readonly-assignment shape: the whole function
+		// stack unwinds — not even a `||` on a caller's line sees the
+		// status — and the top level carries on with status 1, so a
+		// script file continues at its next line while -c, one input
+		// unit, loses its remainder and exits 1. Only a wholly numeric,
+		// positive value binds; bash ignores FUNCNEST=0, negatives, and
+		// anything non-numeric.
+		if limit, err := strconv.Atoi(r.envGet("FUNCNEST")); err == nil && limit > 0 {
+			depth := 0
+			for _, frame := range r.frames {
+				if frame.isFunc {
+					depth++
+				}
+			}
+			if depth >= limit {
+				r.errf("%s: maximum function nesting level exceeded (%d)\n", name, limit)
+				r.exit.code = 1
+				r.exit.aborting = true
+				return
+			}
+		}
 		// stack them to support nested func calls
 		oldParams := r.Params
 		r.Params = args[1:]
