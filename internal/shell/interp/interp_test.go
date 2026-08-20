@@ -3542,6 +3542,18 @@ done <<< 2`,
 		"shopt: unsupported option \"-q\"\nexit status 2 #IGNORE",
 	},
 
+	// Single quotes inside a double-quoted ${x+word} are literal text
+	// (#359), and what sits between them still expands; $'..' expands
+	// there, a heredoc's ${x+word} keeps the span as written, and a
+	// pattern operator's quotes really do quote.
+	{`echo "foo ${IFS+'bar'} baz"`, "foo 'bar' baz\n"},
+	{`a=foo; echo "${IFS+'$a'}"`, "'foo'\n"},
+	{`a=foo; echo "${IFS+'\$a'}"`, "'$a'\n"},
+	{`unset u; echo "${u-'x'}"`, "'x'\n"},
+	{`a=foo; echo "${a#'f'}"`, "oo\n"},
+	{`x=1; echo ${x:+'q'}`, "q\n"},
+	{"unset n; cat <<EOF\n${n-a$'\\01'b}\nEOF", "a$'\\01'b\n"},
+
 	// The word in an unquoted ${param op word} expands in the caller's
 	// context (#358): quoted nulls make fields, quoted spaces are
 	// protected, and an inner "$@" splits into the parameters — the flat
