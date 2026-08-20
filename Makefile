@@ -14,10 +14,10 @@ all: build
 
 build:
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/koi
+	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/koi
 
 install:
-	go install $(LDFLAGS) ./cmd/koi
+	CGO_ENABLED=0 go install $(LDFLAGS) ./cmd/koi
 
 # Install where an agent actually finds koi, and keep the symlinks current.
 #
