@@ -54,11 +54,19 @@ func CaptureIgnoredSignals() {
 }
 
 // ignoredSignalOptions passes the captured set to a runner.
+// historyVarOptions installs the assignment hooks the history layer
+// needs, which today is HISTFILESIZE's truncation (#491).
+func historyVarOptions() []interp.RunnerOption {
+	return []interp.RunnerOption{
+		interp.VarHook([]string{"HISTFILESIZE"}, historyFileSizeHook),
+	}
+}
+
 func ignoredSignalOptions() []interp.RunnerOption {
 	if len(ignoredSignals) == 0 {
-		return nil
+		return historyVarOptions()
 	}
-	return []interp.RunnerOption{interp.IgnoredSignals(ignoredSignals)}
+	return append(historyVarOptions(), interp.IgnoredSignals(ignoredSignals))
 }
 
 func Run(ctx context.Context, login, interactive bool) error {

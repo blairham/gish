@@ -28,12 +28,19 @@ package repl
 // again), while `-n` leaves the append position alone (a later `-a`
 // writes the pre-read entries *and* the read lines).
 //
-// # Not implemented, deliberately
+// # HISTFILESIZE
 //
-// HISTFILESIZE truncation. Assigning HISTSIZE with HISTFILESIZE unset
-// makes bash truncate $HISTFILE on the spot — a write to a file the
-// script never asked to write — and that is its own feature with its own
-// measurements rather than a detail of these three.
+// Assigning HISTFILESIZE truncates $HISTFILE on the spot — a write to a
+// file the script never asked to write, which is why it was left out
+// until it could be measured (#491). Two rules, both measured against
+// bash 5.3 rather than reasoned from the manual:
+//
+//   - Assigning HISTFILESIZE truncates the file to that many lines
+//     immediately, whether or not history is on. Zero empties it.
+//   - Enabling history truncates to HISTFILESIZE, which defaults to
+//     HISTSIZE when unset. That is why `HISTFILE=f; HISTSIZE=3; set -o
+//     history` truncates and `set -o history; HISTSIZE=3` does not:
+//     assigning HISTSIZE is not itself an action.
 
 import (
 	"bufio"
@@ -61,10 +68,64 @@ import (
 func historyEnableCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 	return func(ctx context.Context, args []string) ([]string, error) {
 		if len(args) == 3 && args[0] == "set" && args[1] == "-o" && args[2] == "history" {
+			// Truncation comes first: bash trims the file as the option
+			// flips, so what the preload reads is the trimmed file.
+			historyTruncateFile("")
 			historyPreload(interp.HandlerCtx(ctx))
 		}
 		return next(ctx, args)
 	}
+}
+
+// historyTruncateFile trims $HISTFILE to its last n lines, where n is
+// the given value, or HISTFILESIZE, or HISTSIZE (#491).
+//
+// It is called for an assignment to HISTFILESIZE, where the value is
+// the one just assigned, and when history is enabled, where it is not.
+func historyTruncateFile(assigned string) {
+	runner := sessionRunner()
+	path := sessionVarOf(runner, "HISTFILE")
+	if path == "" {
+		return
+	}
+	raw := assigned
+	if raw == "" {
+		raw = sessionVarOf(runner, "HISTFILESIZE")
+	}
+	if raw == "" {
+		raw = sessionVarOf(runner, "HISTSIZE")
+	}
+	limit, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || limit < 0 {
+		// A value that is not a number is not a limit; bash leaves the
+		// file alone rather than emptying it.
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = nil
+	}
+	if len(lines) <= limit {
+		return
+	}
+	out := ""
+	if limit > 0 {
+		out = strings.Join(lines[len(lines)-limit:], "\n") + "\n"
+	}
+	// Written in place rather than through a temporary: the file's
+	// identity is what $HISTFILE names, and a rename would break a
+	// shell that has it open.
+	_ = os.WriteFile(path, []byte(out), 0o600)
+}
+
+// historyFileSizeHook is what the interpreter calls when HISTFILESIZE
+// is assigned.
+func historyFileSizeHook(_ string, value string) {
+	historyTruncateFile(value)
 }
 
 // historyPreload loads $HISTFILE into the session list, once per shell.

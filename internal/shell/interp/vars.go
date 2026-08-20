@@ -410,6 +410,12 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 		}
 		r.optState = getopts{argidx: n - 1}
 	}
+	if hook := r.varHooks[name]; hook != nil {
+		// The shell around the interpreter asked to hear about this
+		// name: assigning it is an action rather than just a value
+		// (#491).
+		hook(name, vr.Str)
+	}
 	if name == "GLOBIGNORE" && vr.Kind == expand.String && vr.Str != "" {
 		// Assigning a non-null GLOBIGNORE turns the dotglob option on.
 		// bash mutates the real option — shopt reports it on and

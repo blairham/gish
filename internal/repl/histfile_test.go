@@ -71,3 +71,49 @@ func TestHistoryPreloadOnlyInAmbientSessions(t *testing.T) {
 		t.Fatalf("appendPos=%d fileLines=%d, want 1 and 1 — the preload marks its entries written", pos, lines)
 	}
 }
+
+// TestHistoryTruncateFileRules pins #491's two measured rules: the
+// truncation is HISTFILESIZE's, and HISTSIZE only supplies its default.
+//
+// The helper is exercised directly rather than through a shell, because
+// what is being pinned is *which* limit applies and how many lines
+// survive — the end-to-end path is covered by the differential probes
+// recorded in the issue.
+func TestHistoryTruncateFileRules(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		assigned string
+		want     string
+	}{
+		{name: "assigned wins", assigned: "2", want: "4\n5\n"},
+		{name: "zero empties", assigned: "0", want: ""},
+		{name: "larger than the file leaves it", assigned: "99", want: "1\n2\n3\n4\n5\n"},
+		{name: "not a number leaves it", assigned: "abc", want: "1\n2\n3\n4\n5\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "hf")
+			if err := os.WriteFile(path, []byte("1\n2\n3\n4\n5\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// An explicit environment, never the process's, for the
+			// reason the test above spells out.
+			runner, err := interp.New(
+				interp.Dir(dir),
+				interp.Env(expand.ListEnviron("HISTFILE="+path)),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			setSessionRunner(runner)
+			historyTruncateFile(tc.assigned)
+			got, rerr := os.ReadFile(path)
+			if rerr != nil {
+				t.Fatal(rerr)
+			}
+			if string(got) != tc.want {
+				t.Errorf("file is %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
