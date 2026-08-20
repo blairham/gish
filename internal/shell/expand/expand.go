@@ -133,6 +133,12 @@ type Config struct {
 	// which is how "${a#'f'}" strips an f.
 	paramOuterQuote quoteLevel
 	paramQuoteCtx   quoteLevel
+
+	// assignValue marks that a variable assignment's value is being
+	// expanded, where bash also tilde-expands after each unquoted colon
+	// (#364): p=/bin:~/bin reads the home directory. Set by
+	// [LiteralAssign] only.
+	assignValue bool
 }
 
 // UnexpectedCommandError is returned if a command substitution is encountered
@@ -228,6 +234,20 @@ func Literal(cfg *Config, word *syntax.Word) (string, error) {
 		return "", err
 	}
 	return cfg.fieldJoin(field), nil
+}
+
+// LiteralAssign is [Literal] for a variable assignment's value, where
+// bash also tilde-expands after each unquoted colon (#364).
+func LiteralAssign(cfg *Config, word *syntax.Word) (string, error) {
+	if word == nil {
+		return "", nil
+	}
+	cfg = prepareConfig(cfg)
+	old := cfg.assignValue
+	cfg.assignValue = true
+	s, err := Literal(cfg, word)
+	cfg.assignValue = old
+	return s, err
 }
 
 // Document expands a single shell word as if it were a here-document body.
@@ -660,6 +680,11 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 					s = prefix + rest
 				}
 			}
+			if cfg.assignValue && ql == quoteNone {
+				// Before backslash processing, so an escaped colon does
+				// not read as a tilde position.
+				s = cfg.expandTildesAfterColons(s, false)
+			}
 			if (ql == quoteDouble || ql == quoteHeredoc) && strings.Contains(s, "\\") {
 				sb := cfg.strBuilder()
 				for i := 0; i < len(s); i++ {
@@ -882,6 +907,12 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 					})
 				}
 				s = rest
+				// An argument shaped like an assignment tilde-expands
+				// after its = and after each colon in the value (#364):
+				// `make FOO=~/mumble` hands make a path.
+				if eq := strings.IndexByte(s, '='); eq > 0 && syntax.ValidName(s[:eq]) {
+					s = s[:eq+1] + cfg.expandTildesAfterColons(s[eq+1:], true)
+				}
 			}
 			if strings.Contains(s, "\\") {
 				sb := cfg.strBuilder()
@@ -1321,13 +1352,39 @@ func (cfg *Config) sliceElems(pe *syntax.ParamExp, elems []string, indexes []int
 	return elems
 }
 
+// expandTildesAfterColons tilde-expands each `:~...` segment of an
+// assignment-style value (#364); expandStart also expands a tilde at
+// the string's own beginning, for the segment right after an `=`.
+func (cfg *Config) expandTildesAfterColons(s string, expandStart bool) string {
+	if !strings.Contains(s, "~") {
+		return s
+	}
+	pieces := strings.Split(s, ":")
+	changed := false
+	for i, p := range pieces {
+		if i == 0 && !expandStart {
+			continue
+		}
+		if prefix, rest := cfg.expandUser(p, false); prefix != "" {
+			pieces[i] = prefix + rest
+			changed = true
+		}
+	}
+	if !changed {
+		return s
+	}
+	return strings.Join(pieces, ":")
+}
+
 func (cfg *Config) expandUser(field string, moreFields bool) (prefix, rest string) {
 	name, ok := strings.CutPrefix(field, "~")
 	if !ok {
 		// No tilde prefix to expand, e.g. "foo".
 		return "", field
 	}
-	i := strings.IndexByte(name, '/')
+	// A colon ends a tilde prefix like a slash does (#364): `echo ~:x`
+	// expands in bash, and PATH-style assignment values depend on it.
+	i := strings.IndexAny(name, "/:")
 	if i < 0 && moreFields {
 		// There is a tilde prefix, but followed by more fields, e.g. "~'foo'".
 		// We only proceed if an unquoted slash was found in this field, e.g. "~/'foo'".
@@ -1336,6 +1393,20 @@ func (cfg *Config) expandUser(field string, moreFields bool) (prefix, rest strin
 	if i >= 0 {
 		rest = name[i:]
 		name = name[:i]
+	}
+	// ~+ and ~- are the directory pair cd maintains (#364); when the
+	// variable is unset the tilde stays literal, as bash leaves it.
+	switch name {
+	case "+":
+		if vr := cfg.Env.Get("PWD"); vr.IsSet() {
+			return vr.String(), rest
+		}
+		return "", field
+	case "-":
+		if vr := cfg.Env.Get("OLDPWD"); vr.IsSet() {
+			return vr.String(), rest
+		}
+		return "", field
 	}
 	if name == "" {
 		// Current user; try via "HOME", otherwise fall back to the

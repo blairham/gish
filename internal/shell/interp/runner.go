@@ -261,6 +261,14 @@ func (r *Runner) literal(word *syntax.Word) string {
 	return str
 }
 
+// literalAssign expands an assignment's value, where a tilde also
+// expands after each unquoted colon (#364).
+func (r *Runner) literalAssign(word *syntax.Word) string {
+	str, err := expand.LiteralAssign(r.ecfg, word)
+	r.expandErr(err)
+	return str
+}
+
 func (r *Runner) document(word *syntax.Word) string {
 	str, err := expand.Document(r.ecfg, word)
 	r.expandErr(err)
