@@ -235,7 +235,21 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		}
 		str = join(elems)
 	case pe.Exp != nil:
+		// See [Config.paramQuoteCtx]: only the default/alternate/assign/
+		// error family lets the surrounding quotes leak into how the
+		// word reads its own single quotes.
+		literalCtx := quoteNone
+		switch pe.Exp.Op {
+		case syntax.AlternateUnset, syntax.AlternateUnsetOrNull,
+			syntax.DefaultUnset, syntax.DefaultUnsetOrNull,
+			syntax.ErrorUnset, syntax.ErrorUnsetOrNull,
+			syntax.AssignUnset, syntax.AssignUnsetOrNull:
+			literalCtx = cfg.paramOuterQuote
+		}
+		oldCtx := cfg.paramQuoteCtx
+		cfg.paramQuoteCtx = literalCtx
 		arg, err := Literal(cfg, pe.Exp.Word)
+		cfg.paramQuoteCtx = oldCtx
 		if err != nil {
 			return "", err
 		}

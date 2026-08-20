@@ -120,6 +120,19 @@ type Config struct {
 	// passed.
 	wordResult   *syntax.Word
 	wordResultPe *syntax.ParamExp
+
+	// paramOuterQuote is the quoting context surrounding the parameter
+	// expansion being evaluated — set around each paramExp call — and
+	// paramQuoteCtx is that context made visible to the operator word's
+	// own expansion, for the ${x+word} family only. Inside a
+	// double-quoted ${...}, bash keeps a single quote *literal* (#359):
+	// "${IFS+'bar'}" prints 'bar' with its quotes, and "${IFS+'$a'}"
+	// still expands $a between them. Inside a heredoc's ${...} the whole
+	// quoted span stays as written, $'..' included. Pattern and
+	// replacement operators are excluded — there quotes really do quote,
+	// which is how "${a#'f'}" strips an f.
+	paramOuterQuote quoteLevel
+	paramQuoteCtx   quoteLevel
 }
 
 // UnexpectedCommandError is returned if a command substitution is encountered
@@ -630,6 +643,32 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 			s, _, _ = strings.Cut(s, "\x00") // TODO: why is this needed?
 			field = append(field, fieldPart{val: s})
 		case *syntax.SglQuoted:
+			if ql == quoteNone && cfg.paramQuoteCtx == quoteHeredoc {
+				// A heredoc's ${x+word}: the quoted span stays exactly
+				// as written, $'..' included (#359).
+				val := "'" + wp.Value + "'"
+				if wp.Dollar {
+					val = "$" + val
+				}
+				field = append(field, fieldPart{quote: quoteSingle, val: val})
+				continue
+			}
+			if ql == quoteNone && cfg.paramQuoteCtx == quoteDouble && !wp.Dollar {
+				// A double-quoted ${x+word}: the single quotes are
+				// literal text and what sits between them still expands
+				// (#359) — "${IFS+'$a'}" prints the value in quotes. The
+				// span re-reads under heredoc rules, which are exactly
+				// that: quotes literal, expansions live.
+				w, err := syntax.NewParser().Document(strings.NewReader("'" + wp.Value + "'"))
+				if err == nil && w != nil {
+					sub, err := cfg.wordFieldMode(w.Parts, quoteHeredoc, false)
+					if err != nil {
+						return nil, err
+					}
+					field = append(field, sub...)
+					continue
+				}
+			}
 			fp := fieldPart{quote: quoteSingle, val: wp.Value}
 			if wp.Dollar {
 				fp.val, _, _ = Format(cfg, fp.val, nil)
@@ -646,7 +685,10 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 				field = append(field, part)
 			}
 		case *syntax.ParamExp:
+			oldOuter := cfg.paramOuterQuote
+			cfg.paramOuterQuote = ql
 			val, err := cfg.paramExp(wp)
+			cfg.paramOuterQuote = oldOuter
 			if err != nil {
 				return nil, err
 			}
