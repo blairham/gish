@@ -2,9 +2,12 @@ package interp
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+	"time"
 
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -88,6 +91,34 @@ func (t *tracer) newLineFlush() {
 	t.flush()
 	// reset state
 	t.needsPlus = true
+}
+
+// tracedCall runs a simple command through [Runner.call] bracketed by the
+// hook installed with [TraceHook] (#474): position and unexpanded text
+// are taken before the call, exit status and duration after it. The argv
+// is cloned because a sink may hold the event past this command's life.
+func (r *Runner) tracedCall(ctx context.Context, cm *syntax.CallExpr, fields []string) {
+	pos := cm.Args[0].Pos()
+	var sb strings.Builder
+	if err := syntax.NewPrinter().Print(&sb, cm); err != nil {
+		sb.Reset() // a node that cannot print still traces, with empty text
+	}
+	ev := TraceEvent{
+		Src:           r.currentSource(),
+		Line:          pos.Line(),
+		Col:           pos.Col(),
+		Cmd:           sb.String(),
+		Expanded:      slices.Clone(fields),
+		StartedUnixMs: time.Now().UnixMilli(),
+	}
+	if r.inFunction() {
+		ev.Func = r.frames[0].name
+	}
+	start := time.Now()
+	r.call(ctx, pos, fields)
+	ev.DurationMs = time.Since(start).Milliseconds()
+	ev.Exit = int(r.exit.code)
+	r.traceHook(ev)
 }
 
 // call prints a command and its arguments with varying formats depending on the cmd type,
