@@ -4727,7 +4727,12 @@ set +o xtrace
 	},
 	{
 		"readonly a=1; echo $a; unset a; echo $a",
-		"1\na: readonly variable\n1\n #IGNORE bash prints a warning",
+		// The refusal is the command's, and its status says so (#535).
+		// Not bash-confirmable: bash prefixes the diagnostic with
+		// `bash: line 1:` and koi does not (#120), while the script's
+		// own status is 0 — so neither JUSTERR nor a plain compare
+		// fits.
+		"1\nunset: a: cannot unset: readonly variable\n1\n #IGNORE bash prefixes the diagnostic with its own name and line",
 	},
 	{
 		"f() { local a=1; echo $a; unset a; echo $a; }; f",
@@ -7007,7 +7012,7 @@ var runTestsUnix = []runTest{
 	},
 	{
 		`unset UID`,
-		"UID: readonly variable\n #IGNORE",
+		"unset: UID: cannot unset: readonly variable\nexit status 1 #JUSTERR",
 	},
 	{
 		`test -n "$EUID" && echo OK`,
@@ -7019,12 +7024,15 @@ var runTestsUnix = []runTest{
 	},
 	{
 		`unset EUID`,
-		"EUID: readonly variable\n #IGNORE",
+		"unset: EUID: cannot unset: readonly variable\nexit status 1 #JUSTERR",
 	},
 	// GID is not set in bash
 	{
+		// GID is koi's own — bash has GROUPS and no GID at all, so its
+		// `unset GID` is a silent no-op on a variable that was never
+		// there. The message and status are the readonly ones (#535).
 		`unset GID`,
-		"GID: readonly variable\n #IGNORE",
+		"unset: GID: cannot unset: readonly variable\nexit status 1 #IGNORE GID is not a bash variable",
 	},
 	{
 		`[[ -z $GID ]] && echo "GID not set"`,

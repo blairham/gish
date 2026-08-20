@@ -290,6 +290,16 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			if name, sub, ok := cutElemSubscript(arg); vars && ok {
 				r.unsetElem(name, sub)
 			} else if vars && r.lookupVar(arg).IsSet() {
+				if r.lookupVar(arg).ReadOnly {
+					// The refusal is the command's, and it has to be
+					// visible as one: koi reported the variable's state
+					// and answered 0, so `unset R || die` was told the
+					// unset had worked (#535). bash names the builtin
+					// and what it could not do.
+					r.errf("unset: %s: cannot unset: readonly variable\n", arg)
+					exit.code = 1
+					continue
+				}
 				r.delVar(arg)
 			} else if _, ok := r.Funcs[arg]; ok && funcs {
 				delete(r.Funcs, arg)
