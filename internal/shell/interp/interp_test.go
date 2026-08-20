@@ -3403,6 +3403,15 @@ done <<< 2`,
 	{"shopt -s lastpipe; shopt -u lastpipe; echo foo | read x; echo \"x=[$x]\"", "x=[]\n"},
 	{"shopt lastpipe | grep 'off$' | wc -l | tr -d ' '", "1\n"},
 	{"set -o pipefail; shopt -s lastpipe; false | true; echo st=$?", "st=1\n"},
+	// declare/typeset behind a prefix assignment (#277): the prefix keeps
+	// the word from being a keyword, so these arrive at the builtin
+	// dispatch, which refused them — `ref=xxx typeset -p ref` answered
+	// "unsupported builtin" while `typeset -p ref` worked.
+	{"x=1 declare -p x", "declare -x x=\"1\"\n"},
+	{"x=1 typeset -p x", "declare -x x=\"1\"\n"},
+	{"v=1; x=2 declare -p v", "declare -- v=\"1\"\n"},
+	{"x=1 declare -x y=2; declare -p y", "declare -x y=\"2\"\n"},
+	{"ref=xxx typeset -p nosuch 2>/dev/null; echo st=$?", "st=1\n"},
 	{"shopt extglob | grep 'off' | wc -l | tr -d ' '", "1\n"},
 	{
 		"shopt inherit_errexit",

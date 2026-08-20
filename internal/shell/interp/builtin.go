@@ -1402,6 +1402,36 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 	case "jobs":
 		return r.jobsBuiltin(args)
 
+	case "declare", "typeset", "local", "export", "readonly", "nameref":
+		// The parser produces a DeclClause when one of these words sits
+		// at command position, so this path runs only when something kept
+		// it from being a keyword — a prefix assignment is the case
+		// bash's own suite exercises (`ref=xxx typeset -p ref var`,
+		// nameref14.sub), and it answered "unsupported builtin" (#277).
+		// The args arrive already expanded; wrapping each in a literal
+		// Assign is exactly what flattenAssigns builds for a naked word,
+		// so no value is expanded twice.
+		assigns := make([]*syntax.Assign, 0, len(args))
+		for _, field := range args {
+			as := &syntax.Assign{}
+			nm, val, ok := strings.Cut(field, "=")
+			as.Name = &syntax.Lit{Value: nm}
+			if !ok {
+				as.Naked = true
+			} else {
+				as.Value = &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: val}}}
+			}
+			assigns = append(assigns, as)
+		}
+		// declClause reports through r.exit, the way the DeclClause node
+		// does; run it against a clean status and hand the result back
+		// through the builtin contract.
+		oldExit := r.exit
+		r.exit = exitStatus{}
+		r.declClause(name, assigns)
+		exit, r.exit = r.exit, oldExit
+		return exit
+
 	default:
 		return failf(2, "%s: unsupported builtin\n", name)
 	}

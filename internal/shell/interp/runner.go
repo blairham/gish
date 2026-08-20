@@ -1137,226 +1137,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.exit.code = 1
 		}
 	case *syntax.DeclClause:
-		local, global := false, false
-		var modes []string
-		valType := ""
-		declQuery := "" // "-f", "-F" or "-p" for query mode
-		namedAny := false
-		unref := false // "+n": detach a nameref
-		switch cm.Variant.Value {
-		case "declare":
-			// When used in a function, "declare" acts as "local"
-			// unless the "-g" option is used.
-			local = r.inFunc
-		case "local":
-			if !r.inFunc {
-				r.errf("local: can only be used in a function\n")
-				r.exit.code = 1
-				return
-			}
-			local = true
-		case "export":
-			modes = append(modes, "-x")
-		case "readonly":
-			modes = append(modes, "-r")
-		case "nameref":
-			valType = "-n"
-		}
-	assignLoop:
-		for as := range r.flattenAssigns(cm.Args) {
-			fp := flagParser{remaining: []string{as.Name.Value}}
-			// Note that this consumes every flag clustered into the one
-			// argument before moving on; "declare -ri" is -r and -i, and
-			// stopping after the first silently dropped the rest.
-			sawFlag := fp.more()
-			for fp.more() {
-				switch flag := fp.flag(); flag {
-				case "-x", "-r", "-i", "+i":
-					modes = append(modes, flag)
-				case "-a", "-A", "-n":
-					valType = flag
-				case "+n":
-					unref = true
-				case "-g":
-					global = true
-				case "-f", "-p", "-F":
-					declQuery = flag
-				default:
-					r.errf("declare: invalid option %q\n", flag)
-					r.exit.code = 2
-					return
-				}
-			}
-			if sawFlag {
-				continue assignLoop
-			}
-			name := as.Name.Value
-			namedAny = true
-			if !syntax.ValidName(name) {
-				r.errf("declare: invalid name %q\n", name)
-				r.exit.code = 1
-				return
-			}
-			if declQuery == "-F" {
-				// declare -F name: print the name alone, which is how a
-				// harness enumerates functions without their bodies. Bash
-				// returns 1 for a missing function and carries on with the
-				// names which follow.
-				if r.Funcs[name] != nil {
-					r.outf("%s\n", name)
-				} else {
-					r.exit.code = 1
-				}
-				continue
-			}
-			if declQuery == "-f" {
-				// declare -f name: print function definition.
-				// Bash silently returns exit 1 for missing functions.
-				if body := r.Funcs[name]; body != nil {
-					r.printFuncDef(name, body)
-				} else {
-					r.exit.code = 1
-				}
-				continue
-			}
-			if declQuery == "-p" {
-				// declare -p name: print variable with attributes.
-				vr := r.lookupVar(name)
-				if !vr.Declared() {
-					r.errf("declare: %s: not found\n", name)
-					r.exit.code = 1
-					continue
-				}
-				flags := vr.Flags()
-				if flags == "" {
-					flags = "-"
-				}
-				switch vr.Kind {
-				case expand.Indexed:
-					r.outf("declare -%s %s=(", flags, name)
-					for i, v := range vr.List {
-						if i > 0 {
-							r.out(" ")
-						}
-						idx := i
-						if vr.Indexes != nil {
-							idx = vr.Indexes[i]
-						}
-						r.outf("[%d]=%q", idx, v)
-					}
-					r.out(")\n")
-				case expand.Associative:
-					r.outf("declare -%s %s=(", flags, name)
-					first := true
-					for k, v := range vr.Map {
-						if !first {
-							r.out(" ")
-						}
-						r.outf("[%s]=%q", k, v)
-						first = false
-					}
-					r.out(")\n")
-				default:
-					// Declared but never set prints bare: `declare -n foo`
-					// and `declare -x foo`, not `... foo=""`. The two are
-					// the same rule, and it turns on Set rather than on
-					// the value being empty — `foo=` *is* set, and bash
-					// prints `declare -- foo=""` for it.
-					if !vr.Set {
-						r.outf("declare -%s %s\n", flags, name)
-						continue
-					}
-					r.outf("declare -%s %s=%q\n", flags, name, vr.Str)
-				}
-				continue
-			}
-			if unref {
-				r.unsetNameRef(name, as)
-				continue
-			}
-			vr := r.lookupVar(name)
-			// The integer attribute has to be settled before the value is
-			// computed, since it is what decides whether the value is an
-			// arithmetic expression; the other modes are applied afterwards.
-			if slices.Contains(modes, "-i") {
-				vr.Integer = true
-			} else if slices.Contains(modes, "+i") {
-				vr.Integer = false
-			}
-			if as.Naked {
-				switch valType {
-				case "-A":
-					vr.Kind = expand.Associative
-				case "-n":
-					// `declare -n foo` with no value *promotes* an
-					// existing variable: bash reads foo's current value
-					// as the name it now points at, so
-					//
-					//	bar=one; foo=bar; declare -n foo; echo $foo
-					//
-					// prints "one". Keeping the value and not the
-					// attribute — which is what KeepValue did here — left
-					// foo an ordinary variable holding the string "bar",
-					// so every later read gave the target's *name* where
-					// bash gives its value (#277).
-					vr.Kind = expand.NameRef
-				default:
-					vr.Kind = expand.KeepValue
-				}
-			} else {
-				name, vr = r.assignVal(name, vr, as, valType)
-			}
-			if global {
-				vr.Local = false
-			} else if local {
-				vr.Local = true
-			}
-			for _, mode := range modes {
-				switch mode {
-				case "-x":
-					vr.Exported = true
-				case "-r":
-					vr.ReadOnly = true
-				case "-i":
-					vr.Integer = true
-				case "+i":
-					vr.Integer = false
-				}
-			}
-			r.setVar(name, vr)
-		}
-		if !namedAny && valType == "-n" && declQuery == "" && !unref {
-			// A bare `declare -n` lists the namerefs, the way a bare
-			// `declare -f` lists the functions. Sorted, as bash sorts.
-			var names []string
-			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
-				if vr.Kind == expand.NameRef {
-					names = append(names, name)
-				}
-				return true
-			})
-			slices.Sort(names)
-			for _, name := range names {
-				r.outf("declare -n %s=%q\n", name, r.lookupVar(name).Str)
-			}
-		}
-		if !namedAny && (declQuery == "-f" || declQuery == "-F") {
-			// A bare "declare -f" or "declare -F" lists every function, sorted
-			// by name as bash does. Claude Code's shell snapshot uses the
-			// latter to carry the user's functions into an agent subshell.
-			names := make([]string, 0, len(r.Funcs))
-			for name := range r.Funcs {
-				names = append(names, name)
-			}
-			slices.Sort(names)
-			for _, name := range names {
-				if declQuery == "-F" {
-					r.outf("declare -f %s\n", name)
-				} else {
-					r.printFuncDef(name, r.Funcs[name])
-				}
-			}
-		}
+		r.declClause(cm.Variant.Value, cm.Args)
 	case *syntax.CoprocClause:
 		r.coproc(ctx, cm)
 	case *syntax.TimeClause:
@@ -1379,6 +1160,235 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		// Should only happen if we forgot a case above.
 		r.errf("unhandled command node: %T\n", cm)
 		r.exit.code = 1
+	}
+}
+
+// declClause implements declare/typeset/local/export/readonly/nameref.
+// It serves two callers: the DeclClause node the parser produces when the
+// word sits at command position, and the builtin dispatch, for the call
+// form the parser produces when a prefix assignment keeps the word from
+// being a keyword -- `ref=xxx typeset -p ref` reached "unsupported
+// builtin" while `typeset -p ref` worked (#277).
+func (r *Runner) declClause(variant string, args []*syntax.Assign) {
+	local, global := false, false
+	var modes []string
+	valType := ""
+	declQuery := "" // "-f", "-F" or "-p" for query mode
+	namedAny := false
+	unref := false // "+n": detach a nameref
+	switch variant {
+	case "declare":
+		// When used in a function, "declare" acts as "local"
+		// unless the "-g" option is used.
+		local = r.inFunc
+	case "local":
+		if !r.inFunc {
+			r.errf("local: can only be used in a function\n")
+			r.exit.code = 1
+			return
+		}
+		local = true
+	case "export":
+		modes = append(modes, "-x")
+	case "readonly":
+		modes = append(modes, "-r")
+	case "nameref":
+		valType = "-n"
+	}
+assignLoop:
+	for as := range r.flattenAssigns(args) {
+		fp := flagParser{remaining: []string{as.Name.Value}}
+		// Note that this consumes every flag clustered into the one
+		// argument before moving on; "declare -ri" is -r and -i, and
+		// stopping after the first silently dropped the rest.
+		sawFlag := fp.more()
+		for fp.more() {
+			switch flag := fp.flag(); flag {
+			case "-x", "-r", "-i", "+i":
+				modes = append(modes, flag)
+			case "-a", "-A", "-n":
+				valType = flag
+			case "+n":
+				unref = true
+			case "-g":
+				global = true
+			case "-f", "-p", "-F":
+				declQuery = flag
+			default:
+				r.errf("declare: invalid option %q\n", flag)
+				r.exit.code = 2
+				return
+			}
+		}
+		if sawFlag {
+			continue assignLoop
+		}
+		name := as.Name.Value
+		namedAny = true
+		if !syntax.ValidName(name) {
+			r.errf("declare: invalid name %q\n", name)
+			r.exit.code = 1
+			return
+		}
+		if declQuery == "-F" {
+			// declare -F name: print the name alone, which is how a
+			// harness enumerates functions without their bodies. Bash
+			// returns 1 for a missing function and carries on with the
+			// names which follow.
+			if r.Funcs[name] != nil {
+				r.outf("%s\n", name)
+			} else {
+				r.exit.code = 1
+			}
+			continue
+		}
+		if declQuery == "-f" {
+			// declare -f name: print function definition.
+			// Bash silently returns exit 1 for missing functions.
+			if body := r.Funcs[name]; body != nil {
+				r.printFuncDef(name, body)
+			} else {
+				r.exit.code = 1
+			}
+			continue
+		}
+		if declQuery == "-p" {
+			// declare -p name: print variable with attributes.
+			vr := r.lookupVar(name)
+			if !vr.Declared() {
+				r.errf("declare: %s: not found\n", name)
+				r.exit.code = 1
+				continue
+			}
+			flags := vr.Flags()
+			if flags == "" {
+				flags = "-"
+			}
+			switch vr.Kind {
+			case expand.Indexed:
+				r.outf("declare -%s %s=(", flags, name)
+				for i, v := range vr.List {
+					if i > 0 {
+						r.out(" ")
+					}
+					idx := i
+					if vr.Indexes != nil {
+						idx = vr.Indexes[i]
+					}
+					r.outf("[%d]=%q", idx, v)
+				}
+				r.out(")\n")
+			case expand.Associative:
+				r.outf("declare -%s %s=(", flags, name)
+				first := true
+				for k, v := range vr.Map {
+					if !first {
+						r.out(" ")
+					}
+					r.outf("[%s]=%q", k, v)
+					first = false
+				}
+				r.out(")\n")
+			default:
+				// Declared but never set prints bare: `declare -n foo`
+				// and `declare -x foo`, not `... foo=""`. The two are
+				// the same rule, and it turns on Set rather than on
+				// the value being empty — `foo=` *is* set, and bash
+				// prints `declare -- foo=""` for it.
+				if !vr.Set {
+					r.outf("declare -%s %s\n", flags, name)
+					continue
+				}
+				r.outf("declare -%s %s=%q\n", flags, name, vr.Str)
+			}
+			continue
+		}
+		if unref {
+			r.unsetNameRef(name, as)
+			continue
+		}
+		vr := r.lookupVar(name)
+		// The integer attribute has to be settled before the value is
+		// computed, since it is what decides whether the value is an
+		// arithmetic expression; the other modes are applied afterwards.
+		if slices.Contains(modes, "-i") {
+			vr.Integer = true
+		} else if slices.Contains(modes, "+i") {
+			vr.Integer = false
+		}
+		if as.Naked {
+			switch valType {
+			case "-A":
+				vr.Kind = expand.Associative
+			case "-n":
+				// `declare -n foo` with no value *promotes* an
+				// existing variable: bash reads foo's current value
+				// as the name it now points at, so
+				//
+				//	bar=one; foo=bar; declare -n foo; echo $foo
+				//
+				// prints "one". Keeping the value and not the
+				// attribute — which is what KeepValue did here — left
+				// foo an ordinary variable holding the string "bar",
+				// so every later read gave the target's *name* where
+				// bash gives its value (#277).
+				vr.Kind = expand.NameRef
+			default:
+				vr.Kind = expand.KeepValue
+			}
+		} else {
+			name, vr = r.assignVal(name, vr, as, valType)
+		}
+		if global {
+			vr.Local = false
+		} else if local {
+			vr.Local = true
+		}
+		for _, mode := range modes {
+			switch mode {
+			case "-x":
+				vr.Exported = true
+			case "-r":
+				vr.ReadOnly = true
+			case "-i":
+				vr.Integer = true
+			case "+i":
+				vr.Integer = false
+			}
+		}
+		r.setVar(name, vr)
+	}
+	if !namedAny && valType == "-n" && declQuery == "" && !unref {
+		// A bare `declare -n` lists the namerefs, the way a bare
+		// `declare -f` lists the functions. Sorted, as bash sorts.
+		var names []string
+		r.writeEnv.Each(func(name string, vr expand.Variable) bool {
+			if vr.Kind == expand.NameRef {
+				names = append(names, name)
+			}
+			return true
+		})
+		slices.Sort(names)
+		for _, name := range names {
+			r.outf("declare -n %s=%q\n", name, r.lookupVar(name).Str)
+		}
+	}
+	if !namedAny && (declQuery == "-f" || declQuery == "-F") {
+		// A bare "declare -f" or "declare -F" lists every function, sorted
+		// by name as bash does. Claude Code's shell snapshot uses the
+		// latter to carry the user's functions into an agent subshell.
+		names := make([]string, 0, len(r.Funcs))
+		for name := range r.Funcs {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			if declQuery == "-F" {
+				r.outf("declare -f %s\n", name)
+			} else {
+				r.printFuncDef(name, r.Funcs[name])
+			}
+		}
 	}
 }
 
