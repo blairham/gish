@@ -126,7 +126,21 @@ func enableAliases(ctx context.Context, runner *interp.Runner) {
 // cd, and exports persist into the interactive session. A missing file is
 // normal; a broken one warns and the shell starts anyway — an rc error
 // must never lock the user out of their shell.
+// skipRC and skipProfile record bash's --norc and --noprofile (#531):
+// a caller asking for a clean shell gets one, rather than a usage error
+// and no shell at all.
+var skipRC, skipProfile bool
+
+// SkipStartupFiles records which startup files this invocation asked to
+// skip. It is set once from argv, before anything is sourced.
+func SkipStartupFiles(noRC, noProfile bool) {
+	skipRC, skipProfile = noRC, noProfile
+}
+
 func loadRC(ctx context.Context, runner *interp.Runner) {
+	if skipRC {
+		return
+	}
 	// Adopted team fragments run first (#209), so the user's own rc has
 	// the last word: anything they set beats anything a repo shipped,
 	// by source order rather than by a merge policy. A missing
@@ -171,6 +185,9 @@ func runRCFile(ctx context.Context, runner *interp.Runner, path string) {
 // then the first of $KOI_PROFILE, ~/.koi_profile, ~/.profile. Errors
 // warn and continue — a broken profile must never lock the user out.
 func loadProfile(ctx context.Context, runner *interp.Runner) {
+	if skipProfile {
+		return
+	}
 	paths := []string{"/etc/profile"}
 	if p := os.Getenv("KOI_PROFILE"); p != "" {
 		paths = append(paths, p)
