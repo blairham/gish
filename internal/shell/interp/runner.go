@@ -892,8 +892,6 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			} else {
 				r2.stderr = r.stderr
 			}
-			oldIn := r.stdin
-			r.stdin = pr
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				r2.stmt(ctx, cm.X)
@@ -902,7 +900,34 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				pw.Close()
 			})
 			r.pipeStatus = nil
-			r.stmt(ctx, cm.Y)
+			if r.opts[optLastPipe] {
+				// lastpipe: the final stage runs in the current shell, so
+				// `cmd | read x` keeps x. Until #277 this was the only
+				// behavior, which answered the most famous bash gotcha
+				// un-bash-ly by default.
+				oldIn := r.stdin
+				r.stdin = pr
+				r.stmt(ctx, cm.Y)
+				r.stdin = oldIn
+			} else {
+				// bash's default: the final stage is a subshell like every
+				// other stage — its variables, cd, and even `exit` end with
+				// it (`echo | exit 3; echo after` prints after). The same
+				// two inheritance exceptions as cm.X's subshell apply, for
+				// the same reasons. Non-background, unlike cm.X's: this
+				// stage runs synchronously in the parent's goroutine, and
+				// the background flavor snapshots the environment via Each,
+				// which loses values a FuncEnviron can only answer by name.
+				r3 := r.subshell(false)
+				r3.callbackDebug = r.callbackDebug
+				r3.bgProcs = inheritedJobs(r.bgProcs)
+				r3.stdin = pr
+				r3.stmt(ctx, cm.Y)
+				r3.exit.exiting = false
+				r3.exit.aborting = false
+				r.pipeStatus = r3.pipeStatus
+				r.exit = r3.exit
+			}
 			pr.Close()
 			wg.Wait()
 			// A pipeline of three or more stages nests to the left, so cm.X is
@@ -923,7 +948,6 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// pipeline as a whole is the command PIPESTATUS describes, so let
 			// this statement publish the full list over the top of it.
 			r.pipeStatusSet = false
-			r.stdin = oldIn
 			if r.opts[optPipeFail] && !r2.exit.ok() && r.exit.ok() {
 				r.exit = r2.exit
 			}

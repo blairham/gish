@@ -3390,6 +3390,19 @@ done <<< 2`,
 	{"shopt -u -o noexec; echo foo", "foo\n"},
 	{"shopt -u globstar; shopt globstar | grep 'off$' | wc -l | tr -d ' '", "1\n"},
 	{"shopt -s globstar; shopt globstar | grep 'off$' | wc -l | tr -d ' '", "0\n"},
+	// lastpipe (#277): off by default as in bash, so the last pipeline
+	// stage is a subshell like every other stage — before this, koi
+	// answered the most famous bash gotcha un-bash-ly and `exit` in a
+	// last stage took the whole shell down.
+	{"echo foo | read x; echo \"x=[$x]\"", "x=[]\n"},
+	{"printf 'a\\nb\\n' | while read l; do n=$((n+1)); done; echo \"n=[$n]\"", "n=[]\n"},
+	{"echo | exit 3; echo after=$?", "after=3\n"},
+	{"echo | cd /; [ \"$PWD\" = / ] && echo moved || echo stayed", "stayed\n"},
+	{"shopt -s lastpipe; echo foo | read x; echo \"x=[$x]\"", "x=[foo]\n"},
+	{"shopt -s lastpipe; printf 'a\\nb\\n' | while read l; do n=$((n+1)); done; echo \"n=[$n]\"", "n=[2]\n"},
+	{"shopt -s lastpipe; shopt -u lastpipe; echo foo | read x; echo \"x=[$x]\"", "x=[]\n"},
+	{"shopt lastpipe | grep 'off$' | wc -l | tr -d ' '", "1\n"},
+	{"set -o pipefail; shopt -s lastpipe; false | true; echo st=$?", "st=1\n"},
 	{"shopt extglob | grep 'off' | wc -l | tr -d ' '", "1\n"},
 	{
 		"shopt inherit_errexit",

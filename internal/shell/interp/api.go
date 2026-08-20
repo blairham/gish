@@ -882,6 +882,19 @@ var bashOptsTable = [...]bashOpt{
 		supported:    true,
 	},
 	{
+		// Off by default, as in bash — and until #277 it was effectively
+		// always on: the last pipeline stage ran in the current shell, so
+		// `cmd | read x` kept x and `cat f | while read l; do n=$((n+1));
+		// done` kept n, which is the single most famous bash gotcha
+		// answered un-bash-ly. bash additionally requires job control to
+		// be inactive for lastpipe to take effect; the interpreter never
+		// has job control (monitor is unsupported here — the shell around
+		// it owns jobs), so the option is honored whenever set.
+		name:         "lastpipe",
+		defaultState: false,
+		supported:    true,
+	},
+	{
 		name:         "nocaseglob",
 		defaultState: false,
 		supported:    true,
@@ -948,7 +961,6 @@ var bashOptsTable = [...]bashOpt{
 		name:         "interactive_comments",
 		defaultState: true,
 	},
-	{name: "lastpipe"},
 	{name: "lithist"},
 	{name: "localvar_inherit"},
 	{name: "localvar_unset"},
@@ -1013,6 +1025,7 @@ const (
 	optExpandAliases
 	optExtGlob
 	optGlobStar
+	optLastPipe
 	optNoCaseGlob
 	optNullGlob
 )
