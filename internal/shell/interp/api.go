@@ -245,8 +245,14 @@ type Runner struct {
 	// that command, before the next one.
 	sigTraps  map[string]string
 	sigListed map[string]string
-	sigChan   chan os.Signal
-	sigNames  map[os.Signal]string
+	// sigIgnoredAtEntry are the signals the shell was started with
+	// ignored (#441). POSIX says a non-interactive shell may neither
+	// trap nor reset one, and bash lists them — koi never looked, so
+	// its listing omitted them and `trap 'cmd' SIG` armed a handler
+	// bash refuses to arm.
+	sigIgnoredAtEntry map[string]bool
+	sigChan           chan os.Signal
+	sigNames          map[os.Signal]string
 
 	// Where each non-command trap was set, for $LINENO inside its action
 	// (#352): bash counts an EXIT, RETURN, or signal trap's action lines
@@ -926,6 +932,30 @@ func stdinFile(r io.Reader) (*os.File, error) {
 // When providing an [*os.File] as standard input, consider using an [os.Pipe]
 // as it has the best chance to support cancellable reads via [os.File.SetReadDeadline],
 // so that cancelling the runner's context can stop a blocked standard input read.
+// IgnoredSignals records the signals that were ignored when the process
+// started, which the shell around the interpreter has to find out (#441)
+// — reading a disposition needs sigaction, and os/signal has no query.
+//
+// A signal named here is listed by `trap` with an empty action, and a
+// script's attempt to trap or reset it is refused, as POSIX requires of
+// a non-interactive shell.
+func IgnoredSignals(names []string) RunnerOption {
+	return func(r *Runner) error {
+		if len(names) == 0 {
+			return nil
+		}
+		r.sigIgnoredAtEntry = make(map[string]bool, len(names))
+		for _, n := range names {
+			name, _, ok := lookupSignal(n)
+			if !ok {
+				continue
+			}
+			r.sigIgnoredAtEntry[name] = true
+		}
+		return nil
+	}
+}
+
 func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	return func(r *Runner) error {
 		stdin, _err := stdinFile(in)
@@ -1453,6 +1483,11 @@ func (r *Runner) Reset() {
 		historyHook: r.historyHook,
 		traceHook:   r.traceHook,
 
+		// What the process inherited is constructor state as well: a
+		// Reset that forgot it would let a script trap a signal the
+		// shell was told to ignore (#441).
+		sigIgnoredAtEntry: r.sigIgnoredAtEntry,
+
 		dirStack: r.dirStack[:0],
 		usedNew:  r.usedNew,
 	}
@@ -1784,6 +1819,7 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2.returnTrapOff = r.returnTrapOff
 	r2.listed = r.listed
 	r2.sigListed = maps.Clone(r.sigListed)
+	r2.sigIgnoredAtEntry = r.sigIgnoredAtEntry
 	// The frame stack crosses into a subshell, because `$(caller 0)` and
 	// `$(trap -p)` are how a script asks these questions at all — a
 	// command substitution that reported an empty stack would answer

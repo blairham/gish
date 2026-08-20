@@ -30,6 +30,10 @@ func main() {
 }
 
 func run() int {
+	// Which signals were ignored when koi was handed control is
+	// recorded before koi installs any handler of its own (#441).
+	repl.CaptureIgnoredSignals()
+
 	// Private re-exec mode for sandboxed commands (#21): the parent
 	// rewrote argv to [koi, __sandbox-exec, policy, --, cmd…]. Handled
 	// before flag parsing — it is not CLI surface.
