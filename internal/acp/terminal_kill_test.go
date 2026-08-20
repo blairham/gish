@@ -100,7 +100,12 @@ func TestKillReachesDescendants(t *testing.T) {
 		if sig != "killed" {
 			t.Errorf("signal = %q, want %q", sig, "killed")
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(20 * time.Second):
+		// Comfortably above the WaitDelay backstop, not equal to it: on
+		// a loaded runner the pipe can linger until the backstop fires
+		// at exactly waitDelay, and a bound of the same length loses
+		// that race by milliseconds (it did, on CI). The deadlock this
+		// pins lasted forever, so a generous bound still catches it.
 		t.Fatal("Wait did not return after the whole tree was killed")
 	}
 }
@@ -191,7 +196,10 @@ func TestWaitForExitReturnsAfterKill(t *testing.T) {
 		if err != nil {
 			t.Errorf("wait_for_exit after kill: %v", err)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(20 * time.Second):
+		// Same margin rule as TestKillReachesDescendants: well above
+		// the WaitDelay backstop, so a lingering pipe rescued at
+		// waitDelay is a pass, not a photo finish.
 		t.Fatal("terminal/wait_for_exit never returned after terminal/kill — the session is deadlocked")
 	}
 }
