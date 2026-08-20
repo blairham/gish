@@ -202,6 +202,9 @@ type Runner struct {
 	bashPIDValue int
 	// argv0 is BASH_ARGV0's writable view of $0.
 	argv0 string
+	// varHooks are the callbacks [VarHook] installed, keyed by variable
+	// name. Constructor state, like the other hooks.
+	varHooks map[string]func(string, string)
 	// traceLine is the line of the statement being run, which PS4's
 	// $LINENO reports (#413).
 	traceLine uint
@@ -690,6 +693,29 @@ func (r *Runner) Options() []OptionState {
 func HistoryHook(fn func(*syntax.Stmt)) RunnerOption {
 	return func(r *Runner) error {
 		r.historyHook = fn
+		return nil
+	}
+}
+
+// VarHook installs a callback for assignments to the named variables,
+// which is how the shell around the interpreter learns about a variable
+// whose *assignment* is an action rather than a value.
+//
+// HISTFILESIZE is the case it exists for (#491): assigning it truncates
+// $HISTFILE on the spot, and the history file belongs to the shell
+// rather than to the interpreter. The callback runs after the variable
+// is set, so a hook that reads it sees the new value.
+func VarHook(names []string, fn func(name, value string)) RunnerOption {
+	return func(r *Runner) error {
+		if fn == nil || len(names) == 0 {
+			return nil
+		}
+		if r.varHooks == nil {
+			r.varHooks = make(map[string]func(string, string), len(names))
+		}
+		for _, n := range names {
+			r.varHooks[n] = fn
+		}
 		return nil
 	}
 }
@@ -1482,6 +1508,7 @@ func (r *Runner) Reset() {
 		// and must survive the Reset that Run performs on first use.
 		historyHook: r.historyHook,
 		traceHook:   r.traceHook,
+		varHooks:    r.varHooks,
 
 		// What the process inherited is constructor state as well: a
 		// Reset that forgot it would let a script trap a signal the
@@ -1820,6 +1847,7 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2.listed = r.listed
 	r2.sigListed = maps.Clone(r.sigListed)
 	r2.sigIgnoredAtEntry = r.sigIgnoredAtEntry
+	r2.varHooks = r.varHooks
 	// The frame stack crosses into a subshell, because `$(caller 0)` and
 	// `$(trap -p)` are how a script asks these questions at all — a
 	// command substitution that reported an empty stack would answer
