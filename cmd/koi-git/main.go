@@ -2,6 +2,10 @@
 // prompt segment. Resident per-repo cache, fsnotify invalidation on the
 // .git directory (never polls), background refreshes — a render answers
 // from cache in microseconds, well inside the 50ms budget.
+//
+// Since #476 it also serves completion — branches, remotes, changed
+// files — as a second service on the same connection, sharing the repo
+// cache (see complete.go).
 package main
 
 import (
@@ -51,7 +55,13 @@ func (p prompt) Render(ctx context.Context, req *pluginapi.RenderRequest) (*plug
 // it through here, so a capability cannot be claimed in Describe without the
 // service behind it actually being registered.
 func newPlugin() pluginsdk.Plugin {
-	p := pluginsdk.Plugin{Prompt: prompt{cache: newRepoCache()}}
+	// One cache, two services: completion answers from the same repo
+	// roots the prompt segment resolves.
+	cache := newRepoCache()
+	p := pluginsdk.Plugin{
+		Prompt:     prompt{cache: cache},
+		Completion: completion{cache: cache},
+	}
 	p.Info = info{caps: pluginsdk.Capabilities(p)}
 	return p
 }

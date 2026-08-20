@@ -185,7 +185,7 @@ broken theme costs its look, never the prompt.
 | Plugin | What | Fast/correct notes |
 | --- | --- | --- |
 | `koi-direnv` | ~~planned~~ **landed** (#137, cmd/koi-direnv) | Delegates `.envrc` evaluation and the whole stdlib (`use nix`, `layout python`, `source_up`) to real direnv; koi owns the cd moment, the approval UX, and apply/revert. Checks `direnv status --json` **before** exporting — export fails identically for blocked, denied, and broken-`.envrc`, and only the status enum tells them apart. `DIRENV_*` bookkeeping is stripped (the host does not send it back, so it has no consumer). direnv reports symlink-resolved paths, so `for_dir` is mapped into the caller's namespace or the host discards every proposal on macOS |
-| `koi-dotenv` | plain `.env` file loading — **next up** (#475) | Parse only — never execute, never expand; the trust prompt shows every value. The second real EnvProvider, which is what proves the trust flow generalizes beyond the tool it was built against — and it covers the far larger population that has `.env` files but no direnv |
+| `koi-dotenv` | ~~plain `.env` file loading~~ **landed** (#475, cmd/koi-dotenv) | Parse only — never execute, never expand; no subprocess anywhere, and the trust prompt shows every value. The second real EnvProvider, proving the trust flow generalizes beyond the tool it was built against. Walks up to the nearest `.env` (skipping `.env` *directories* — a common virtualenv location); the dialect is the rules motdotla/dotenv and docker compose agree on, written down in the file header because `.env` has no spec |
 
 Trust is the contract, enforced host-side: a proposal applies only after
 `trust allow` records (plugin, directory, diff-hash); a changed diff
@@ -211,7 +211,7 @@ but the user is told, since the next shell may re-prompt.
 | Plugin | What | Fast/correct notes |
 | --- | --- | --- |
 | `koi-carapace` | ~~bridge to carapace's registry~~ **landed** (#9, cmd/koi-carapace) | Shells out to the user's own carapace binary (`export` JSON) guarded by its supported-command list; no carapace installed means empty results, never errors |
-| `koi-git-complete` | branches, remotes, modified files — **next up** (#476) | Same process as `koi-git`, second service on the connection — shares the repo cache, and gives the flagship the multi-capability shape only koi-aws demonstrates today. Beats the carapace bridge's shell-out latency for the most-completed CLI |
+| `koi-git-complete` | ~~branches, remotes, modified files~~ **landed** (#476, cmd/koi-git/complete.go) | Second service on koi-git's connection, sharing the repo cache — the multi-capability shape koi-aws proved out. Branches and remotes read natively (loose refs, packed-refs, .git/config; worktree `gitdir:`/`commondir` hops resolved) with no subprocess on the Tab path; only changed-file completion runs git, budget-bounded. Out-of-scope lines get an empty final batch, never a guess — subcommand and flag breadth stays with carapace |
 | `koi-kubectl` | cluster resource completion — **demand-gated** | Resident cache with TTL; upstream kubectl completion is slow *because* it's spawn-per-tab, which is the one thing the carapace bridge can't fix. The biggest lift here, so it waits for a user to ask |
 | `koi-make` | ~~Makefile/justfile targets~~ **dropped** | carapace already completes make/just targets; a dedicated plugin buys a few milliseconds on completions nobody has complained about |
 | `koi-ssh` | ~~hosts from `~/.ssh/config`~~ **dropped** | carapace already completes ssh hosts. If it ever comes back: skip hashed `known_hosts` entries — never un-hash, never guess |
@@ -298,15 +298,16 @@ out this table.
 
 What clears that bar, in order:
 
-1. **`koi-dotenv`** (#475) — the second real EnvProvider. Tiny
+1. **`koi-dotenv`** (#475, landed — cmd/koi-dotenv) — the second real EnvProvider. Tiny
    (parse-only, no subprocess), and it proves the #12 trust flow
    generalizes beyond the tool it was built against rather than being
    shaped around direnv. `.env` files are ubiquitous in exactly the
    population koi is courting, and most of them don't run direnv.
-2. **git completion as a second service on `koi-git`** (#476) — the
-   roadmap's koi-git-complete row, in the same binary as the segment.
-   Proves the multi-service-one-connection shape on the flagship and
-   answers Tab for the most-completed CLI at ref-cache latency.
+2. **git completion as a second service on `koi-git`** (#476, landed —
+   cmd/koi-git/complete.go) — the roadmap's koi-git-complete row, in
+   the same binary as the segment. Proves the multi-service-one-
+   connection shape on the flagship and answers Tab for the
+   most-completed CLI at ref-cache latency.
 3. **A first-party ShellEvents consumer** — when #83's host wiring
    lands. ShellEvents is the one allocated capability no in-tree plugin
    exercises, which is exactly the state the in-tree plugins exist to
