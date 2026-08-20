@@ -51,6 +51,12 @@ type completionSpec struct {
 	suffix string
 	filter string
 	glob   string
+	// letterSpelled records which actions were written as a letter
+	// rather than as `-A name`. bash prints back the spelling it was
+	// given — `-s` stays `-s` and `-A signal` stays `-A signal` — so
+	// the spelling is part of the spec rather than a detail of parsing
+	// (#533).
+	letterSpelled map[string]bool
 }
 
 // completionSpecs maps command name to spec, plus the two catch-alls
@@ -123,17 +129,42 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 			target.options = append(target.options, next())
 		case "-f":
 			target.actions = append(target.actions, "file")
+			if target.letterSpelled == nil {
+				target.letterSpelled = map[string]bool{}
+			}
+			target.letterSpelled["file"] = true
 		case "-d":
 			target.actions = append(target.actions, "directory")
+			if target.letterSpelled == nil {
+				target.letterSpelled = map[string]bool{}
+			}
+			target.letterSpelled["directory"] = true
 		case "-c":
 			target.actions = append(target.actions, "command")
+			if target.letterSpelled == nil {
+				target.letterSpelled = map[string]bool{}
+			}
+			target.letterSpelled["command"] = true
 		case "-b":
 			target.actions = append(target.actions, "builtin")
+			if target.letterSpelled == nil {
+				target.letterSpelled = map[string]bool{}
+			}
+			target.letterSpelled["builtin"] = true
 		case "-u", "-g", "-j", "-s", "-v", "-e", "-a", "-k":
 			// Users, groups, jobs, signals, variables, exports, aliases,
 			// keywords: recognized so they do not become command names,
 			// and left to compgen, which knows how to produce them.
-			target.actions = append(target.actions, strings.TrimPrefix(a, "-"))
+			//
+			// Stored under the *long* name compgen and `-A` use, so a
+			// spec round-trips: kept as the bare letter, `complete -e`
+			// printed back as `complete -A e` (#533).
+			long := actionLongName(strings.TrimPrefix(a, "-"))
+			target.actions = append(target.actions, long)
+			if target.letterSpelled == nil {
+				target.letterSpelled = map[string]bool{}
+			}
+			target.letterSpelled[long] = true
 		case "-r":
 			remove = true
 		case "-p":
@@ -227,48 +258,65 @@ func printCompletions(out io.Writer, only ...string) bool {
 	return len(names) == len(only) || len(only) == 0
 }
 
+// actionLongName maps a one-letter action to the name `-A` and compgen
+// use for it. The letters and the names are two spellings of one set,
+// and the spec keeps the names so that printing can choose the letter.
+func actionLongName(letter string) string {
+	switch letter {
+	case "u":
+		return "user"
+	case "g":
+		return "group"
+	case "j":
+		return "job"
+	case "s":
+		return "signal"
+	case "v":
+		return "variable"
+	case "e":
+		return "export"
+	case "a":
+		return "alias"
+	case "k":
+		return "keyword"
+	}
+	return letter
+}
+
 // commandLine renders a spec as the `complete` call that would
 // recreate it, in bash's option order.
 func (spec completionSpec) commandLine() string {
 	var b strings.Builder
 	b.WriteString("complete")
-	for _, o := range spec.options {
+	// bash prints the pieces in a canonical order rather than the order
+	// they were given, and sorts what it can: `-o` options
+	// alphabetically, then the letter actions alphabetically, then the
+	// `-A name` forms, then the value-carrying options in a fixed
+	// sequence. Measured, since a listing a script diffs has to be
+	// stable (#533).
+	for _, o := range slices.Sorted(slices.Values(spec.options)) {
 		b.WriteString(" -o " + o)
 	}
-	// The action letters come back as the letters they were written
-	// as; -A's long names are the exception bash spells out.
+	var letters, named []string
 	for _, a := range spec.actions {
-		switch a {
-		case "file":
-			b.WriteString(" -f")
-		case "directory":
-			b.WriteString(" -d")
-		case "command":
-			b.WriteString(" -c")
-		case "builtin":
-			b.WriteString(" -b")
-		case "user":
-			b.WriteString(" -u")
-		case "group":
-			b.WriteString(" -g")
-		case "job":
-			b.WriteString(" -j")
-		case "signal":
-			b.WriteString(" -s")
-		case "variable":
-			b.WriteString(" -v")
-		case "export":
-			b.WriteString(" -e")
-		case "alias":
-			b.WriteString(" -a")
-		case "keyword":
-			b.WriteString(" -k")
-		default:
-			b.WriteString(" -A " + a)
+		if spec.letterSpelled[a] {
+			letters = append(letters, actionLetter(a))
+			continue
 		}
+		named = append(named, a)
+	}
+	slices.Sort(letters)
+	for _, l := range letters {
+		b.WriteString(" -" + l)
+	}
+	for _, n := range named {
+		b.WriteString(" -A " + n)
 	}
 	if spec.glob != "" {
 		b.WriteString(" -G " + singleQuote(spec.glob))
+	}
+	if len(spec.words) > 0 {
+		b.WriteString(" -W " + singleQuote(strings.Join(spec.words, " ")))
 	}
 	if spec.prefix != "" {
 		b.WriteString(" -P " + singleQuote(spec.prefix))
@@ -279,16 +327,34 @@ func (spec completionSpec) commandLine() string {
 	if spec.filter != "" {
 		b.WriteString(" -X " + singleQuote(spec.filter))
 	}
-	if spec.function != "" {
-		b.WriteString(" -F " + spec.function)
-	}
 	if spec.command != "" {
 		b.WriteString(" -C " + singleQuote(spec.command))
 	}
-	if len(spec.words) > 0 {
-		b.WriteString(" -W " + singleQuote(strings.Join(spec.words, " ")))
+	if spec.function != "" {
+		b.WriteString(" -F " + spec.function)
 	}
 	return b.String()
+}
+
+// actionLetter is actionLongName's inverse, for printing back a spec
+// that was written with letters.
+func actionLetter(long string) string {
+	for _, l := range []string{"u", "g", "j", "s", "v", "e", "a", "k"} {
+		if actionLongName(l) == long {
+			return l
+		}
+	}
+	switch long {
+	case "file":
+		return "f"
+	case "directory":
+		return "d"
+	case "command":
+		return "c"
+	case "builtin":
+		return "b"
+	}
+	return long
 }
 
 // runCompgen generates candidates the way bash's compgen does. It is a
