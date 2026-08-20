@@ -34,7 +34,7 @@ func runSession(t *testing.T, src string) string {
 func TestClobberRedirectWritesTheFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "snapshot")
-	out := runSession(t, "echo first >| "+path+"\necho second >| "+path)
+	out := runSession(t, "echo first >| '"+path+"'\necho second >| '"+path+"'")
 	if out != "" {
 		t.Errorf("clobber redirect wrote to the terminal: %q", out)
 	}
@@ -51,7 +51,7 @@ func TestClobberRedirectWritesTheFile(t *testing.T) {
 func TestClobberAppendKeepsAppending(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "log")
-	runSession(t, "echo first >> "+path+"\necho second >> "+path)
+	runSession(t, "echo first >> '"+path+"'\necho second >> '"+path+"'")
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestQuotedHeredocIsLiteral(t *testing.T) {
 func TestQuotedHeredocWritesTheFileItWasGiven(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "probe.sh")
 	body := "esc=${snippet//\\\\/\\\\\\\\}\nre='\\\\d+'\npath='c:\\\\users'\n"
-	runSession(t, "cat > "+path+" <<'SH'\n"+body+"SH")
+	runSession(t, "cat > '"+path+"' <<'SH'\n"+body+"SH")
 	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("the heredoc wrote no file: %v", err)
