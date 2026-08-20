@@ -1276,6 +1276,10 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
 	}
 	r.fillExpandConfig(ctx)
 	r.exit = exitStatus{}
+	// A runner is Run more than once — an rc file, then the session — and
+	// each run's exit is its own: a mark left by the last run would
+	// silence this one's EXIT trap entirely.
+	r.exitTrapFired = false
 	r.filename = ""
 	switch node := node.(type) {
 	case *syntax.File:
@@ -1299,7 +1303,13 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
 		// would make `kill -X $$` on the last line a silent no-op.
 		r.runPendingSignalTraps(ctx)
 		if !r.exitTrapFired {
-			r.trapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine)
+			r.exitTrapFired = true
+			// The keep-flow path, not the restoring one: an `exit` inside
+			// an EXIT trap replaces the status — `trap "exit 9" EXIT;
+			// exit 3` answers 9 — while an ordinary failing command in
+			// the action still restores it, since the body's first
+			// statement clears the in-flight exiting flag (#353).
+			r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
 		}
 	}
 	maps.Insert(r.Vars, r.writeEnv.Each)

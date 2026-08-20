@@ -87,6 +87,7 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 			r2.bgProcs = inheritedJobs(r.bgProcs)
 			r2.stdout = w
 			r2.stmts(ctx, cs.Stmts)
+			r2.runSubshellExitTrap(ctx)
 			r2.exit.exiting = false  // subshells don't exit the parent shell
 			r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 			r.lastExpandExit = r2.exit
@@ -172,6 +173,7 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 					panic(fmt.Sprintf("unexpected process substitution operator: %q", ps.Op))
 				}
 				r2.stmts(ctx, ps.Stmts)
+				r2.runSubshellExitTrap(ctx)
 				r2.exit.exiting = false  // subshells don't exit the parent shell
 				r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 			}()
@@ -487,6 +489,7 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 		r.bgProcs = append(r.bgProcs, bg)
 		go func() {
 			r2.Run(ctx, &st2)
+			r2.runSubshellExitTrap(ctx)
 			r2.exit.exiting = false  // subshells don't exit the parent shell
 			r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 			*bg.exit = r2.exit
@@ -741,6 +744,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.Subshell:
 		r2 := r.subshell(false)
 		r2.stmts(ctx, cm.Stmts)
+		r2.runSubshellExitTrap(ctx)
 		r2.exit.exiting = false  // subshells don't exit the parent shell
 		r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 		r.exit = r2.exit
@@ -915,6 +919,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				r2.stmt(ctx, cm.X)
+				r2.runSubshellExitTrap(ctx)
 				r2.exit.exiting = false  // subshells don't exit the parent shell
 				r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
 				pw.Close()
@@ -943,6 +948,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				r3.bgProcs = inheritedJobs(r.bgProcs)
 				r3.stdin = pr
 				r3.stmt(ctx, cm.Y)
+				r3.runSubshellExitTrap(ctx)
 				r3.exit.exiting = false
 				r3.exit.aborting = false
 				r.pipeStatus = r3.pipeStatus
@@ -1666,6 +1672,18 @@ func (r *Runner) signalTrapCallback(ctx context.Context, callback, name string, 
 	r.runTrapCallback(ctx, callback, name, baseLine, true)
 }
 
+// runSubshellExitTrap fires this subshell's own EXIT trap: the end of the
+// body is that subshell's exit, whether it fell off the end or called
+// exit (#353). Callers run it before clearing exit.exiting, and bash's
+// exit-overrides-status rule rides on the keep-flow path.
+func (r *Runner) runSubshellExitTrap(ctx context.Context) {
+	if r.exitTrapFired || r.callbackExit == "" {
+		return
+	}
+	r.exitTrapFired = true
+	r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
+}
+
 func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, baseLine uint, keepFlow bool) {
 	if callback == "" {
 		return // nothing to do
@@ -2240,7 +2258,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		// stack. Run's own firing point skips it once fired.
 		if r.exit.exiting && !r.exitTrapFired && !r.handlingTrap && r.callbackExit != "" {
 			r.exitTrapFired = true
-			r.trapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine)
+			r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
 		}
 
 		r.writeEnv = origEnv
