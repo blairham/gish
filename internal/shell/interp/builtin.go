@@ -113,7 +113,7 @@ var builtinNames = map[string]bool{
 	"help":      false,
 	"let":       true, // NOTE: our parser treats this as a keyword
 	"local":     true,
-	"logout":    false,
+	"logout":    true,
 	"mapfile":   true,
 	"readarray": true,
 	"popd":      true,
@@ -697,6 +697,18 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}
 			r.hashTable[name] = path
 		}
+
+	case "logout":
+		// A non-login shell refuses, naming the command that does work
+		// (#427). koi answered "unsupported builtin", which reads as
+		// koi lacking the builtin rather than as the shell not being a
+		// login shell — and the two want different fixes from whoever
+		// hits it.
+		//
+		// The login case belongs to the shell around the interpreter,
+		// which owns whether it is a login session; here it is the
+		// refusal that matters, since that is what a script sees.
+		return failf(1, "logout: not login shell: use `exit'\n")
 
 	case "enable":
 		// `enable -n name` turns a builtin off, so the name resolves on
