@@ -2508,6 +2508,36 @@ var runTests = []runTest{
 		"D:[cat <<EOF > /dev/null\nbody line\nEOF\n]\n",
 	},
 	{
+		// A subshell is still inside its function, so `return` ends the
+		// subshell with that status instead of refusing (#422).
+		"f(){ (return 5); echo st=$?; }; f",
+		"st=5\n",
+	},
+	{
+		// The one that was worse than a wrong status: the rest of the
+		// command substitution used to run anyway.
+		"f(){ z=$(echo comsub; return; echo after); echo \"z=$z\"; }; f",
+		"z=comsub\n",
+	},
+	{
+		// A status set by return inside a substitution is the
+		// substitution's status.
+		"f(){ z=$(echo a; return 7); echo \"st=$? z=$z\"; }; f",
+		"st=7 z=a\n",
+	},
+	{
+		// And it must not leak: returning inside a subshell does not
+		// return from the function containing it.
+		"g(){ (return 9); return 3; }; g; echo st=$?",
+		"st=3\n",
+	},
+	{
+		// The ordinary case still works — a return in the function body
+		// itself stops the body.
+		"f(){ return 4; echo NOPE; }; f; echo st=$?",
+		"st=4\n",
+	},
+	{
 		// A function body is not traced without "functrace"; the call is.
 		"trap 'echo D' DEBUG; f() { echo in; }; f",
 		"D\nin\n",
