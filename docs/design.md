@@ -68,6 +68,63 @@ The line editor and prompt engine consume both tiers through one internal interf
 
 ## Decisions
 
+- **First-party plugins stay in `cmd/`; no plugin registry** (2026-08):
+  the `cmd/koi-*` plugins are not moved to a separate repo, and koi does
+  not host, index, or vouch for a registry with a submission pipeline.
+  Written down because it is cheap to re-propose ("shouldn't plugins
+  live in their own repo, with a registry?") and expensive to
+  re-litigate.
+
+  The proposal bundles two questions, and the first is already solved:
+  **external authors need nothing moved.** `pkg/pluginsdk/v1` and
+  `pkg/pluginapi/v1` exist precisely so a plugin compiles outside this
+  repo (#188), `abi_test.go` freezes what the protos cannot describe,
+  #168's CI gate fails anything that would break a compiled plugin, and
+  the manifest's `source` entries plus `plugmgr`/ghr install from GitHub
+  releases today. GitHub *is* the registry — the model the zsh and vim
+  ecosystems grew huge on with no central index at all, and the nushell
+  lesson (#168) is that plugin ecosystems live or die on ABI stability,
+  not on a registry nushell also does not have.
+
+  Keeping the first-party plugins in-tree is what makes the frozen-v1
+  claim enforceable rather than aspirational: they compile in the same
+  CI run as the host, so a proto or SDK change that would break a plugin
+  fails the PR that makes it, not a downstream repo weeks later.
+  koi-p10k is #30's proof the ThemeProvider round trip works, koi-direnv
+  tests against real direnv, koi-atuin against real atuin — they are
+  reference implementations and living contract tests, and the repo is
+  their documentation. Splitting them out buys version skew and a second
+  release pipeline, pre-launch, when every release-engineering hour
+  competes with the launch checklist. They are already separate binaries
+  the user chooses to install; in-repo has never meant in-shell.
+
+  A hosted registry fails three tests this file and its neighbors
+  already record. #90 said it in as many words — the `plugin browse`
+  starter list "is explicitly not a registry (koi does not host, index,
+  or vouch for plugins)." docs/adoption.md names **maintainer count as
+  koi's zeroed factor**, and a registry is a standing service: submission
+  review, takedowns, namespace disputes, compromised-plugin incident
+  response — a second product staffed by the same zero spare
+  maintainers. And the trust stance is load-bearing (it is why #210
+  refused even a phone-home version check): a koi-branded registry
+  implies koi vetted its contents, and the first malicious submission
+  that ships through it spends the differentiator that converts — the
+  one failure docs/adoption.md says nobody recovers from.
+
+  The discoverability gap a registry would fill is served the cheap way:
+  the `plugin browse` starter list now, an awesome-koi-style curated
+  links page later — recommending without hosting or vouching.
+
+  The carve-out, sized so it is not mistaken for the door: moving a
+  *vendor-specific* plugin (koi-aws is the shape) to its own repo
+  post-1.0, case by case, is a small decision this entry does not
+  block. The reference plugins stay in-tree indefinitely.
+
+  Revisit the registry only on demand data that does not exist yet:
+  post-1.0, dozens of third-party plugins, and users visibly failing to
+  find them. Even then, the curated list is the first answer, not the
+  service.
+
 - **No cross-shell components** (2026-08,
   [#214](https://github.com/blairham/koi-shell/issues/214)): koi does not
   ship its highlighting, autosuggestions or prompt engine as add-ons for
