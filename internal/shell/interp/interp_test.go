@@ -1570,12 +1570,20 @@ var runTests = []runTest{
 	// cd takes -L and -P, and searches CDPATH for a relative operand
 	// (#391) — koi answered a usage error and never changed directory.
 	{
-		`cd -P /tmp; echo "st=$?"; pwd`,
-		"st=0\n/private/tmp\n",
+		// -L keeps the path as written, -P resolves it. The symlink is
+		// built here rather than relying on /tmp, which is a symlink on
+		// darwin and a real directory on linux — a case that bakes that
+		// in passes on one platform and fails on the other.
+		`mkdir real; ln -s real link; cd -L link; [ "$(basename "$PWD")" = link ] && echo kept`,
+		"kept\n",
 	},
 	{
-		`cd -L /tmp; echo "st=$?"; pwd`,
-		"st=0\n/tmp\n",
+		`mkdir real; ln -s real link; cd -P link; [ "$(basename "$PWD")" = real ] && echo resolved`,
+		"resolved\n",
+	},
+	{
+		`cd -P .; echo "st=$?"`,
+		"st=0\n",
 	},
 	{
 		`cd -- /tmp && pwd`,
