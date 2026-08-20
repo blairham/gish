@@ -221,14 +221,23 @@ func (r *Runner) expandErr(err error) {
 	fmt.Fprintln(r.stderr, errMsg)
 	switch {
 	case errors.As(err, &expand.UnsetParameterError{}):
+		// nounset is genuinely fatal in bash: measured against 5.3, a
+		// script file dies at the unbound variable exactly as -c does,
+		// exit 1 both ways.
+		r.exit.code = 1
+		r.exit.exiting = true
 	case errMsg == "invalid indirect expansion":
-		// TODO: These errors are treated as fatal by bash.
-		// Make the error type reflect that.
-	default:
-		return // other cases do not exit
+		// An invalid indirect is the readonly-assignment shape (#308),
+		// not the nounset one: bash abandons the current input unit and
+		// goes back to reading, so a script file continues at the next
+		// command while -c — one unit — loses its remainder and exits 1.
+		// Measured against 5.3; this was `exiting`, which cost a script
+		// every line after the failure (nameref3.sub forfeited its
+		// second half to one probe on line 29).
+		r.exit.code = 1
+		r.exit.aborting = true
 	}
-	r.exit.code = 1
-	r.exit.exiting = true
+	// Other cases neither exit nor abort.
 }
 
 func (r *Runner) arithm(expr syntax.ArithmExpr) int {
