@@ -1672,6 +1672,14 @@ func (r *Runner) stmts(ctx context.Context, stmts []*syntax.Stmt) {
 // (#245); the branch belongs with it when it lands.
 func (r *Runner) stmtsTopLevel(ctx context.Context, stmts []*syntax.Stmt) {
 	for i := 0; i < len(stmts); i++ {
+		// Ambient history (#277): recorded before the statement runs,
+		// which is bash's order — `history` lists itself, and a
+		// `set +o history` is the last line recorded while the
+		// `set -o history` that turned recording on never is, because
+		// the option was still off when this check ran for it.
+		if r.historyHook != nil && r.opts[optHistory] {
+			r.historyHook(stmts[i])
+		}
 		r.stmt(ctx, stmts[i])
 		if !r.exit.aborting {
 			continue

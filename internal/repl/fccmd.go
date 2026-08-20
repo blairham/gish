@@ -114,6 +114,12 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 	// -l` said there was no history at all -- and under `koi -c`, where
 	// there is no store, fc said that about every session.
 	entries := historyEntries()
+	// bash's fc never lists its own invocation, while a later command
+	// still finds the fc line in history — so its just-recorded line is
+	// left out of the view rather than deleted (#277, both measured).
+	if historyAmbientLast() && len(entries) > 0 {
+		entries = entries[:len(entries)-1]
+	}
 	if len(entries) == 0 {
 		// bash prints nothing and succeeds. Nothing to list is not an
 		// error: `fc -l` in a fresh shell is a reasonable thing for a
@@ -122,7 +128,10 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 		return []string{"true"}
 	}
 
-	first, last, err := fcRange(args, len(entries))
+	// Operands are the numbers the listings show, which run ahead of list
+	// positions once HISTSIZE has trimmed entries off the front (#277).
+	base := historyBase()
+	first, last, err := fcRange(args, len(entries), base)
 	if err != nil {
 		fmt.Fprintf(hc.Stderr, "fc: %v\n%s\n", err, fcUsage)
 		return []string{"false"}
@@ -147,7 +156,7 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 		}
 	}
 	for _, i := range idx {
-		writeFCLine(hc, i, entries[i-1], numbered)
+		writeFCLine(hc, i+base, entries[i-1], numbered)
 	}
 	return []string{"true"}
 }
@@ -168,24 +177,25 @@ func writeFCLine(hc interp.HandlerContext, n int, command string, numbered bool)
 }
 
 // fcRange resolves the first/last operands against a history of n
-// entries, numbered 1..n.
+// entries, held as positions 1..n but displayed as base+1..base+n once
+// HISTSIZE trims have advanced the numbering (#277).
 //
 // Negative numbers count back from the newest, which is how people
 // reach for "the last five" without knowing where they are.
-func fcRange(args []string, n int) (first, last int, err error) {
+func fcRange(args []string, n, base int) (first, last int, err error) {
 	switch len(args) {
 	case 0:
 		first, last = n-fcDefaultList+1, n
 	case 1:
-		if first, err = fcIndex(args[0], n); err != nil {
+		if first, err = fcIndex(args[0], n, base); err != nil {
 			return 0, 0, err
 		}
 		last = n
 	case 2:
-		if first, err = fcIndex(args[0], n); err != nil {
+		if first, err = fcIndex(args[0], n, base); err != nil {
 			return 0, 0, err
 		}
-		if last, err = fcIndex(args[1], n); err != nil {
+		if last, err = fcIndex(args[1], n, base); err != nil {
 			return 0, 0, err
 		}
 	default:
@@ -209,7 +219,7 @@ func fcRange(args []string, n int) (first, last int, err error) {
 	return first, last, nil
 }
 
-func fcIndex(s string, n int) (int, error) {
+func fcIndex(s string, n, base int) (int, error) {
 	v, err := strconv.Atoi(s)
 	if err != nil {
 		return 0, fmt.Errorf("%s: history positions must be numbers", s)
@@ -222,7 +232,7 @@ func fcIndex(s string, n int) (int, error) {
 		// the end of the list, not to an out-of-range position.
 		return n, nil
 	}
-	return v, nil
+	return v - base, nil
 }
 
 // isNegativeNumber reports whether an argument is a negative count rather

@@ -250,6 +250,18 @@ type Runner struct {
 	// variable for a logging helper.
 	funcSource map[string]string
 
+	// historyHook is called for each top-level statement about to run
+	// while `set -o history` is on — the recording half of bash's
+	// ambient history (#277). The interpreter fires it and owns nothing
+	// else: rendering the entry text, HISTCONTROL/HISTIGNORE/HISTSIZE,
+	// and the list itself all belong to the shell around it, which is
+	// the side that has the raw source and the `history` builtin.
+	//
+	// It deliberately does not fire for `source` or `eval`, whose
+	// statements never pass through stmtsTopLevel — bash records the
+	// sourcing line, not the sourced file's contents.
+	historyHook func(*syntax.Stmt)
+
 	// pipeStatus collects the exit status of each stage of the pipeline being
 	// run, left to right, for [shellPipeStatusVar]. It is nil when the command
 	// is not a pipeline, in which case that variable holds just the one status.
@@ -497,6 +509,32 @@ func Interactive(enabled bool) RunnerOption {
 func MainScript(path string) RunnerOption {
 	return func(r *Runner) error {
 		r.mainScript = path
+		return nil
+	}
+}
+
+// LookupVar reads a variable as the running script sees it *now*,
+// including values assigned mid-run — which [Runner.Vars] only reflects
+// once Run returns, because the live values sit in an overlay until then.
+// The ambient-history recorder reads HISTCONTROL, HISTIGNORE and HISTSIZE
+// through this at record time (#277), since a script sets them as it goes.
+func (r *Runner) LookupVar(name string) expand.Variable {
+	if r.writeEnv != nil {
+		return r.writeEnv.Get(name)
+	}
+	return r.Env.Get(name)
+}
+
+// HistoryHook installs fn to be called with each top-level statement the
+// runner is about to execute while `set -o history` is on (#277). It fires
+// *before* the statement runs, which is bash's order — `history` lists
+// itself, and the `set +o history` that turns recording off is the last
+// line recorded. The statement is handed over rather than rendered text
+// because bash records raw source lines, not a pretty-printing: the caller
+// holds the source bytes and slices them by the statement's position.
+func HistoryHook(fn func(*syntax.Stmt)) RunnerOption {
+	return func(r *Runner) error {
+		r.historyHook = fn
 		return nil
 	}
 }
@@ -833,8 +871,8 @@ var posixOptsTable = [...]posixOpt{
 	// Known and listed, but koi cannot leave the state bash starts them
 	// in. Asking for that state is answered rather than pretended.
 	//
-	// notify and monitor are job control (#5). histexpand and history are
-	// the line editor's, not the interpreter's, and are already off in a
+	// notify and monitor are job control (#5). histexpand is the line
+	// editor's, not the interpreter's, and is already off in a
 	// non-interactive shell — which is the state scripts ask for. emacs
 	// and vi are the editor's for the same reason. verbose would have to
 	// echo input as it is read, which the interpreter never sees: it is
@@ -842,10 +880,16 @@ var posixOptsTable = [...]posixOpt{
 	// whole interpreter and is its own piece of work, named by #308 for
 	// the one it already owes. The rest are POSIX corners nothing in the
 	// corpus reaches for.
+	//
+	// history is supported (#277): turning it on makes stmtsTopLevel fire
+	// the historyHook per statement, which is ambient recording — the
+	// shell around the interpreter renders and keeps the entries. The row
+	// stays in this block only because the table is positional (the opt*
+	// constants below index into it) and moving it would renumber them.
 	{'b', "notify", false, false},
 	{'m', "monitor", false, false},
 	{'H', "histexpand", false, false},
-	{' ', "history", false, false},
+	{' ', "history", false, true},
 	{' ', "emacs", false, false},
 	{' ', "vi", false, false},
 	{'v', "verbose", false, false},
@@ -1104,6 +1148,10 @@ func (r *Runner) Reset() {
 		// started on does not change between runs, and a Reset that
 		// forgot it would empty BASH_SOURCE at the top level (#266).
 		mainScript: r.mainScript,
+
+		// Constructor state too: the hook is installed once by the shell
+		// and must survive the Reset that Run performs on first use.
+		historyHook: r.historyHook,
 
 		dirStack: r.dirStack[:0],
 		usedNew:  r.usedNew,

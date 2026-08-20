@@ -8,6 +8,7 @@
 package repl
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -751,7 +752,12 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	// Read as bash reads (#276): the statements before the first syntax
 	// error run, and only then is the error reported. A .bashrc with one
 	// construct koi cannot read at the bottom used to be a total loss.
-	stmts, perr := interp.ParseAsRead(r, name)
+	//
+	// The tee keeps the raw source for ambient history (#277): under
+	// `set -o history` bash records source lines, not a re-rendering, so
+	// the recorder needs the bytes the parser consumed.
+	var src bytes.Buffer
+	stmts, perr := interp.ParseAsRead(io.TeeReader(r, &src), name)
 	file := &syntax.File{Name: name, Stmts: stmts}
 	rewriteSubstrateGaps(file)
 	registerSubstrateBuiltins()
@@ -765,12 +771,21 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	if inv == invokedScript {
 		mainScript = name
 	}
-	runner, err := interp.New(
+	// The recorder closes over the runner assigned below: the hook only
+	// fires during Run, and HISTCONTROL/HISTIGNORE/HISTSIZE have to be
+	// read at record time because the script sets them as it goes.
+	var runner *interp.Runner
+	rec := newHistoryRecorder(file, src.String(), func(name string) string {
+		return sessionVarOf(runner, name)
+	})
+	var err error
+	runner, err = interp.New(
 		// The "--" matters: without it a parameter that begins with a
 		// dash would be read as a shell option, so `koi script.sh -v`
 		// would try to set -v instead of passing it along.
 		interp.Params(append([]string{"--"}, params...)...),
 		interp.MainScript(mainScript),
+		interp.HistoryHook(rec.record),
 		interp.Env(sessionEnv(sessionFlags{interactive: interactive, invocation: inv})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
@@ -822,14 +837,22 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 // error messages. Later opts override the default stdio, which keeps the
 // core loop testable without touching the real terminal.
 func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.RunnerOption) error {
-	stmts, perr := interp.ParseAsRead(r, name)
+	// The tee keeps the raw source for ambient history under
+	// `set -o history` (#277), same as runScript.
+	var src bytes.Buffer
+	stmts, perr := interp.ParseAsRead(io.TeeReader(r, &src), name)
 	file := &syntax.File{Name: name, Stmts: stmts}
 	rewriteSubstrateGaps(file)
 	// The session-querying builtins (declare -F) need a runner on this
 	// path too: a script asks the same questions an interactive line does.
 	registerSubstrateBuiltins()
+	var runner *interp.Runner
+	rec := newHistoryRecorder(file, src.String(), func(name string) string {
+		return sessionVarOf(runner, name)
+	})
 	runner, err := interp.New(append(
 		[]interp.RunnerOption{
+			interp.HistoryHook(rec.record),
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(shoptCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),

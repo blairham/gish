@@ -76,7 +76,51 @@ var (
 	// `history -s x &` really can race with a `history` on the main line.
 	histList    []string
 	histMutated bool
+	// histBase is how many entries HISTSIZE has trimmed off the front.
+	// bash's listing numbers keep advancing past a trim — after
+	// HISTSIZE=2 drops two entries the next listing starts at 3 — while
+	// `history -c` resets the numbering to 1 (both measured).
+	histBase int
+	// histAmbientLast marks that the newest list entry is the ambient
+	// record (#277) of the line currently executing. `history -s` and
+	// `history -p` replace that line rather than following it — bash
+	// deletes the just-recorded `history -s …` entry before appending
+	// the substitute (measured: the -s invocations never appear in the
+	// listing, only what they stored).
+	histAmbientLast bool
 )
+
+// historyAmbientLast reports whether the newest entry is the ambient
+// record of the currently running line. `fc` reads this to leave its own
+// line out of its view — bash's fc never lists itself, while a *later*
+// command still sees the fc line in history, so the exclusion is a view
+// and not a deletion (both measured).
+func historyAmbientLast() bool {
+	histMu.Lock()
+	defer histMu.Unlock()
+	return histAmbientLast
+}
+
+// historyPopSelf removes the ambient record of the currently running
+// line, if that is what the newest entry is — the first half of
+// `history -s` and `history -p`. No effect when recording is off or the
+// line itself was filtered out, which is also when bash has nothing to
+// delete.
+func historyPopSelf() {
+	histMu.Lock()
+	defer histMu.Unlock()
+	if histAmbientLast && histMutated && len(histList) > 0 {
+		histList = histList[:len(histList)-1]
+	}
+	histAmbientLast = false
+}
+
+// historyBase returns the numbering offset trims have accumulated.
+func historyBase() int {
+	histMu.Lock()
+	defer histMu.Unlock()
+	return histBase
+}
 
 // historyEntries returns the list `history` reports, oldest first.
 func historyEntries() []string {
@@ -109,6 +153,9 @@ func historyMutate(fn func(list []string) []string) {
 		histMutated = true
 	}
 	histList = fn(histList)
+	// Whatever the newest entry is now, it is not the ambient record of
+	// the running line anymore.
+	histAmbientLast = false
 }
 
 func historyCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
@@ -168,13 +215,26 @@ operands:
 		if len(args) == 0 {
 			return historyStatus(0)
 		}
+		// `history -s` *replaces* its own line: bash deletes the entry
+		// recording the `history -s …` command itself, then runs the
+		// substitute through the same HISTCONTROL/HISTIGNORE gate as
+		// ambient recording — `history -s ' spaced'` under ignoreboth
+		// deletes and records nothing (both measured).
+		historyPopSelf()
 		entry := strings.Join(args, " ")
-		historyMutate(func(list []string) []string { return append(list, entry) })
+		historyAppendFiltered(entry, false, func(name string) string {
+			return sessionVarOf(sessionRunner(), name)
+		})
 		return historyStatus(0)
 	case del != "":
 		return historyDelete(hc, del)
 	case clear:
 		historyMutate(func([]string) []string { return nil })
+		// Clearing restarts the numbering at 1, unlike a HISTSIZE trim
+		// (measured against bash 5.3).
+		histMu.Lock()
+		histBase = 0
+		histMu.Unlock()
 		return historyStatus(0)
 	}
 	return historyList(hc, args)
@@ -184,6 +244,7 @@ operands:
 // count shows only the newest n, keeping their real positions.
 func historyList(hc interp.HandlerContext, args []string) []string {
 	entries := historyEntries()
+	base := historyBase()
 	first := 0
 	if len(args) > 0 {
 		n, err := strconv.Atoi(args[0])
@@ -199,7 +260,7 @@ func historyList(hc interp.HandlerContext, args []string) []string {
 		}
 	}
 	for i := first; i < len(entries); i++ {
-		fmt.Fprintf(hc.Stdout, "%5d  %s\n", i+1, entries[i])
+		fmt.Fprintf(hc.Stdout, "%5d  %s\n", i+1+base, entries[i])
 	}
 	return historyStatus(0)
 }
@@ -215,10 +276,15 @@ func historyDelete(hc interp.HandlerContext, spec string) []string {
 		return historyStatus(1)
 	}
 	bad := false
+	base := historyBase()
 	historyMutate(func(list []string) []string {
 		i := n
 		if i < 0 { // bash counts back from the newest
 			i = len(list) + 1 + i
+		} else {
+			// Positive offsets are the numbers the listing shows, which
+			// run ahead of list positions once HISTSIZE has trimmed.
+			i -= base
 		}
 		if i < 1 || i > len(list) {
 			bad = true
@@ -240,6 +306,9 @@ func historyDelete(hc interp.HandlerContext, spec string) []string {
 // had — the same expander the interactive line goes through (#96), so
 // `history -p '!!'` and typing `!!` cannot disagree.
 func historyExpand(hc interp.HandlerContext, args []string) []string {
+	// `history -p` removes its own line first (measured), which is also
+	// what makes its `!!` mean the previous command rather than itself.
+	historyPopSelf()
 	entries := historyEntries()
 	match := func(prefix string, n int) (string, bool) {
 		// Newest first, skipping n matches, which is the contract
