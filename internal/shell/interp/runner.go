@@ -1311,7 +1311,7 @@ assignLoop:
 			case "-f", "-p", "-F":
 				declQuery = flag
 			default:
-				r.errf("declare: invalid option %q\n", flag)
+				r.errf("%s: invalid option %q\n", variant, flag)
 				r.exit.code = 2
 				return
 			}
@@ -1321,8 +1321,17 @@ assignLoop:
 		}
 		name := as.Name.Value
 		namedAny = true
+		// The builtin fallback path hands the whole word over as the
+		// name, so `declare f[qux]=v` arrives with the subscript still
+		// attached; the parse path delivers it as as.Index already.
+		if as.Index == nil {
+			if base, sub, ok := cutElemSubscript(name); ok {
+				name = base
+				as.Index = &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: sub}}}
+			}
+		}
 		if !syntax.ValidName(name) {
-			r.errf("declare: invalid name %q\n", name)
+			r.errf("%s: invalid name %q\n", variant, name)
 			r.exit.code = 1
 			return
 		}
@@ -1352,7 +1361,7 @@ assignLoop:
 			// declare -p name: print variable with attributes.
 			vr := r.lookupVar(name)
 			if !vr.Declared() {
-				r.errf("declare: %s: not found\n", name)
+				r.errf("%s: %s: not found\n", variant, name)
 				r.exit.code = 1
 				continue
 			}
@@ -1362,6 +1371,12 @@ assignLoop:
 			}
 			switch vr.Kind {
 			case expand.Indexed:
+				// Declared but never set prints bare — `declare -a c`
+				// answers `declare -a c`, not `=()` (#378).
+				if !vr.Set {
+					r.outf("declare -%s %s\n", flags, name)
+					continue
+				}
 				r.outf("declare -%s %s=(", flags, name)
 				for i, v := range vr.List {
 					if i > 0 {
@@ -1375,14 +1390,16 @@ assignLoop:
 				}
 				r.out(")\n")
 			case expand.Associative:
+				if !vr.Set {
+					r.outf("declare -%s %s\n", flags, name)
+					continue
+				}
+				// Keys are sorted for determinism where bash prints its
+				// hash order, and each element carries bash's trailing
+				// space: ([one]="1" [two]="2" ).
 				r.outf("declare -%s %s=(", flags, name)
-				first := true
-				for k, v := range vr.Map {
-					if !first {
-						r.out(" ")
-					}
-					r.outf("[%s]=%q", k, v)
-					first = false
+				for _, k := range slices.Sorted(maps.Keys(vr.Map)) {
+					r.outf("[%s]=%q ", k, vr.Map[k])
 				}
 				r.out(")\n")
 			default:
@@ -1404,6 +1421,19 @@ assignLoop:
 			continue
 		}
 		vr := r.lookupVar(name)
+		// An explicit -a or -A settles the kind before any value is
+		// assigned: the attribute is sticky (#378), so `declare -a c`
+		// declares an unset array that a later c=4 fills at element 0,
+		// a scalar's value carries to element 0, and converting one
+		// array kind to the other is bash's error with the data kept.
+		if valType == "-a" || valType == "-A" {
+			if !r.applyArrayKind(&vr, valType, variant, name) {
+				continue
+			}
+		}
+		// prev is what setVarWithIndex consults to route a scalar
+		// assignment into an array variable's element 0.
+		prev := vr
 		// The integer attribute has to be settled before the value is
 		// computed, since it is what decides whether the value is an
 		// arithmetic expression; the other modes are applied afterwards.
@@ -1414,8 +1444,8 @@ assignLoop:
 		}
 		if as.Naked {
 			switch valType {
-			case "-A":
-				vr.Kind = expand.Associative
+			case "-a", "-A":
+				// The kind is already applied; the value stands.
 			case "-n":
 				// `declare -n foo` with no value *promotes* an
 				// existing variable: bash reads foo's current value
@@ -1452,7 +1482,16 @@ assignLoop:
 				vr.Integer = false
 			}
 		}
-		r.setVar(name, vr)
+		if as.Naked {
+			r.setVar(name, vr)
+		} else {
+			// The index route covers both an explicit subscript —
+			// `declare f[qux]=assigned` adds an element rather than
+			// flattening the array to a scalar (#378) — and the
+			// implicit element 0 a scalar assignment to an array
+			// variable lands in.
+			r.setVarWithIndex(prev, name, as.Index, vr)
+		}
 	}
 	if !namedAny && valType == "-n" && declQuery == "" && !unref {
 		// A bare `declare -n` lists the namerefs, the way a bare
@@ -1829,6 +1868,40 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	}
 	r.exit, r.lastExit = oldExit, oldLastExit // traps on EXIT or ERR should not modify the result
 	return code
+}
+
+// applyArrayKind gives vr the array kind an explicit -a or -A asks for
+// (#378): an unset variable keeps its unsetness — `declare -a c` then
+// prints bare — a scalar's value carries to element 0, the matching
+// kind is a no-op, and the opposite kind is bash's cannot-convert
+// error with the data kept and status 1. Measured against 5.3.
+func (r *Runner) applyArrayKind(vr *expand.Variable, valType, variant, name string) bool {
+	want := expand.Indexed
+	other, from, to := expand.Associative, "associative", "indexed"
+	if valType == "-A" {
+		want = expand.Associative
+		other, from, to = expand.Indexed, "indexed", "associative"
+	}
+	switch vr.Kind {
+	case want:
+	case other:
+		r.errf("%s: %s: cannot convert %s to %s array\n", variant, name, from, to)
+		r.exit.code = 1
+		return false
+	case expand.String:
+		if vr.Set {
+			if want == expand.Indexed {
+				vr.List = []string{vr.Str}
+			} else {
+				vr.Map = map[string]string{"0": vr.Str}
+			}
+			vr.Str = ""
+		}
+		vr.Kind = want
+	default:
+		vr.Kind = want
+	}
+	return true
 }
 
 func (r *Runner) flattenAssigns(args []*syntax.Assign) iter.Seq[*syntax.Assign] {
