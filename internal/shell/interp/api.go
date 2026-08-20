@@ -1003,7 +1003,7 @@ func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 
 func (r *Runner) posixOptByName(name string) (*bool, posixOpt) {
 	for i, opt := range &posixOptsTable {
-		if opt.name == name {
+		if opt.name == name && !letterOnlyOpts[name] {
 			return &r.opts[i], opt
 		}
 	}
@@ -1048,6 +1048,12 @@ func (r *Runner) posixOptByFlag(flag byte) (*bool, posixOpt) {
 // Asking for the other state is refused, because the alternative is a shell
 // that says it is in POSIX mode and is not.
 func setPosixOpt(status *bool, opt posixOpt, enable bool) error {
+	if opt.name == "restricted" && *status && !enable {
+		// A restricted shell cannot un-restrict itself, which is the
+		// one rule the whole feature rests on (#398). bash reports it
+		// as an invalid option, since `+r` is not a spelling it takes.
+		return fmt.Errorf("+r: invalid option")
+	}
 	if opt.supported || enable == *status {
 		*status = enable
 		return nil
@@ -1103,6 +1109,7 @@ func posixOptNames() []int {
 	for i := range idx {
 		idx[i] = i
 	}
+	idx = slices.DeleteFunc(idx, func(i int) bool { return letterOnlyOpts[posixOptsTable[i].name] })
 	slices.SortFunc(idx, func(a, b int) int {
 		return strings.Compare(posixOptsTable[a].name, posixOptsTable[b].name)
 	})
@@ -1143,6 +1150,16 @@ type posixOpt struct {
 	defaultState bool   // the state bash starts this option in, non-interactively
 	supported    bool   // whether koi can put it in the other state
 }
+
+// letterOnlyOpts have no `-o name` spelling: `restricted` is reachable
+// as -r and is neither listed by `set -o` nor accepted as `set -o
+// restricted` (#398). Measured — the differential listing test caught
+// it being listed.
+//
+// It is a set rather than a field on posixOpt because the table is
+// written positionally, and one exception is not worth rewriting
+// twenty-eight rows for.
+var letterOnlyOpts = map[string]bool{"restricted": true}
 
 type bashOpt struct {
 	name         string
@@ -1201,6 +1218,13 @@ var posixOptsTable = [...]posixOpt{
 	{'k', "keyword", false, true},
 	{'t', "onecmd", false, false},
 	{'p', "privileged", false, false},
+	// A restricted shell (#398). It is a *compatibility* feature and
+	// not a security boundary — bash's own manual says a restricted
+	// shell can be escaped through any program that runs a subshell,
+	// and koi's answer to confinement is the sandbox profiles on the
+	// exec path. What it buys here is that rsh.tests' probes behave,
+	// and that a script asking for it is not refused outright.
+	{'r', "restricted", false, true},
 	// ignoreeof governs what an *interactive* shell does with EOF, so
 	// there is nothing for this runner to do — but refusing it made
 	// `set -o ignoreeof` in an rc abort rather than be irrelevant
@@ -1410,6 +1434,7 @@ const (
 	optKeyword
 	optOneCmd
 	optPrivileged
+	optRestricted
 	optIgnoreEOF
 	optNoLog
 

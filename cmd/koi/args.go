@@ -60,6 +60,8 @@ var longOptions = map[string]bool{
 	"sandbox":        true,
 	"rc":             true,
 	"restore":        true,
+	// bash's long spelling of -r (#398).
+	"restricted": false,
 }
 
 // parseArgs reads a shell command line. The error is meant for the user:
@@ -100,6 +102,8 @@ func parseArgs(args []string) (shellArgs, error) {
 				out.version = true
 			case "login":
 				out.login = true
+			case "restricted":
+				out.setFlags = append(out.setFlags, "-r")
 			case "remote-session":
 				out.remoteSession = true
 			case "help":

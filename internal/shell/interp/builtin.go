@@ -413,6 +413,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		r.outf("%s\n", pwd)
 	case "cd":
+		if r.opts[optRestricted] {
+			return failf(1, "cd: restricted\n")
+		}
 		// -L and -P choose whether a symlinked path is kept as written
 		// or resolved (#391). koi rejected both with a usage error and
 		// exit 2, which cost whole suite files their content: a script
@@ -656,6 +659,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			r.hashTable = nil
 			break
 		}
+		if remember != "" && r.opts[optRestricted] {
+			return failf(1, "hash: %s: restricted\n", remember)
+		}
 		if remember != "" {
 			if len(args) == 0 {
 				return failf(2, "hash: usage: hash [-lr] [-p pathname] [-dt] [name ...]\n")
@@ -776,6 +782,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		if len(args) < 1 {
 			return failf(2, "%v: source: need filename\n", pos)
 		}
+		if r.opts[optRestricted] && strings.ContainsRune(args[0], '/') {
+			// A restricted shell may source by name but not by path,
+			// which is what keeps the search inside PATH (#398).
+			return failf(1, "%s: %s: restricted\n", name, args[0])
+		}
 		path, err := scriptFromPathDir(r.Dir, r.writeEnv, args[0])
 		if err != nil {
 			// If the script was not found in PATH or there was any error, pass
@@ -882,6 +893,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		exit.oneIf(falsy)
 	case "exec":
+		if r.opts[optRestricted] && len(args) > 0 {
+			return failf(1, "exec: restricted\n")
+		}
 		// TODO: Consider unix.Exec, i.e. actually replacing
 		// the process. It's in theory what a shell should do,
 		// but in practice it would kill the entire Go process
@@ -938,7 +952,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			case "-p":
 				// Search the *default* PATH rather than the session's,
 				// which is how a script reaches the system tools when
-				// PATH may have been rewritten.
+				// PATH may have been rewritten — and exactly what a
+				// restricted shell exists to prevent (#398).
+				if r.opts[optRestricted] {
+					return failf(1, "command: -p: restricted\n")
+				}
 				defPath = true
 			default:
 				return failf(2, "command: invalid option %q\n", flag)

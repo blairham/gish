@@ -3078,6 +3078,18 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	default:
 		return nil, fmt.Errorf("unhandled redirect op: %v", rd.Op)
 	}
+	if r.opts[optRestricted] {
+		// A restricted shell refuses every output redirection to a
+		// file (#398). Input is untouched: reading is not what the
+		// restriction is about.
+		switch op {
+		case syntax.RdrOut, syntax.RdrAll, syntax.RdrClob,
+			syntax.AppOut, syntax.AppAll, syntax.RdrInOut:
+			err := fmt.Errorf("%s: restricted: cannot redirect output", arg)
+			r.errf("%v\n", err)
+			return nil, err
+		}
+	}
 	// noclobber refuses to truncate an existing regular file. ">|" is the
 	// escape hatch which ignores the option, and appending or writing to a file
 	// which does not exist yet is always allowed. Note that bash only protects
@@ -3450,6 +3462,13 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			r.optState = oldOptState
 		}
 		r.exit.returning = false
+		return
+	}
+	if r.opts[optRestricted] && strings.ContainsRune(name, '/') {
+		// A restricted shell runs only what PATH finds, so a name with
+		// a slash in it is refused (#398).
+		r.errf("%s: restricted: cannot specify `/' in command names\n", name)
+		r.exit.code = 1
 		return
 	}
 	if IsBuiltin(name) && !r.disabledBuiltins[name] {

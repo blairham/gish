@@ -1950,6 +1950,33 @@ q`,
 		"m\n",
 	},
 
+	// A restricted shell (#398). It is a compatibility feature rather
+	// than a security boundary — bash's own manual says as much, and
+	// koi's answer to confinement is the sandbox profiles on the exec
+	// path — but a script asking for it was refused outright, so every
+	// probe in rsh.tests simply succeeded.
+	{"set -r; cd /tmp; echo rc=$?", "cd: restricted\nrc=1\n #JUSTERR"},
+	{"set -r; /bin/echo hi; echo rc=$?", "/bin/echo: restricted: cannot specify `/' in command names\nrc=1\n #JUSTERR"},
+	{"set -r; echo hi > f; echo rc=$?", "f: restricted: cannot redirect output\nrc=1\n #JUSTERR"},
+	{"set -r; exec /bin/echo x; echo rc=$?", "exec: restricted\nrc=1\n #JUSTERR"},
+	{"set -r; source /etc/hosts; echo rc=$?", "source: /etc/hosts: restricted\nrc=1\n #JUSTERR"},
+	{
+		// The refusal is fatal, unlike an ordinary readonly
+		// assignment: measured, and it is what makes the restriction a
+		// restriction rather than a message.
+		"set -r; PATH=/x; echo rc=$?",
+		"PATH: readonly variable\nexit status 1 #JUSTERR",
+	},
+	{"set -r; echo ok; echo rc=$?", "ok\nrc=0\n"},
+	{
+		// Not an `-o` option name at all: it is reachable as -r, and
+		// neither listed nor settable by name. The differential
+		// listing test in cmd/koi caught it being listed, which is
+		// where the whole `set -o` table is compared to bash's.
+		"set -o restricted; echo rc=$?",
+		"set: invalid option: \"restricted\"\nrc=2\n #JUSTERR",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
