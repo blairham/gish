@@ -68,3 +68,29 @@ func TestACPHandshakeSucceedsWithinDeadline(t *testing.T) {
 		t.Errorf("no hosting banner, so the handshake did not complete: %q", errOut.String())
 	}
 }
+
+// The agent's stderr reaches the session's (#331): it is frequently the
+// only place an agent explains a refusal — claude-code-acp's
+// nested-session guard writes there and answers only "Internal error"
+// on the wire.
+func TestACPAgentStderrReachesTheSession(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses /bin/sh as the agent")
+	}
+	old := handshakeTimeout
+	handshakeTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { handshakeTimeout = old })
+
+	var out, errOut bytes.Buffer
+	err := RunACP(context.Background(), strings.NewReader(""), &out, &errOut,
+		[]string{
+			"--profile", "none", "--",
+			"/bin/sh", "-c", "echo agent-diagnostic >&2; exec sleep 60",
+		})
+	if err == nil {
+		t.Fatal("a mute agent completed the handshake")
+	}
+	if !strings.Contains(errOut.String(), "agent-diagnostic") {
+		t.Errorf("the agent's stderr was discarded: %q", errOut.String())
+	}
+}

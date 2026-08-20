@@ -54,7 +54,17 @@ type Error struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-func (e *Error) Error() string { return fmt.Sprintf("acp: %s (%d)", e.Message, e.Code) }
+// Error formats the error with its Data when there is any. Data is
+// where agents put the actual cause ("Query closed before response
+// received" arrived there under a bare "Internal error"), and an error
+// that drops it is undebuggable without re-implementing the handshake
+// by hand (#331).
+func (e *Error) Error() string {
+	if len(e.Data) > 0 && string(e.Data) != "null" {
+		return fmt.Sprintf("acp: %s (%d): %s", e.Message, e.Code, e.Data)
+	}
+	return fmt.Sprintf("acp: %s (%d)", e.Message, e.Code)
+}
 
 // Standard JSON-RPC codes, plus the one ACP adds for a refused method.
 const (

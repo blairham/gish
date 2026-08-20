@@ -41,7 +41,7 @@ func TestClientHandshakeAndPrompt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	client, err := acp.Start(ctx, []string{bin}, acp.ExecRunner)
+	client, err := acp.Start(ctx, []string{bin}, acp.ExecRunner, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestAgentRunsCommandsThroughTheClient(t *testing.T) {
 		return acp.ExecRunner(ctx, cmd, out)
 	}
 
-	client, err := acp.Start(ctx, []string{bin}, runner)
+	client, err := acp.Start(ctx, []string{bin}, runner, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,5 +168,32 @@ func TestOutputKeepsTheTail(t *testing.T) {
 	}
 	if !truncated {
 		t.Error("truncation was not reported, so an agent would read a partial log as whole")
+	}
+}
+
+// Error.Data carries the actual cause — "Internal error (-32603)" with
+// the explanation in Data is exactly what claude-code-acp answers when
+// its session dies — and dropping it made failures undebuggable (#331).
+func TestErrorFormatsData(t *testing.T) {
+	t.Parallel()
+
+	withData := &acp.Error{
+		Code:    -32603,
+		Message: "Internal error",
+		Data:    json.RawMessage(`{"details":"Query closed before response received"}`),
+	}
+	if got := withData.Error(); !strings.Contains(got, "Query closed before response received") {
+		t.Errorf("the error dropped its Data: %q", got)
+	}
+
+	// Without Data — including JSON null, which is absence spelled out —
+	// the shape stays as it was: no trailing garbage.
+	for _, e := range []*acp.Error{
+		{Code: -32601, Message: "method not found"},
+		{Code: -32601, Message: "method not found", Data: json.RawMessage(`null`)},
+	} {
+		if got, want := e.Error(), "acp: method not found (-32601)"; got != want {
+			t.Errorf("Error() = %q, want %q", got, want)
+		}
 	}
 }
