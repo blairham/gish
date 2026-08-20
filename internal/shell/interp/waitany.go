@@ -16,6 +16,24 @@ const waitNoChildren = 127
 // bgIndex resolves a job spelling — "g" plus the 1-indexed position, the
 // same form $! hands out — to an index into bgProcs.
 func (r *Runner) bgIndex(arg string) (int, bool) {
+	if spec, ok := strings.CutPrefix(arg, "%"); ok {
+		// A jobspec, which is what a script actually writes: `wait %1`,
+		// and `%%`/`%+`/`%-` for the current and previous jobs (#397).
+		// koi understood only its own "gN" pid form, so `wait %1`
+		// answered "not a child of this shell".
+		switch spec {
+		case "", "%", "+":
+			return r.bgCurrent(0)
+		case "-":
+			return r.bgCurrent(1)
+		}
+		n := atoi(spec)
+		if n <= 0 || n > int64(len(r.bgProcs)) ||
+			r.bgProcs[n-1].inherited || r.bgProcs[n-1].disowned {
+			return 0, false
+		}
+		return int(n) - 1, true
+	}
 	rest, ok := strings.CutPrefix(arg, "g")
 	pid := atoi(rest)
 	if !ok || pid <= 0 || pid > int64(len(r.bgProcs)) {
@@ -23,10 +41,26 @@ func (r *Runner) bgIndex(arg string) (int, bool) {
 	}
 	// An inherited job is visible to `jobs` but is not ours to wait for,
 	// which is the answer bash gives a command substitution that tries.
-	if r.bgProcs[pid-1].inherited {
+	if r.bgProcs[pid-1].inherited || r.bgProcs[pid-1].disowned {
 		return 0, false
 	}
 	return int(pid) - 1, true
+}
+
+// bgCurrent finds the current job, or the one back counted from it,
+// which is what %% / %+ and %- name. Jobs already waited for do not
+// count: bash's "current" is the newest one still around.
+func (r *Runner) bgCurrent(back int) (int, bool) {
+	for i := len(r.bgProcs) - 1; i >= 0; i-- {
+		if r.bgProcs[i].inherited || r.bgProcs[i].reaped || r.bgProcs[i].disowned {
+			continue
+		}
+		if back == 0 {
+			return i, true
+		}
+		back--
+	}
+	return 0, false
 }
 
 // waitAny implements `wait -n`: block until the *next* job finishes and

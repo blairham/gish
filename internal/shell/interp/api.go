@@ -479,6 +479,10 @@ type bgProc struct {
 	// process to ask afterwards what it was running.
 	cmd string
 
+	// disowned marks a job `disown` forgot: it is no longer listed and
+	// no longer waited for (#397).
+	disowned bool
+
 	// inherited marks a job this shell can *see* but is not the parent of.
 	// A command substitution gets one of these per job of the shell that
 	// spawned it, because `jobs` inside `$(...)` reports the caller's jobs

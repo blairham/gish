@@ -94,6 +94,7 @@ var helpTopics = map[string]helpTopic{
 	"fg":       {"fg [%job]", "resume a job in the foreground"},
 	"help":     {"help [name]", "explain a builtin; koi commands also answer `<name> help`"},
 	"jobs":     {"jobs", "list background and stopped jobs"},
+	"disown":   {"disown [-ar] [jobspec ...]", "forget a background job"},
 	"enable":   {"enable [-n] [-a] [name ...]", "enable or disable shell builtins"},
 	"logout":   {"logout", "exit a login shell"},
 	"kill":     {"kill [-signal] pid|%job ...", "send a signal to processes or jobs"},

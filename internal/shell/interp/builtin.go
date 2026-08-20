@@ -106,7 +106,7 @@ var builtinNames = map[string]bool{
 	"declare":   true, // NOTE: our parser treats this as a keyword
 	"typeset":   true, // NOTE: our parser treats this as a keyword
 	"dirs":      true,
-	"disown":    false,
+	"disown":    true,
 	"echo":      true, // TODO: surely this is POSIX? but why is it not in the main POSIX spec page?
 	"enable":    true,
 	"history":   false,
@@ -481,6 +481,13 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				if pidVar = fp.value(); pidVar == "" {
 					return failf(2, "wait: -p: option requires an argument\n")
 				}
+			case "-f":
+				// -f asks to wait for the job to *terminate* rather
+				// than to change state, which is the only thing koi's
+				// wait does: its jobs are goroutines and cannot stop
+				// (#397). Accepted rather than refused, because
+				// refusing it made `wait -f %1` a usage error where
+				// bash simply waits.
 			default:
 				return failf(2, "wait: invalid option %q\n", flag)
 			}
@@ -498,6 +505,10 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		if len(args) == 0 {
 			// Note that "wait" without arguments always returns exit status zero.
 			for i := range r.bgProcs {
+				if r.bgProcs[i].disowned {
+					// Forgotten by `disown`, so not waited for (#397).
+					continue
+				}
 				<-r.bgProcs[i].done
 				r.bgProcs[i].reaped = true
 			}
@@ -506,6 +517,12 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		for _, arg := range args {
 			i, ok := r.bgIndex(arg)
 			if !ok {
+				if strings.HasPrefix(arg, "%") {
+					// A jobspec that names nothing is a different
+					// error from a pid that is not ours, and carries
+					// bash's 127 rather than 1 (#397).
+					return failf(127, "wait: %s: no such job\n", arg)
+				}
 				return failf(1, "wait: pid %s is not a child of this shell\n", arg)
 			}
 			<-r.bgProcs[i].done
@@ -1855,6 +1872,62 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 
 	case "jobs":
 		return r.jobsBuiltin(args)
+
+	case "disown":
+		// Forget a job, so it is no longer listed and no longer waited
+		// for (#397). koi refused the builtin, which made the ordinary
+		// `cmd & disown` line fatal.
+		//
+		// koi's jobs are goroutines rather than processes, so there is
+		// no SIGHUP to withhold — what disown can honestly do here is
+		// drop the bookkeeping, which is what a script observes.
+		fp := flagParser{remaining: args}
+		all, running := false, false
+		for fp.more() {
+			switch flag := fp.flag(); flag {
+			case "-a":
+				all = true
+			case "-r":
+				running = true
+			case "-h":
+				// Mark to skip SIGHUP: koi has nothing to send one to.
+			default:
+				return failf(2, "disown: invalid option %q\n", flag)
+			}
+		}
+		args := fp.args()
+		drop := func(i int) {
+			if i >= 0 && i < len(r.bgProcs) {
+				r.bgProcs[i].disowned = true
+			}
+		}
+		switch {
+		case len(args) > 0:
+			for _, arg := range args {
+				i, ok := r.bgIndex(arg)
+				if !ok {
+					r.errf("disown: %s: no such job\n", arg)
+					exit.code = 1
+					continue
+				}
+				drop(i)
+			}
+		case all, running:
+			for i := range r.bgProcs {
+				if running && r.bgProcs[i].reaped {
+					continue
+				}
+				drop(i)
+			}
+		default:
+			// Bare disown forgets the current job, and says so when
+			// there is none — bash names it "current".
+			i, ok := r.bgCurrent(0)
+			if !ok {
+				return failf(1, "disown: current: no such job\n")
+			}
+			drop(i)
+		}
 
 	case "declare", "typeset", "local", "export", "readonly", "nameref":
 		// The parser produces a DeclClause when one of these words sits

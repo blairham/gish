@@ -2000,6 +2000,24 @@ q`,
 	{`v=1 export v2=2; echo "v=[$v] v2=[$v2]"`, "v=[] v2=[2]\n"},
 	{`set -o posix; v=9 echo hi; echo "v=[$v]"`, "hi\nv=[]\n"},
 
+	// A script could not name a job (#397): wait understood only koi's
+	// own pid form, so `wait %1` — what a script actually writes —
+	// answered "not a child of this shell".
+	{"sleep 0.01 & wait %1; echo w=$?", "w=0\n"},
+	{"sleep 0.01 & wait %%; echo w=$?", "w=0\n"},
+	{"sleep 0.01 & wait -f %1; echo w=$?", "w=0\n"},
+	{
+		// A jobspec naming nothing is a different error from a pid
+		// that is not ours, and carries bash's 127.
+		"sleep 0.01 & wait %9; echo w=$?",
+		"wait: %9: no such job\nw=127\n #JUSTERR",
+	},
+	// disown was refused outright, which made the ordinary
+	// `cmd & disown` line fatal.
+	{"sleep 0.01 & disown; echo d=$?", "d=0\n"},
+	{"sleep 0.01 & disown; jobs", ""},
+	{"disown; echo d=$?", "disown: current: no such job\nd=1\n #JUSTERR"},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
