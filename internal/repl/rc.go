@@ -127,10 +127,24 @@ func enableAliases(ctx context.Context, runner *interp.Runner) {
 // normal; a broken one warns and the shell starts anyway — an rc error
 // must never lock the user out of their shell.
 func loadRC(ctx context.Context, runner *interp.Runner) {
+	// Adopted team fragments run first (#209), so the user's own rc has
+	// the last word: anything they set beats anything a repo shipped,
+	// by source order rather than by a merge policy. A missing
+	// directory is the normal state — startup creates nothing.
+	for _, fragment := range adoptedFragments() {
+		runRCFile(ctx, runner, fragment)
+	}
 	path := rcPath()
 	if path == "" {
 		return
 	}
+	runRCFile(ctx, runner, path)
+}
+
+// runRCFile sources one startup file into the session runner, warning
+// and continuing on every failure — a startup-file error must never
+// lock the user out of their shell.
+func runRCFile(ctx context.Context, runner *interp.Runner, path string) {
 	f, err := os.Open(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "koi: %s: %v\n", path, err)

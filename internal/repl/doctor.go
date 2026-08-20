@@ -81,6 +81,7 @@ func runDoctor(hc interp.HandlerContext) []string {
 		checkTerminal(),
 		checkLoginShell(),
 		checkUpdate(),
+		checkAdopted(),
 	}
 
 	style := ui.Styles(ui.Enabled(hc.Stdout))

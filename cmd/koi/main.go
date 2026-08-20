@@ -52,6 +52,16 @@ func run() int {
 		}
 		return 0
 	}
+	// `koi adopt` applies a repo's checked-in .koi.toml (#209). A
+	// subcommand for the migrate reason: the moment it matters most is
+	// a fresh clone, before anyone has a koi session open.
+	if len(os.Args) >= 2 && os.Args[1] == "adopt" {
+		if err := repl.RunAdopt(os.Stdin, os.Stdout, os.Stderr, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "koi adopt:", err)
+			return 1
+		}
+		return 0
+	}
 	// `koi migrate` reads an existing bash/zsh setup (#160). A
 	// subcommand rather than only a builtin, because the moment it
 	// matters most is before anyone has started a koi session.
