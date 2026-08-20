@@ -344,6 +344,11 @@ func (e expandEnv) Set(name string, vr expand.Variable) error {
 	// temp-env's violations only cost status 1, so the raise lives on
 	// this path rather than in setVar.
 	if prev := e.r.writeEnv.Get(name); prev.ReadOnly {
+		// Not preRedirErrf: this is export's or a temp-env's violation,
+		// raised while the *command* runs, so its own redirection
+		// applies — `export R=2 2>/dev/null` says nothing in bash,
+		// where a plain `R=2 2>/dev/null` still does (#469, measured
+		// both ways).
 		e.r.errf("%s: readonly variable\n", name)
 		e.r.exit.code = 1
 		e.r.exit.aborting = true
@@ -548,6 +553,17 @@ func (r *Runner) outf(format string, a ...any) {
 
 func (r *Runner) errf(format string, a ...any) {
 	fmt.Fprintf(r.stderr, format, a...)
+}
+
+// preRedirErrf writes to the stderr that was in force before the
+// current statement's own redirections, which is where an error raised
+// *before* the command runs belongs (#469).
+func (r *Runner) preRedirErrf(format string, a ...any) {
+	w := r.stderr
+	if r.preRedirStderr != nil {
+		w = r.preRedirStderr
+	}
+	fmt.Fprintf(w, format, a...)
 }
 
 func (r *Runner) stop(ctx context.Context) bool {
@@ -998,7 +1014,10 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					// `set -o posix`. Marking this `exiting` cost a script
 					// every line after the offending one, so a cleanup or a
 					// teardown trap below it never ran (#308).
-					r.errf("%s: readonly variable\n", name)
+					// Reported before the command's own redirections
+					// (#469): an assignment happens first, so
+					// `R=changed 2>/dev/null` still says so.
+					r.preRedirErrf("%s: readonly variable\n", name)
 					r.exit.code = 1
 					r.exit.aborting = true
 					return

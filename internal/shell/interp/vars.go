@@ -341,7 +341,7 @@ func (r *Runner) envGet(name string) string {
 
 func (r *Runner) delVar(name string) {
 	if err := r.writeEnv.Set(name, expand.Variable{}); err != nil {
-		r.errf("%s: %v\n", name, err)
+		r.preRedirErrf("%s: %v\n", name, err)
 		r.exit.code = 1
 		return
 	}
@@ -384,6 +384,10 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 		}
 	}
 	if err := r.writeEnv.Set(name, vr); err != nil {
+		// Not preRedirErrf: reaching here means a *builtin* refused the
+		// write (export, declare, read), and a builtin's diagnostic
+		// goes to its own stderr. The plain-assignment path reports its
+		// own before the redirections (#469).
 		r.errf("%s: %v\n", name, err)
 		r.exit.code = 1
 		return
