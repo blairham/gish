@@ -546,6 +546,26 @@ var runTests = []runTest{
 		"a=b; echo ${!a}; b=c; echo ${!a}",
 		"\nc\n",
 	},
+	// An operator after the indirection applies to the target (#277):
+	// substitution and trims rewrite the target's value, a slice cuts
+	// it, and a default fires on the target being unset. All were
+	// silently dropped, so ${!x//c/X} answered the unsubstituted value.
+	{`x=var; var=abcde; echo "${!x//c/X}"`, "abXde\n"},
+	{`x=var; var=abcde; echo "${!x:1:2}"`, "bc\n"},
+	{`x=var; var=abcde; echo "${!x%de}"`, "abc\n"},
+	{`x=var; var=abcde; echo "${!x:-def}"`, "abcde\n"},
+	{`x=var; unset var; echo "${!x-def}"`, "def\n"},
+	// An empty or invalid target name is an error in bash, never a
+	// silent empty string — silence made ${!x} with a garbage x read
+	// as an unset variable.
+	{
+		`foo=; echo "${!foo-def}"`,
+		"invalid indirect expansion\nexit status 1 #JUSTERR",
+	},
+	{
+		`x='a b'; echo "${!x}"`,
+		"invalid indirect expansion\nexit status 1 #JUSTERR",
+	},
 	{
 		"a=foo_very_long; echo ${a:1}; echo ${a: -1}; echo ${a: -10}; echo ${a:5}",
 		"oo_very_long\ng\n_very_long\nery_long\n",

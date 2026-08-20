@@ -160,6 +160,9 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		case pe.Names != 0:
 			strs = cfg.namesByPrefix(pe.Param.Value)
 		case orig.Kind == NameRef:
+			// An operator after a nameref's ${!r} applies to the target's
+			// *name* in bash (${!r//v/X} rewrites the string), which this
+			// does not implement; the plain form is what scripts use.
 			strs = append(strs, orig.Str)
 		case pe.Index != nil && vr.Kind == Indexed:
 			strs = vr.indexedKeys()
@@ -167,9 +170,33 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			strs = slices.Sorted(maps.Keys(vr.Map))
 		case !vr.IsSet():
 			return "", fmt.Errorf("invalid indirect expansion")
-		case str == "":
-			return "", nil
+		case str == "" || !syntax.ValidName(str):
+			if !syntax.ValidName(name) {
+				// ${!@}, ${!*} and ${!1} with nothing to point at: the
+				// special parameters expand to nothing rather than to an
+				// invalid name, and bash prints empty where an ordinary
+				// variable would error.
+				return "", nil
+			}
+			// bash calls both an empty and a malformed target "invalid
+			// variable name" and treats them the way it treats a missing
+			// one: an error, never a silent empty string — silence here
+			// made ${!x} with a garbage x read as an unset variable (#277).
+			return "", fmt.Errorf("invalid indirect expansion")
 		default:
+			// An operator after the indirection applies to the *target*
+			// (#277): ${!x//c/X} substitutes in the target's value,
+			// ${!x:1:2} slices it, ${!x-def} defaults when the target is
+			// unset. Re-expand with the target as the parameter and the
+			// indirection consumed; without an operator the plain lookup
+			// below keeps the fast path.
+			if pe.Repl != nil || pe.Exp != nil || pe.Slice != nil {
+				pe2 := *pe
+				pe2.Excl = false
+				pe2.Param = &syntax.Lit{Value: str}
+				pe2.Index = nil
+				return cfg.paramExp(&pe2)
+			}
 			vr = cfg.Env.Get(str)
 			strs = append(strs, vr.String())
 		}
