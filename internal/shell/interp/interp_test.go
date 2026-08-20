@@ -3560,6 +3560,31 @@ done <<< 2`,
 		"mkdir sub .sub2; touch {sub,.sub2}/{a,.b}; shopt -s globstar; shopt -u dotglob; echo **/* | sed 's@\\\\@/@g'",
 		"sub sub/a\n",
 	},
+	// Adjacent ** collapse instead of cross-multiplying, and the
+	// zero-match trailing slash appears only after a literal prefix
+	// (#371): a/** answers "a/" where **/a/**, a/**/** and */** answer
+	// bare names — with **/a/**'s natural duplicate kept, as bash keeps
+	// it.
+	{
+		"mkdir -p ga/a gb/a; shopt -s globstar; printf '<%s>' **/** | sed 's@\\\\@/@g'; echo",
+		"<ga><ga/a><gb><gb/a>\n",
+	},
+	{
+		"mkdir -p ga/a; shopt -s globstar; printf '<%s>' ga/** | sed 's@\\\\@/@g'; echo",
+		"<ga/><ga/a>\n",
+	},
+	{
+		"mkdir -p ga/a; shopt -s globstar; printf '<%s>' ga/**/** | sed 's@\\\\@/@g'; echo",
+		"<ga><ga/a>\n",
+	},
+	{
+		"mkdir -p a/a b/a; shopt -s globstar; printf '<%s>' **/a/** | sed 's@\\\\@/@g'; echo",
+		"<a><a/a><a/a><b/a>\n",
+	},
+	{
+		"mkdir -p ga/a gb/a; shopt -s globstar; printf '<%s>' */** | sed 's@\\\\@/@g'; echo",
+		"<ga><ga/a><gb><gb/a>\n",
+	},
 	{
 		"mkdir sub .sub2; touch {sub,.sub2}/{a,.b}; shopt -s globstar; shopt -s dotglob; echo **/* | sed 's@\\\\@/@g'",
 		".sub2 .sub2/.b .sub2/a sub sub/.b sub/a\n",
