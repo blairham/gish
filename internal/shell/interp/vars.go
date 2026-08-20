@@ -82,11 +82,14 @@ func (o *overlayEnviron) Get(name string) expand.Variable {
 func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	normalized := o.normalize(name)
 	prev, inOverlay := o.values[normalized]
-	// Manipulation of a global var inside a function.
-	if o.funcScope && !vr.Local && !prev.Local {
+	// Manipulation of a global var inside a function. A Global write
+	// (`declare -g`, #379) descends regardless of any local shadowing
+	// the name — that shadow is exactly what it exists to bypass.
+	if o.funcScope && (vr.Global || (!vr.Local && !prev.Local)) {
 		// In a function, the parent environment is ours, so it's always read-write.
 		return o.parent.(expand.WriteEnviron).Set(name, vr)
 	}
+	vr.Global = false // a write-time signal, never stored
 	if !inOverlay && o.parent != nil {
 		prev.Variable = o.parent.Get(name)
 	}
@@ -367,6 +370,7 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 	prev.Exported = vr.Exported
 	prev.ReadOnly = vr.ReadOnly
 	prev.Integer = vr.Integer
+	prev.Global = vr.Global
 
 	// from the syntax package, we know that value must be a string if index
 	// is non-nil; nested arrays are forbidden.

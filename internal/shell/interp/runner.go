@@ -1421,6 +1421,32 @@ assignLoop:
 			continue
 		}
 		vr := r.lookupVar(name)
+		if global {
+			// -g reads and writes the global scope through any local
+			// shadowing the name (#379): with f's `local v` in scope,
+			// g's `declare -g v=two` sets the global and leaves the
+			// local — and $v in both functions — untouched.
+			vr = r.globalVar(name)
+		}
+		// The string form of a compound assignment (#379): a value that
+		// arrived through expansion as "( ... )" is parsed as an array
+		// literal whose elements are then expanded — but only when an
+		// explicit -a/-A asks for an array or the variable already is
+		// one; bash 5.1 made the bare form stay a literal string, and
+		// an unbalanced "(" stays literal too. The expansion is reused
+		// either way so a command substitution in the value runs once.
+		if as.Value != nil && as.Index == nil &&
+			(valType == "-a" || valType == "-A" ||
+				vr.Kind == expand.Indexed || vr.Kind == expand.Associative) {
+			val := r.literalAssign(as.Value)
+			lit := &syntax.Assign{Name: as.Name, Append: as.Append}
+			if arr := parseCompoundArray(val); arr != nil {
+				lit.Array = arr
+			} else {
+				lit.Value = &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: val}}}
+			}
+			as = lit
+		}
 		// An explicit -a or -A settles the kind before any value is
 		// assigned: the attribute is sticky (#378), so `declare -a c`
 		// declares an unset array that a later c=4 fills at element 0,
@@ -1467,6 +1493,7 @@ assignLoop:
 		}
 		if global {
 			vr.Local = false
+			vr.Global = true
 		} else if local {
 			vr.Local = true
 		}
@@ -1868,6 +1895,37 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	}
 	r.exit, r.lastExit = oldExit, oldLastExit // traps on EXIT or ERR should not modify the result
 	return code
+}
+
+// globalVar reads name from the global scope, skipping every function
+// scope in between — what declare -g consults and writes (#379).
+func (r *Runner) globalVar(name string) expand.Variable {
+	env := expand.Environ(r.writeEnv)
+	for {
+		o, ok := env.(*overlayEnviron)
+		if !ok || !o.funcScope {
+			return env.Get(name)
+		}
+		env = o.parent
+	}
+}
+
+// parseCompoundArray parses the string form of a compound assignment
+// (#379): a declare argument whose value is the text "( ... )". It
+// returns nil when the text is not exactly one array literal.
+func parseCompoundArray(val string) *syntax.ArrayExpr {
+	if !strings.HasPrefix(val, "(") || !strings.HasSuffix(val, ")") {
+		return nil
+	}
+	f, err := syntax.NewParser().Parse(strings.NewReader("_x="+val), "")
+	if err != nil || len(f.Stmts) != 1 {
+		return nil
+	}
+	ce, ok := f.Stmts[0].Cmd.(*syntax.CallExpr)
+	if !ok || len(ce.Assigns) != 1 || len(ce.Args) != 0 {
+		return nil
+	}
+	return ce.Assigns[0].Array
 }
 
 // applyArrayKind gives vr the array kind an explicit -a or -A asks for
