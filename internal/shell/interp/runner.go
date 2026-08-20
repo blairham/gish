@@ -243,7 +243,16 @@ func (r *Runner) expandErr(err error) {
 		return
 	}
 	errMsg := err.Error()
-	fmt.Fprintln(r.stderr, errMsg)
+	// Word expansion happens *before* a command's own redirections, so
+	// the message goes to the stderr that was in force before them
+	// (#469). koi applies redirections first, so `echo $nope
+	// 2>/dev/null` under `set -u` sent the diagnostic into /dev/null
+	// and the script stopped mid-unit with nothing said.
+	stderr := r.stderr
+	if r.preRedirStderr != nil {
+		stderr = r.preRedirStderr
+	}
+	fmt.Fprintln(stderr, errMsg)
 	switch {
 	case errors.As(err, &expand.UnsetParameterError{}):
 		// nounset is genuinely fatal in bash: measured against 5.3, a
@@ -773,6 +782,13 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	r.traceLine = st.Pos().Line()
 
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
+	// An expansion error is reported to the stderr this statement had
+	// before its own redirections (#469); an enclosing block's
+	// redirection is still in force, which is why this is per statement
+	// rather than the runner's original stderr.
+	oldPreRedir := r.preRedirStderr
+	r.preRedirStderr = oldErr
+	defer func() { r.preRedirStderr = oldPreRedir }()
 	// The descriptor table is modified in place, so a statement with its own
 	// redirections gets a copy to modify and the original is put back after.
 	oldExtraFiles := r.extraFiles
