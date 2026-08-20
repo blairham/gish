@@ -2683,6 +2683,35 @@ var runTests = []runTest{
 		"D:[cat <<EOF > /dev/null\nbody line\nEOF\n]\n",
 	},
 	{
+		// A here-document takes a descriptor like any other input
+		// redirection (#414). koi assigned every body to fd 0 before
+		// the descriptor was even worked out, so fd 3 was never opened
+		// and E2's body landed on the shell's stdin.
+		"while read line1; do read line2 <&3; echo \"$line1 - $line2\"; done <<E1 3<<E2\none\nE1\nalpha\nE2\n",
+		"one - alpha\n",
+	},
+	{
+		// The exec form, which is how a script keeps one open.
+		"exec 4<<EOF\nbody\nEOF\nread -u 4 v; echo \"v=$v\"",
+		"v=body\n",
+	},
+	{
+		// A here-string takes one too.
+		"read -u 3 x 3<<< hello; echo \"x=$x\"",
+		"x=hello\n",
+	},
+	{
+		// And a {varname} here-document assigns the descriptor it
+		// allocated, which is one of #418's cases falling out here.
+		"exec {v}<<XEOF\nline 1\nXEOF\nread -u $v l; echo \"l=$l\"",
+		"l=line 1\n",
+	},
+	{
+		// The ordinary forms are unchanged.
+		"cat <<EOF\nplain\nEOF\ncat <<< hs",
+		"plain\nhs\n",
+	},
+	{
 		// `<&N-` moves rather than copies: dup onto the target, then
 		// close the source (#417). koi did neither, so the descriptor
 		// stayed put and nothing was closed.

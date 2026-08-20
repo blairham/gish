@@ -448,6 +448,23 @@ func (r *Runner) setFdWriter(fd int, w io.Writer) {
 }
 
 // setFdFile points a descriptor at an open file.
+// setInputFd points a descriptor at an open file for reading. fd 0 is
+// the shell's own stdin and goes through stdinFile, which is what the
+// rest of the interpreter reads; any other descriptor is an ordinary
+// entry in the table.
+func (r *Runner) setInputFd(fd int, f *os.File) error {
+	if fd == 0 {
+		stdin, err := stdinFile(f)
+		if err != nil {
+			return err
+		}
+		r.stdin = stdin
+		return nil
+	}
+	r.setFdFile(fd, f)
+	return nil
+}
+
 func (r *Runner) setFdFile(fd int, rwc io.ReadWriteCloser) {
 	switch fd {
 	case 1:
@@ -2717,20 +2734,18 @@ func literalHdoc(rd *syntax.Redirect) (string, bool) {
 func hdocDelimQuoted(w *syntax.Word) bool { return posixQuotedDelim(w) }
 
 func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, error) {
-	if rd.Hdoc != nil {
-		pr, err := r.hdocReader(rd)
-		if err != nil {
-			return nil, err
-		}
-		r.stdin = pr
-		return pr, nil
-	}
-
 	// Which descriptor this applies to. Input redirections default to 0 and
 	// output ones to 1; "{name}>" allocates one and stores its number.
+	//
+	// The here-document forms are input redirections and take a
+	// descriptor like any other (#414): `3<<E` opens fd 3, and koi used
+	// to answer this before the descriptor was even worked out — every
+	// body landed on fd 0, so `<<E1 3<<E2` left fd 3 unopened and put
+	// E2's body on the shell's stdin.
 	fd := 1
 	switch rd.Op {
-	case syntax.RdrIn, syntax.DplIn, syntax.RdrInOut:
+	case syntax.RdrIn, syntax.DplIn, syntax.RdrInOut,
+		syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
 		fd = 0
 	}
 	fdVarName := ""
@@ -2751,6 +2766,18 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			fd = n
 		}
 	}
+	if rd.Hdoc != nil {
+		pr, err := r.hdocReader(rd)
+		if err != nil {
+			return nil, err
+		}
+		if err := r.setInputFd(fd, pr); err != nil {
+			return nil, err
+		}
+		r.setFdVar(fdVarName, fd)
+		return pr, nil
+	}
+
 	orig := &r.stdout
 	if fd == 2 {
 		orig = &r.stderr
@@ -2791,7 +2818,11 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 		if err != nil {
 			return nil, err
 		}
-		r.stdin = pr
+		// A here-string takes a descriptor too: `read -u 3 x 3<<< hi`.
+		if err := r.setInputFd(fd, pr); err != nil {
+			return nil, err
+		}
+		r.setFdVar(fdVarName, fd)
 		// We write to the pipe in a new goroutine,
 		// as pipe writes may block once the buffer gets full.
 		go func() {
