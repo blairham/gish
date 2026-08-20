@@ -2671,6 +2671,56 @@ var runTests = []runTest{
 		"D:[cat <<EOF > /dev/null\nbody line\nEOF\n]\n",
 	},
 	{
+		// `<&N-` moves rather than copies: dup onto the target, then
+		// close the source (#417). koi did neither, so the descriptor
+		// stayed put and nothing was closed.
+		// The message text is left out of the comparison on purpose:
+		// bash prefixes its diagnostics with the shell name and line,
+		// and the status is what a caller acts on.
+		// Two lines, deliberately: with only one, the source descriptor
+		// is at EOF after the first read and answers status 1 whether
+		// it was closed or not — the case would pass against a move
+		// that never closed anything.
+		//
+		// The target is fd 9 rather than fd 0 for a reason worth
+		// keeping: this table's confirm pass feeds bash the script on
+		// stdin, so moving a two-line file onto fd 0 makes bash read
+		// the second line as a command.
+		"printf 'B\\nC\\n' > d2; exec 6<d2; exec 9<&6-; read -u 9 y; echo \"move:$y\"; read -u 6 z 2>/dev/null; echo \"fd6:$?\"",
+		"move:B\nfd6:1\n",
+	},
+	{
+		// The output side. The write through the moved descriptor is
+		// not enough on its own — that works whether or not the source
+		// was closed — so this also asserts fd 7 is gone, which is the
+		// half that makes it a move rather than a copy.
+		// The subshell is what silences the diagnostic: applying a
+		// redirection to a closed descriptor is reported by the *shell*,
+		// so 2>/dev/null on the command itself does not catch it.
+		"exec 7>o7; exec 8>&7-; echo hi >&8; exec 8>&-; cat o7; ( echo x >&7 ) 2>/dev/null; echo \"src:$?\"",
+		"hi\nsrc:1\n",
+	},
+	{
+		// Moving a descriptor onto itself is a no-op, not a self-close.
+		"exec 6>o6; exec 6>&6-; echo hi >&6; exec 6>&-; cat o6",
+		"hi\n",
+	},
+	{
+		// A plain dup still copies, leaving the source open.
+		"printf 'C\\n' > d3; exec 6<d3; exec 0<&6; read y; echo \"dup:$y\"",
+		"dup:C\n",
+	},
+	{
+		// The shape that leaked: a swizzle loop handing a descriptor
+		// back and forth used to run the shell out of them ("too many
+		// open files"). This runs in-process over the descriptor map
+		// rather than real OS descriptors, so it is a behavioral
+		// regression guard rather than proof of the exhaustion — the
+		// exhaustion itself was reproduced against the built binary.
+		"exec 3</dev/null; i=0; while [ $i -lt 300 ]; do exec 4<&3-; exec 3<&4-; i=$((i+1)); done; echo \"survived i=$i\"",
+		"survived i=300\n",
+	},
+	{
 		// A redirection's word is expanded like any other and must come
 		// out as exactly one field (#415). Two fields is ambiguous, and
 		// koi used to open a file literally named "a b" — creating it,
