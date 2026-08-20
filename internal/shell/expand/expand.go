@@ -219,7 +219,20 @@ func (cfg *Config) envSet(name, value string) error {
 	if !ok {
 		return fmt.Errorf("environment is read-only")
 	}
-	return wenv.Set(name, Variable{Set: true, Kind: String, Str: value})
+	// An arithmetic assignment writes the value, not a fresh variable:
+	// building one from scratch stripped declare -i (and -x) from the
+	// target, so `declare -i j=8; let j=j+1` left j a plain string and
+	// every later assignment stored literals (#368).
+	prev := cfg.Env.Get(name)
+	return wenv.Set(name, Variable{
+		Set:      true,
+		Kind:     String,
+		Str:      value,
+		Local:    prev.Local,
+		Exported: prev.Exported,
+		ReadOnly: prev.ReadOnly,
+		Integer:  prev.Integer,
+	})
 }
 
 // Literal expands a single shell word. It is similar to [Fields], but the result
