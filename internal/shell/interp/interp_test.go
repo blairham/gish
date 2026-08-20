@@ -3063,6 +3063,14 @@ var runTests = []runTest{
 		"a=b; echo $(($a))",
 		"0\n",
 	},
+	// Backslash quoting reaches the pattern matcher (#372): an escaped
+	// metacharacter never globs, an escaped name component resolves to
+	// the real file, and a trailing lone backslash is a literal one.
+	{"touch a abc; echo \\* a\\*", "* a*\n"},
+	{`var="ab\\"; [[ $var = $var ]] && echo true || echo false`, "true\n"},
+	{`var="ab\\"; case $var in $var) echo m;; *) echo n;; esac`, "m\n"},
+	{"mkdir 's*d'; touch 's*d/f'; echo s\\*d/* | sed 's@\\\\@/@g'", "s*d/f\n"},
+
 	// A readonly violation inside an arithmetic expansion is fatal to
 	// the input unit (#370): the command aborts with status 1 and a
 	// script continues at its next line.
