@@ -2018,6 +2018,26 @@ q`,
 	{"sleep 0.01 & disown; jobs", ""},
 	{"disown; echo d=$?", "disown: current: no such job\nd=1\n #JUSTERR"},
 
+	// In the C locale a character is a byte (#470): koi was UTF-8
+	// everywhere, so a script that sets LC_ALL=C to make its own output
+	// stable got UTF-8 answers anyway.
+	{
+		`export LC_ALL=C; a=$'\316\261'; case $a in ?) echo one;; ??) echo two;; esac`,
+		"two\n",
+	},
+	{
+		`export LC_ALL=en_US.UTF-8; a=$'\316\261'; case $a in ?) echo one;; ??) echo two;; esac`,
+		"one\n",
+	},
+	{`export LC_ALL=C; a=$'\316\261'; echo "${#a}"`, "2\n"},
+	{`export LC_ALL=en_US.UTF-8; a=$'\316\261'; echo "${#a}"`, "1\n"},
+	{
+		// C.UTF-8 is a C locale by name and a UTF-8 one by encoding,
+		// and it is the encoding this is about.
+		`export LC_ALL=C.UTF-8; a=$'\316\261'; echo "${#a}"`,
+		"1\n",
+	},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,

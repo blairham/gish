@@ -2226,7 +2226,16 @@ func (r *Runner) readLine(ctx context.Context, src io.Reader, raw bool, delim by
 	// alone, which is how bash's mbrtowc failure path treats it.
 	chars := 0
 	pending := 0
+	// In the C locale a character *is* a byte, so -n and -N count bytes
+	// and a read can stop in the middle of a multibyte sequence (#470).
+	// A script that sets LC_ALL=C is asking for exactly that.
+	cLocale := r.ecfg != nil && r.ecfg.CLocale()
 	countByte := func(b byte) {
+		if cLocale {
+			chars++
+			pending = 0
+			return
+		}
 		switch {
 		case b < 0x80:
 			chars++

@@ -172,7 +172,13 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		switch nodeLit(index) {
 		case "@", "*":
 		default:
-			n = utf8.RuneCountInString(str)
+			// In the C locale a character is a byte, so `${#x}` of a
+			// two-byte character is 2 (#470).
+			if cfg.CLocale() {
+				n = len(str)
+			} else {
+				n = utf8.RuneCountInString(str)
+			}
 		}
 		str = strconv.Itoa(n)
 	case pe.Excl:

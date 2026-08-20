@@ -1489,7 +1489,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			if !matched {
 				for _, word := range ci.Patterns {
 					pattern := r.pattern(word)
-					if match(pattern, str) {
+					if r.matchLocale(pattern, str) {
 						matched = true
 						break
 					}
@@ -2666,6 +2666,18 @@ func (r *Runner) flattenAssigns(args []*syntax.Assign) iter.Seq[*syntax.Assign] 
 			}
 		}
 	}
+}
+
+// match reports whether name matches pat. cLocale asks for byte-wise
+// matching, which is what the C locale means by a character (#470).
+func (r *Runner) matchLocale(pat, name string) bool {
+	if r.ecfg != nil && r.ecfg.CLocale() {
+		// Re-reading both sides as one rune per byte makes the
+		// rune-wise matcher behave byte-wise without touching it: `?`
+		// then matches one byte, so a two-byte character is `??`.
+		return match(expand.LatinBytes(pat), expand.LatinBytes(name))
+	}
+	return match(pat, name)
 }
 
 func match(pat, name string) bool {
