@@ -1084,6 +1084,62 @@ var runTests = []runTest{
 		"x-b\n",
 	},
 
+	// declare -g writes the global scope through any local shadowing
+	// the name (#379); reads stay dynamically scoped, so both
+	// functions still see the local.
+	{
+		`f(){ local v; g; echo f:$v; }; g(){ declare -g v=two; echo g:$v; }; f; echo FIN:$v`,
+		"g:\nf:\nFIN:two\n",
+	},
+	{
+		`f(){ local v=one; declare -g v=two; echo in:$v; }; f; echo out:$v`,
+		"in:one\nout:two\n",
+	},
+	{
+		`v=g0; f(){ local v=one; g; }; g(){ declare -g v; v=three; }; f; echo $v`,
+		"g0\n",
+	},
+	{
+		`f(){ declare -ga arr=(1 2); }; f; declare -p arr`,
+		`declare -a arr=([0]="1" [1]="2")` + "\n",
+	},
+	// The string form of a compound assignment (#379): parsed as an
+	// array literal — its elements expanded — only under an explicit
+	// -a/-A or an existing array; the bare form stays a literal
+	// string (bash 5.1), and so does an unbalanced "(".
+	{
+		`aux=v; declare -ga "$aux=( a b )"; declare -p v`,
+		`declare -a v=([0]="a" [1]="b")` + "\n",
+	},
+	{
+		`aux="v=( a b )"; declare "$aux"; declare -p v`,
+		`declare -- v="( a b )"` + "\n",
+	},
+	{
+		`v=(1); declare "v=( new )"; declare -p v`,
+		`declare -a v=([0]="new")` + "\n",
+	},
+	{
+		`x="\$y"; y=z; declare -a v="( $x )"; declare -p v`,
+		`declare -a v=([0]="z")` + "\n",
+	},
+	{
+		`aux="( a b )"; declare -a v=$aux; declare -p v`,
+		`declare -a v=([0]="a" [1]="b")` + "\n",
+	},
+	{
+		`aux="( a b )"; declare -a v=("$aux"); declare -p v`,
+		`declare -a v=([0]="( a b )")` + "\n",
+	},
+	{
+		`declare -a "w=( a b"; echo rc=$?; declare -p w`,
+		"rc=0\n" + `declare -a w=([0]="( a b")` + "\n",
+	},
+	{
+		`declare -a "w=()"; declare -p w`,
+		"declare -a w=()\n",
+	},
+
 	// test -v on arrays (#378): a bare array name tests element 0, a
 	// subscript tests that element (@/* meaning any, except that they
 	// are ordinary keys for an associative array), and a scalar is

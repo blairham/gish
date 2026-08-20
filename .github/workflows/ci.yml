@@ -14,15 +14,23 @@ jobs:
   # root markdown, LICENSE) skip the test matrix, lint and build.
   #
   # Two rules keep this honest. Skipping happens at the *job* level, never via
-  # workflow-level `paths-ignore`: the branch policy requires these checks by
-  # name, and a check that never starts blocks the merge as "Expected" forever,
-  # while a job skipped by an `if:` reports "skipped", which satisfies it. And
+  # workflow-level `paths-ignore`: a check that never starts blocks a merge as
+  # "Expected" forever, while a job skipped by an `if:` reports "skipped". And
   # the docs CI itself consumes stay "code": docs/compat.md is compat-check's
   # threshold, docs/bash-suite.md, docs/agents.md and docs/interactive-compat.md
   # carry generated regions the harnesses compare against, and docs/bench.md is
   # the published measurement — hand-editing any of them must face the gate
   # that reads it. Anything unrecognized counts as code, so when this
   # classification is wrong it is wrong in the direction of running the tests.
+  #
+  # The branch policy requires exactly one check: ci-ok (bottom of this file).
+  # It used to require the jobs by name, and the first prose-only PR proved
+  # that wrong in a way job-level skipping cannot fix: a *matrix* job skipped
+  # by `if:` never expands, so it reports as "test" while the policy wanted
+  # "test (ubuntu-latest)" — which therefore stayed "Expected" forever. A
+  # single always-running gate that fails when any upstream job failed is the
+  # shape that survives matrix renames, new jobs, and skips alike; when jobs
+  # are added or removed here, update ci-ok's `needs` and nothing else.
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -243,3 +251,27 @@ jobs:
         GOOS=windows GOARCH=amd64 go build ./...
         GOOS=linux GOARCH=arm64 go build ./...
         GOOS=darwin GOARCH=amd64 go build ./...
+
+  # The one check the branch policy requires (see the `changes` comment for
+  # why it is a gate job and not the jobs by name). `if: always()` because a
+  # gate that is skipped when its dependencies are skipped would report
+  # nothing on prose-only PRs — the exact hole it exists to close. A job
+  # skipped by the prose guard is fine; a job that failed, or was skipped
+  # *because a failed job stood between it and `changes`* (build, when test
+  # fails), is not — the failure upstream of it fails the gate directly.
+  ci-ok:
+    runs-on: ubuntu-latest
+    needs: [ changes, test, test-windows, lint, build ]
+    if: always()
+    steps:
+    - name: Verify no required job failed
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        echo "$RESULTS"
+        bad=$(echo "$RESULTS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"')
+        if [ -n "$bad" ]; then
+          echo "not ok: $bad"
+          exit 1
+        fi
+        echo "ok"
