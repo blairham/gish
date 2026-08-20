@@ -2736,7 +2736,32 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 	if fd == 2 {
 		orig = &r.stderr
 	}
-	arg := r.literal(rd.Word)
+	// bash expands a redirection's word the way it expands any other —
+	// splitting and globbing included — and then requires exactly one
+	// field to come out (#415). `cat < g*` reads g1, while `cat < $z`
+	// with z="a b", `cat < f*` matching two files, and `> $unset` are
+	// all "ambiguous redirect" with status 1.
+	//
+	// koi did neither half: it took the word literally, so a glob opened
+	// a file named `g*` and a two-word expansion opened one named "a b",
+	// silently creating it on the output side.
+	//
+	// A here-string is the exception, being content rather than a
+	// filename: `cat <<< $z` prints "a b" and `cat <<< h*` prints the
+	// literal `h*` (both measured).
+	var arg string
+	if rd.Op == syntax.WordHdoc {
+		arg = r.literal(rd.Word)
+	} else {
+		fields := r.fields(rd.Word)
+		if len(fields) != 1 {
+			// bash names the word as written rather than what it
+			// expanded to, which is what makes the message useful.
+			r.errf("%s: ambiguous redirect\n", wordSource(rd.Word))
+			return nil, errAmbiguousRedirect
+		}
+		arg = fields[0]
+	}
 	// op is what the redirection *means*, which is not always what was
 	// written: `>&file` is csh's "send both streams to this file", so it
 	// becomes RdrAll below and takes the ordinary file path from there.
@@ -2774,7 +2799,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 				op = syntax.RdrAll
 				break
 			}
-			r.errf("%s: ambiguous redirect\n", arg)
+			r.errf("%s: ambiguous redirect\n", wordSource(rd.Word))
 			return nil, errAmbiguousRedirect
 		}
 		w := r.fdWriter(src)
@@ -2798,7 +2823,7 @@ func (r *Runner) redir(ctx context.Context, rd *syntax.Redirect) (io.Closer, err
 			// There is no csh form on the input side: `<&word` is
 			// ambiguous whatever the fd, which is also the answer for
 			// `exec 3<&$fd` with fd unset (#415's dup half).
-			r.errf("%s: ambiguous redirect\n", arg)
+			r.errf("%s: ambiguous redirect\n", wordSource(rd.Word))
 			return nil, errAmbiguousRedirect
 		}
 		rwc, ok := r.extraFiles[src]
@@ -2886,6 +2911,17 @@ func (r *Runner) setFdVar(name string, fd int) {
 		return
 	}
 	r.setVarString(name, strconv.Itoa(fd))
+}
+
+// wordSource renders a redirection's word as it was written, which is
+// what bash names in an "ambiguous redirect" — `$z`, not the two fields
+// it became.
+func wordSource(w *syntax.Word) string {
+	var sb strings.Builder
+	if err := syntax.NewPrinter(syntax.SingleLine(true)).Print(&sb, w); err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 // errAmbiguousRedirect is returned when a redirection's word cannot name
