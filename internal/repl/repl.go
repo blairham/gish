@@ -801,6 +801,21 @@ func RunCommand(ctx context.Context, src string, login, interactive bool, operan
 	return runScript(ctx, strings.NewReader(src), name, login, interactive, invokedCommand, params...)
 }
 
+// PrettyPrintFile renders a script the way bash's --pretty-print does
+// and runs nothing (#531).
+func PrettyPrintFile(path string) error {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	file, err := syntax.NewParser().Parse(bytes.NewReader(src), path)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.WriteString(interp.PrintCanonicalFile(file))
+	return err
+}
+
 // RunFile runs the script at path. Everything after the path is a
 // positional parameter; $0 is the path itself.
 func RunFile(ctx context.Context, path string, login, interactive bool, params ...string) error {

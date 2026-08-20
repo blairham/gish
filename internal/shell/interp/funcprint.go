@@ -49,6 +49,31 @@ type funcPrinter struct {
 
 // printFuncCanonical renders `name` and `body` the way bash's declare -f
 // does, including the trailing newline.
+// PrintCanonicalFile renders a whole parsed file the way bash's
+// --pretty-print does (#531). It is the same printer `declare -f` uses,
+// because it is the same layout: bash's pretty-print output *is* what
+// declare -f produces, extended to the statements outside a function.
+//
+// Top-level statements carry no trailing semicolon, which is where a
+// file differs from a function body — bash prints `f () ` on its own
+// line and `if true; then` unterminated.
+func PrintCanonicalFile(file *syntax.File) string {
+	p := &funcPrinter{wp: syntax.NewPrinter(syntax.SingleLine(true))}
+	for _, st := range file.Stmts {
+		if fn, ok := st.Cmd.(*syntax.FuncDecl); ok {
+			p.sb.WriteString(printFuncCanonical(fn.Name.Value, fn.Body, false))
+			continue
+		}
+		p.stmt(st)
+		p.sb.WriteString("\n")
+	}
+	// bash ends the whole listing with a blank line, whatever the last
+	// statement was — measured against a file with functions and one
+	// without.
+	p.sb.WriteString("\n")
+	return p.sb.String()
+}
+
 func printFuncCanonical(name string, body *syntax.Stmt, keyword bool) string {
 	p := &funcPrinter{wp: syntax.NewPrinter(syntax.SingleLine(true))}
 	if keyword {

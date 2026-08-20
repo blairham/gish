@@ -116,6 +116,13 @@ func run() int {
 	repl.SetSessionOptions(opts.setFlags)
 	repl.SetSessionShoptOptions(opts.shoptFlags)
 
+	repl.SkipStartupFiles(opts.noRC, opts.noProfile)
+	if opts.noEditing {
+		// bash's --noediting: no line editor even on a terminal. koi
+		// has one switch for that already, so the flag sets it rather
+		// than growing a second path (#531).
+		os.Setenv("KOI_EDIT_MODE", "none") //nolint:errcheck // process-local
+	}
 	if opts.rc != "" {
 		os.Setenv("KOI_RC", opts.rc) //nolint:errcheck // process-local
 	}
@@ -186,6 +193,16 @@ func run() int {
 		return 0
 	}
 
+	if opts.prettyPrint && len(opts.operands) > 0 {
+		// bash's --pretty-print parses the script and prints it back,
+		// running nothing. With -c it does nothing at all, which is why
+		// this is gated on a file operand (#531).
+		if err := repl.PrettyPrintFile(opts.operands[0]); err != nil {
+			fmt.Fprintln(os.Stderr, "koi:", err)
+			return 1
+		}
+		return 0
+	}
 	switch {
 	case opts.haveCommand:
 		// Everything after the command string is $0 then $1…

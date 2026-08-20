@@ -35,6 +35,10 @@ type shellArgs struct {
 	login         bool   // -l / --login
 	interactive   bool   // -i
 	noexec        bool   // -n: parse, report syntax errors, run nothing
+	noRC          bool   // --norc
+	noProfile     bool   // --noprofile
+	noEditing     bool   // --noediting
+	prettyPrint   bool   // --pretty-print
 	version       bool   // --version
 	remoteSession bool   // --remote-session
 	sandbox       string // --sandbox profile
@@ -64,6 +68,13 @@ var longOptions = map[string]bool{
 	"restricted": false,
 	// bash's --posix (#395).
 	"posix": false,
+	// bash's startup-file options (#531). A caller passing one of
+	// these got a usage dump and no shell.
+	"norc":         false,
+	"noprofile":    false,
+	"rcfile":       true,
+	"noediting":    false,
+	"pretty-print": false,
 }
 
 // parseArgs reads a shell command line. The error is meant for the user:
@@ -108,6 +119,17 @@ func parseArgs(args []string) (shellArgs, error) {
 				out.setFlags = append(out.setFlags, "-r")
 			case "posix":
 				out.setFlags = append(out.setFlags, "-o", "posix")
+			case "norc":
+				out.noRC = true
+			case "noprofile":
+				out.noProfile = true
+			case "rcfile":
+				// bash's spelling of koi's --rc.
+				out.rc = value
+			case "noediting":
+				out.noEditing = true
+			case "pretty-print":
+				out.prettyPrint = true
 			case "remote-session":
 				out.remoteSession = true
 			case "help":
