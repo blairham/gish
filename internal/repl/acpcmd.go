@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/blairham/koi-shell/internal/acp"
 	"github.com/blairham/koi-shell/internal/sandbox"
@@ -97,20 +98,46 @@ func RunACP(ctx context.Context, in io.Reader, out, errOut io.Writer, args []str
 		}
 	}
 
-	info, err := client.Initialize(ctx)
+	// The handshake gets a deadline (#330). Deadlines on every call are
+	// what koi adds to ACP, and the one place that had none was the
+	// first exchange — where a mute agent (the wrong binary, a program
+	// that is not an ACP agent at all) answers nothing and initialize
+	// blocks forever. The prompt loop's calls stay unbounded on purpose:
+	// a model can legitimately think for minutes, and Ctrl-C covers them.
+	hsCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
+	info, err := client.Initialize(hsCtx)
 	if err != nil {
-		return err
+		return handshakeErr(hsCtx, err, argv[0])
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	if _, err := client.NewSession(ctx, cwd); err != nil {
-		return err
+	if _, err := client.NewSession(hsCtx, cwd); err != nil {
+		return handshakeErr(hsCtx, err, argv[0])
 	}
 	fmt.Fprintf(errOut, "koi: hosting %s %s — commands run %s\n", info.Name, info.Version, describe)
 
 	return promptLoop(ctx, client, in, out, errOut)
+}
+
+// handshakeTimeout bounds initialize + session/new. Generous, because a
+// real agent may be cold-starting a runtime (claude-code-acp boots node
+// and the claude CLI inside it) — but bounded, because an agent that
+// says nothing in this long is not going to start saying something. A
+// variable so the test does not wait it out.
+var handshakeTimeout = 30 * time.Second
+
+// handshakeErr turns a deadline expiry into an error that names the
+// agent and the likely cause; any other handshake failure passes
+// through as itself. context.DeadlineExceeded alone reads as koi timing
+// out, when what happened is the agent never spoke.
+func handshakeErr(ctx context.Context, err error, agent string) error {
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("agent %q did not answer the ACP handshake within %s — is it an ACP agent?", agent, handshakeTimeout)
 }
 
 // promptLoop reads prompts and streams answers until EOF.
