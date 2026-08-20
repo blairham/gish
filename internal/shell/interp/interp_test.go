@@ -1770,7 +1770,14 @@ var runTests = []runTest{
 	// see that a builtin is shadowing the program it meant.
 	{"type -a echo | head -1", "echo is a shell builtin\n"},
 	{"type -p echo; echo rc=$?", "rc=0\n"},
-	{"type -P echo", "/bin/echo\n"},
+	{
+		// -P forces the PATH search where -p answers about what the
+		// shell would run. The path itself differs by platform
+		// (/bin/echo on darwin, /usr/bin/echo on linux), so the case
+		// asserts that something executable was named.
+		`[ -x "$(type -P echo)" ] && echo executable`,
+		"executable\n",
+	},
 	// `enable -n` really turns the builtin off, so the name resolves
 	// on PATH like any other command.
 	{"enable -n test; type -t test", "file\n"},
