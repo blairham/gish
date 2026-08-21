@@ -589,6 +589,28 @@ func (r *Runner) rawErrf(format string, a ...any) {
 	fmt.Fprintf(r.stderr, format, a...)
 }
 
+// ReportRecovered reports a parse error the shell recovers from and
+// leaves the status a discarded input unit leaves (#581).
+//
+// It is a *runtime* diagnostic and not a parse failure as far as the
+// caller is concerned: nothing on the discarded line ran, reading
+// continues, and `$?` is 1 — which is exactly bash's answer. So it is
+// located the way every other runtime diagnostic is (#571), from the
+// error's own line rather than from the statement being run, since the
+// statements of that line were thrown away.
+func (r *Runner) ReportRecovered(err error) {
+	var pe syntax.ParseError
+	if !errors.As(err, &pe) {
+		return
+	}
+	oldLine := r.traceLine
+	r.traceLine = pe.Pos.Line() + r.lineOffset
+	r.errf("%s\n", pe.Text)
+	r.traceLine = oldLine
+	r.exit.code = 1
+	r.lastExit = r.exit
+}
+
 // errLocation is bash's `source: line N: ` prefix on a runtime
 // diagnostic. bash builds it from BASH_SOURCE and LINENO, which is why a
 // command inside a function names the file the *function* lives in

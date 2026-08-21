@@ -272,6 +272,14 @@ func (p *Parser) Parse(r io.Reader, name string) (*File, error) {
 		// trigger the parsing error.
 		p.doHeredocs()
 	}
+	if p.err == nil && len(p.recoverable) > 0 {
+		// Whoever parses a whole input at once has no unit smaller than
+		// that to discard, so a recoverable error is returned as an
+		// ordinary one here (#581) — which is also right for the caller
+		// that has exactly one unit, an interactive line. Only the
+		// incremental readers ask [Parser.RecoverableErrors].
+		return p.f, p.recoverable[0]
+	}
 	return p.f, p.err
 }
 
@@ -548,6 +556,11 @@ type Parser struct {
 	recoveredErrors  int
 	recoverErrorsMax int
 
+	// recoverable collects the errors bash discards an input unit for
+	// rather than ending the shell — see [ParseError.Recoverable]. They
+	// are not returned, because parsing continues past them.
+	recoverable []ParseError
+
 	forbidNested bool
 
 	// list of pending heredoc bodies
@@ -608,6 +621,7 @@ func (p *Parser) reset() {
 	p.quote, p.forbidNested = noState, false
 	p.openNodes = 0
 	p.recoveredErrors = 0
+	p.recoverable = nil
 	p.heredocs, p.buriedHdocs = p.heredocs[:0], 0
 	p.hdocStops = nil
 	p.parsingDoc = false
@@ -1011,6 +1025,19 @@ type ParseError struct {
 	Text     string
 
 	Incomplete bool
+
+	// Recoverable marks an error bash reports and then carries on from:
+	// the input *unit* being parsed is discarded — the line of a script,
+	// the whole string of a `-c` — and reading continues after it with a
+	// status of 1 (#581). An unexpected token inside a compound array
+	// assignment is the case; an ordinary grammar error is not, and bash
+	// ends a non-interactive shell for those.
+	//
+	// Errors like this are not returned; they are collected and handed
+	// over by [Parser.RecoverableErrors], since the parser keeps going.
+	// Unrelated to the [RecoverErrors] option, which invents grammar
+	// tokens the input is missing.
+	Recoverable bool
 }
 
 func (e ParseError) Error() string {
@@ -1078,6 +1105,30 @@ func (p *Parser) posErr(pos Pos, format string, args ...any) {
 
 func (p *Parser) curErr(format string, args ...any) {
 	p.posErr(p.pos, format, args...)
+}
+
+// recoverableErr records an error that costs its input unit and lets
+// parsing carry on, which is what bash does with a syntax error inside a
+// compound array assignment (#581). See [ParseError.Recoverable].
+func (p *Parser) recoverableErr(pos Pos, format string, args ...any) {
+	p.recoverable = append(p.recoverable, ParseError{
+		Filename:    p.f.Name,
+		Pos:         pos,
+		Text:        fmt.Sprintf(format, args...),
+		Recoverable: true,
+	})
+}
+
+// RecoverableErrors returns the errors found so far which cost their
+// input unit without stopping the parse, and forgets them.
+//
+// A caller reading input incrementally asks after each unit: statements
+// from a unit with one of these must not run, and reading continues. See
+// [ParseError.Recoverable].
+func (p *Parser) RecoverableErrors() []ParseError {
+	errs := p.recoverable
+	p.recoverable = nil
+	return errs
 }
 
 func (p *Parser) checkLang(pos Pos, langSet LangVariant, format string, a ...any) {
@@ -2113,6 +2164,7 @@ func (p *Parser) getAssign(needEqual bool) *Assign {
 		old := p.preNested(newQuote)
 		p.next()
 		p.got(_Newl)
+		badElems := false
 		for p.tok != _EOF && p.tok != rightParen {
 			ae := &ArrayElem{}
 			ae.Comments, p.accComs = p.accComs, nil
@@ -2130,9 +2182,31 @@ func (p *Parser) getAssign(needEqual bool) *Assign {
 				case _Newl, rightParen, leftBrack:
 					// TODO: support [index]=[
 				default:
-					p.curErr("array element values must be words")
-					return nil
+					// bash reports this and keeps reading (#581):
+					// `x=(a & b)` costs the line and the script carries
+					// on, so the error is recoverable and the parse
+					// skips to the array's own closing paren rather than
+					// forfeiting the rest of the file.
+					p.recoverableErr(p.pos, "syntax error near unexpected token `%s'", p.tok)
+					// A nested `(` is itself an unexpected token in bash
+					// — it is what the error above just named — so the
+					// depth count is only here to find the paren that
+					// closes *this* array rather than an inner one.
+					for depth := 0; p.tok != _EOF; p.next() {
+						if p.tok == leftParen {
+							depth++
+						} else if p.tok == rightParen {
+							if depth == 0 {
+								break
+							}
+							depth--
+						}
+					}
+					badElems = true
 				}
+			}
+			if badElems {
+				break
 			}
 			if len(p.accComs) > 0 {
 				c := p.accComs[0]
