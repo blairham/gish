@@ -1774,9 +1774,13 @@ func (p *Parser) nestedParameterStart(pe *ParamExp) (left token, quotePos Pos) {
 	switch p1 := p.peek(); p1 {
 	case '{', '(':
 		p.pos = p.nextPos()
-		p.checkLang(p.pos, LangZsh, "nested parameter expansions")
-		if p.err != nil {
-			return illegalTok, Pos{} // xxx given that we overwrite p.tok below
+		if !p.lang.in(LangZsh) {
+			// bash reads a nested expansion and complains about it
+			// while expanding, so this is parsed the way zsh parses it
+			// and the *outer* expansion carries the verdict (#277).
+			// Refusing it here forfeited the rest of the file, which is
+			// what new-exp.tests measured.
+			pe.Bad = true
 		}
 		p.rune()
 		p.rune()

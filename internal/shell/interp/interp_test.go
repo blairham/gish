@@ -2130,6 +2130,34 @@ q`,
 		"${x:}: bad substitution\nexit status 1 #JUSTERR",
 	},
 
+	// A nested expansion is a zsh feature bash does not have, but bash
+	// only says so while *expanding* it (#277), so it lands in the same
+	// place as the empty slice above: the command is lost, not the file.
+	// koi used to refuse it at parse time, which cost the whole file.
+	{
+		`foo=bar; echo "${${foo}}"; echo after`,
+		"${${foo}}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`foo=bar; echo ${${foo}}; echo after`,
+		"${${foo}}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		// The diagnostic names the whole expansion, operators and all.
+		`foo=bar; echo "${${foo}#b}"; echo after`,
+		"${${foo}#b}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`foo=bar; echo "${#${foo}}"; echo after`,
+		"${#${foo}}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		// A nested command substitution is not run first; the shape is
+		// rejected before anything inside it expands.
+		`echo "${$(echo x)}"; echo after`,
+		"${$(echo x)}: bad substitution\nexit status 1 #JUSTERR",
+	},
+
 	// The same rule reaches every operator that counts characters, not
 	// only `?` and ${#x} (#470): a slice, a pattern removal, a
 	// replacement and a case conversion are all byte-wise there, and

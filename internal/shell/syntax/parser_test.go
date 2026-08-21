@@ -1216,14 +1216,16 @@ var errorCases = []errorCase{
 		langErr("1:6: reached EOF without matching `${` with `}`", LangZsh),
 	),
 	errCase(
+		// The nested expansion is read in every language now (#277), so
+		// what is left to report is the truncated input -- the same
+		// answer "echo ${" gives.
 		"echo ${#${",
-		langErr("1:9: nested parameter expansions are a zsh feature; tried parsing as LANG"),
+		langErr("1:11: invalid parameter name"),
 		langErr("1:9: reached EOF without matching `${` with `}`", LangZsh),
 	),
 	errCase(
 		"echo ${#$(",
-		langErr("1:9: nested parameter expansions are a zsh feature; tried parsing as LANG"),
-		langErr("1:9: reached EOF without matching `$(` with `)`", LangZsh),
+		langErr("1:9: reached EOF without matching `$(` with `)`"),
 	),
 	errCase(
 		"echo ${(",
