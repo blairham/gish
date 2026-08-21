@@ -113,11 +113,14 @@ done`,
 	}
 }
 
-// The two features the oracle needs, named so a case declares what it
+// The features the oracle needs, named so a case declares what it
 // depends on rather than repeating a probe script.
 const (
 	featCoproc = "coproc"
 	featWaitN  = "wait -n"
+	// compgen -V arrived in bash 5.3, so it is the one probe here that
+	// most machines' bash fails rather than only macOS's 3.2 (#556).
+	featCompgenV = "compgen -V"
 )
 
 // oracleHas reports whether this machine's bash implements feat.
@@ -136,6 +139,8 @@ func oracleHas(t *testing.T, bashBin, feat string) bool {
 		probe = "coproc C { :; }"
 	case featWaitN:
 		probe = "wait -n"
+	case featCompgenV:
+		probe = "compgen -V v -W x"
 	default:
 		t.Fatalf("unknown oracle feature %q", feat)
 	}
