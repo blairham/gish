@@ -84,6 +84,15 @@ func (s *scriptStream) run(ctx context.Context) (err error, perr error) {
 		switched := false
 		for stmts, rerr := range reader.Lines() {
 			if rerr != nil {
+				if interp.Recoverable(rerr) {
+					// bash discards the line and reads the next one
+					// (#581). The runner reports it, because the
+					// diagnostic is located the way its runtime ones
+					// are and the status a discarded line leaves is its
+					// to set.
+					s.runner.ReportRecovered(rerr)
+					continue
+				}
 				perr = rerr
 				break
 			}

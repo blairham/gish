@@ -1682,8 +1682,12 @@ var errorCases = []errorCase{
 		langErr("1:15: `declare` must be followed by names or assignments", LangBash),
 	),
 	errCase(
+		// bash's own answer, measured: it names the token and, in a
+		// script, discards the line and reads the next one (#581). What
+		// a whole-input parse can do with that is return it, which is
+		// what this asserts.
 		"a=(<)",
-		langErr("1:4: array element values must be words", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:4: syntax error near unexpected token `<'", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"a=([)",
@@ -1707,8 +1711,12 @@ var errorCases = []errorCase{
 		langErr("1:7: arrays cannot be nested", LangBash|LangZsh),
 	),
 	errCase(
+		// The recoverable error skips to the paren that closes the
+		// array and there is none, so the unterminated array is what
+		// gets reported — which is bash's answer here too, and unlike
+		// the case above it ends the script rather than the line.
 		"o=([0]=#",
-		langErr("1:8: array element values must be words", LangBash|LangZsh),
+		langErr("1:3: reached EOF without matching `(` with `)`", LangBash|LangZsh),
 	),
 	errCase(
 		"a[b] ==[",

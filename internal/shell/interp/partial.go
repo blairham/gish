@@ -74,6 +74,11 @@ func (sr *ScriptReader) Source() string { return sr.src.String() }
 // A parse error is yielded once, with no statements, and ends the
 // iteration: the statements sharing the error's line are dropped,
 // because bash could not finish reading that line and so never ran them.
+//
+// A *recoverable* error is yielded the same way and reading continues
+// (#581), which is bash's own recovery: the line is discarded and the
+// next one is read. The caller reports it and keeps going — see
+// [syntax.ParseError.Recoverable].
 func (sr *ScriptReader) Lines() iter.Seq2[[]*syntax.Stmt, error] {
 	return func(yield func([]*syntax.Stmt, error) bool) {
 		var line []*syntax.Stmt
@@ -87,12 +92,36 @@ func (sr *ScriptReader) Lines() iter.Seq2[[]*syntax.Stmt, error] {
 			if !sr.parser.AtLineEnd() {
 				continue // more of this line to read
 			}
+			// Asked once the line is complete rather than at the moment
+			// of the error, because the unit bash throws away is the
+			// line: an error inside a one-line `for` loop costs the
+			// whole loop, and a statement earlier on the line never runs.
+			if rec := sr.parser.RecoverableErrors(); len(rec) > 0 {
+				line = nil
+				if !yield(nil, sr.named(rec[0])) {
+					return
+				}
+				continue
+			}
 			if !yield(line, nil) {
 				return
 			}
 			line = nil
 		}
+		// The input can end mid-line — `x=(a &` with no newline after
+		// it — and the error still belongs to the caller.
+		if rec := sr.parser.RecoverableErrors(); len(rec) > 0 {
+			yield(nil, sr.named(rec[0]))
+		}
 	}
+}
+
+// Recoverable reports whether err is a parse error bash discards an
+// input unit for and then carries on from, which is the caller's signal
+// to report it and keep reading (#581).
+func Recoverable(err error) bool {
+	var pe syntax.ParseError
+	return errors.As(err, &pe) && pe.Recoverable
 }
 
 // named puts the script's name in a parse error, which StmtsSeq has no
@@ -132,6 +161,12 @@ func (r *Runner) runReading(ctx context.Context, sr *ScriptReader) error {
 	}()
 	for stmts, err := range sr.Lines() {
 		if err != nil {
+			if Recoverable(err) {
+				// The line is gone and the file carries on, which is
+				// what bash does with a sourced file too (#581).
+				r.ReportRecovered(err)
+				continue
+			}
 			return err
 		}
 		r.stmts(ctx, stmts)
