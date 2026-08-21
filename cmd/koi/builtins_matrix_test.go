@@ -63,8 +63,39 @@ var interpBuiltinCases = []builtinCase{
 	{name: "[", script: `[ 1 = 1 ] && echo yes; [ 1 = 2 ] || echo no`},
 	{name: "break", script: `for i in 1 2 3; do [ "$i" = 2 ] && break; echo "$i"; done`},
 	{name: "builtin", script: `builtin echo via-builtin`},
+	{
+		// Both spellings mean "the shell builtin, not a function", and
+		// both went straight to the interpreter's table -- past the call
+		// seam, which is where koi's *replacements* live (#565). So they
+		// reached a printf without %q or --, and an unsupported-builtin
+		// refusal for three builtins the plain spelling runs.
+		//
+		// The `--` case is the one bash's own shopt.tests depends on:
+		// `builtin printf -- "--\n"` is its section separator, and koi
+		// printed the separator without its newline.
+		name: "builtin", script: `builtin printf "%q\n" "a b"
+builtin printf -- "--\n"
+builtin umask
+builtin kill -l 1
+builtin times >/dev/null; echo "times=$?"
+builtin nosuchthing 2>/dev/null; echo "notbuiltin=$?"
+builtin ls 2>/dev/null; echo "program=$?"`,
+	},
 	{name: "cd", script: `cd /tmp && pwd | sed 's|/private||'`},
 	{name: "command", script: `command echo via-command`},
+	{
+		// The same seam from the other spelling. `command kill` and
+		// `command umask` are how a portable script reaches the builtin
+		// past a function of the same name; both answered "unsupported
+		// builtin" while the bare name worked.
+		name: "command", script: `command printf "%q\n" "a b"
+command umask
+command kill -l 1
+command times >/dev/null; echo "times=$?"
+command help true | head -1
+echo() { echo shadowed; }; command echo not-shadowed
+command -v printf`,
+	},
 	{name: "continue", script: `for i in 1 2 3; do [ "$i" = 2 ] && continue; echo "$i"; done`},
 	{
 		// `cd "$HOME"` first, and that is load-bearing: the listing

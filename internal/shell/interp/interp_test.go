@@ -5349,7 +5349,9 @@ done <<< 2`,
 
 	// builtin
 	{"builtin", ""},
-	{"builtin noexist", "exit status 1 #JUSTERR"},
+	// bash names what it refused; failing silently made `builtin ls`
+	// look like a builtin that ran and printed nothing (#565).
+	{"builtin noexist", "builtin: noexist: not a shell builtin\nexit status 1 #JUSTERR"},
 	{"builtin echo foo", "foo\n"},
 	{
 		"echo() { printf 'bar\n'; }; echo foo; builtin echo foo",
