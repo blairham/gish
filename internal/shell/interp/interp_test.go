@@ -2044,16 +2044,27 @@ q`,
 	{
 		// #IGNORE rather than #JUSTERR because the harness's
 		// error check reads the *first* line, and here that is the
-		// listing. Measured by hand against bash 5.3, which answers
-		// exactly this: the listing, then "fg: current: no such job".
+		// listing. Measured by hand against bash 5.3 on darwin, which
+		// answers exactly this; the job mark differs on linux, which is
+		// the other reason this one is not confirmed automatically.
 		"set -m; { exit 3; } & sleep 0.2; jobs; fg; echo f=$?",
 		"[1]+  Exit 3                     { exit 3; }\nfg: current: no such job\nf=1\n #IGNORE",
 	},
 	// A job already waited for is gone, whatever its number was.
 	{"set -m; sleep 0.01 & wait; fg; echo f=$?", "fg: current: no such job\nf=1\n #JUSTERR"},
 	// And a finished job is named by what it answered, not by "Done".
-	{"{ exit 3; } & sleep 0.2; jobs", "[1]+  Exit 3                     { exit 3; }\n"},
-	{"{ exit 0; } & sleep 0.2; jobs", "[1]+  Done                       { exit 0; }\n"},
+	// The job *mark* is stripped because bash spells it per platform —
+	// a finished job is still the current job on darwin (`[1]+`) and no
+	// longer one on linux (`[1] `) — which CI found and which is not
+	// what these two cases are about.
+	{
+		`{ exit 3; } & sleep 0.2; jobs | sed "s/^\[1\][-+ ]//"`,
+		"  Exit 3                     { exit 3; }\n",
+	},
+	{
+		`{ exit 0; } & sleep 0.2; jobs | sed "s/^\[1\][-+ ]//"`,
+		"  Done                       { exit 0; }\n",
+	},
 	// Nothing koi runs in the background is ever stopped, so every job
 	// bg can name is already running — the case bash answers 0 for.
 	{"set -m; sleep 0.2 & bg; echo b=$?", "bg: job 1 already in background\nb=0\n #JUSTERR"},
