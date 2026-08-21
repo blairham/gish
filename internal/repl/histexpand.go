@@ -19,16 +19,25 @@ import (
 // entries. changed=false means the line passes through untouched; a
 // non-nil error aborts the line (bash prints "event not found").
 func expandHistory(line string, last func(prefix string, n int) (string, bool)) (string, bool, error) {
+	expanded, changed, _, err := expandHistoryLine(line, last)
+	return expanded, changed, err
+}
+
+// expandHistoryLine is [expandHistory] with `:p` reported: the modifier
+// asks for the expansion to be *shown* rather than run, which only the
+// interactive caller can honor (#96).
+func expandHistoryLine(line string, last func(prefix string, n int) (string, bool)) (string, bool, bool, error) {
 	// ^old^new: whole-line substitution on the previous command.
 	if strings.HasPrefix(line, "^") {
-		return expandCaret(line, last)
+		expanded, changed, err := expandCaret(line, last)
+		return expanded, changed, false, err
 	}
 	if !strings.Contains(line, "!") {
-		return line, false, nil
+		return line, false, false, nil
 	}
 
 	var b strings.Builder
-	changed := false
+	changed, printOnly := false, false
 	inSingle, inDouble := false, false
 	runes := []rune(line)
 	for i := 0; i < len(runes); i++ {
@@ -44,12 +53,13 @@ func expandHistory(line string, last func(prefix string, n int) (string, bool)) 
 			b.WriteRune(runes[i])
 			continue
 		case r == '!' && !inSingle:
-			replacement, consumed, err := expandEvent(runes[i:], last)
+			sel, consumed, err := expandEvent(runes[i:], last)
 			if err != nil {
-				return "", false, err
+				return "", false, false, err
 			}
 			if consumed > 0 {
-				b.WriteString(replacement)
+				b.WriteString(sel.text)
+				printOnly = printOnly || sel.printOnly
 				i += consumed - 1
 				changed = true
 				continue
@@ -62,56 +72,60 @@ func expandHistory(line string, last func(prefix string, n int) (string, bool)) 
 		// converts invalid UTF-8 bytes to U+FFFD, so a pasted line in a
 		// legacy encoding with a stray `!` would be silently mangled by
 		// a pass that expanded nothing. Found by FuzzExpandHistory.
-		return line, false, nil
+		return line, false, false, nil
 	}
-	return b.String(), true, nil
+	return b.String(), true, printOnly, nil
 }
 
 // expandEvent handles one `!` designator starting at runes[0]. A zero
 // consumed count means "not an event, leave the ! alone".
-func expandEvent(runes []rune, last func(string, int) (string, bool)) (string, int, error) {
+func expandEvent(runes []rune, last func(string, int) (string, bool)) (selection, int, error) {
+	none := selection{}
 	if len(runes) < 2 {
-		return "", 0, nil
+		return none, 0, nil
 	}
 	prev, ok := last("", 0)
 	next := runes[1]
+	// withSelectors reads the designators an event may be followed by —
+	// `!!:$:h`, `!vi:p` — which apply to every event form and not only
+	// to `!!` (#277).
+	withSelectors := func(text string, consumed int, ev string) (selection, int, error) {
+		sel, n, err := applySelectors(text, runes[consumed:], ev)
+		if err != nil {
+			return none, 0, err
+		}
+		if n == 0 {
+			return selection{text: text}, consumed, nil
+		}
+		return sel, consumed + n, nil
+	}
 	switch {
 	case next == ' ' || next == '\t' || next == '=' || next == '(':
-		return "", 0, nil // bash's lexical outs: negation, != , !(
+		return none, 0, nil // bash's lexical outs: negation, != , !(
 	case next == '!':
 		if !ok {
-			return "", 0, errNoEvent("!!")
+			return none, 0, errNoEvent("!!")
 		}
-		if rest, n, err := applyWordDesignator(prev, runes[2:]); err == nil && n > 0 {
-			return rest, 2 + n, nil
-		}
-		return prev, 2, nil
+		return withSelectors(prev, 2, "!!")
 	case next == '$':
 		if !ok {
-			return "", 0, errNoEvent("!$")
+			return none, 0, errNoEvent("!$")
 		}
-		return lastArgOf(prev), 2, nil
+		return withSelectors(lastArgOf(prev), 2, "!$")
 	case next == '^':
 		if !ok {
-			return "", 0, errNoEvent("!^")
+			return none, 0, errNoEvent("!^")
 		}
 		fields := strings.Fields(prev)
 		if len(fields) < 2 {
-			return "", 0, errNoEvent("!^")
+			return none, 0, errNoEvent("!^")
 		}
-		return fields[1], 2, nil
+		return withSelectors(fields[1], 2, "!^")
 	case next == ':':
 		if !ok {
-			return "", 0, errNoEvent("!:")
+			return none, 0, errNoEvent("!:")
 		}
-		rest, n, err := applyWordDesignator(prev, runes[1:])
-		if err != nil {
-			return "", 0, err
-		}
-		if n == 0 {
-			return "", 0, nil
-		}
-		return rest, 1 + n, nil
+		return withSelectors(prev, 1, "!")
 	case isEventWordRune(next):
 		// !prefix — most recent command starting with prefix.
 		j := 1
@@ -121,42 +135,11 @@ func expandEvent(runes []rune, last func(string, int) (string, bool)) (string, i
 		prefix := string(runes[1:j])
 		match, found := last(prefix, 0)
 		if !found {
-			return "", 0, errNoEvent("!" + prefix)
+			return none, 0, errNoEvent("!" + prefix)
 		}
-		return match, j, nil
+		return withSelectors(match, j, "!"+prefix)
 	}
-	return "", 0, nil
-}
-
-// applyWordDesignator handles :N and :N-M against a command's words.
-// runes starts at the ':'.
-func applyWordDesignator(command string, runes []rune) (string, int, error) {
-	if len(runes) < 2 || runes[0] != ':' {
-		return "", 0, nil
-	}
-	j := 1
-	for j < len(runes) && (runes[j] >= '0' && runes[j] <= '9') {
-		j++
-	}
-	if j == 1 {
-		return "", 0, nil
-	}
-	from := atoiRunes(runes[1:j])
-	to := from
-	consumed := j
-	if j+1 < len(runes) && runes[j] == '-' && runes[j+1] >= '0' && runes[j+1] <= '9' {
-		k := j + 1
-		for k < len(runes) && (runes[k] >= '0' && runes[k] <= '9') {
-			k++
-		}
-		to = atoiRunes(runes[j+1 : k])
-		consumed = k
-	}
-	fields := strings.Fields(command)
-	if from >= len(fields) || to >= len(fields) || from > to {
-		return "", 0, errNoEvent(fmt.Sprintf("!:%d", from))
-	}
-	return strings.Join(fields[from:to+1], " "), consumed, nil
+	return none, 0, nil
 }
 
 // expandCaret is ^old^new: substitute in the previous command.

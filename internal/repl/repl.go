@@ -402,7 +402,7 @@ func runEditor(ctx context.Context, login bool) error {
 		// History expansion (#96): !!, !$, !^, !:N, !prefix, ^old^new.
 		// bash echoes the expansion so the user sees what runs.
 		if store != nil {
-			expanded, changed, herr := expandHistory(line, store.Match)
+			expanded, changed, printOnly, herr := expandHistoryLine(line, store.Match)
 			switch {
 			case herr != nil:
 				fmt.Fprintln(os.Stderr, "koi:", herr)
@@ -411,6 +411,22 @@ func runEditor(ctx context.Context, login bool) error {
 			case changed:
 				fmt.Fprintln(os.Stdout, expanded)
 				line = expanded
+			}
+			if printOnly {
+				// `:p` asks to see the expansion rather than run it,
+				// which is the whole reason to write it — and it still
+				// goes into history, so the next line can recall it.
+				now := time.Now()
+				if _, aerr := store.Append(history.Entry{
+					Command:       expanded,
+					StartedUnixMs: now.UnixMilli(),
+					Cwd:           runner.Dir,
+					SessionID:     sessionID,
+				}); aerr != nil {
+					fmt.Fprintln(os.Stderr, "koi: history:", aerr)
+				}
+				lastExit = 0
+				continue
 			}
 		}
 		// The agent surface (#34): plan first, approve, execute gated
