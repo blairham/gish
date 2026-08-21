@@ -1092,11 +1092,9 @@ var errorCases = []errorCase{
 		`echo $((a b"`,
 		langErr("1:11: not a valid arithmetic operator: `b`"),
 	),
-	errCase(
-		"echo $(())",
-		langErr("1:6: `$((` must be followed by an expression"),
-		flipConfirmAll, // TODO: empty arithmetic expressions seem to be OK?
-	),
+	// `echo $(())` is not an error: bash, ksh and zsh all answer 0 for
+	// an empty arithmetic expansion, and `$[]` with it. dash rejects it,
+	// but at evaluation time rather than while parsing.
 	errCase(
 		"echo $((()))",
 		langErr("1:9: `(` must be followed by an expression"),
@@ -1117,11 +1115,11 @@ var errorCases = []errorCase{
 		"echo $((a ; c))",
 		langErr("1:11: not a valid arithmetic operator: `;`"),
 	),
-	errCase(
-		"echo $((foo) )",
-		langErr("1:6: reached `)` without matching `$((` with `))`", LangBash|LangMirBSDKorn|LangZsh),
-		flipConfirmAll, // note that we don't backtrack
-	),
+	// `echo $((foo) )` was an error case here, marked "note that we
+	// don't backtrack". bash runs it as a command substitution — the
+	// inner paren closes before the outer one — and koi now agrees,
+	// without backtracking, by looking at where that paren closes
+	// (#424).
 	errCase(
 		"echo $((a *))",
 		langErr("1:11: `*` must be followed by an expression"),
@@ -1175,8 +1173,13 @@ var errorCases = []errorCase{
 	// 	//  `1:10: not a valid arithmetic operator: ``,
 	// ),
 	errCase(
+		// koi reads this as a command substitution containing a
+		// subshell, because the inner paren closes before the outer
+		// one — which is bash's rule and bash's message here too
+		// ("unexpected EOF while looking for matching `)'"). Upstream
+		// read it as an empty arithmetic expansion (#424).
 		"<<EOF\n$(()a",
-		langErr("2:1: `$((` must be followed by an expression"),
+		langErr("2:1: reached EOF without matching `$(` with `)`"),
 	),
 	errCase(
 		"<<EOF\n`))",
@@ -1464,10 +1467,8 @@ var errorCases = []errorCase{
 		langErr("1:1: reached EOF without matching `((` with `))`", LangBash|LangMirBSDKorn|LangZsh),
 		langErr("1:2: reached EOF without matching `(` with `)`", LangPOSIX),
 	),
-	errCase(
-		"(())",
-		langErr("1:1: `((` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
-	),
+	// `(())` is not an error either: bash and zsh both run it, and since
+	// an empty expression is zero its status is 1.
 	errCase(
 		"echo ((foo",
 		langErr("1:6: `((` can only be used to open an arithmetic cmd", LangBash|LangMirBSDKorn|LangZsh),
@@ -1945,11 +1946,12 @@ var errorCases = []errorCase{
 		"foo=force_expansion; echo ${foo@'Q'}",
 		langErr("1:33: @ expansion operator requires a literal", LangBash),
 	),
-	errCase(
-		`echo $((echo a); (echo b))`,
-		langErr("1:14: not a valid arithmetic operator: `a`", LangBash|LangMirBSDKorn|LangZsh),
-		flipConfirmAll, // note that we don't backtrack
-	),
+	// `echo $((echo a); (echo b))` was an error case here, marked "note
+	// that we don't backtrack". koi parses it as bash does — a command
+	// substitution whose first command is a subshell — because bash
+	// never backtracks either: it decides by where the inner paren
+	// closes, which is a bounded lookahead rather than a retry (#424).
+	// The behavior is asserted against real bash in interp's table.
 	errCase(
 		`((echo a); (echo b))`,
 		langErr("1:8: not a valid arithmetic operator: `a`", LangBash|LangMirBSDKorn|LangZsh),

@@ -434,6 +434,9 @@ func printArithm(x syntax.ArithmExpr) string {
 }
 
 func (p *funcPrinter) arithm(x syntax.ArithmExpr) {
+	if x == nil {
+		return // the empty `$(())`
+	}
 	switch e := x.(type) {
 	case nil:
 	case *syntax.Word:

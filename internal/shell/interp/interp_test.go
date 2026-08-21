@@ -2038,6 +2038,33 @@ q`,
 		"1\n",
 	},
 
+	// Backslash-newline is removed by the backquote-level scan before
+	// the inner text is parsed — even inside single quotes, which are
+	// otherwise literal (#423). The same string outside backquotes
+	// keeps both characters, which is what makes this the backquote's
+	// rule rather than the quote's.
+	{"echo `echo 'foo\\\nbar'`", "foobar\n"},
+	{"echo 'foo\\\nbar'", "foo\\\nbar\n"},
+	{"echo `echo \\`echo 'a\\\nb'\\``", "ab\n"},
+	// `$((` is arithmetic only when the two parens close together;
+	// otherwise it is a command substitution whose first command is a
+	// subshell (#424). bash decides the same way — by where the inner
+	// paren closes — rather than by parsing and backtracking.
+	{"echo $((echo sh_a);(echo sh_b))", "sh_a sh_b\n"},
+	{"echo $((1+2))", "3\n"},
+	{"echo $(( (1+2) ))", "3\n"},
+	{"x=3; echo $((x++))", "3\n"},
+	{"echo $((echo hi) )", "hi\n"},
+	{"echo [$((echo hi); echo there)]", "[hi there]\n"},
+	// An empty arithmetic expansion is zero rather than an error, in
+	// every spelling; `(( ))` is zero too, so its status is 1.
+	{"echo $(())", "0\n"},
+	{"echo $(( ))", "0\n"},
+	{"x=$(()); echo \"[$x]\"", "[0]\n"},
+	{"echo $[]", "0\n"},
+	{"(( )); echo rc=$?", "rc=1\n"},
+	{"if (( )); then echo t; else echo f; fi", "f\n"},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
