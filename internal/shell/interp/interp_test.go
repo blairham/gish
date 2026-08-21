@@ -257,7 +257,7 @@ var runTests = []runTest{
 	{"shift a", "usage: shift [n]\nexit status 2 #JUSTERR"},
 	{
 		"shouldnotexist",
-		"\"shouldnotexist\": executable file not found in $PATH\nexit status 127 #JUSTERR",
+		"shouldnotexist: command not found\nexit status 127 #JUSTERR",
 	},
 	{
 		"for i in 1; do continue a; done",
@@ -4689,7 +4689,7 @@ q`,
 	},
 	{
 		"set -e; shouldnotexist; echo foo",
-		"\"shouldnotexist\": executable file not found in $PATH\nexit status 127 #JUSTERR",
+		"shouldnotexist: command not found\nexit status 127 #JUSTERR",
 	},
 	{
 		"set -e; set +e; false; echo foo",
@@ -4930,7 +4930,7 @@ set +o xtrace
 	},
 	{
 		"notinpath() { echo func; }; notinpath; unset -f notinpath; notinpath",
-		"func\n\"notinpath\": executable file not found in $PATH\nexit status 127 #JUSTERR",
+		"func\nnotinpath: command not found\nexit status 127 #JUSTERR",
 	},
 	{
 		"a=1; a() { echo func; }; unset -f a; echo $a",
@@ -4942,7 +4942,7 @@ set +o xtrace
 	},
 	{
 		"notinpath=1; notinpath() { echo func; }; notinpath; echo $notinpath; unset notinpath; notinpath; echo $notinpath; unset notinpath; notinpath",
-		"func\n1\nfunc\n\n\"notinpath\": executable file not found in $PATH\nexit status 127 #JUSTERR",
+		"func\n1\nfunc\n\nnotinpath: command not found\nexit status 127 #JUSTERR",
 	},
 	{
 		"unset PATH; [[ $PATH == '' ]]",
@@ -6583,7 +6583,7 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 	{"declare {A,B}_VAR; A_VAR=1; B_VAR=2; echo $A_VAR $B_VAR", "1 2\n"},
 	{"declare {foo=x,bar=y}; echo $foo $bar", "x y\n"},
 	{`declare foo{bar=baz`, "declare: invalid name \"foo{bar\"\nexit status 1 #JUSTERR"},
-	{"{a,b}=value", "\"a=value\": executable file not found in $PATH\nexit status 127 #JUSTERR"},
+	{"{a,b}=value", "a=value: command not found\nexit status 127 #JUSTERR"},
 
 	// tilde expansion
 	{
@@ -6629,7 +6629,7 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 	{"exec", ""},
 	{
 		"exec builtin echo foo",
-		"\"builtin\": executable file not found in $PATH\nexit status 127 #JUSTERR",
+		"builtin: command not found\nexit status 127 #JUSTERR",
 	},
 	{
 		"exec $GOSH_PROG 'echo foo'; echo bar",
@@ -7284,11 +7284,11 @@ var runTestsUnix = []runTest{
 	// Unix-y PATH
 	{
 		"PATH=; bash -c 'echo foo'",
-		"\"bash\": executable file not found in $PATH\nexit status 127 #JUSTERR",
+		"bash: command not found\nexit status 127 #JUSTERR",
 	},
 	{
 		"cd /; sure/is/missing",
-		"stat /sure/is/missing: no such file or directory\nexit status 127 #JUSTERR",
+		"sure/is/missing: No such file or directory\nexit status 127 #JUSTERR",
 	},
 	{
 		"echo '#!/bin/sh\necho b' >a; chmod 0755 a; PATH=; a",
