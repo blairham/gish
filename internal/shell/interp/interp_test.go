@@ -2062,6 +2062,21 @@ q`,
 	{`shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[x]\n"},
 	{`set -m; shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[]\n"},
 
+	// bash's case *toggle*, which koi did not have at all (#277):
+	// `${x~}` swaps the case of the first character and `${x~~}` of
+	// every one, both filtered by an optional pattern exactly as `^`
+	// and `,` are. casemod.tests stopped on the first one.
+	{"Z1=oenophile; echo ${Z1~}", "Oenophile\n"},
+	{"Z1=oenophile; echo ${Z1~~}", "OENOPHILE\n"},
+	{"Z2=OenOphIlE; echo ${Z2~}", "oenOphIlE\n"},
+	{"Z2=OenOphIlE; echo ${Z2~~}", "oENoPHiLe\n"},
+	{"x=abc; echo ${x~[b]}", "abc\n"},
+	{"x=abc; echo ${x~~[bc]}", "aBC\n"},
+	{`a=(abc DEF); echo "${a[@]~}"`, "Abc dEF\n"},
+	{`declare -A m=([k]=aB); echo "${m[k]~~}"`, "Ab\n"},
+	// And the C locale has no case beyond ASCII here either (#470).
+	{"export LC_ALL=C; x=ÿab; echo ${x~~}", "ÿAB\n"},
+
 	// koi's parser refused three shapes bash reads and complains about
 	// only while evaluating — and because koi parses ahead, refusing
 	// them lost the rest of the file rather than the line (#277).

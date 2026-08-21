@@ -351,7 +351,8 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			syntax.RemSmallSuffix, syntax.RemLargeSuffix:
 			str = join(cfg.removePatternElems(op, arg, elems))
 		case syntax.UpperFirst, syntax.UpperAll,
-			syntax.LowerFirst, syntax.LowerAll:
+			syntax.LowerFirst, syntax.LowerAll,
+			syntax.ToggleFirst, syntax.ToggleAll:
 			str = join(cfg.caseConvElems(op, arg, elems))
 		case syntax.OtherParamOps:
 			switch arg {
@@ -457,7 +458,8 @@ func (cfg *Config) perElemOps(pe *syntax.ParamExp, elems []string) ([]string, er
 			syntax.RemSmallSuffix, syntax.RemLargeSuffix:
 			return cfg.removePatternElems(op, arg, elems), nil
 		case syntax.UpperFirst, syntax.UpperAll,
-			syntax.LowerFirst, syntax.LowerAll:
+			syntax.LowerFirst, syntax.LowerAll,
+			syntax.ToggleFirst, syntax.ToggleAll:
 			return cfg.caseConvElems(op, arg, elems), nil
 		}
 	}
@@ -533,10 +535,15 @@ func (cfg *Config) removePatternElems(op syntax.ParExpOperator, arg string, elem
 // caseConvElems applies a case conversion operator to each element.
 func (cfg *Config) caseConvElems(op syntax.ParExpOperator, arg string, elems []string) []string {
 	caseFunc := unicode.ToLower
-	if op == syntax.UpperFirst || op == syntax.UpperAll {
+	switch op {
+	case syntax.UpperFirst, syntax.UpperAll:
 		caseFunc = unicode.ToUpper
+	case syntax.ToggleFirst, syntax.ToggleAll:
+		// bash's `${x~}` and `${x~~}` swap the case rather than forcing
+		// one, which is why this is a third function and not a flag.
+		caseFunc = toggleCase
 	}
-	all := op == syntax.UpperAll || op == syntax.LowerAll
+	all := op == syntax.UpperAll || op == syntax.LowerAll || op == syntax.ToggleAll
 
 	// empty string means '?'; nothing to do there
 	expr, err := pattern.Regexp(arg, 0)

@@ -2858,3 +2858,24 @@ func TestPOSIXModeQuoteRule(t *testing.T) {
 		})
 	}
 }
+
+// The case-toggle operators are koi's own addition to this parser
+// (#277): bash's `${x~}` and `${x~~}`, which the corpus above has no
+// entry for. What matters beyond parsing is that they *print* back as
+// themselves — a token whose string came out wrong would round-trip a
+// script into a different one.
+func TestCaseToggleRoundTrips(t *testing.T) {
+	t.Parallel()
+	const src = "echo ${x~} ${x~~} ${x~[ab]} ${x^} ${x,,}\n"
+	f, err := NewParser().Parse(strings.NewReader(src), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sb strings.Builder
+	if err := NewPrinter().Print(&sb, f); err != nil {
+		t.Fatal(err)
+	}
+	if got := sb.String(); got != src {
+		t.Errorf("printed %q, want %q", got, src)
+	}
+}

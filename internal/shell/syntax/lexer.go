@@ -865,6 +865,12 @@ func (p *Parser) paramToken(r rune) token {
 			return dblCaret
 		}
 		return caret
+	case '~':
+		if p.rune() == '~' {
+			p.rune()
+			return parDblTilde
+		}
+		return parTilde
 	case ',':
 		if p.rune() == ',' {
 			p.rune()
