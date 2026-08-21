@@ -33,10 +33,12 @@ func runJobScript(t *testing.T, shell, src string) string {
 	out, _ := cmd.CombinedOutput() // a non-zero status is part of what is compared
 	text := bashPrefix.ReplaceAllString(string(out), "")
 	// bash reports a job killed by an uncatchable signal as a job
-	// notice; koi has no asynchronous notices in a script.
+	// notice, and spells it differently per platform (`Killed: 9` on
+	// darwin, `<pid> Killed` on linux); koi has no asynchronous notices
+	// in a script at all.
 	var kept []string
 	for line := range strings.SplitSeq(text, "\n") {
-		if strings.Contains(line, "Killed:") || strings.Contains(line, "Terminated:") {
+		if strings.Contains(line, "Killed") || strings.Contains(line, "Terminated") {
 			continue
 		}
 		kept = append(kept, line)
@@ -54,7 +56,6 @@ func TestAScriptCanSignalItsOwnJobs(t *testing.T) {
 		// what a script reads to tell a kill from a failure.
 		{"term", `sleep 5 & kill %1; wait %1; echo w=$?`},
 		{"kill -9", `sleep 5 & kill -9 %1; wait %1; echo w=$?`},
-		{"kill -INT", `sleep 5 & kill -INT %1; wait %1; echo w=$?`},
 		{"by name", `sleep 5 & kill -TERM %% ; wait %1; echo w=$?`},
 		// Signal 0 asks whether the job is there and changes nothing.
 		{"signal 0", `sleep 0.2 & kill -0 %1; echo k=$?; wait`},
@@ -72,6 +73,23 @@ func TestAScriptCanSignalItsOwnJobs(t *testing.T) {
 				t.Errorf("koi = %q, bash = %q", got, want)
 			}
 		})
+	}
+}
+
+// SIGINT to a background job is deliberately not in the table above,
+// because bash's own two builds disagree about it: on darwin the signal
+// reaches the job and it dies with 130, while on linux the job carries
+// on and `wait` answers 0 — POSIX has an asynchronous command ignore
+// SIGINT when job control is off, and only one of them does it. koi
+// delivers, which matches darwin and is the answer a script asking for
+// a job to stop can act on; a `kill` that quietly did nothing is the
+// shape this issue was opened about.
+func TestInterruptingAScriptJobEndsIt(t *testing.T) {
+	t.Parallel()
+	koi := buildKoi(t)
+
+	if got := runJobScript(t, koi, `sleep 5 & kill -INT %1; wait %1; echo w=$?`); !strings.Contains(got, "w=130") {
+		t.Errorf("output = %q, want the job to report the signal", got)
 	}
 }
 
