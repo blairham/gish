@@ -130,3 +130,77 @@ func TestHelpFailureIsNotFatal(t *testing.T) {
 		t.Errorf("the || branch never ran: %q", out)
 	}
 }
+
+// TestHelpSyntaxTableIsWellFormed guards the shape of the syntax half
+// (#557). It is a separate table from helpTopics because those names are
+// commands and these are grammar, so the two must not overlap, and every
+// entry has to carry both halves of the answer — a topic that is listed
+// with no text is the bug this issue was about, arriving from the other
+// side. Whether koi actually *runs* each construct is asserted where a
+// script can run, in cmd/koi/nativebuiltins_test.go.
+func TestHelpSyntaxTableIsWellFormed(t *testing.T) {
+	t.Parallel()
+	for name, topic := range helpSyntaxTopics {
+		if _, clash := helpTopics[name]; clash {
+			t.Errorf("%q is both a command topic and a syntax topic", name)
+		}
+		if strings.TrimSpace(topic.use) == "" {
+			t.Errorf("syntax topic %q has no synopsis", name)
+		}
+		if len(strings.TrimSpace(topic.desc)) < 20 {
+			t.Errorf("syntax topic %q is described as %q", name, topic.desc)
+		}
+	}
+	for alias, canonical := range helpSyntaxAliases {
+		if _, ok := helpSyntaxTopics[canonical]; !ok {
+			t.Errorf("alias %q points at %q, which is not a topic", alias, canonical)
+		}
+		if _, listed := helpSyntaxTopics[alias]; listed {
+			t.Errorf("alias %q is also a listed topic", alias)
+		}
+		if !slices.Contains(helpTopicNames(), canonical) {
+			t.Errorf("%q resolves but is not in the listing", canonical)
+		}
+		if slices.Contains(helpTopicNames(), alias) {
+			t.Errorf("alias %q is offered by the listing; only the canonical name should be", alias)
+		}
+	}
+}
+
+func TestHelpExplainsShellSyntax(t *testing.T) {
+	out, _, err := runHelpScript(t, "help while\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "while commands ; do") {
+		t.Errorf("help while = %q", out)
+	}
+}
+
+// A punctuation topic is reached by the form a person types, and the
+// entry is headed by the name the listing offers — bash's own behavior,
+// which it gets from prefix-matching its table.
+func TestHelpPunctuationAliasNamesTheListedTopic(t *testing.T) {
+	out, _, err := runHelpScript(t, "help '[['\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "[[ ... ]]: ") {
+		t.Errorf("help '[[' = %q, want the entry headed by the listed name", out)
+	}
+}
+
+func TestHelpOverviewListsTheSyntaxGroup(t *testing.T) {
+	out, _, err := runHelpScript(t, "help\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "shell syntax:") {
+		t.Errorf("overview has no syntax group: %q", out)
+	}
+	for _, name := range []string{"case", "while", "for ((", "[[ ... ]]"} {
+		if !strings.Contains(out, name) {
+			t.Errorf("overview does not name the %q topic: %q", name, out)
+		}
+	}
+}

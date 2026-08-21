@@ -780,6 +780,14 @@ loop:
 				if errors.Is(err, io.EOF) {
 					break loop
 				}
+				// This is the one reading path that is not an
+				// interp.ScriptReader, so it has neither the recoverable
+				// error's report (#607) nor the syntax error's status of 2
+				// (#608). Both are the parse-time half of the same gap
+				// #599 closed at runtime, and both are filed rather than
+				// reimplemented beside InteractiveSeq — whose Incomplete
+				// callback is the only thing that prompts a continuation
+				// line under `-i`.
 				return err
 			}
 			if parser.Incomplete() {
@@ -788,16 +796,24 @@ loop:
 			}
 			for _, stmt := range stmts {
 				rewriteSubstrateGaps(stmt)
-				if err := safely("running the command", func() error { return runner.Run(ctx, stmt) }); err != nil {
-					if runner.Exited() {
-						exitErr = err
-						break loop
-					}
-					// Nonzero statuses are ordinary interactive life; only
-					// surface real interpreter errors.
-					if _, ok := errors.AsType[interp.ExitStatus](err); !ok {
-						fmt.Fprintln(os.Stderr, "koi:", err)
-					}
+			}
+			// The line runs as one unit, which is what gives this loop
+			// the rules that belong to a reading unit rather than to a
+			// statement (#599): an aborting error abandons the rest of
+			// the line, and the line's status is the session's. Running
+			// the statements one at a time reached neither, because both
+			// live in the interpreter's own top-level loop.
+			if err := safely("running the command", func() error {
+				return runner.RunStmts(ctx, "", stmts)
+			}); err != nil {
+				if runner.Exited() {
+					exitErr = err
+					break loop
+				}
+				// Nonzero statuses are ordinary interactive life; only
+				// surface real interpreter errors.
+				if _, ok := errors.AsType[interp.ExitStatus](err); !ok {
+					fmt.Fprintln(os.Stderr, "koi:", err)
 				}
 			}
 			for _, opt := range runner.ParserOptions() {
@@ -813,6 +829,15 @@ loop:
 		}
 		if !switched {
 			break
+		}
+	}
+	// The input ran out, which is the moment the EXIT trap fires and the
+	// session's status settles — the other half of RunStmts' contract,
+	// and the half this loop never had. An `exit` has already fired the
+	// trap and already carries its own status.
+	if !runner.Exited() {
+		if err := safely("finishing the session", func() error { return runner.Finish(ctx) }); err != nil {
+			exitErr = err
 		}
 	}
 	if promptOut != nil {
