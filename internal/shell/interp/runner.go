@@ -267,7 +267,6 @@ func (r *Runner) expandErr(err error) {
 		r.exit.code = 1
 		r.exit.exiting = true
 	case strings.HasSuffix(errMsg, "readonly variable"),
-		strings.HasSuffix(errMsg, "arithmetic syntax error"),
 		strings.HasSuffix(errMsg, "bad substitution"),
 		// A subscript bash reads at assignment time rather than while
 		// parsing (#582): `b[]=x`, `b[*]=x`, `c[-9]=x`, `d[7]=(a b)`.
@@ -276,7 +275,13 @@ func (r *Runner) expandErr(err error) {
 		strings.HasSuffix(errMsg, "bad array subscript"),
 		strings.HasSuffix(errMsg, "cannot assign list to array member"),
 		strings.HasSuffix(errMsg, "cannot assign to non-numeric index"),
-		strings.HasSuffix(errMsg, "expression recursion level exceeded"):
+		// Every diagnostic the arithmetic evaluator raises, rather than
+		// a list of their wordings (#597): a division by zero abandons
+		// the line exactly as a syntax error in the expression does, and
+		// matching on suffixes had missed it. In a *command* — `(( … ))`
+		// or `let` — the same error is only that command failing, which
+		// is what arithmCmd answers.
+		errors.As(err, &expand.ArithError{}):
 		// An arithmetic error in an expansion is the same input-unit
 		// abandonment (#366): bash's `echo "${x:bad}"` loses the rest
 		// of the -c string and a script continues at the next line.
@@ -306,6 +311,27 @@ func (r *Runner) arithm(expr syntax.ArithmExpr) int {
 	n, err := expand.Arithm(r.ecfg, expr)
 	r.expandErr(err)
 	return n
+}
+
+// arithmCmd evaluates an arithmetic expression that *is* a command —
+// `(( … ))`, a C-style loop's header, or a `let` argument — where an
+// arithmetic error means the command failed rather than the shell losing
+// the rest of the line (#597). bash reports it under the command's own
+// name and answers 1, so `(( 5 += 2 )); echo $?` prints 1 and the line
+// carries on, while `echo $((5 += 2))` abandons it. Only the arithmetic
+// evaluator's own diagnostics are treated that way: a bad substitution
+// inside `(( ))` still abandons the input unit, which is what
+// [expand.ArithError] marks.
+func (r *Runner) arithmCmd(expr syntax.ArithmExpr, name string) (int, bool) {
+	n, err := expand.Arithm(r.ecfg, expr)
+	var aerr expand.ArithError
+	if errors.As(err, &aerr) {
+		r.errf("%s: %s\n", name, aerr.Error())
+		r.exit.code = 1
+		return 0, true
+	}
+	r.expandErr(err)
+	return n, false
 }
 
 func (r *Runner) fields(words ...*syntax.Word) []string {
@@ -1545,7 +1571,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 			if y.Init != nil {
 				traceArithm(y.Init)
-				r.arithm(y.Init)
+				if _, failed := r.arithmCmd(y.Init, "(("); failed {
+					return
+				}
 			}
 			// A failing body command does not end the loop (#369):
 			// `for ((f=0; f<3; f++)); do …; false; done` runs all three
@@ -1557,7 +1585,8 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			for {
 				if y.Cond != nil {
 					traceArithm(y.Cond)
-					if r.arithm(y.Cond) == 0 {
+					n, failed := r.arithmCmd(y.Cond, "((")
+					if failed || n == 0 {
 						break
 					}
 				}
@@ -1566,7 +1595,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				}
 				if y.Post != nil {
 					traceArithm(y.Post)
-					r.arithm(y.Post)
+					if _, failed := r.arithmCmd(y.Post, "(("); failed {
+						break
+					}
 				}
 				if r.exit.exiting || r.exit.returning || r.exit.aborting {
 					break
@@ -1581,7 +1612,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		}
 		r.setFunc(cm.Name.Value, cm.Body)
 	case *syntax.ArithmCmd:
-		r.exit.oneIf(r.arithm(cm.X) == 0)
+		if n, failed := r.arithmCmd(cm.X, "(("); !failed {
+			r.exit.oneIf(n == 0)
+		}
 	case *syntax.LetClause:
 		if len(cm.Exprs) == 0 {
 			// A bare `let` is bash's builtin refusing its own argument
@@ -1593,7 +1626,11 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		}
 		var val int
 		for _, expr := range cm.Exprs {
-			val = r.arithm(expr)
+			n, failed := r.arithmCmd(expr, "let")
+			if failed {
+				return
+			}
+			val = n
 
 			if !tracingEnabled {
 				continue

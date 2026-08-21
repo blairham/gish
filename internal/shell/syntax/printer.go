@@ -115,8 +115,8 @@ func NewPrinter(opts ...PrinterOption) *Printer {
 // to w are buffered.
 //
 // The node types supported at the moment are [*File], [*Stmt], [*Word], [*Assign], any
-// [Command] node, and any WordPart node. A trailing newline will only be printed
-// when a [*File] is used.
+// [Command] node, any WordPart node, and any [ArithmExpr] node. A trailing newline
+// will only be printed when a [*File] is used.
 func (p *Printer) Print(w io.Writer, node Node) error {
 	p.reset()
 
@@ -156,6 +156,14 @@ func (p *Printer) Print(w io.Writer, node Node) error {
 	case *Assign:
 		p.line = node.Pos().Line()
 		p.assigns([]*Assign{node})
+	case ArithmExpr:
+		// An arithmetic *expression* on its own, which this printer
+		// already knows how to render inside `$(( ))` and refused only
+		// because the entry point did not list it (#597). A diagnostic
+		// that has to name the expression it is about needs this — and
+		// `*Word` is an ArithmExpr too, so the case above still wins.
+		p.line = node.Pos().Line()
+		p.arithmExpr(node, false, false)
 	default:
 		return fmt.Errorf("unsupported node type: %T", node)
 	}

@@ -1347,6 +1347,18 @@ func TestPrintNodeTypes(t *testing.T) {
 			in:   multiline.Stmts[0].Cmd.(*CallExpr).Args[0].Parts[0],
 			want: "echo",
 		},
+		// An arithmetic expression on its own, which a diagnostic that
+		// has to name the expression it is complaining about needs
+		// (#597). A *Word is an ArithmExpr too and keeps its own case,
+		// which the litWord entry above is the guard for.
+		{
+			in:   arithmExprOf(t, "$(( 1 ? 20 : x += 2 ))"),
+			want: "1 ? 20 : x += 2",
+		},
+		{
+			in:   arithmExprOf(t, "$(( (a[1] + 2) * -3 ))"),
+			want: "(a[1] + 2) * -3",
+		},
 	}
 	printer := NewPrinter()
 	for _, tc := range tests {
@@ -1415,4 +1427,16 @@ func TestKeepPaddingRepeated(t *testing.T) {
 	// Disable the option, and ensure it's disabled.
 	KeepPadding(false)(printer)
 	printTest(t, parser, printer, "foo  bar", "foo bar")
+}
+
+// arithmExprOf parses one `$(( … ))` word and hands back the expression
+// inside it, since an [ArithmExpr] has no constructor as convenient as
+// litWord's.
+func arithmExprOf(t *testing.T, src string) ArithmExpr {
+	t.Helper()
+	f, err := NewParser().Parse(strings.NewReader("echo "+src), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f.Stmts[0].Cmd.(*CallExpr).Args[1].Parts[0].(*ArithmExp).X
 }

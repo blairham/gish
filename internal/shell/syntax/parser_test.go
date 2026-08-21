@@ -1142,15 +1142,12 @@ var errorCases = []errorCase{
 		"echo $((:",
 		langErr("1:9: ternary operator missing `?` before `:`"),
 	),
-	errCase(
-		"echo $(((a)+=b))",
-		langErr("1:12: `+=` must follow a name"),
-		flipConfirm(LangMirBSDKorn),
-	),
-	errCase(
-		"echo $((1=2))",
-		langErr("1:10: `=` must follow a name"),
-	),
+	// Whether an arithmetic assignment's target is a variable is a
+	// question bash answers while *evaluating* — `$(((a)+=b))` and
+	// `$((1=2))` are both `attempted assignment to non-variable` at run
+	// time, which abandons the line and lets the script continue — so
+	// neither is a parse error any more (#597). Refusing them here cost
+	// the whole file, since koi parses ahead.
 	// A name an expansion spells is only knowable when it is evaluated,
 	// so neither of these is a parse error: bash runs `$(($(echo a)=2))`
 	// and assigns 2 to `a`, and complains about `$(($0=2))` only while
@@ -1535,10 +1532,9 @@ var errorCases = []errorCase{
 		"let a:b",
 		langErr("1:6: ternary operator missing `?` before `:`", LangBash|LangMirBSDKorn|LangZsh),
 	),
-	errCase(
-		"let a+b=c",
-		langErr("1:8: `=` must follow a name", LangBash|LangMirBSDKorn|LangZsh),
-	),
+	// `let a+b=c` parses and the builtin refuses it: bash answers
+	// `let: a+b=c: attempted assignment to non-variable` with status 1
+	// and carries on (#597).
 	errCase(
 		"`let` { foo; }",
 		langErr("1:14: `}` can only be used to close a block", LangBash|LangMirBSDKorn|LangZsh),
