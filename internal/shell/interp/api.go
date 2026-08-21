@@ -720,7 +720,7 @@ func (r *Runner) OptionSet(name string) bool {
 	}
 	for i, opt := range bashOptsTable {
 		if opt.name == name {
-			return opt.supported && r.opts[len(posixOptsTable)+i]
+			return opt.settable() && r.opts[len(posixOptsTable)+i]
 		}
 	}
 	return false
@@ -744,7 +744,7 @@ func (r *Runner) Options() []OptionState {
 		}
 	}
 	for i, opt := range bashOptsTable {
-		if opt.supported {
+		if opt.settable() {
 			out = append(out, OptionState{opt.name, r.opts[len(posixOptsTable)+i]})
 		}
 	}
@@ -1243,7 +1243,7 @@ func (r *Runner) bashOptByName(name string) (status *bool, supported bool) {
 	for i, opt := range bashOptsTable {
 		if opt.name == name {
 			index := len(posixOptsTable) + i
-			return &r.opts[index], opt.supported
+			return &r.opts[index], opt.settable()
 		}
 	}
 	return nil, false
@@ -1286,9 +1286,41 @@ var letterOnlyOpts = map[string]bool{"restricted": true}
 
 type bashOpt struct {
 	name         string
-	defaultState bool // Bash's default value for this option
-	supported    bool // whether we support the option's non-default state
+	defaultState bool       // Bash's default value for this option
+	support      optSupport // what koi can do about being asked to move it
 }
+
+// optSupport says what happens when something asks a shopt to leave its
+// default, and there are three answers rather than two (#575).
+//
+// The third one is the reason this is not a bool. A handful of bash's
+// options govern behavior that is not the *interpreter's* — cd spelling
+// correction at a prompt, what happens after a history expansion, whether
+// programmable completion runs — and koi's answers to all of those come
+// from its own line editor and completion, not from a bash bit. For those
+// the bit is real state and recording it is not a pretence: nothing a
+// script can observe is being faked, and refusing instead costs the
+// script its state for nothing. Everything that would change what a
+// script observes keeps the honest refusal, because a shell that says it
+// is in a mode it is not is worse than one that says no.
+type optSupport uint8
+
+const (
+	// optUnimplemented: koi cannot put this option in its other state,
+	// and says so rather than accepting the request (#542).
+	optUnimplemented optSupport = iota
+	// optImplemented: the interpreter acts on this option.
+	optImplemented
+	// optStateOnly: the bit is tracked and answered; the behavior it
+	// names belongs to the shell around the interpreter.
+	optStateOnly
+)
+
+// settable reports whether this option can leave its default at all —
+// either because koi implements it or because its bit is state koi
+// records. It is what `shopt -s` is allowed to move and what the option
+// listings for a *session* report.
+func (o bashOpt) settable() bool { return o.support != optUnimplemented }
 
 // The order here is the order of the opt* constants below, which index into
 // it — not the order `set -o` prints, which is sorted by name at the point
@@ -1377,39 +1409,39 @@ var bashOptsTable = [...]bashOpt{
 	{
 		name:         "dotglob",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		name:         "expand_aliases",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		name:         "extdebug",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		name:         "extglob",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		name:         "failglob",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		name:         "globstar",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		// A command substitution runs without errexit unless this asks
 		// for it (#412), so the option lands with the fix it governs.
 		name:         "inherit_errexit",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		// Off by default, as in bash — and until #277 it was effectively
@@ -1421,7 +1453,7 @@ var bashOptsTable = [...]bashOpt{
 		// `set -m` became settable (#397).
 		name:         "lastpipe",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		// A new local starts unset rather than inheriting the outer
@@ -1429,17 +1461,17 @@ var bashOptsTable = [...]bashOpt{
 		// the inheritance, so it lands with the fix it governs.
 		name:         "localvar_inherit",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		name:         "nocaseglob",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		name:         "nullglob",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	{
 		// Off by default, as in bash: a {varname} redirection's
@@ -1449,24 +1481,26 @@ var bashOptsTable = [...]bashOpt{
 		// constants below index this table positionally.
 		name:         "varredir_close",
 		defaultState: false,
-		supported:    true,
+		support:      optImplemented,
 	},
 	// unsupported options, sorted alphabetically by name
 	{name: "array_expand_once"},
 	{name: "assoc_expand_once"},
-	{name: "autocd"},
+	{name: "autocd", support: optStateOnly},
 	{name: "bash_source_fullpath"},
 	{name: "cdable_vars"},
-	{name: "cdspell"},
+	{name: "cdspell", support: optStateOnly},
 	{name: "checkhash"},
-	{name: "checkjobs"},
+	{name: "checkjobs", support: optStateOnly},
 	{
 		name:         "checkwinsize",
 		defaultState: true,
+		support:      optStateOnly,
 	},
 	{
 		name:         "cmdhist",
 		defaultState: true,
+		support:      optStateOnly,
 	},
 	{name: "compat31"},
 	{name: "compat32"},
@@ -1478,9 +1512,10 @@ var bashOptsTable = [...]bashOpt{
 	{
 		name:         "complete_fullquote",
 		defaultState: true,
+		support:      optStateOnly,
 	},
-	{name: "direxpand"},
-	{name: "dirspell"},
+	{name: "direxpand", support: optStateOnly},
+	{name: "dirspell", support: optStateOnly},
 	{name: "execfail"},
 	{
 		name:         "extquote",
@@ -1489,6 +1524,7 @@ var bashOptsTable = [...]bashOpt{
 	{
 		name:         "force_fignore",
 		defaultState: true,
+		support:      optStateOnly,
 	},
 	{
 		// On by default in bash 5.x, which koi had as off — a default
@@ -1501,37 +1537,40 @@ var bashOptsTable = [...]bashOpt{
 		defaultState: true,
 	},
 	{name: "gnu_errfmt"},
-	{name: "histappend"},
-	{name: "histreedit"},
-	{name: "histverify"},
+	{name: "histappend", support: optStateOnly},
+	{name: "histreedit", support: optStateOnly},
+	{name: "histverify", support: optStateOnly},
 	{
 		name:         "hostcomplete",
 		defaultState: true,
+		support:      optStateOnly,
 	},
-	{name: "huponexit"},
+	{name: "huponexit", support: optStateOnly},
 	{
 		name:         "interactive_comments",
 		defaultState: true,
 	},
-	{name: "lithist"},
+	{name: "lithist", support: optStateOnly},
 	{name: "localvar_unset"},
 	{name: "login_shell"},
-	{name: "mailwarn"},
-	{name: "no_empty_cmd_completion"},
+	{name: "mailwarn", support: optStateOnly},
+	{name: "no_empty_cmd_completion", support: optStateOnly},
 	{name: "nocasematch"},
 	{name: "noexpand_translation"},
 	{
 		name:         "progcomp",
 		defaultState: true,
+		support:      optStateOnly,
 	},
 	{
 		name:         "patsub_replacement",
 		defaultState: true,
 	},
-	{name: "progcomp_alias"},
+	{name: "progcomp_alias", support: optStateOnly},
 	{
 		name:         "promptvars",
 		defaultState: true,
+		support:      optStateOnly,
 	},
 	{name: "restricted_shell"},
 	{name: "shift_verbose"},
