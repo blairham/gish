@@ -10,7 +10,7 @@ import (
 
 // The substrate gaps (#119), reduced to minimal reproductions.
 //
-// All four are `mvdan.cc/sh` behaviors rather than koi code, so the
+// All of them were `mvdan.cc/sh` behaviors rather than koi code, so the
 // fix belongs upstream where it improves every consumer. What this file
 // is for is the other half of that: **noticing when one is fixed.** A
 // gap that is quietly corrected upstream leaves koi carrying a
@@ -38,18 +38,14 @@ var substrateGaps = []substrateGap{
 		koiWant:  "1",
 		upstream: "the count path is wrong; the keys themselves are present",
 	},
-	{
-		name:     "prefix-anchored substitution",
-		script:   `s=a-b-c; echo "${s/#a/A}"`,
-		koiWant:  "a-b-c",
-		upstream: "silently no-ops, which is the dangerous kind: wrong data, not an error",
-	},
-	{
-		name:     "suffix-anchored substitution",
-		script:   `s=a-b-c; echo "${s/%c/C}"`,
-		koiWant:  "a-b-c",
-		upstream: "same as the prefix form",
-	},
+	// The two anchored substitutions lived here until #636 — the
+	// substrate read `#` and `%` as part of the pattern, so
+	// `${s/#a/A}` and `${s/%c/C}` returned the value untouched. They
+	// are koi's own code now (#272), the anchor is read after the
+	// pattern word expands the way bash reads it, and the cases moved
+	// to interp's differential table. This file's job is the one it
+	// just did: a gap that stops being a gap fails here rather than
+	// leaving koi carrying a paragraph about it.
 	// "single quote escaped inside an assignment" lived here until #357:
 	// quote removal now runs on unquoted backslashes in assignment
 	// values, so `x='a'\''b'` assigns `a'b` as bash does.

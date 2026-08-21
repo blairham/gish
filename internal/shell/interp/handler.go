@@ -34,6 +34,31 @@ func HandlerCtx(ctx context.Context) HandlerContext {
 
 type handlerCtxKey struct{}
 
+// Errf writes a runtime diagnostic to the handler's stderr, located the
+// way bash locates one: `file: line N: ` when the shell has a file to
+// name, and nothing at all when it does not (#571, #611).
+//
+// It is [Runner.errf] for code on the other side of a handler seam. A
+// builtin which reaches for fmt.Fprintf on [HandlerContext.Stderr]
+// instead prints an unlocated message, which is the shape #611 was
+// filed about — three families of diagnostic disagreeing with each
+// other as well as with bash.
+//
+// Use [HandlerContext.RawErrf] for stderr that is not a diagnostic: the
+// usage line bash prints *after* an error, a menu, a child's own output.
+func (hc HandlerContext) Errf(format string, a ...any) {
+	fmt.Fprint(hc.Stderr, hc.ErrLocation+fmt.Sprintf(format, a...))
+}
+
+// RawErrf writes to the handler's stderr with no location prefix, the
+// counterpart to [Runner.rawErrf]. Not everything a builtin writes to
+// stderr is a diagnostic, and bash is specific about which is which:
+// `unalias` with no arguments prints its usage line bare, and every
+// usage line that *follows* a diagnostic is bare too.
+func (hc HandlerContext) RawErrf(format string, a ...any) {
+	fmt.Fprintf(hc.Stderr, format, a...)
+}
+
 type handlerKind int
 
 const (
@@ -75,7 +100,8 @@ type HandlerContext struct {
 	// message.
 	//
 	// Handlers which print their own diagnostics should write it first;
-	// [DefaultExecHandler] does.
+	// [DefaultExecHandler] does, and [HandlerContext.Errf] is the
+	// shorthand every other handler should reach for.
 	ErrLocation string
 
 	// TODO(v4): use an os.File for stdin below directly.

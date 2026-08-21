@@ -799,17 +799,29 @@ func (r *Runner) enterFuncForReturnTrap() bool {
 }
 
 // runReturnTrap fires the RETURN trap for a frame that is about to be
-// left, if it is set and reachable from here.
+// left, if it is set and reachable from here. line is what $LINENO
+// reports inside the action.
 //
-// Called *before* the frame is popped, because FUNCNAME inside the trap
-// is still the function that is returning — which is what a cleanup
-// handler reads to name what it is cleaning up after. The exit status is
+// Called *before* the frame is popped for a function, because FUNCNAME
+// inside the trap is still the function that is returning — which is
+// what a cleanup handler reads to name what it is cleaning up after.
+// `source` is the other way round; see the call site. The exit status is
 // restored by trapCallback, so a `return 5` still answers 5.
-func (r *Runner) runReturnTrap(ctx context.Context) {
+//
+// **The line is the frame's, not the trap's** (#614). It was
+// `callbackReturnLine` — where the `trap` command was written — which is
+// bash's rule for EXIT and for a signal, and is not bash's rule here:
+// measured, a RETURN action reads `$LINENO` as the line the *function's
+// body* starts on, and for a `source` as the line the `source` was
+// written on. `print_return_trap $LINENO` is bash's own debugger idiom
+// and it was answering the line the debugger was installed on, the same
+// number for every frame in the run — plausible, constant, and useless
+// for the one thing a RETURN trap is read for.
+func (r *Runner) runReturnTrap(ctx context.Context, line uint) {
 	if r.callbackReturn == "" || r.returnTrapOff {
 		return
 	}
-	r.trapCallback(ctx, r.callbackReturn, "return", r.callbackReturnLine)
+	r.trapCallback(ctx, r.callbackReturn, "return", line)
 }
 
 // pushFrame enters a context; the returned function leaves it.
@@ -2220,25 +2232,72 @@ func (r *Runner) printFuncDef(name string, body *syntax.Stmt) {
 // and a bare assignment, BASH_COMMAND as the *unexpanded* source, and a
 // function body or a sourced file left untraced unless "functrace" is
 // set. Two known divergences, stated so they are not surprises: bash
-// also fires for the header of a `for` or `while`, once per iteration,
-// and koi does not; and koi's pipeline stages run concurrently, so their
-// traces can interleave where bash's are strictly left to right.
+// also fires for a `for` head once per iteration and for a `case` head
+// once, and koi does neither (#629); and koi's pipeline stages run
+// concurrently, so their traces can interleave where bash's are strictly
+// left to right.
 // traceCommand reports whether the statement should be skipped: under
 // extdebug, a DEBUG trap answering nonzero cancels the command (#355).
 func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) bool {
 	if r.handlingTrap {
 		return false
 	}
-	if r.callbackDebug == "" && r.callbackErr == "" && r.callbackExit == "" {
+	if !r.anyTrapSet() {
 		return false
 	}
-	// Only a simple command. A compound statement's own trace is the
-	// divergence noted above, and firing for both would report every
-	// command twice — once for the `if` and once for its body.
-	if _, ok := st.Cmd.(*syntax.CallExpr); !ok {
+	if !tracedCommand(st.Cmd) {
 		return false
 	}
 	r.setVarString(shellCommandVar, stmtSource(st))
+	return r.fireDebugTrap(ctx, st.Pos().Line())
+}
+
+// tracedCommand reports whether bash fires DEBUG for this kind of
+// command in its own right.
+//
+// The rule is *leaf, not compound*: a command that does work itself
+// gets one trace, and a command that contains other statements gets
+// none of its own — `( echo a )`, `{ echo b; }`, `! false` and `time :`
+// all reach a trap once, as their inner command. Measured across the
+// set rather than reasoned from the simple-command case, because the
+// leaves are not all [syntax.CallExpr]: `declare -i n`, `local x=1`,
+// `export FOO=bar` and `readonly R=1` are a [syntax.DeclClause], `[[ x
+// == x ]]` a [syntax.TestClause], `(( 1+1 ))` a [syntax.ArithmCmd] and
+// `let a=2` a [syntax.LetClause] — and every one of them traces in
+// bash. Missing the DeclClause was the visible half of #614: a function
+// whose body declares its locals traced none of those lines, which for
+// a debugger stepping through is the body's whole preamble.
+//
+// A `for` head does trace in bash, once per iteration, and a `case`
+// head once; that is the recorded divergence (#629) rather than an
+// omission here, because those are compound — firing for them means
+// firing *beside* their bodies rather than instead of them.
+func tracedCommand(cmd syntax.Command) bool {
+	switch cmd.(type) {
+	case *syntax.CallExpr, *syntax.DeclClause, *syntax.TestClause,
+		*syntax.ArithmCmd, *syntax.LetClause:
+		return true
+	}
+	return false
+}
+
+// anyTrapSet reports whether some trap could read BASH_COMMAND, which
+// is the condition for maintaining it. RETURN is in the set because
+// bash's RETURN trap reads it — `trap 'echo left $BASH_COMMAND' RETURN`
+// names the last command the frame ran.
+func (r *Runner) anyTrapSet() bool {
+	return r.callbackDebug != "" || r.callbackErr != "" ||
+		r.callbackExit != "" || r.callbackReturn != ""
+}
+
+// fireDebugTrap runs the DEBUG trap for something happening at line,
+// and reports whether extdebug's cancel rule says to skip it.
+//
+// Under extdebug, a DEBUG trap answering nonzero tells the shell not to
+// run the command at all — the mechanism a debugger's step and skip are
+// built on (#355). The skipped command leaves $? as 0, measured against
+// 5.3.
+func (r *Runner) fireDebugTrap(ctx context.Context, line uint) bool {
 	if r.callbackDebug == "" {
 		return false
 	}
@@ -2248,11 +2307,7 @@ func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) bool {
 	if (r.inFunction() || r.inSource) && !r.opts[optFuncTrace] {
 		return false
 	}
-	code := r.trapCallback(ctx, r.callbackDebug, "debug", st.Pos().Line())
-	// Under extdebug, a DEBUG trap answering nonzero tells the shell not
-	// to run the command at all — the mechanism a debugger's step and
-	// skip are built on (#355). The skipped command leaves $? as 0,
-	// measured against 5.3.
+	code := r.trapCallback(ctx, r.callbackDebug, "debug", line)
 	return code != 0 && r.opts[optExtDebug]
 }
 
@@ -2509,9 +2564,10 @@ func (r *Runner) runPendingSignalTraps(ctx context.Context) {
 
 // trapCallback runs a fake trap's handler. baseLine is what $LINENO
 // reports on the action's first line — the triggering command's line for
-// DEBUG and ERR, the line the trap was set on for EXIT and RETURN — with
-// later action lines counting on from it, which is bash's arithmetic
-// (#352). Zero means the action's own positions report as written.
+// DEBUG and ERR, the returning frame's own line for RETURN (#614), the
+// line the trap was set on for EXIT — with later action lines counting
+// on from it, which is bash's arithmetic (#352). Zero means the action's
+// own positions report as written.
 // It reports the action's final exit status, which extdebug's skip rule
 // reads off the DEBUG trap (#355); every other caller ignores it.
 func (r *Runner) trapCallback(ctx context.Context, callback, name string, baseLine uint) uint8 {
@@ -3659,11 +3715,27 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		origEnv := r.writeEnv
 		r.writeEnv = &overlayEnviron{parent: r.writeEnv, funcScope: true}
 
-		r.stmt(ctx, body)
+		// Entering the function is its own DEBUG event (#614), and the
+		// line it reports is the one the *body* starts on — so a call
+		// on line 85 to a function written at line 30 traces 85 in the
+		// caller's frame and then 30 in the function's, which is how a
+		// stepping debugger follows execution into a call. BASH_COMMAND
+		// is deliberately not touched: it still holds the call, which
+		// is bash's answer here too. `source` gets no such event,
+		// measured — a sourced file's first traced line is its first
+		// command.
+		//
+		// The whole body is skipped when extdebug's cancel rule fires,
+		// and the RETURN trap with it: `f` traced and then declined
+		// leaves the function as though it had never been entered,
+		// which is what makes the trap a debugger's "skip this call".
+		if !r.fireDebugTrap(ctx, body.Pos().Line()) {
+			r.stmt(ctx, body)
 
-		// Before the scope and the frame go: the trap sees the
-		// function's locals and its FUNCNAME, as bash's does.
-		r.runReturnTrap(ctx)
+			// Before the scope and the frame go: the trap sees the
+			// function's locals and its FUNCNAME, as bash's does.
+			r.runReturnTrap(ctx, body.Pos().Line())
+		}
 		r.returnTrapOff = oldReturnTrapOff
 
 		// The same rule for EXIT when `exit` was called in here (#352):

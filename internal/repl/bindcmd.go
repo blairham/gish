@@ -46,11 +46,15 @@ func bindCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 			return next(ctx, args)
 		}
 		hc := interp.HandlerCtx(ctx)
-		return runBind(hc.Stdout, hc.Stderr, args[1:]), nil
+		return runBind(hc.Stdout, hc.Stderr, hc.ErrLocation, args[1:]), nil
 	}
 }
 
-func runBind(out, errOut io.Writer, args []string) []string {
+// errLoc is the caller's interp.HandlerContext.ErrLocation: bash
+// locates a builtin's diagnostics and so does koi (#611), and this
+// one takes writers rather than a handler context so it can be driven
+// from a test with buffers.
+func runBind(out, errOut io.Writer, errLoc string, args []string) []string {
 	ed := currentEditor()
 	if ed == nil {
 		// Non-interactive: bindings have nowhere to live. Silence is
@@ -114,7 +118,7 @@ func runBind(out, errOut io.Writer, args []string) []string {
 		return []string{"true"}
 	case remove && spec != "":
 		if !ed.UnbindKey(spec) {
-			fmt.Fprintf(errOut, "bind: %s: cannot parse key sequence\n", spec)
+			fmt.Fprintf(errOut, "%sbind: %s: cannot parse key sequence\n", errLoc, spec)
 			return []string{"false"}
 		}
 		return []string{"true"}
@@ -138,7 +142,7 @@ func runBind(out, errOut io.Writer, args []string) []string {
 	if !ed.BindKeyCommand(seq, command) {
 		// Reported, not fatal: an unsupported sequence should cost that
 		// binding and nothing else.
-		fmt.Fprintf(errOut, "bind: %s: unsupported key sequence\n", seq)
+		fmt.Fprintf(errOut, "%sbind: %s: unsupported key sequence\n", errLoc, seq)
 		return []string{"false"}
 	}
 	return []string{"true"}

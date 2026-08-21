@@ -1650,6 +1650,76 @@ var runTests = []runTest{
 		"f () \n{ \n    a=(1 2);\n    x=$((1+2));\n    echo \"${a[@]}$x\"\n}\n",
 	},
 
+	// A definition's own redirections are part of the function (#631).
+	// They hang off the statement wrapping the body, one level up from
+	// where the body is rendered, and were dropped — so the printed
+	// definition was not the function that was defined, and eval'ing it
+	// elsewhere landed a function with different stdio.
+	{
+		`f(){ echo hi; } 1>&2; declare -f f`,
+		"f () \n{ \n    echo hi\n} 1>&2\n",
+	},
+	{
+		// bash re-spaces the operator it prints — `> /dev/null` from a
+		// source that wrote `>/dev/null` — while keeping a duplicating
+		// form tight, so what is matched is what bash prints.
+		`f(){ echo hi; } >/dev/null 2>&1; declare -f f`,
+		"f () \n{ \n    echo hi\n} > /dev/null 2>&1\n",
+	},
+	{
+		`f(){ cat; } < /dev/null; declare -f f`,
+		"f () \n{ \n    cat\n} < /dev/null\n",
+	},
+	{
+		// `type` prints through the same path, so the two agree, and a
+		// duplicating redirection grows its descriptor here too.
+		`f(){ echo hi; } >&2; type f`,
+		"f is a function\nf () \n{ \n    echo hi\n} 1>&2\n",
+	},
+	{
+		// A nested definition's redirection is indented with its own
+		// closing brace and still takes the statement's semicolon.
+		`outer(){ inner(){ echo hi; } 1>&2; inner; }; declare -f outer`,
+		"outer () \n{ \n    function inner () \n    { \n        echo hi\n    } 1>&2;\n    inner\n}\n",
+	},
+	{
+		// A body that is not a block is wrapped in braces by bash, so
+		// its redirection prints *inside* them, on the statement it was
+		// written on rather than after the brace bash supplied.
+		`f() ( echo hi ) 1>&2; declare -f f`,
+		"f () \n{ \n    ( echo hi ) 1>&2\n}\n",
+	},
+	{
+		`f() ( echo hi ); declare -f f`,
+		"f () \n{ \n    ( echo hi )\n}\n",
+	},
+	{
+		`f() if true; then echo a; fi 1>&2; declare -f f`,
+		"f () \n{ \n    if true; then\n        echo a;\n    fi 1>&2\n}\n",
+	},
+	{
+		`f(){ echo hi; } 2>&-; declare -f f`,
+		"f () \n{ \n    echo hi\n} 2>&-\n",
+	},
+	{
+		// A here-string is an ordinary word and prints inline; a
+		// here-document is the one shape that cannot (#638).
+		`f(){ cat; } <<< "hi"; declare -f f`,
+		"f () \n{ \n    cat\n} <<< \"hi\"\n",
+	},
+	{
+		`f(){ echo hi; } {fd}>/dev/null; declare -f f`,
+		"f () \n{ \n    echo hi\n} {fd}> /dev/null\n",
+	},
+	{
+		// The reason this is worse than cosmetic: `eval "$(declare -f
+		// f)"` is the documented way to move a function between shells,
+		// so a dropped redirection is a function that behaves
+		// differently where it lands — silently.
+		`f(){ echo hi; } 1>&2; eval "$(declare -f f)"; f 2>/dev/null; echo rc=$?`,
+		"rc=0\n",
+	},
+
 	// Nameref residuals (#389): a reference may name an array element,
 	// its target is validated, a self reference is refused, a nameref
 	// loop variable is re-targeted rather than written through, and
@@ -2443,6 +2513,134 @@ q`,
 	{`a=(ab cd); echo "[${a[@]@u}]"`, "[Ab Cd]\n"},
 	{`a=(1 2); echo "[${a[@]@nope}]"`, "${a[@]@nope}: bad substitution\nexit status 1 #JUSTERR"},
 
+	// A replacement can be anchored to the start or the end of the value
+	// (#636): `${v/#pat/rep}` and `${v/%pat/rep}`, which koi read as
+	// part of the pattern, so `${path/#$HOME/\~}` and
+	// `${name/%.txt/.md}` returned their input untouched and said
+	// nothing.
+	{
+		`v=aabbaa; echo "${v/#aa/X}"`,
+		"Xbbaa\n",
+	},
+	{
+		`v=aabbaa; echo "${v/%aa/Y}"`,
+		"aabbY\n",
+	},
+	{
+		// The anchor is read even when nothing matches there, which is
+		// what tells a dropped anchor from an honoured one.
+		`v=aabbaa; echo "${v/#bb/X}"`,
+		"aabbaa\n",
+	},
+	{
+		// An anchor with no pattern is a pure prepend or append.
+		`v=aabbaa; echo "${v/#/P}"`,
+		"Paabbaa\n",
+	},
+	{
+		`v=aabbaa; echo "${v/%/S}"`,
+		"aabbaaS\n",
+	},
+	{
+		// No replacement is a deletion at the anchor.
+		`v=aabbaa; echo "${v/#aa}"`,
+		"bbaa\n",
+	},
+	{
+		`v=aabbaa; echo "${v/%aa}"`,
+		"aabb\n",
+	},
+	{
+		// The match is the longest one at the anchor, not the shortest.
+		`v=aabbaa; echo "${v/#a*b/X}"`,
+		"Xaa\n",
+	},
+	{
+		// Anchored at the end it is the earliest start that reaches it.
+		`v=aabbaa; echo "${v/%b*a/X}"`,
+		"aaX\n",
+	},
+	{
+		`v=aabbaa; echo "${v/#?/X}"`,
+		"Xabbaa\n",
+	},
+	{
+		// The double-slash form has no anchor: `#` is an ordinary
+		// character there, so this replaces nothing at all…
+		`v=aabbaa; echo "${v//#aa/X}"`,
+		"aabbaa\n",
+	},
+	{
+		// …and matches a literal `#` where the value has one.
+		`v="#a#a"; echo "${v//#a/X}"`,
+		"XX\n",
+	},
+	{
+		`v="#aabb"; echo "${v/#aa/X}"`,
+		"#aabb\n",
+	},
+	{
+		// Escaped or quoted, it is the literal `#` rather than an
+		// anchor — the three spellings a script uses to say so.
+		`v="#aabb"; echo "${v/\#aa/X}"`,
+		"Xbb\n",
+	},
+	{
+		`v="#aabb"; echo "${v/"#"aa/X}"`,
+		"Xbb\n",
+	},
+	{
+		`v='#aabb'; echo "${v/'#'aa/X}"`,
+		"Xbb\n",
+	},
+	{
+		// bash reads the anchor *after* expanding the pattern word, so
+		// one arriving from a variable anchors too…
+		`v=aabbaa; p="#aa"; echo "${v/$p/X}"`,
+		"Xbbaa\n",
+	},
+	{
+		// …which is only visible in a case where the anchored pattern
+		// then fails to match.
+		`v="#ppbb"; p="#pp"; echo "${v/$p/X}"`,
+		"#ppbb\n",
+	},
+	{
+		`v="#ppbb"; p="#pp"; echo "${v/#"$p"/X}"`,
+		"Xbb\n",
+	},
+	{
+		// Every element, which is what makes a list of names the shape
+		// most often affected.
+		`a=(aa1 aa2); echo "${a[@]/#aa/X}"`,
+		"X1 X2\n",
+	},
+	{
+		`a=(x y); echo "${a[@]/#/P}"`,
+		"Px Py\n",
+	},
+	{
+		`a=(x y); echo "${a[@]/%/S}"`,
+		"xS yS\n",
+	},
+	{
+		`set -- -a -b; echo "${@/#-/+}"`,
+		"+a +b\n",
+	},
+	{
+		`declare -A m=([k]=aav); echo "${m[k]/#aa/X}"`,
+		"Xv\n",
+	},
+	{
+		// The two idioms the issue was reported for.
+		`v=note.txt; echo "${v/%.txt/.md}"`,
+		"note.md\n",
+	},
+	{
+		`h=/home/me; p=/home/me/src; echo "${p/#$h/\~}"`,
+		"~/src\n",
+	},
+
 	// The same rule reaches every operator that counts characters, not
 	// only `?` and ${#x} (#470): a slice, a pattern removal, a
 	// replacement and a case conversion are all byte-wise there, and
@@ -2455,6 +2653,10 @@ q`,
 	{`export LC_ALL=C; a=абв; echo "${a//?/x}"`, "xxxxxx\n"},
 	{`export LC_ALL=en_US.UTF-8; a=абв; echo "${a//?/x}"`, "xxx\n"},
 	{`export LC_ALL=C; a=абв; echo "${a/б/Y}"`, "аYв\n"},
+	// An anchored replacement (#636) is byte-wise there too, since it
+	// runs through the same conversion as the plain one.
+	{`export LC_ALL=C; a=áb; echo "${a/#?/X}"`, "X\xa1b\n"},
+	{`export LC_ALL=en_US.UTF-8; a=áb; echo "${a/#?/X}"`, "Xb\n"},
 	{`export LC_ALL=C; a=aÿb; echo "${a^^}"`, "AÿB\n"},
 	{`export LC_ALL=en_US.UTF-8; a=aÿb; echo "${a^^}"`, "AŸB\n"},
 
@@ -3798,6 +4000,43 @@ q`,
 		"trap 'echo D' DEBUG; ( echo sub )",
 		"sub\n",
 	},
+
+	// Which commands the DEBUG trap fires for (#614). The rule is leaf,
+	// not compound, and the leaves are not all a CallExpr — a function
+	// that declares its locals traced none of those lines, which for a
+	// debugger stepping through a body is the whole preamble.
+	{
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; declare -i n=1; echo $n",
+		"D:[declare -i n=1]\nD:[echo $n]\n1\n",
+	},
+	{
+		"set -T; trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; f(){ local a=1; declare -i b=2; echo $a$b; }; f",
+		"D:[f]\nD:[f]\nD:[local a=1]\nD:[declare -i b=2]\nD:[echo $a$b]\n12\n",
+	},
+	{
+		"set -T; trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; f(){ export E=1; readonly R=2; echo $E$R; }; f",
+		"D:[f]\nD:[f]\nD:[export E=1]\nD:[readonly R=2]\nD:[echo $E$R]\n12\n",
+	},
+	{
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; [[ x == y ]]; let q=2+3; echo $q",
+		"D:[[[ x == y ]]]\nD:[let q=2+3]\nD:[echo $q]\n5\n",
+	},
+	{
+		// `(( ))` traces too, and is counted rather than spelled: bash
+		// answers BASH_COMMAND with the arithmetic *as written* while
+		// koi prints it back from the parse tree with normalized
+		// spacing, so `(( a+1 ))` reads `((a + 1))` here — the same
+		// root cause as #598, and the timing is what this asserts.
+		"set -T; trap 'echo D' DEBUG; [[ x == x ]]; let a=1; (( a+1 )); echo done",
+		"D\nD\nD\nD\ndone\n",
+	},
+	{
+		// A compound command gets no trace of its own: the subshell,
+		// the block, the negation and `time` all reach the trap once,
+		// as their inner command.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; { echo blk; }; ! false",
+		"D:[echo blk]\nblk\nD:[false]\n",
+	},
 	{
 		// The trap fires for the command that removes it, which is the
 		// order bash runs them in rather than an accident.
@@ -3852,6 +4091,50 @@ q`,
 	{
 		"f(){ trap 'echo T' RETURN; :; }; f; trap -p RETURN",
 		"T\ntrap -- 'echo T' RETURN\n",
+	},
+
+	// Where a RETURN trap says it is, and where the DEBUG trap says the
+	// function starts (#614). `print_return_trap $LINENO` is bash's own
+	// debugger idiom; koi answered the line the *trap* was written on,
+	// so every frame in a run reported the same number.
+	{
+		"set -T\ntrap 'echo \"R:$LINENO\"' RETURN\nf() {\n  echo body\n}\nf",
+		"body\nR:3\n",
+	},
+	{
+		// Installed after the function, so the trap's own line is past
+		// the body rather than before it: a number taken from the trap
+		// would read 5 here and 2 in the case above.
+		"set -T\nf() {\n  echo body\n}\ntrap 'echo \"R:$LINENO\"' RETURN\nf",
+		"body\nR:2\n",
+	},
+	{
+		// Each frame reports its own, innermost first.
+		"set -T\ntrap 'echo \"R:$LINENO\"' RETURN\nouter() { inner; }\ninner() { echo work; }\nouter",
+		"work\nR:4\nR:3\n",
+	},
+	{
+		// The action reads BASH_COMMAND as the last command the frame
+		// ran, which is why RETURN counts as a trap that wants it
+		// maintained.
+		"set -T; trap 'echo \"R:[$BASH_COMMAND]\"' RETURN; f(){ echo one; echo two; }; f",
+		"one\ntwo\nR:[echo two]\n",
+	},
+	{
+		// Entering a function is its own DEBUG event, reporting the
+		// line the body starts on — so a call on line 6 traces 6 in the
+		// caller's frame and then 3 in the function's, which is how a
+		// stepping debugger follows execution into a call.
+		"set -T\ntrap 'echo \"D:$LINENO\"' DEBUG\nf() {\n  echo body\n}\nf",
+		"D:6\nD:3\nD:4\nbody\n",
+	},
+	{
+		// extdebug: declining the function-entry trace skips the whole
+		// body *and* the RETURN trap, which is what makes it a
+		// debugger's "skip this call". `keep` shows both still happen
+		// when the trace does not decline.
+		"shopt -s extdebug\nset -T\nd() { [ \"$1\" = enter ] && return 1; return 0; }\ntrap 'd $BASH_COMMAND' DEBUG\ntrap 'echo LEFT:$LINENO' RETURN\nenter() { echo NOPE; }\nkeep() { echo yes; }\nenter\nkeep\necho st=$?",
+		"yes\nLEFT:7\nst=0\n",
 	},
 	{
 		// bare `trap` prints the same listing as `trap -p`.

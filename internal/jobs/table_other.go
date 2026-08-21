@@ -4,7 +4,6 @@ package jobs
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
@@ -33,7 +32,7 @@ func (t *Table) ExecMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerFu
 }
 
 func unsupported(hc interp.HandlerContext, name string) error {
-	fmt.Fprintf(hc.Stderr, "%s: job control is not supported on this platform\n", name)
+	hc.Errf("%s: job control is not supported on this platform\n", name)
 	return interp.ExitStatus(1)
 }
 

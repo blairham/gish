@@ -186,7 +186,7 @@ const declFuncsName = "__koi_declare_funcs"
 func declareFuncs(_ context.Context, hc interp.HandlerContext, args []string) error {
 	runner := sessionRunner()
 	if runner == nil {
-		fmt.Fprintln(hc.Stderr, "declare: no session to query")
+		hc.Errf("declare: no session to query\n")
 		return interp.ExitStatus(1)
 	}
 	if len(args) == 0 {

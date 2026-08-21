@@ -146,7 +146,7 @@ func sandboxCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 func runSandbox(hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "sandbox:", err)
+		hc.Errf("sandbox: %v\n", err)
 		return []string{"false"}
 	}
 	if len(args) == 0 {

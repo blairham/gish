@@ -925,11 +925,31 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			source:   sourceName,
 			callLine: pos.Line(),
 		})
+		// BASH_COMMAND is the `source` again once the file is done, not
+		// whatever the file ran last (#614) — measured, and it is what
+		// the RETURN trap below reads. A function does not restore it,
+		// which is why this is here and not in the frame machinery. Put
+		// back only when some trap could read it, on the same reasoning
+		// as publishing it at all: the variable exists for a reader
+		// that only exists inside a trap.
+		oldCommandVar := r.lookupVar(shellCommandVar)
 		perr := r.runReading(ctx, sr)
+		if r.anyTrapSet() {
+			r.setVar(shellCommandVar, oldCommandVar)
+		}
+		popFrame()
 		// A sourced file's return fires RETURN too, and unlike a
 		// function it inherits the trap without needing "functrace".
-		r.runReturnTrap(ctx)
-		popFrame()
+		//
+		// Fired *after* the frame is popped, which is the opposite of a
+		// function and is bash's, measured both ways: the action sees
+		// the caller's FUNCNAME and BASH_SOURCE, and `$LINENO` is the
+		// line the `source` was written on rather than anything inside
+		// the file. So `. ./lib.sh` inside a function reports that
+		// function and that line — a cleanup handler naming where the
+		// library came from, which is the only location a caller of
+		// `source` could act on.
+		r.runReturnTrap(ctx, pos.Line())
 
 		// If we modified the parameters and the sourced file didn't
 		// explicitly set them, we restore the old ones.
@@ -1596,7 +1616,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		// bash diagnoses all three of these; koi answered 0 for every
 		// one (#407).
 		if len(args) == 0 {
-			return failf(2, "unalias: usage: unalias [-a] name [name ...]\n")
+			// A usage line is not a diagnostic, so it carries no
+			// location — measured: bare `unalias` in a script prints the
+			// line and nothing else, where koi prefixed it with
+			// `file: line N:` (#611). This is the only one of the three
+			// where the usage line stands alone rather than following a
+			// message of its own.
+			r.rawErrf("unalias: usage: unalias [-a] name [name ...]\n")
+			exit.code = 2
+			return exit
 		}
 		fp := flagParser{remaining: args}
 		for fp.more() {
@@ -1699,7 +1727,6 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				// though entering that function had turned inheritance
 				// off. That is what makes the cleanup idiom work.
 				r.callbackReturn, r.listed.ret = callback, callback
-				r.callbackReturnLine = pos.Line()
 				r.returnTrapOff = false
 			default:
 				name, sig, ok := lookupSignal(arg)

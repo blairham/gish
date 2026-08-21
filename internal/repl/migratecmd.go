@@ -41,7 +41,7 @@ func migrateCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 		}
 		hc := interp.HandlerCtx(ctx)
 		if err := RunMigrate(hc.Stdout, hc.Stderr, args[1:]); err != nil {
-			fmt.Fprintln(hc.Stderr, "migrate:", err)
+			hc.Errf("migrate: %v\n", err)
 			return []string{"false"}, nil
 		}
 		return []string{"true"}, nil
