@@ -46,6 +46,57 @@ func arithmOps(r rune) bool {
 	return false
 }
 
+// dollarParenIsSubshell reports whether a `$((` that has just been read
+// opens a command substitution rather than an arithmetic expansion.
+//
+// bash's rule is paren matching rather than try-then-retry: the text is
+// arithmetic when the inner paren and the outer paren close together, so
+// `$((echo a);(echo b))` is two commands while `$((for i in 1; do :;
+// done))` stays arithmetic and reports an arithmetic error. The scan
+// looks for the `)` that closes the inner paren and asks what follows.
+//
+// It reads only what is already buffered. A `$((` whose body is longer
+// than the buffer keeps the arithmetic reading, which is what koi did
+// for every case before this — a limit rather than a new failure mode.
+func (p *Parser) dollarParenIsSubshell() bool {
+	depth := 1
+	for i := p.bsp; i < uint(len(p.bs)); i++ {
+		switch p.bs[i] {
+		case '\\':
+			i++ // an escaped byte is never a paren
+		case '\'':
+			// A single-quoted span holds no parens for this purpose.
+			for i++; i < uint(len(p.bs)) && p.bs[i] != '\''; i++ {
+			}
+		case '"':
+			// Treating a double-quoted span as opaque keeps its parens
+			// from being counted; a `$(` inside it is balanced by its
+			// own `)` either way.
+			for i++; i < uint(len(p.bs)) && p.bs[i] != '"'; i++ {
+				if p.bs[i] == '\\' {
+					i++
+				}
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth > 0 {
+				continue
+			}
+			// The inner paren closed. Arithmetic closes with an
+			// *adjacent* `))`, so anything else — including a space
+			// between them, as in `$(( 1 ) )` — means this was a
+			// subshell. Measured.
+			if i+1 < uint(len(p.bs)) {
+				return p.bs[i+1] != ')'
+			}
+			return false // ran out: keep the arithmetic reading
+		}
+	}
+	return false
+}
+
 func bquoteEscaped(b byte) bool {
 	switch b {
 	case '$', '`', '\\':
@@ -553,6 +604,20 @@ func (p *Parser) regToken(r rune) token {
 			return dollBrack
 		case '(':
 			if p.rune() == '(' {
+				if p.dollarParenIsSubshell() {
+					// `$((` is an arithmetic expansion only when the two
+					// parens close together; otherwise it is a command
+					// substitution whose first command is a subshell
+					// (#424). bash decides the same way, by where the
+					// inner paren closes:
+					//
+					//	$((echo a);(echo b))         two commands
+					//	$((for i in 1; do :; done))  arithmetic, and an error
+					//
+					// The second `(` is left unconsumed, so the command
+					// substitution parses it as the subshell it is.
+					return dollParen
+				}
 				p.rune()
 				return dollDblParen
 			}
@@ -698,6 +763,9 @@ func (p *Parser) dqToken(r rune) token {
 			return dollBrack
 		case '(':
 			if p.rune() == '(' {
+				if p.dollarParenIsSubshell() {
+					return dollParen // see the note at the other site (#424)
+				}
 				p.rune()
 				return dollDblParen
 			}

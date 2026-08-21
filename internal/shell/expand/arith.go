@@ -146,6 +146,9 @@ func atoiLargeBaseStrict(s string, base int64) (int64, bool) {
 }
 
 func Arithm(cfg *Config, expr syntax.ArithmExpr) (int, error) {
+	if expr == nil {
+		return 0, nil // the empty `$(())`, which bash evaluates as zero
+	}
 	switch expr := expr.(type) {
 	case *syntax.Word:
 		str, err := Literal(cfg, expr)

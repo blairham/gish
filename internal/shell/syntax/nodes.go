@@ -734,6 +734,8 @@ type ArithmExp struct {
 	Bracket     bool // deprecated $[expr] form
 	Unsigned    bool // mksh's $((# expr))
 
+	// X is nil for an empty expansion like `$(())` or `$[]`,
+	// which bash evaluates as zero.
 	X ArithmExpr
 }
 
@@ -752,6 +754,8 @@ type ArithmCmd struct {
 	Left, Right Pos
 	Unsigned    bool // mksh's ((# expr))
 
+	// X is nil for an empty command like `(( ))`, which evaluates
+	// as zero and so has a status of 1.
 	X ArithmExpr
 }
 

@@ -110,9 +110,11 @@ func Walk(node Node, f func(Node) bool) {
 			walkNilable(node.Exp.Word, f)
 		}
 	case *ArithmExp:
-		Walk(node.X, f)
+		// X is nil for the empty `$(())`.
+		walkNilable(node.X, f)
 	case *ArithmCmd:
-		Walk(node.X, f)
+		// X is nil for the empty `(( ))`.
+		walkNilable(node.X, f)
 	case *BinaryArithm:
 		Walk(node.X, f)
 		Walk(node.Y, f)

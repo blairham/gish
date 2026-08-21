@@ -1242,7 +1242,14 @@ func (p *Parser) wordPart() WordPart {
 			p.checkLang(ar.Pos(), LangMirBSDKorn, "unsigned expressions")
 			ar.Unsigned = true
 		}
-		ar.X = p.followArithm(left, ar.Left)
+		// An empty arithmetic expansion is valid and answers zero:
+		// `$(())`, `$(( ))` and `$[]` are all 0 in bash, where koi
+		// refused them as "must be followed by an expression".
+		if p.peekArithmEnd() || (left == dollBrack && p.tok == rightBrack) {
+			ar.X = nil
+		} else {
+			ar.X = p.followArithm(left, ar.Left)
+		}
 		if ar.Bracket {
 			if p.tok != rightBrack {
 				if p.recoverError() {
@@ -1299,6 +1306,15 @@ func (p *Parser) wordPart() WordPart {
 				p.next()
 				return sq
 			case escNewl:
+				if p.openBquotes > 0 {
+					// Inside backquotes, backslash-newline is removed
+					// by the backquote-level scan before the inner text
+					// is parsed — even inside single quotes, which are
+					// otherwise literal (#423). Measured: `echo 'foo\
+					// bar'` answers foobar, while the same single-quoted
+					// string outside backquotes keeps both characters.
+					continue
+				}
 				p.litBs = append(p.litBs, '\\', '\n')
 			case runeEOF:
 				p.tok = _EOF
@@ -2373,7 +2389,11 @@ func (p *Parser) arithmExpCmd(s *Stmt) {
 		p.checkLang(ar.Pos(), LangMirBSDKorn, "unsigned expressions")
 		ar.Unsigned = true
 	}
-	ar.X = p.followArithm(dblLeftParen, ar.Left)
+	// `(( ))` is empty and valid, like `$(())` above; it evaluates
+	// as zero, so the command's status is 1.
+	if !p.peekArithmEnd() {
+		ar.X = p.followArithm(dblLeftParen, ar.Left)
+	}
 	ar.Right = p.arithmEnd(dblLeftParen, ar.Left, old)
 	s.Cmd = ar
 }

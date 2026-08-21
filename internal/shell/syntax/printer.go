@@ -898,6 +898,9 @@ func (p *Printer) arithmExpr(expr ArithmExpr, compact, spacePlusMinus bool) {
 }
 
 func (p *Printer) arithmExprRecurse(expr ArithmExpr, compact, spacePlusMinus bool) {
+	if expr == nil {
+		return // the empty `$(())`
+	}
 	switch expr := expr.(type) {
 	case *Word:
 		p.word(expr)
