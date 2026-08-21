@@ -170,11 +170,29 @@ func (r *Runner) runReading(ctx context.Context, sr *ScriptReader) error {
 			return err
 		}
 		r.stmts(ctx, stmts)
+		// An aborting error ends the *line*, not the file (#585). That
+		// is what the category means (#469) — abandon this input unit
+		// and go back to reading — and in a file the unit is the line
+		// (#450), which is what the shell's own loop does through
+		// stmtsTopLevel. Ending the file here cost a sourced library
+		// every line after a bad substitution, and cost the *caller* the
+		// rest of its own line too, since the flag escaped with the
+		// source's status. It was invisible because every case that
+		// aborted did so on a file's last line, where "stop reading" and
+		// "read the next line" look identical.
+		//
+		// r.stmts has already stopped at the aborting statement, so the
+		// rest of the line is abandoned; clearing the flag is what lets
+		// the next line be read.
+		if r.exit.aborting {
+			r.exit.aborting = false
+			continue
+		}
 		// Stop reading, not just running: an `exit`, a `return` out of a
-		// sourced file, an aborting error or a cancelled context all end
-		// the script here. `set -n` deliberately does not — reading the
-		// rest is the whole point of it.
-		if r.exit.exiting || r.exit.returning || r.exit.aborting || ctx.Err() != nil {
+		// sourced file or a cancelled context all end the script here.
+		// `set -n` deliberately does not — reading the rest is the whole
+		// point of it.
+		if r.exit.exiting || r.exit.returning || ctx.Err() != nil {
 			return nil
 		}
 		sr.Configure(r.ParserOptions()...)
