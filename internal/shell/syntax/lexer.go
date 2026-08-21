@@ -335,6 +335,20 @@ func (p *Parser) nextKeepSpaces() {
 		default:
 			p.advanceLitOther(r)
 		}
+	case subscriptWord:
+		// paramExpExp's rules minus `}` ending the word, which a
+		// subscript's text may contain because the scan that found the
+		// text stopped at the matching bracket instead (#564). It cannot
+		// be folded into the case above for the same reason paramExpRepl
+		// falls *into* that one rather than the other way around: the
+		// fallthrough chain is what gives a replacement paramExpExp's
+		// rules, and a subscript needs all of them but that one.
+		switch r {
+		case '\'', '`', '"', '$':
+			p.tok = p.regToken(r)
+		default:
+			p.advanceLitOther(r)
+		}
 	}
 	if p.err != nil {
 		p.tok = _EOF
@@ -1178,7 +1192,7 @@ loop:
 				break loop
 			}
 		case '/':
-			if p.quote != paramExpExp {
+			if p.quote&allWholeText == 0 {
 				break loop
 			}
 		case ':', '=', '%', '^', ',', '?', '!', '~', '*':

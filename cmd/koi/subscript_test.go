@@ -111,6 +111,54 @@ var subscriptCases = []struct {
 			"local_probe\n",
 		needs: "c=[2]",
 	},
+	{
+		// A subscript that will not read as arithmetic is an assignment
+		// that does not happen (#564). koi printed the error and then
+		// wrote the value over element zero anyway, which is the worst
+		// of both: a diagnostic and a mutation. stderr is dropped here
+		// because koi's arithmetic wording still lacks bash's
+		// error-token tail (#598); the line's control flow and what the
+		// array is left holding are what this case is about.
+		name: "a non-arithmetic subscript assigns nothing",
+		body: "exec 2>/dev/null\n" +
+			"declare -a a\n" +
+			"echo pre; a[hello world]=1; echo \"same=$?\"\n" +
+			"echo \"after=$?\"\n" +
+			"declare -p a\n",
+		needs: "declare -a a\n",
+	},
+	{
+		// The same subscript inside a compound assignment costs *every*
+		// element rather than the one that was wrong, and an append is
+		// left with the base it was appending to.
+		name: "a non-arithmetic element subscript costs the assignment",
+		body: "exec 2>/dev/null\n" +
+			"declare -a d=(keep)\n" +
+			"echo pre; d=([hello world]=x); echo \"same=$?\"\n" +
+			"echo \"after=$?\"\n" +
+			"declare -p d\n" +
+			"declare -a e=(base)\n" +
+			"e+=([hello world]=y); echo \"app=$?\"\n" +
+			"declare -p e\n",
+		needs: `declare -a e=([0]="base")`,
+	},
+	{
+		// The associative half needs no stderr at all: the text between
+		// the brackets is the key, with quotes removed, metacharacters
+		// kept, and expansions run — including one whose output holds
+		// the bracket the scan is looking for.
+		name: "an associative key is the subscript's text",
+		body: "declare -A m\n" +
+			"m[hello world]=flip\n" +
+			"echo \"read=[${m[hello world]}]\"\n" +
+			"m['a b']=q; m[c\\ d]=r; m[e \"f\"]=s\n" +
+			"echo \"quoted=[${m[a b]}${m[c d]}${m[e f]}]\"\n" +
+			"m[$(echo \"a]b\")]=t\n" +
+			"echo \"nested=[${m['a]b']}]\"\n" +
+			"m[a;b]=1; m[a{b]=2; m[a}b]=3; m[a(b]=4; m[a)b]=5\n" +
+			"echo \"meta=[${m[a;b]}${m[a{b]}${m[a}b]}${m[a(b]}${m[a)b]}]\"\n",
+		needs: "read=[flip]",
+	},
 }
 
 func TestSubscriptVerdictsMatchBash(t *testing.T) {

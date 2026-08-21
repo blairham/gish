@@ -654,7 +654,16 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 			return
 		}
 	}
-	k := r.arithm(index)
+	// Not r.arithm: a subscript that will not read as arithmetic is an
+	// assignment that does not happen, where r.arithm reports and answers
+	// zero (#564). `declare -a a=(p q); a[hello world]=1` leaves bash's
+	// array untouched, and answering zero wrote the value over element 0
+	// while printing the error — the worst of both.
+	k, err := expand.Arithm(r.ecfg, index)
+	if err != nil {
+		r.expandErr(err)
+		return
+	}
 	if k < 0 {
 		// Negative indices count from one past the maximum index.
 		if k += shinternal.IndexedMax(list, indexes) + 1; k < 0 {
@@ -1166,8 +1175,16 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 			break
 		}
 		if elem.Index != nil {
-			// Index resets our index with a literal value.
-			index = r.arithm(elem.Index)
+			// Index resets our index with a literal value. Not r.arithm:
+			// a subscript that will not read as arithmetic costs the
+			// whole compound assignment like the verdicts above, where
+			// r.arithm would report and carry on with zero (#564).
+			var err error
+			if index, err = expand.Arithm(r.ecfg, elem.Index); err != nil {
+				r.expandErr(err)
+				list, indexes = baseList, baseIndexes
+				break
+			}
 			if index < 0 {
 				// Negative indices count from one past the maximum index.
 				if index += shinternal.IndexedMax(list, indexes) + 1; index < 0 {

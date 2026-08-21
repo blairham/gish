@@ -1344,6 +1344,63 @@ var runTests = []runTest{
 	{"a=(foo[0-9] bar); declare -p a", "declare -a a=([0]=\"foo[0-9]\" [1]=\"bar\")\n"},
 	{`a=("[1]=q"); declare -p a`, "declare -a a=([0]=\"[1]=q\")\n"},
 	{"a=([i]); declare -p a", "declare -a a=([0]=\"[i]\")\n"},
+	// A subscript is text bash cannot classify while reading it: whether
+	// `hello world` is an arithmetic expression or an associative key
+	// depends on the array, which only running knows (#564). Every one of
+	// these was a parse error, so it cost the rest of the file.
+	{`declare -A m; m[hello world]=1; declare -p m`, "declare -A m=([\"hello world\"]=\"1\" )\n"},
+	{`declare -A m=([a b]=1); declare -p m`, "declare -A m=([\"a b\"]=\"1\" )\n"},
+	{`declare -A m; m[%]=x; echo "${m[%]}"`, "x\n"},
+	{`declare -A m; m[a b]=1; echo "[${m[a b]}] [${m[a  b]-none}]"`, "[1] [none]\n"},
+	// Quotes come off and every metacharacter stays: the text is read to
+	// its bracket, so nothing inside it is a separator, an operator, or
+	// the end of the construct the subscript sits in.
+	{
+		`declare -A m; m['a b']=1; m[c\ d]=2; m[e "f"]=3; echo "${m[a b]}${m[c d]}${m[e f]}"`,
+		"123\n",
+	},
+	{
+		`declare -A m; m[a;b]=1; m[a{b]=2; m[a}b]=3; m[a(b]=4; echo "${m[a;b]}${m[a{b]}${m[a}b]}${m[a(b]}"`,
+		"1234\n",
+	},
+	{`declare -A m; m[a)b]=Q; echo "[${m[a)b]}]"`, "[Q]\n"},
+	// Expansions inside a subscript still run — including one whose own
+	// output holds the bracket the scan is looking for.
+	{`declare -A m; k='a b'; m[$k]=1; echo "${m[a b]}"`, "1\n"},
+	{`declare -A m; m[$(echo "a]b")]=1; echo "${m['a]b']}"`, "1\n"},
+	{`declare -A m; m[a b]=7; echo $((m[a b]))`, "7\n"},
+	{`declare -A m; m[a b]=v; echo "${m[a b]-alt} ${#m[a b]} ${m[a b]:0:1}"`, "v 1 v\n"},
+	{
+		`declare -A m; m[a b]=1; echo "${!m[@]}"; unset "m[a b]"; declare -p m`,
+		"a b\ndeclare -A m=()\n",
+	},
+	{`a=(1 2 3); echo "${a[1 ]} ${a[ 1]} ${a[1+1]}"`, "2 2 3\n"},
+	// An *indexed* array reads the same text arithmetically and reports it
+	// while running, which abandons the rest of the line — where the parse
+	// error used to cost the rest of the file. bash names the token it
+	// stopped at too, which koi does not yet (#598).
+	{
+		`declare -a a; a[hello world]=1; echo after`,
+		"hello world: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{`declare -a a; a[%]=10; echo after`, "%: arithmetic syntax error\nexit status 1 #JUSTERR"},
+	{`echo "[${foo[1 2]}]"; echo after`, "1 2: arithmetic syntax error\nexit status 1 #JUSTERR"},
+	{
+		`declare -a foo=(x y); echo "[${#foo[1 2]}]"; echo after`,
+		"1 2: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	// The one exception, measured: `${#name[…]}` on a name that does not
+	// exist answers 0 without ever reading the subscript, while
+	// `${name[…]}` on the same missing name reports the error.
+	{`unset foo; echo "[${#foo[1 2]}]"; echo after`, "[0]\nafter\n"},
+	// Re-parsing a *string* as arithmetic took a partial read for a whole
+	// one everywhere it happens, so text bash refuses evaluated to zero:
+	// a name read arithmetically, and a `[[ ]]` operand.
+	{
+		`y="hello world"; echo $((y)); echo after`,
+		"hello world: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{`x="1 2"; [[ $x -eq 1 ]]; echo "r=$?"`, "[[: 1 2: arithmetic syntax error\nr=1\n #JUSTERR"},
 	// A loop variable can be a word, and bash refuses it when the loop
 	// *runs* — naming the text as written, since it never expands it
 	// (#593). The rest of the line still runs, so these are ordinary

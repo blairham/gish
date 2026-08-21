@@ -166,6 +166,14 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			str = join(elems)
 		}
 	}
+	if pe.Length && index != nil && !vr.IsSet() {
+		// `${#foo[1 2]}` on a name that does not exist answers 0 without
+		// ever reading the subscript, where `${foo[1 2]}` reports the
+		// arithmetic error. Measured against 5.3, and the one exception
+		// to a subscript always being evaluated (#564) — as soon as the
+		// name exists, in any kind, the subscript is read again.
+		callVarInd = false
+	}
 	if callVarInd {
 		var err error
 		str, set, err = cfg.varInd(vr, index)
@@ -637,6 +645,20 @@ func (cfg *Config) varInd(vr Variable, idx syntax.ArithmExpr) (string, bool, err
 		}
 		if str, ok := vr.indexedVal(i); ok {
 			return str, true, nil
+		}
+	case Unknown:
+		// A name that does not exist is read like an indexed array, so
+		// its subscript is still evaluated — and a subscript that is not
+		// arithmetic is bash's error rather than an empty string:
+		// `echo ${foo[1 2]}` reports the arithmetic error and abandons
+		// the line where koi answered nothing at all (#564). The value is
+		// discarded; only the diagnostic is the point.
+		switch nodeLit(idx) {
+		case "@", "*":
+		default:
+			if _, err := Arithm(cfg, idx); err != nil {
+				return "", false, err
+			}
 		}
 	case Associative:
 		switch lit := nodeLit(idx); lit {
