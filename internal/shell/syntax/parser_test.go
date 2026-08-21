@@ -1697,11 +1697,11 @@ var errorCases = []errorCase{
 		"a=([i)",
 		langErr("1:4: reached `)` without matching `[` with `]`", LangBash|LangZsh),
 	),
-	errCase(
-		"a=([i])",
-		langErr("1:4: `[x]` must be followed by `=`", LangBash|LangZsh),
-		flipConfirmAll, // TODO: why is this valid?
-	),
+	// `a=([i])` is deliberately absent, and its "TODO: why is this
+	// valid?" is answered: bash reads the bracket as an ordinary word,
+	// since a subscript needs the `=` that would complete it (#588), so
+	// the element is the literal `[i]`. Measured. The two cases above
+	// still error because neither bracket ever closes.
 	// `a[i]=(y)` is deliberately absent: bash *parses* it and reports
 	// `a[i]: cannot assign list to array member` when the assignment
 	// runs (#582), so refusing it here cost the rest of the file. zsh

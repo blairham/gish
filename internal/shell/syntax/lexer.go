@@ -97,6 +97,50 @@ func (p *Parser) dollarParenIsSubshell() bool {
 	return false
 }
 
+// bracketIsSubscript reports whether a `[` beginning a word inside a
+// compound assignment opens a subscript — `[idx]=val` — rather than
+// being an ordinary word that happens to start with a bracket.
+//
+// bash decides by whether the shape *completes*, so `array=(42 [1]=14)`
+// assigns element 1 while `array2=(grep [ 123 ] \*)` is five words, one
+// of which is a lone bracket. One token cannot tell, which makes this
+// the same bounded forward scan `$((` needs (#424) — and it is bounded
+// the same way: what is already buffered, with "ran out" answering the
+// way the parser behaved before the scan existed.
+func (p *Parser) bracketIsSubscript() bool {
+	p.fill() // as much of the line as the reader will give
+	for i := p.bsp; i < uint(len(p.bs)); i++ {
+		switch p.bs[i] {
+		case '\\':
+			i++ // an escaped byte is never a bracket
+		case '\'':
+			for i++; i < uint(len(p.bs)) && p.bs[i] != '\''; i++ {
+			}
+		case '"':
+			for i++; i < uint(len(p.bs)) && p.bs[i] != '"'; i++ {
+				if p.bs[i] == '\\' {
+					i++
+				}
+			}
+		case '\n':
+			// A subscript and its `=` are on one line; an element list
+			// spanning lines is still one element per line.
+			return false
+		case ']':
+			// The bracket closed, so this is a subscript only if the
+			// assignment follows it immediately: `]=` or `]+=`.
+			if i+1 >= uint(len(p.bs)) {
+				return true // ran out mid-shape; read it as one
+			}
+			if p.bs[i+1] == '=' {
+				return true
+			}
+			return i+2 < uint(len(p.bs)) && p.bs[i+1] == '+' && p.bs[i+2] == '='
+		}
+	}
+	return true // ran out: as before the scan
+}
+
 func bquoteEscaped(b byte) bool {
 	switch b {
 	case '$', '`', '\\':
@@ -392,9 +436,12 @@ skipSpace:
 			}
 			p.next()
 		case '[':
-			// `[` only starts an `[idx]=val` element when it begins a new word;
-			// otherwise it continues a glob like `foo[0-9]`.
-			if p.quote == arrayElems && (p.spaced || p.tok == leftParen || p.tok == _Newl) {
+			// `[` only starts an `[idx]=val` element when it begins a new
+			// word *and* the shape completes; otherwise it continues a
+			// glob like `foo[0-9]`, or is an ordinary word of its own
+			// (#588).
+			if p.quote == arrayElems && (p.spaced || p.tok == leftParen || p.tok == _Newl) &&
+				p.bracketIsSubscript() {
 				p.rune()
 				p.tok = leftBrack
 			} else {
