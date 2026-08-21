@@ -83,7 +83,16 @@ func importedOptionFlags() (setNames, shoptNames []string) {
 	return setNames, shoptNames
 }
 
-func applySessionOptions(ctx context.Context, runner *interp.Runner) {
+func applySessionOptions(ctx context.Context, runner *interp.Runner, interactive bool) {
+	// An interactive shell starts in emacs editing mode, which is a state
+	// koi was in and did not say it was in (#576): bash answers `emacs on`
+	// for `bash -i` and `emacs off` for a script, and koi answered off for
+	// both while editing in emacs. It goes first, so an inherited
+	// SHELLOPTS, an argv `-o vi`, or an rc's `set -o vi` all still win —
+	// each of those turns emacs off on its way past.
+	if interactive {
+		_ = runHookSource(ctx, runner, "set -o emacs")
+	}
 	// The environment's options come first: argv is the more specific
 	// instruction and must be able to override them.
 	setNames, shoptNames := importedOptionFlags()

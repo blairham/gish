@@ -849,7 +849,7 @@ func Params(args ...string) RunnerOption {
 				if status == nil {
 					return fmt.Errorf("invalid option: %q", flag)
 				}
-				if err := setPosixOpt(status, opt, enable); err != nil {
+				if err := r.setPosixOpt(status, opt, enable); err != nil {
 					return err
 				}
 				continue
@@ -875,7 +875,7 @@ func Params(args ...string) RunnerOption {
 			if status == nil {
 				return fmt.Errorf("invalid option: %q", value)
 			}
-			if err := setPosixOpt(status, opt, enable); err != nil {
+			if err := r.setPosixOpt(status, opt, enable); err != nil {
 				return err
 			}
 		}
@@ -1144,7 +1144,7 @@ func (r *Runner) posixOptByFlag(flag byte) (*bool, posixOpt) {
 // nothing needs to, which is exactly what bash does with the same line.
 // Asking for the other state is refused, because the alternative is a shell
 // that says it is in POSIX mode and is not.
-func setPosixOpt(status *bool, opt posixOpt, enable bool) error {
+func (r *Runner) setPosixOpt(status *bool, opt posixOpt, enable bool) error {
 	if opt.name == "restricted" && *status && !enable {
 		// A restricted shell cannot un-restrict itself, which is the
 		// one rule the whole feature rests on (#398). bash reports it
@@ -1153,6 +1153,7 @@ func setPosixOpt(status *bool, opt posixOpt, enable bool) error {
 	}
 	if opt.supported || enable == *status {
 		*status = enable
+		r.excludeEditMode(opt.name, enable)
 		return nil
 	}
 	state := "off"
@@ -1160,6 +1161,27 @@ func setPosixOpt(status *bool, opt posixOpt, enable bool) error {
 		state = "on"
 	}
 	return fmt.Errorf("cannot turn %s %s: not implemented", opt.name, state)
+}
+
+// excludeEditMode keeps `emacs` and `vi` from being on at once, which is
+// the one rule in the `set -o` table that couples two options (#576).
+//
+// It is one-directional, and that is measured rather than symmetric-by
+// -assumption: turning either one *on* turns the other off, while turning
+// one off leaves the other exactly as it was — `set -o vi; set +o vi`
+// ends with both off in bash rather than back in emacs mode, and a shell
+// with neither bit set is still editing in emacs, since that is what
+// readline does with no mode asked for.
+func (r *Runner) excludeEditMode(name string, enable bool) {
+	if !enable {
+		return
+	}
+	switch name {
+	case "emacs":
+		r.opts[optVi] = false
+	case "vi":
+		r.opts[optEmacs] = false
+	}
 }
 
 // shellOptsList and bashOptsList render SHELLOPTS and BASHOPTS: the
@@ -1345,8 +1367,8 @@ var posixOptsTable = [...]posixOpt{
 	//
 	// notify and monitor are job control (#5). histexpand is the line
 	// editor's, not the interpreter's, and is already off in a
-	// non-interactive shell — which is the state scripts ask for. emacs
-	// and vi are the editor's for the same reason. verbose would have to
+	// non-interactive shell — which is the state scripts ask for.
+	// verbose would have to
 	// echo input as it is read, which the interpreter never sees: it is
 	// handed statements, not lines. posix changes behavior across the
 	// whole interpreter and is its own piece of work, named by #308 for
@@ -1373,8 +1395,17 @@ var posixOptsTable = [...]posixOpt{
 	{'m', "monitor", false, true},
 	{'H', "histexpand", false, false},
 	{' ', "history", false, true},
-	{' ', "emacs", false, false},
-	{' ', "vi", false, false},
+	// The line editor's dialect (#576). The behavior is the shell's
+	// around the interpreter rather than the interpreter's own, which is
+	// why these two spent so long refusing to move — and refusing was the
+	// wrong answer for exactly the reason #575 gives for `cdspell`: the
+	// bit is real state, nothing a script can observe is being faked by
+	// recording it, and koi *does* act on the request, so not recording it
+	// left the option disagreeing with the shell's own behavior. See
+	// [Runner.excludeEditMode] for the one rule that is not an ordinary
+	// option's: they are mutually exclusive.
+	{' ', "emacs", false, true},
+	{' ', "vi", false, true},
 	{'v', "verbose", false, false},
 	// POSIX mode (#395). koi refused it, which was honest and cost
 	// whole suite files: a script that opens with `set -o posix` got

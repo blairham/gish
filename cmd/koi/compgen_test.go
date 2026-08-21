@@ -299,3 +299,302 @@ func TestCompgenListsOnlyWhatKoiHas(t *testing.T) {
 func singleQuoted(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
+
+// The complete/compgen/compopt option grammar (#556).
+//
+// Two halves, and both are asserted, because either alone passes
+// vacuously. A shell that refused *every* option would pass the refusal
+// table; a shell that accepted every option — koi, until this change —
+// passes the acceptance table. The pair is the claim.
+//
+// The refusals compare the exit status against bash and check that the
+// message tail appears in *both* shells' output. That second half is what
+// keeps the wording honest: koi's message is bash's because bash printed
+// it here, not because this file believes it does. What is deliberately
+// not compared is the whole line — bash prefixes a location koi's own
+// builtins do not carry yet (#621) and follows the message with a usage
+// line (#577), so the status and the wording are what is pinned.
+
+// compFamilyRefusals are the invocations bash refuses, one per shape of
+// refusal. Every one of them was exit 0 or a silent 1 in koi before, and
+// `complete` was the worst: 0 says the registration happened.
+var compFamilyRefusals = []struct {
+	name, script, message string
+}{
+	{"an unknown option to complete", `complete -Z x`, "complete: -Z: invalid option"},
+	{"an unknown option to compgen", `compgen -Z x`, "compgen: -Z: invalid option"},
+	{"an unknown option to compopt", `compopt -Z x`, "compopt: -Z: invalid option"},
+
+	// -V is compgen's alone, which is what bash's own complete.tests
+	// records as "doesn't work for complete".
+	{"complete does not take -V", `complete -V name`, "complete: -V: invalid option"},
+	// The options complete has and compgen does not, and vice versa.
+	{"compgen does not take -p", `compgen -p`, "compgen: -p: invalid option"},
+	{"compgen does not take -r", `compgen -r`, "compgen: -r: invalid option"},
+	{"compgen does not take -D", `compgen -D`, "compgen: -D: invalid option"},
+	{"compopt does not take -p", `compopt -p x`, "compopt: -p: invalid option"},
+
+	// An unknown letter inside a cluster, so the cluster is read rather
+	// than taken as one long option name.
+	{"an unknown letter in a cluster", `complete -dZ x`, "complete: -Z: invalid option"},
+
+	// A `+`-word is an option for compopt only, and there it can be wrong.
+	{"an unknown plus option to compopt", `compopt +Z x`, "compopt: +Z: invalid option"},
+
+	// An option that takes an argument and did not get one. koi read the
+	// missing argument as the empty string, so `compgen -W` generated
+	// from an empty wordlist and said nothing.
+	{"a missing option argument", `compgen -W "a b" -V`, "compgen: -V: option requires an argument"},
+
+	// The same bug at the value level: a name outside a closed list was
+	// taken verbatim and then quietly did nothing.
+	{"an unknown -o name", `compgen -o nooption -W a`, "compgen: nooption: invalid option name"},
+	{"an unknown -o name to complete", `complete -o nooption x`, "complete: nooption: invalid option name"},
+	{"an unknown -o name to compopt", `compopt -o nooption x`, "compopt: nooption: invalid option name"},
+	{"an unknown -A action", `compgen -A noaction`, "compgen: noaction: invalid action name"},
+	{"an unknown -A action to complete", `complete -A noaction x`, "complete: noaction: invalid action name"},
+
+	// -V takes a name, not an assignment target: bash refuses a subscript
+	// here where `printf -v` accepts one.
+	{"a -V name that is not an identifier", `compgen -V invalid-name -b`, "compgen: `invalid-name': not a valid identifier"},
+	{"a -V name with a subscript", `compgen -V 'arr[2]' -b`, "compgen: `arr[2]': not a valid identifier"},
+}
+
+// compFamilyAccepted are the invocations bash *accepts*, which is the
+// half that makes the refusal safe to have. Each one is a shape the
+// refusal would reject if the argument list were read a word at a time,
+// and one of them (`complete -df x`) is ordinary bash-completion corpus.
+var compFamilyAccepted = []struct {
+	name, script string
+}{
+	{"clustered letters", `complete -df x`},
+	{"a cluster ending in an argument-taking letter", `compgen -bW "aa bb"`},
+	{"an argument joined to its letter", `compgen -bWfoo`},
+
+	// bash does not permute: options stop at the first operand, so a
+	// dash-word after one is a name rather than an option.
+	{"an option-looking name", `complete x -Z`},
+	{"an option-looking word", `compgen -W abc abc -Z`},
+
+	// And a `+`-word is not an option for these two at all — it is a
+	// name. bash registers three specs here, not one with nosort cleared.
+	{"a plus word is a name", `complete +o nosort x`},
+	{"a plus word is a word", `compgen +b`},
+
+	// Every -o name and every -A action bash knows, so the closed lists
+	// cannot go stale in the refusing direction.
+	{"every -o name", `for o in bashdefault default dirnames filenames noquote nosort nospace plusdirs; do complete -o "$o" x || echo "refused -o $o"; done`},
+	{"every -A action", `for a in alias arrayvar binding builtin command directory disabled enabled export file function group helptopic hostname job keyword running service setopt shopt signal stopped user variable; do compgen -A "$a" >/dev/null; [ $? = 2 ] && echo "refused -A $a"; done`},
+
+	// The three catch-alls, -I included: bash 5.1 added it, koi records
+	// it and does not act on it yet (#609), and refusing it would reject
+	// a line bash takes.
+	{"the catch-all registrations", `complete -D -F f; complete -E -F f; complete -I -F f`},
+}
+
+func TestCompFamilyRefusesWhatBashRefuses(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+
+	for _, tc := range compFamilyRefusals {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			script := tc.script + `; echo "rc=$?"`
+			gotOut, _ := runShell(t, koi, script)
+			wantOut, _ := runShell(t, bash, script)
+
+			// The status the caller acts on, taken from the shell rather
+			// than from the process: `echo "rc=$?"` is what a completion
+			// script would read.
+			wantRC := grepLine(wantOut, "rc=")
+			if wantRC != "rc=2" {
+				t.Skipf("bash here does not refuse %q (%s): %q",
+					tc.script, bashVersion(t, bash), wantOut)
+			}
+			if got := grepLine(gotOut, "rc="); got != wantRC {
+				t.Errorf("%s: koi %s, bash %s\n  koi:  %q\n  bash: %q",
+					tc.script, got, wantRC, gotOut, wantOut)
+			}
+			if !strings.Contains(wantOut, tc.message) {
+				t.Errorf("%s: bash does not say %q — the expected message is invented: %q",
+					tc.script, tc.message, wantOut)
+			}
+			if !strings.Contains(gotOut, tc.message) {
+				t.Errorf("%s: koi does not say %q: %q", tc.script, tc.message, gotOut)
+			}
+		})
+	}
+
+	for _, tc := range compFamilyAccepted {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			script := tc.script + `; echo "rc=$?"`
+			gotOut, _ := runShell(t, koi, script)
+			wantOut, _ := runShell(t, bash, script)
+			if strings.Contains(wantOut, "invalid option") || strings.Contains(wantOut, "refused ") {
+				t.Skipf("bash here refuses %q (%s): %q", tc.script, bashVersion(t, bash), wantOut)
+			}
+			if strings.Contains(gotOut, "invalid option") || strings.Contains(gotOut, "refused ") {
+				t.Errorf("%s: koi refuses what bash accepts: %q", tc.script, gotOut)
+			}
+			if got, want := grepLine(gotOut, "rc="), grepLine(wantOut, "rc="); got != want {
+				t.Errorf("%s: koi %s, bash %s\n  koi:  %q\n  bash: %q",
+					tc.script, got, want, gotOut, wantOut)
+			}
+		})
+	}
+}
+
+// grepLine returns the first line of out starting with prefix, so a case
+// can read one reported value out of a script's output without depending
+// on what a diagnostic printed around it.
+func grepLine(out, prefix string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return line
+		}
+	}
+	return ""
+}
+
+// `compgen -V name` (#556): bash 5.3's option for putting the candidates
+// in an array instead of on stdout — the shape that replaces `arr=(
+// $(compgen …) )`, and with it the word splitting that turns a candidate
+// containing a space into two.
+//
+// Differential, and every case is chosen so the *order* of the array is
+// not what is being compared: koi sorts compgen's output where bash keeps
+// generation order (#613), so a wordlist that is already in order is used
+// where the elements are asserted, and the one case that does care about
+// order compares each shell against itself.
+func TestCompgenVWritesAnArray(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	if !oracleHas(t, bash, featCompgenV) {
+		t.Skipf("bash here has no compgen -V (%s) — no oracle for this case", bashVersion(t, bash))
+	}
+
+	for _, tc := range []struct{ name, script string }{
+		// The array is written and stdout stays empty: `-V` is instead
+		// of printing, not as well as. The output goes to a file rather
+		// than into `$(…)`, because a command substitution runs compgen
+		// in a subshell and the array would then be set where nothing
+		// can read it — which is the whole reason `-V` exists.
+		{"the candidates land in the array", `f=$(mktemp); compgen -V arr -W "aa bb cc" >"$f"; echo "printed=[$(cat "$f")] rc=$?"; rm -f "$f"; declare -p arr`},
+
+		// It replaces rather than appends, which is the difference
+		// between a completion function that offers this word's
+		// candidates and one that offers every word's so far.
+		{"an existing array is replaced", `arr=(x y z); compgen -V arr -W "aa bb" >/dev/null; declare -p arr`},
+
+		// Nothing generated still creates the array *and* still answers
+		// 1, so a caller can read either one.
+		{"nothing generated still creates it", `compgen -V arr -W "" -- zzz; echo "rc=$?"; declare -p arr`},
+		{"no generator at all", `compgen -V arr; echo "rc=$?"; declare -p arr`},
+
+		// The shaping options apply inside the array, and `-o nosort`
+		// changes nothing — compgen does not sort in bash either.
+		{"prefix and suffix apply", `compgen -V arr -P "pre-" -S "-suf" -W "aa bb" >/dev/null; declare -p arr`},
+		{"nosort changes nothing", `compgen -V arr -o nosort -W "aa bb" >/dev/null; declare -p arr`},
+
+		// The scope is the caller's, which is why the assignment goes
+		// back through the interpreter rather than being written by the
+		// handler: bash's -V inside a function with a `local` of that
+		// name writes the local and leaves the global unset.
+		{"a local of that name is what gets written", `f(){ local arr=(z); compgen -V arr -W "aa" >/dev/null; declare -p arr; }; f`},
+
+		// bash's own complete.tests line, which is where the option came
+		// to attention: build the `unalias` commands that undo the
+		// aliases just defined, minus the ones a pattern filters out.
+		{"the suite's own case", `alias fee=one fi=two fo=three fum=four
+compgen -a -X 'fo*' -V vv -P 'unalias -- ' f
+printf '%s\n' "${vv[@]}"`},
+
+		// A readonly target is refused by the assignment, not by the
+		// option parsing, so the status is 1 rather than 2. Only the
+		// status is compared here: bash's message carries a location and
+		// koi's does not (#621), and koi additionally abandons the rest
+		// of the line where bash carries on — a property of a failed
+		// assignment (#469) rather than of compgen, recorded rather than
+		// worked around.
+		{"a readonly target", `readonly ro=1; compgen -V ro -W "aa"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotOut, gotCode := runShell(t, koi, tc.script)
+			wantOut, wantCode := runShell(t, bash, tc.script)
+			if strings.Contains(tc.script, "readonly") {
+				if !strings.Contains(gotOut, "ro: readonly variable") {
+					t.Errorf("koi does not report the readonly target: %q", gotOut)
+				}
+				if !strings.Contains(wantOut, "ro: readonly variable") {
+					t.Errorf("bash does not report the readonly target: %q", wantOut)
+				}
+			} else if gotOut != wantOut {
+				t.Errorf("%s:\n  koi:  %q\n  bash: %q", tc.script, gotOut, wantOut)
+			}
+			if gotCode != wantCode {
+				t.Errorf("%s: koi status %d, bash %d", tc.script, gotCode, wantCode)
+			}
+		})
+	}
+}
+
+// The array is the listing, in the same order — asserted with each shell
+// compared against itself, so it holds without either shell's candidate
+// order being encoded here. This is the invariant that would survive
+// #613 changing koi's order, and it is what fails if `-V` is ever
+// implemented as a second generation pass rather than as the same one.
+func TestCompgenVArrayIsTheListing(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	if !oracleHas(t, bash, featCompgenV) {
+		t.Skipf("bash here has no compgen -V (%s) — no oracle for this case", bashVersion(t, bash))
+	}
+
+	for _, gen := range []string{`-W "cc aa bb"`, `-f`, `-b`, `-A keyword`} {
+		script := `[ "$(compgen ` + gen + `)" = "$(compgen -V arr ` + gen +
+			` >/dev/null; printf '%s\n' "${arr[@]}")" ] && echo same || echo differs`
+		t.Run(gen, func(t *testing.T) {
+			t.Parallel()
+			dir := compgenFixture(t)
+			got, _ := shellRows(t, koi, dir, script)
+			want, _ := shellRows(t, bash, dir, script)
+			if strings.Join(want, "") != "same" {
+				t.Fatalf("bash: %q — the invariant is wrong, not koi", want)
+			}
+			if strings.Join(got, "") != "same" {
+				t.Errorf("koi: compgen %s and its -V array disagree", gen)
+			}
+		})
+	}
+}
+
+// Nothing asked for is not a failure. `compgen` with no options at all
+// answers 0 in bash — there was no generator to come up empty — where a
+// generator that produced nothing answers 1. koi answered 1 for both,
+// which is a completion script being told "no candidates" for a question
+// it never asked.
+func TestCompgenWithNoGeneratorSucceeds(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+
+	for _, script := range []string{
+		`compgen; echo "rc=$?"`,
+		`compgen abc; echo "rc=$?"`,
+		`compgen -- ; echo "rc=$?"`,
+		// The other half: a generator that matched nothing still fails,
+		// so this is not "compgen always succeeds".
+		`compgen -b zzzz; echo "rc=$?"`,
+		`compgen -W "aa" zzzz; echo "rc=$?"`,
+	} {
+		t.Run(script, func(t *testing.T) {
+			t.Parallel()
+			gotOut, _ := runShell(t, koi, script)
+			wantOut, _ := runShell(t, bash, script)
+			if gotOut != wantOut {
+				t.Errorf("%s: koi %q, bash %q", script, gotOut, wantOut)
+			}
+		})
+	}
+}

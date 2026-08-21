@@ -190,7 +190,7 @@ func runEditor(ctx context.Context, login bool) error {
 	// aliasTrackCallHandler is interactive-only and outermost: only this
 	// chain feeds the surfaces that consult the mirror, and observing
 	// before any rewrite means it sees the words as typed.
-	runnerOpts = append(runnerOpts, interp.CallHandler(aliasTrackCallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(callBase))))))))))))))))))))))))))))))))
+	runnerOpts = append(runnerOpts, interp.CallHandler(aliasTrackCallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(trapCallHandler(shoptCallHandler(historyEnableCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(callBase)))))))))))))))))))))))))))))))
 	runner, err := interp.New(runnerOpts...)
 	if err != nil {
 		return err
@@ -268,7 +268,7 @@ func runEditor(ctx context.Context, login bool) error {
 	declareShellIdentity(ctx, runner)
 	// argv's `set` options are in force before the profile and rc run,
 	// which is bash's order (#426).
-	applySessionOptions(ctx, runner)
+	applySessionOptions(ctx, runner, true)
 	// Color-friendly defaults before anything is sourced, so an rc that
 	// disagrees simply arrives later and wins (#54).
 	applyColorDefaults(ctx, runner)
@@ -319,6 +319,10 @@ func runEditor(ctx context.Context, login bool) error {
 	}
 	lastDuration := time.Duration(0)
 	lastCommandText := "" // what session recording (#103) reports as "last"
+	// The last KOI_EDIT_MODE this loop acted on. The variable is a
+	// request and the `set -o` bit is the state, so it speaks when it
+	// changes rather than on every prompt (#576, see applyEditModeVar).
+	seenEditMode := ""
 	for {
 		// Native tool-version switching (#77) rebuilds PATH first —
 		// first-party env work precedes EnvProvider plugins (#12), which
@@ -383,7 +387,10 @@ func runEditor(ctx context.Context, login bool) error {
 		ed.SetTransientPrompt(transientPrompt(runner, info))
 		// Vi mode is read per prompt, so an rc setting — or a live
 		// `config editmode vi` — takes effect on the next line rather
-		// than the next shell (#163).
+		// than the next shell (#163). The variable is resolved into the
+		// option first, so the editor and `set -o` cannot disagree
+		// whichever of the three spellings asked (#576).
+		seenEditMode = applyEditModeVar(runner, seenEditMode)
 		ed.SetEditMode(editModeOf(runner))
 		lastPromptDir = info.dir
 
@@ -739,7 +746,7 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 		// is visible to the script it started (#419).
 		interp.InheritedFiles(inheritedFDs()),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
+		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
 	)...)
 	if err != nil {
 		return err
@@ -748,10 +755,13 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 	declareShellIdentity(ctx, runner)
 	// argv's `set` options are in force before the profile and rc run,
 	// which is bash's order (#426).
-	applySessionOptions(ctx, runner)
+	applySessionOptions(ctx, runner, interactive)
 	if login {
 		loadProfile(ctx, runner)
 	}
+	// The editing mode a caller configured is still what this shell must
+	// report, even with no editor and no prompt loop to resolve it (#576).
+	applyEditModeVar(runner, "")
 	// nil when no prompt is wanted at all, which is the common case.
 	var promptOut io.Writer
 	if interactive {
@@ -950,7 +960,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		// is visible to the script it started (#419).
 		interp.InheritedFiles(inheritedFDs()),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
+		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
 	)...)
 	if err != nil {
 		return err
@@ -959,7 +969,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	declareShellIdentity(ctx, runner)
 	// argv's `set` options are in force before the profile and rc run,
 	// which is bash's order (#426).
-	applySessionOptions(ctx, runner)
+	applySessionOptions(ctx, runner, interactive)
 	// The names must resolve here too, so an unavailable builtin reports
 	// itself rather than looking like a missing program.
 	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))
@@ -985,6 +995,12 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		enableAliases(ctx, runner)
 		loadRC(ctx, runner)
 	}
+	// KOI_EDIT_MODE is resolved into the `set -o` bit once the rc has had
+	// its say, because a session with no prompt loop still gets asked what
+	// editing mode it is in — `KOI_EDIT_MODE=vi koi -c 'set -o'` answered
+	// emacs, which is #576 on the path that has no editor to disagree with
+	// (see applyEditModeVar).
+	applyEditModeVar(runner, "")
 	// Read as bash reads (#276): the statements before the first syntax
 	// error run, and only then is the error reported. A .bashrc with one
 	// construct koi cannot read at the bottom used to be a total loss.
@@ -1024,7 +1040,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 			// is visible to the script it started (#419).
 			interp.InheritedFiles(inheritedFDs()),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
-			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
+			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall))))))))))))))))))))))))))))),
 		},
 		append(jsonTraceOptions(), ignoredSignalOptions()...)...),
 		opts...,
