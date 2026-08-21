@@ -22,8 +22,8 @@ import (
 // ones that hold for all of them:
 //
 //   - the name resolves. A builtin koi documents must never answer
-//     "executable file not found in $PATH", which is what a typo looks
-//     like. `plugins` did exactly that outside an interactive session.
+//     "command not found", which is what a typo looks like. `plugins`
+//     did exactly that outside an interactive session.
 //   - it terminates. A builtin that waits for input nobody is going to
 //     send hangs a script forever; the timeout here is the assertion.
 //   - it does not panic. A stack trace is not a diagnostic.
@@ -126,7 +126,7 @@ func TestNativeBuiltinsBehave(t *testing.T) {
 			if strings.Contains(out, "panic:") || strings.Contains(out, "goroutine ") {
 				t.Fatalf("%s panicked:\n%s", name, out)
 			}
-			if strings.Contains(out, "executable file not found") {
+			if strings.Contains(out, "command not found") {
 				t.Errorf("%s did not resolve as a builtin — it fell through to PATH: %q", name, out)
 			}
 			if strings.Contains(out, "unsupported builtin") {

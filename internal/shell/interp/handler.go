@@ -167,7 +167,7 @@ func DefaultExecHandler(killTimeout time.Duration) ExecHandlerFunc {
 		path, err := LookPathDir(hc.Dir, hc.Env, args[0])
 		if err != nil {
 			fmt.Fprintln(hc.Stderr, err)
-			return ExitStatus(127)
+			return ExitStatus(execErrorStatus(err))
 		}
 		cmd := exec.CommandContext(ctx, path)
 		cmd.Args = args
@@ -221,9 +221,12 @@ func DefaultExecHandler(killTimeout time.Duration) ExecHandlerFunc {
 			}
 			return ExitStatus(err.ExitCode())
 		case *exec.Error:
-			// did not start
-			fmt.Fprintf(hc.Stderr, "%v\n", err)
-			return ExitStatus(127)
+			// Did not start. The lookup above already said the file is
+			// there and executable, so whatever stopped it is the
+			// "cannot execute" case rather than the missing one, and
+			// bash's status for that is 126.
+			fmt.Fprintf(hc.Stderr, "%s: %v\n", args[0], err.Err)
+			return ExitStatus(126)
 		default:
 			// The command exited with success, but WaitDelay elapsed with its
 			// I/O pipes still open, e.g. due to an orphaned subprocess.
@@ -269,22 +272,97 @@ func runScriptENOEXEC(ctx context.Context, hc HandlerContext, killTimeout time.D
 	return r.Run(ctx, file)
 }
 
-func checkStat(dir, file string, checkExec bool) (string, error) {
-	if !filepath.IsAbs(file) {
-		file = filepath.Join(dir, file)
+// execError is why a command could not be started: the word to name, the
+// reason in bash's wording, and the status bash answers for that reason.
+//
+// bash keeps 127 for "no such command" and uses 126 for "found it,
+// cannot run it" — a distinction scripts test, and koi answered 127 for
+// every failure (#569). The message matters too: koi printed Go's own
+// error, so a mistyped `./deploy` came back as `stat
+// /Users/me/work/deploy: no such file or directory` where bash says
+// `./deploy: No such file or directory`. The capitalized wording is
+// strerror's, which is where bash gets it.
+type execError struct {
+	name   string // as the user wrote it, or the PATH candidate's full path
+	reason string
+	status uint8
+}
+
+func (e *execError) Error() string { return e.name + ": " + e.reason }
+
+// execErrorStatus is the status to exit with after a failed lookup:
+// bash's for the reason it failed, and 127 for an error from elsewhere,
+// which is what a custom handler's error used to get unconditionally.
+func execErrorStatus(err error) uint8 {
+	var ee *execError
+	if errors.As(err, &ee) {
+		return ee.status
 	}
-	info, err := os.Stat(file)
+	return 127
+}
+
+// notExecutable reports whether err is the "it is there, it will not
+// run" case, which is the one a PATH search remembers rather than
+// discards.
+func notExecutable(err error) bool {
+	var ee *execError
+	return errors.As(err, &ee) && ee.reason == reasonNoPermission
+}
+
+// The reasons, spelled once: bash prints strerror's wording, and a typo
+// in one of these is invisible in a diff of expected output.
+const (
+	reasonNotFound     = "No such file or directory"
+	reasonNoPermission = "Permission denied"
+	reasonIsDir        = "Is a directory"
+	reasonNoCommand    = "command not found"
+)
+
+// openReason is strerror's wording for a failed open, which is what
+// bash prints and what a person can act on: Go's own error names the
+// syscall and the absolute path it resolved to, neither of which the
+// user wrote (#569).
+func openReason(err error) string {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return reasonNotFound
+	case errors.Is(err, fs.ErrPermission):
+		return reasonNoPermission
+	}
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
+}
+
+func checkStat(dir, file string, checkExec bool) (string, error) {
+	full := file
+	if !filepath.IsAbs(full) {
+		full = filepath.Join(dir, full)
+	}
+	info, err := os.Stat(full)
 	if err != nil {
-		return "", err
+		// Named as it was given rather than as it was resolved: for a
+		// path the user typed that is the word they typed, and for a
+		// PATH candidate it is the full path, which is what bash prints
+		// when the search finds a file it cannot run.
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return "", &execError{name: file, reason: reasonNotFound, status: 127}
+		case errors.Is(err, fs.ErrPermission):
+			return "", &execError{name: file, reason: reasonNoPermission, status: 126}
+		}
+		return "", &execError{name: file, reason: err.Error(), status: 126}
 	}
 	m := info.Mode()
 	if m.IsDir() {
-		return "", fmt.Errorf("is a directory")
+		return "", &execError{name: file, reason: reasonIsDir, status: 126}
 	}
 	if checkExec && runtime.GOOS != "windows" && m&0o111 == 0 {
-		return "", fmt.Errorf("permission denied")
+		return "", &execError{name: file, reason: reasonNoPermission, status: 126}
 	}
-	return file, nil
+	return full, nil
 }
 
 func winHasExt(file string) bool {
@@ -312,7 +390,7 @@ func findExecutable(dir, file string, exts []string) (string, error) {
 			return f, nil
 		}
 	}
-	return "", fmt.Errorf("not found")
+	return "", &execError{name: file, reason: reasonNotFound, status: 127}
 }
 
 // findFile returns the path to an existing file.
@@ -354,6 +432,12 @@ func lookPathDir(cwd string, env expand.Environ, file string, find findAny) (str
 	if strings.ContainsAny(file, chars) {
 		return find(cwd, file, exts)
 	}
+	// A candidate that exists and will not run is remembered rather than
+	// discarded. bash keeps searching — a later directory may hold one
+	// that works — but if none does it reports *that* candidate, by full
+	// path and with status 126, instead of claiming the command does not
+	// exist (#569).
+	var notRunnable error
 	for _, elem := range pathList {
 		var path string
 		switch elem {
@@ -363,11 +447,18 @@ func lookPathDir(cwd string, env expand.Environ, file string, find findAny) (str
 		default:
 			path = filepath.Join(elem, file)
 		}
-		if f, err := find(cwd, path, exts); err == nil {
+		f, err := find(cwd, path, exts)
+		if err == nil {
 			return f, nil
 		}
+		if notRunnable == nil && notExecutable(err) {
+			notRunnable = err
+		}
 	}
-	return "", fmt.Errorf("%q: executable file not found in $PATH", file)
+	if notRunnable != nil {
+		return "", notRunnable
+	}
+	return "", &execError{name: file, reason: reasonNoCommand, status: 127}
 }
 
 // scriptFromPathDir is similar to [LookPathDir], with the difference that it looks

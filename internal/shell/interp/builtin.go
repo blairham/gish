@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -841,9 +842,21 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		f, err := r.open(ctx, path, os.O_RDONLY, 0, false)
 		if err != nil {
-			return failf(1, "source: %v\n", err)
+			// bash names the file the way it was written and uses
+			// strerror's wording, without a builtin prefix. koi printed
+			// Go's error, so a missing file came back as `source: open
+			// /Users/me/work/x: no such file or directory` (#569).
+			return failf(1, "%s: %s\n", args[0], openReason(err))
 		}
 		defer f.Close()
+		// A directory opens fine and fails on the first read, which
+		// answered with Go's wording and status 2. bash refuses it here,
+		// naming the builtin as it was called (`source` or `.`).
+		if statter, ok := f.(interface{ Stat() (fs.FileInfo, error) }); ok {
+			if info, serr := statter.Stat(); serr == nil && info.IsDir() {
+				return failf(1, "%s: %s: is a directory\n", name, args[0])
+			}
+		}
 		// Read and run a line at a time, the way bash reads a script: a
 		// sourced file that turns on `set -o posix` changes how the rest
 		// of itself is parsed (#450), and only a reader which runs as it
