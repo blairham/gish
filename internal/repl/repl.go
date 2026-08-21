@@ -1,4 +1,4 @@
-// Package repl implements koi's read-eval loop on top of mvdan.cc/sh's
+// Package repl implements koi's read-eval loop on top of internal/shell's
 // POSIX/bash parser and interpreter.
 //
 // Interactive terminals get the raw-mode line editor (internal/editor);
@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 

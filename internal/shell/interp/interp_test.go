@@ -24,8 +24,8 @@ import (
 	"github.com/blairham/koi-shell/internal/shell/expand"
 	"github.com/blairham/koi-shell/internal/shell/interp"
 	"github.com/blairham/koi-shell/internal/shell/shinternal"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 	"github.com/go-quicktest/qt"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 // runnerRunTimeout is the context timeout used by any tests calling [Runner.Run].

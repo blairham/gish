@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // `-n`: read commands but do not execute them (#233).

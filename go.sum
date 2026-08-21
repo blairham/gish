@@ -1063,8 +1063,6 @@ kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 h1:Z06sMOzc0GNCwp6efaVrIrz
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.77/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
 mvdan.cc/gofumpt v0.11.0 h1:0H01XB95PnN2QgCSR9ELdZyTlJqNZ7181B0BTMh5VZc=
 mvdan.cc/gofumpt v0.11.0/go.mod h1:BeT5wCsOJt6J9zT2MZIOGszjUHzFkn1/l9g6xAzqsXo=
-mvdan.cc/sh/v3 v3.13.2-0.20260817215856-d6550df7ed8d h1:LlqUgrIy872/RmROjVtmRg3oK4RvvqZZr5SfqHSg7Ko=
-mvdan.cc/sh/v3 v3.13.2-0.20260817215856-d6550df7ed8d/go.mod h1:3tr4oDy8eX1SeblVXiVLVGk0PbLzqwQqOAEdu9yKWBM=
 mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15 h1:ssMzja7PDPJV8FStj7hq9IKiuiKhgz9ErWw+m68e7DI=
 mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15/go.mod h1:4M5MMXl2kW6fivUT6yRGpLLPNfuGtU2Z0cPvFquGDYU=
 rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8=

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"mvdan.cc/sh/v3/pattern"
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/pattern"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 )

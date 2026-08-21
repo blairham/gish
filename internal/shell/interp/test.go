@@ -14,7 +14,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // non-empty string is true, empty string is false

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"regexp"
 
-	"mvdan.cc/sh/v3/pattern"
+	"github.com/blairham/koi-shell/internal/shell/pattern"
 )
 
 // ExtendedPatternMatcher returns a [regexp.Regexp.MatchString]-like function

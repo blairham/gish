@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 )

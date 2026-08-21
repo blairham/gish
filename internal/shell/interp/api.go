@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // A Runner interprets shell programs. It can be reused, but it is not safe for

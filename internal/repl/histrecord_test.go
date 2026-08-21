@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // resetSessionHistory gives a test the package-level history list to

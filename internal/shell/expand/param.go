@@ -13,9 +13,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/blairham/koi-shell/internal/shell/pattern"
 	"github.com/blairham/koi-shell/internal/shell/shinternal"
-	"mvdan.cc/sh/v3/pattern"
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 func nodeLit(node syntax.Node) string {

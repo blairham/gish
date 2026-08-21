@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // tracer prints expressions like a shell would do if its

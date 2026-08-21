@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"mvdan.cc/sh/v3/pattern"
+	"github.com/blairham/koi-shell/internal/shell/pattern"
 )
 
 // This file implements a backtracking matcher for extended glob patterns
