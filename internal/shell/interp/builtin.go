@@ -238,21 +238,41 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		r.updateExpandOpts()
 	case "shift":
+		// Every answer here is bash's, measured (#595), because the two
+		// koi had were a crash and a silent loss: `shift -1` indexed a
+		// slice at -1, and `shift 3` on two parameters *cleared* them
+		// and answered 0 where bash keeps them and answers 1 — which is
+		// how an argument-parsing loop carries on believing it consumed
+		// what it did not.
 		n := 1
 		switch len(args) {
 		case 0:
 		case 1:
-			if n2, err := strconv.Atoi(args[0]); err == nil {
-				n = n2
-				break
+			// A whole number, not an arithmetic expression: bash calls
+			// `shift 1+1` a numeric-argument error rather than 2.
+			n2, err := strconv.Atoi(args[0])
+			if err != nil {
+				return failf(2, "shift: %s: numeric argument required\n", args[0])
 			}
-			fallthrough
+			n = n2
 		default:
-			return failf(2, "usage: shift [n]\n")
+			// Fatal to the input unit, unlike the other two errors here:
+			// `echo pre; shift 1 2; echo same` never prints `same`, and
+			// the next line reads $? as 2 (#469's abandonment).
+			r.errf("shift: too many arguments\n")
+			exit.code = 2
+			exit.aborting = true
+			return exit
 		}
-		if n >= len(r.Params) {
-			r.Params = nil
-		} else {
+		switch {
+		case n < 0:
+			return failf(1, "shift: %d: shift count out of range\n", n)
+		case n > len(r.Params):
+			// Nothing moves, and the status is the only thing that says
+			// so — `shift 2` on exactly two parameters still succeeds, so
+			// the boundary is *past* the end rather than at it.
+			exit.code = 1
+		default:
 			r.Params = r.Params[n:]
 		}
 	case "unset":
