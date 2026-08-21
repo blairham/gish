@@ -1650,6 +1650,76 @@ var runTests = []runTest{
 		"f () \n{ \n    a=(1 2);\n    x=$((1+2));\n    echo \"${a[@]}$x\"\n}\n",
 	},
 
+	// A definition's own redirections are part of the function (#631).
+	// They hang off the statement wrapping the body, one level up from
+	// where the body is rendered, and were dropped — so the printed
+	// definition was not the function that was defined, and eval'ing it
+	// elsewhere landed a function with different stdio.
+	{
+		`f(){ echo hi; } 1>&2; declare -f f`,
+		"f () \n{ \n    echo hi\n} 1>&2\n",
+	},
+	{
+		// bash re-spaces the operator it prints — `> /dev/null` from a
+		// source that wrote `>/dev/null` — while keeping a duplicating
+		// form tight, so what is matched is what bash prints.
+		`f(){ echo hi; } >/dev/null 2>&1; declare -f f`,
+		"f () \n{ \n    echo hi\n} > /dev/null 2>&1\n",
+	},
+	{
+		`f(){ cat; } < /dev/null; declare -f f`,
+		"f () \n{ \n    cat\n} < /dev/null\n",
+	},
+	{
+		// `type` prints through the same path, so the two agree, and a
+		// duplicating redirection grows its descriptor here too.
+		`f(){ echo hi; } >&2; type f`,
+		"f is a function\nf () \n{ \n    echo hi\n} 1>&2\n",
+	},
+	{
+		// A nested definition's redirection is indented with its own
+		// closing brace and still takes the statement's semicolon.
+		`outer(){ inner(){ echo hi; } 1>&2; inner; }; declare -f outer`,
+		"outer () \n{ \n    function inner () \n    { \n        echo hi\n    } 1>&2;\n    inner\n}\n",
+	},
+	{
+		// A body that is not a block is wrapped in braces by bash, so
+		// its redirection prints *inside* them, on the statement it was
+		// written on rather than after the brace bash supplied.
+		`f() ( echo hi ) 1>&2; declare -f f`,
+		"f () \n{ \n    ( echo hi ) 1>&2\n}\n",
+	},
+	{
+		`f() ( echo hi ); declare -f f`,
+		"f () \n{ \n    ( echo hi )\n}\n",
+	},
+	{
+		`f() if true; then echo a; fi 1>&2; declare -f f`,
+		"f () \n{ \n    if true; then\n        echo a;\n    fi 1>&2\n}\n",
+	},
+	{
+		`f(){ echo hi; } 2>&-; declare -f f`,
+		"f () \n{ \n    echo hi\n} 2>&-\n",
+	},
+	{
+		// A here-string is an ordinary word and prints inline; a
+		// here-document is the one shape that cannot (#638).
+		`f(){ cat; } <<< "hi"; declare -f f`,
+		"f () \n{ \n    cat\n} <<< \"hi\"\n",
+	},
+	{
+		`f(){ echo hi; } {fd}>/dev/null; declare -f f`,
+		"f () \n{ \n    echo hi\n} {fd}> /dev/null\n",
+	},
+	{
+		// The reason this is worse than cosmetic: `eval "$(declare -f
+		// f)"` is the documented way to move a function between shells,
+		// so a dropped redirection is a function that behaves
+		// differently where it lands — silently.
+		`f(){ echo hi; } 1>&2; eval "$(declare -f f)"; f 2>/dev/null; echo rc=$?`,
+		"rc=0\n",
+	},
+
 	// Nameref residuals (#389): a reference may name an array element,
 	// its target is validated, a self reference is refused, a nameref
 	// loop variable is re-targeted rather than written through, and
@@ -2381,6 +2451,134 @@ q`,
 		"${$(echo x)}: bad substitution\nexit status 1 #JUSTERR",
 	},
 
+	// A replacement can be anchored to the start or the end of the value
+	// (#636): `${v/#pat/rep}` and `${v/%pat/rep}`, which koi read as
+	// part of the pattern, so `${path/#$HOME/\~}` and
+	// `${name/%.txt/.md}` returned their input untouched and said
+	// nothing.
+	{
+		`v=aabbaa; echo "${v/#aa/X}"`,
+		"Xbbaa\n",
+	},
+	{
+		`v=aabbaa; echo "${v/%aa/Y}"`,
+		"aabbY\n",
+	},
+	{
+		// The anchor is read even when nothing matches there, which is
+		// what tells a dropped anchor from an honoured one.
+		`v=aabbaa; echo "${v/#bb/X}"`,
+		"aabbaa\n",
+	},
+	{
+		// An anchor with no pattern is a pure prepend or append.
+		`v=aabbaa; echo "${v/#/P}"`,
+		"Paabbaa\n",
+	},
+	{
+		`v=aabbaa; echo "${v/%/S}"`,
+		"aabbaaS\n",
+	},
+	{
+		// No replacement is a deletion at the anchor.
+		`v=aabbaa; echo "${v/#aa}"`,
+		"bbaa\n",
+	},
+	{
+		`v=aabbaa; echo "${v/%aa}"`,
+		"aabb\n",
+	},
+	{
+		// The match is the longest one at the anchor, not the shortest.
+		`v=aabbaa; echo "${v/#a*b/X}"`,
+		"Xaa\n",
+	},
+	{
+		// Anchored at the end it is the earliest start that reaches it.
+		`v=aabbaa; echo "${v/%b*a/X}"`,
+		"aaX\n",
+	},
+	{
+		`v=aabbaa; echo "${v/#?/X}"`,
+		"Xabbaa\n",
+	},
+	{
+		// The double-slash form has no anchor: `#` is an ordinary
+		// character there, so this replaces nothing at all…
+		`v=aabbaa; echo "${v//#aa/X}"`,
+		"aabbaa\n",
+	},
+	{
+		// …and matches a literal `#` where the value has one.
+		`v="#a#a"; echo "${v//#a/X}"`,
+		"XX\n",
+	},
+	{
+		`v="#aabb"; echo "${v/#aa/X}"`,
+		"#aabb\n",
+	},
+	{
+		// Escaped or quoted, it is the literal `#` rather than an
+		// anchor — the three spellings a script uses to say so.
+		`v="#aabb"; echo "${v/\#aa/X}"`,
+		"Xbb\n",
+	},
+	{
+		`v="#aabb"; echo "${v/"#"aa/X}"`,
+		"Xbb\n",
+	},
+	{
+		`v='#aabb'; echo "${v/'#'aa/X}"`,
+		"Xbb\n",
+	},
+	{
+		// bash reads the anchor *after* expanding the pattern word, so
+		// one arriving from a variable anchors too…
+		`v=aabbaa; p="#aa"; echo "${v/$p/X}"`,
+		"Xbbaa\n",
+	},
+	{
+		// …which is only visible in a case where the anchored pattern
+		// then fails to match.
+		`v="#ppbb"; p="#pp"; echo "${v/$p/X}"`,
+		"#ppbb\n",
+	},
+	{
+		`v="#ppbb"; p="#pp"; echo "${v/#"$p"/X}"`,
+		"Xbb\n",
+	},
+	{
+		// Every element, which is what makes a list of names the shape
+		// most often affected.
+		`a=(aa1 aa2); echo "${a[@]/#aa/X}"`,
+		"X1 X2\n",
+	},
+	{
+		`a=(x y); echo "${a[@]/#/P}"`,
+		"Px Py\n",
+	},
+	{
+		`a=(x y); echo "${a[@]/%/S}"`,
+		"xS yS\n",
+	},
+	{
+		`set -- -a -b; echo "${@/#-/+}"`,
+		"+a +b\n",
+	},
+	{
+		`declare -A m=([k]=aav); echo "${m[k]/#aa/X}"`,
+		"Xv\n",
+	},
+	{
+		// The two idioms the issue was reported for.
+		`v=note.txt; echo "${v/%.txt/.md}"`,
+		"note.md\n",
+	},
+	{
+		`h=/home/me; p=/home/me/src; echo "${p/#$h/\~}"`,
+		"~/src\n",
+	},
+
 	// The same rule reaches every operator that counts characters, not
 	// only `?` and ${#x} (#470): a slice, a pattern removal, a
 	// replacement and a case conversion are all byte-wise there, and
@@ -2393,6 +2591,10 @@ q`,
 	{`export LC_ALL=C; a=абв; echo "${a//?/x}"`, "xxxxxx\n"},
 	{`export LC_ALL=en_US.UTF-8; a=абв; echo "${a//?/x}"`, "xxx\n"},
 	{`export LC_ALL=C; a=абв; echo "${a/б/Y}"`, "аYв\n"},
+	// An anchored replacement (#636) is byte-wise there too, since it
+	// runs through the same conversion as the plain one.
+	{`export LC_ALL=C; a=áb; echo "${a/#?/X}"`, "X\xa1b\n"},
+	{`export LC_ALL=en_US.UTF-8; a=áb; echo "${a/#?/X}"`, "Xb\n"},
 	{`export LC_ALL=C; a=aÿb; echo "${a^^}"`, "AÿB\n"},
 	{`export LC_ALL=en_US.UTF-8; a=aÿb; echo "${a^^}"`, "AŸB\n"},
 

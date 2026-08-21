@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/blairham/koi-shell/internal/complete"
@@ -102,5 +103,63 @@ func TestCommands(t *testing.T) {
 	}
 	if values["not-exec"] || values["other"] {
 		t.Errorf("Commands included non-matches: %+v", got)
+	}
+}
+
+// The editor's listings are sorted here, and that is load-bearing
+// elsewhere: `compgen` deliberately does not sort (#613, bash keeps
+// generation order), so the completion *menu*'s order has to come from
+// this package rather than from the shared sort compgen used to apply.
+// Nothing asserted it, which is how a deletion here would have quietly
+// unsorted the menu while every compgen case still passed.
+//
+// The fixture is created in an unsorted order, so a listing that simply
+// forwarded readdir would fail: os.ReadDir happens to sort too, which
+// would make this vacuous on its own — hence Commands, whose input is a
+// map and whose order can only come from the sort.
+func TestListingsAreSortedForTheEditor(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"zeta", "alpha", "mu"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"zdir", "adir"} {
+		if err := os.Mkdir(filepath.Join(dir, name), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var entries []string
+	for _, e := range complete.Entries("", dir, true) {
+		entries = append(entries, e.Value)
+	}
+	if !slices.IsSorted(entries) {
+		t.Errorf("Entries is not sorted: %q", entries)
+	}
+
+	var files []string
+	for _, c := range complete.Files("", dir) {
+		files = append(files, c.Value)
+	}
+	if !slices.IsSorted(files) {
+		t.Errorf("Files is not sorted: %q", files)
+	}
+
+	bin := t.TempDir()
+	for _, name := range []string{"zcmd", "acmd", "mcmd"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // an executable fixture
+			t.Fatal(err)
+		}
+	}
+	var cmds []string
+	for _, c := range complete.Commands("", bin, []string{"zfunc", "afunc"}) {
+		cmds = append(cmds, c.Value)
+	}
+	if len(cmds) == 0 {
+		t.Fatal("Commands listed nothing, so sortedness proves nothing")
+	}
+	if !slices.IsSorted(cmds) {
+		t.Errorf("Commands is not sorted: %q", cmds)
 	}
 }

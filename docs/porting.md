@@ -148,13 +148,12 @@ you are most likely to hit:
   Usually fine; occasionally a tool refuses.
 - **`declare -A` associative arrays** are partially supported —
   `${#map[@]}` miscounts.
-- **`${var/#pat}` / `${var/%pat}`** anchored substitution silently does
-  nothing. Use `${var#pat}` / `${var%pat}` for stripping.
 - **`exec 3>&1` fd juggling** does not persist.
 - **`printf '%05.2f'`** rejects combined width.precision.
 
-All four are `mvdan.cc/sh` substrate gaps, kept with reproductions so
-they can be re-verified. Scripts that hit
+These are `mvdan.cc/sh` substrate gaps, kept with reproductions so
+they can be re-verified — `${var/#pat}` and `${var/%pat}` were on this
+list until #636 and now answer as bash does. Scripts that hit
 them still run correctly under `bash script.sh` — koi does not change
 what `#!/bin/bash` means.
 
