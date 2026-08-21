@@ -19,7 +19,15 @@ import (
 // meaning, so both are pinned here rather than one being assumed from
 // the other.
 func TestRunReaderFollowsARedirectedCommandStream(t *testing.T) {
-	dir := t.TempDir()
+	// Not t.TempDir: the switched-to file stays open, because it is the
+	// shell's own standard input and a runner has no Close. Windows
+	// refuses to unlink an open file, so the cleanup is best effort
+	// rather than a failure about a file the test is done with.
+	dir, err := os.MkdirTemp("", "koi-stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	inner := filepath.Join(dir, "inner.sh")
 	if err := os.WriteFile(inner, []byte("echo from-inner\n"), 0o600); err != nil {
 		t.Fatal(err)
