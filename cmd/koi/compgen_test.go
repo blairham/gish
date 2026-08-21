@@ -266,8 +266,19 @@ func TestCompgenListsOnlyWhatKoiHas(t *testing.T) {
 		t.Fatal("compgen -A helptopic listed nothing")
 	}
 	for _, topic := range topics {
-		if _, status := shellLines(t, koi, dir, "help "+singleQuoted(topic)); status != 0 {
+		out, status := shellRows(t, koi, dir, "help "+singleQuoted(topic))
+		if status != 0 {
 			t.Errorf("compgen offers help topic %q, which help itself does not answer", topic)
+			continue
+		}
+		// A zero status is not enough: an entry with an empty synopsis
+		// or an empty description prints two blank-ish lines and
+		// succeeds, which is a listed topic with nothing behind it
+		// (#557). The rewrite names answer with one pointing line, so
+		// the assertion is about the first line carrying more than the
+		// topic's own name.
+		if len(out) == 0 || len(strings.TrimSpace(out[0])) <= len(topic)+1 {
+			t.Errorf("compgen offers help topic %q and help answered %q", topic, out)
 		}
 	}
 

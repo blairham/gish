@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -109,6 +110,87 @@ var helpTopics = map[string]helpTopic{
 	"explain": {"explain", "ask the configured AI provider why the last command failed"},
 }
 
+// helpSyntaxTopics are the shell *constructs* help answers for (#557):
+// what someone reaches for after seeing `while` offered in a completion
+// menu, and until now the answer was "no help topic for". They are a
+// separate table from helpTopics on purpose — that one names commands
+// and is checked against what the session dispatches, while every name
+// here is grammar the parser reads and the interpreter runs, so its
+// drift guard has to be a script rather than a lookup
+// (cmd/koi/nativebuiltins_test.go runs one per topic).
+//
+// #269's rule applies unchanged: the answer is about *koi*. A construct
+// koi refuses gets no topic, and the test asserts that in both
+// directions so the list cannot quietly go stale. The wording is koi's
+// own rather than bash's, deliberately: bash's help text is GPLv3 and
+// this repository is MIT, which is the same reason #211's suite is
+// never committed — so each construct is described here, never copied.
+var helpSyntaxTopics = map[string]helpTopic{
+	"!":         {"! pipeline", "run the pipeline and invert its exit status"},
+	"%":         {"%job", "name a job for fg, bg, kill, wait and disown — %n, %%, %+, %-"},
+	"(( ... ))": {"(( expression ))", "evaluate arithmetic; a non-zero value is success and zero is failure"},
+	"[[ ... ]]": {"[[ expression ]]", "test a condition with pattern matching, =~, && and no word splitting"},
+	"{ ... }":   {"{ commands ; }", "group commands in this shell, so one redirection covers all of them"},
+	"case":      {"case word in [pattern | pattern) commands ;;] ... esac", "run the branch whose pattern the word matches (;;& falls through to the next)"},
+	"coproc":    {"coproc [name] command", "run a command in the background with its input and output on a pair of descriptors"},
+	"for":       {"for name [in words ...] ; do commands ; done", "run the body once per word, with name set to each in turn"},
+	"for ((":    {"for (( init ; test ; step )) ; do commands ; done", "loop under arithmetic control — the C-style spelling of for"},
+	"function":  {"function name { commands ; }, or name () { commands ; }", "define a function; declare -f prints one and unset -f removes it"},
+	"if":        {"if commands ; then commands [; elif ...] [; else commands] ; fi", "run the then branch when the condition succeeds, otherwise the else branch"},
+	"select":    {"select name [in words ...] ; do commands ; done", "print a numbered menu, read a choice into name (and REPLY), and repeat"},
+	"time":      {"time [-p] pipeline", "run the pipeline and report real, user and system time on stderr"},
+	"until":     {"until commands ; do commands ; done", "run the body until the condition succeeds"},
+	"variables": {"variables", "the variables koi sets: PWD OLDPWD HOME PATH IFS SHLVL OPTIND RANDOM SECONDS LINENO EPOCHSECONDS EPOCHREALTIME HISTFILE BASH_VERSION BASH_VERSINFO KOI_VERSION — declare -p prints every one that is set"},
+	"while":     {"while commands ; do commands ; done", "run the body while the condition succeeds"},
+}
+
+// helpSyntaxAliases are the spellings a person actually types for the
+// three punctuation topics, since `help '[[ ... ]]'` is nobody's first
+// guess. bash reaches them by prefix-matching its whole table, and
+// matching only the *opening* form is what that behavior amounts to
+// here — measured rather than assumed: bash answers `help '[['` and
+// refuses `help ']]'`. They are deliberately absent from the compgen
+// listing, because an alias is a way in rather than a topic and
+// offering both spellings would list topics bash does not.
+var helpSyntaxAliases = map[string]string{
+	"((": "(( ... ))",
+	"[[": "[[ ... ]]",
+	"{":  "{ ... }",
+}
+
+// helpTopicFor resolves a name against both tables and the aliases,
+// answering with the *listed* name: `help '[['` heads its entry
+// `[[ ... ]]`, as bash does, so the name a completion offers is the one
+// the answer names.
+func helpTopicFor(name string) (string, helpTopic, bool) {
+	if topic, ok := helpTopics[name]; ok {
+		return name, topic, true
+	}
+	if topic, ok := helpSyntaxTopics[name]; ok {
+		return name, topic, true
+	}
+	if canonical, ok := helpSyntaxAliases[name]; ok {
+		if topic, ok := helpSyntaxTopics[canonical]; ok {
+			return canonical, topic, true
+		}
+	}
+	return name, helpTopic{}, false
+}
+
+// helpTopicNames is what `compgen -A helptopic` answers with: both
+// tables, sorted together, aliases excluded.
+func helpTopicNames() []string {
+	names := make([]string, 0, len(helpTopics)+len(helpSyntaxTopics))
+	for name := range helpTopics {
+		names = append(names, name)
+	}
+	for name := range helpSyntaxTopics {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
 // runHelp answers `help [name ...]`. Rewrite names dispatch back into the
 // handler chain via next; everything else prints here. Output stays plain
 // text — help must read identically piped, scripted, and on a dumb
@@ -127,13 +209,13 @@ func runHelp(ctx context.Context, next interp.CallHandlerFunc, args []string) ([
 	}
 	ok := true
 	for _, name := range args {
-		switch topic, found := helpTopics[name]; {
+		switch listed, topic, found := helpTopicFor(name); {
 		case slices.Contains(helpRewrites, name):
 			// Only reachable with several names at once; pointing beats
 			// splicing several full usage screens together.
 			fmt.Fprintf(hc.Stdout, "%s: run `%s help` for its usage\n", name, name)
 		case found:
-			fmt.Fprintf(hc.Stdout, "%s: %s\n    %s\n", name, topic.use, topic.desc)
+			fmt.Fprintf(hc.Stdout, "%s: %s\n    %s\n", listed, topic.use, topic.desc)
 		default:
 			fmt.Fprintf(hc.Stderr, "help: no help topic for %q — try `man %s`\n", name, name)
 			ok = false
@@ -147,8 +229,14 @@ func runHelp(ctx context.Context, next interp.CallHandlerFunc, args []string) ([
 
 func printHelpOverview(hc interp.HandlerContext) {
 	fmt.Fprintln(hc.Stdout, "help: help [name]")
-	fmt.Fprintln(hc.Stdout, "    `help cd` explains a builtin; koi commands also answer `<name> help`.")
+	fmt.Fprintln(hc.Stdout, "    `help cd` explains a builtin, `help while` a piece of syntax;")
+	fmt.Fprintln(hc.Stdout, "    koi commands also answer `<name> help`.")
 	fmt.Fprintf(hc.Stdout, "\nkoi commands:\n  %s\n", strings.Join(callHandlerCommands, " "))
 	fmt.Fprintf(hc.Stdout, "\nkoi builtins:\n  %s\n", strings.Join(builtins.Native(), " "))
 	fmt.Fprintf(hc.Stdout, "\nshell builtins:\n  %s\n", strings.Join(builtins.ShellBuiltins(), " "))
+	// Comma-separated where the other groups use spaces, because four of
+	// these names contain a space of their own (`for ((`, `[[ ... ]]`) and
+	// a space-joined listing would read as twice as many topics.
+	fmt.Fprintf(hc.Stdout, "\nshell syntax:\n  %s\n",
+		strings.Join(slices.Sorted(maps.Keys(helpSyntaxTopics)), ", "))
 }

@@ -502,8 +502,12 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 		case "helptopic":
 			// What `help` can answer about, which is this shell's set
 			// rather than bash's: koi has fewer builtins and some of
-			// its own (#269's rule, applied to a third listing).
-			out = append(out, slices.Sorted(maps.Keys(helpTopics))...)
+			// its own (#269's rule, applied to a third listing). Both
+			// of help's tables answer here — the commands and the
+			// syntax topics (#557) — since a completion menu offering
+			// `while` and a `help while` that works are the same
+			// feature seen from two sides.
+			out = append(out, helpTopicNames()...)
 		case "keyword":
 			// All twenty-two of bash's. coproc was the one deliberate
 			// omission — this action answers what *this* shell has, and
