@@ -25,7 +25,10 @@ func TestRunReaderFollowsARedirectedCommandStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := filepath.Join(dir, "outer.sh")
-	body := "echo one\nexec 0< " + inner + "\necho never\n"
+	// The path is quoted because on Windows it is full of backslashes,
+	// which a shell would otherwise read as escapes — inside double
+	// quotes a backslash is only special before $, `, " and itself.
+	body := "echo one\nexec 0< \"" + inner + "\"\necho never\n"
 	if err := os.WriteFile(script, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
