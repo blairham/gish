@@ -2767,7 +2767,16 @@ var fileTests = []fileTestCase{
 				X:     litWord("QUIT"),
 			},
 		}, LangZsh),
-		langErr2("1:11: subscript flags are a zsh feature; tried parsing as LANG", LangBash|LangMirBSDKorn),
+		// Outside zsh the same text is an ordinary subscript, and bash
+		// reads it as one: `signals[(i)QUIT]=3` on an associative array is
+		// the key `(i)QUIT`, and on an indexed one it is a runtime
+		// arithmetic error. Measured. So the parse error this used to be —
+		// "subscript flags are a zsh feature" — is only reachable now for
+		// text that cannot be a key either, which is nothing (#564).
+		langFile(&ParamExp{
+			Param: lit("signals"),
+			Index: litWord("(i)QUIT"),
+		}, LangBash|LangMirBSDKorn),
 	),
 	fileTest(
 		[]string{`${ZSH_VERSION[(s:.:w)2]}`},

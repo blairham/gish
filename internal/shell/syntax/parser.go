@@ -503,6 +503,15 @@ func (p *Parser) Document(r io.Reader) (*Word, error) {
 
 // Arithmetic parses a single arithmetic expression. That is, as if the input
 // were within the $(( and )) tokens.
+//
+// The whole input has to be that one expression. Text left over after it is
+// an error rather than a partial read, because a partial read is a silent
+// wrong answer: `hello world` parses `hello`, stops, and evaluates the empty
+// value of a name nobody set as zero, where bash answers `hello world:
+// arithmetic syntax error in expression (error token is "world")` (#564).
+// Every caller re-parses a *string* as arithmetic — a subscript, a nameref's
+// subscript, a `[[ x -eq y ]]` operand, a name's value read arithmetically —
+// so every one of them was answering zero for text bash refuses.
 func (p *Parser) Arithmetic(r io.Reader) (ArithmExpr, error) {
 	p.reset()
 	p.f = &File{}
@@ -511,6 +520,14 @@ func (p *Parser) Arithmetic(r io.Reader) (ArithmExpr, error) {
 	p.quote = arithmExpr
 	p.next()
 	expr := p.arithmExpr(false)
+	if p.err == nil && p.tok != _EOF {
+		switch p.tok {
+		case _Lit, _LitWord:
+			p.curErr("not a valid arithmetic operator: %#q", p.val)
+		default:
+			p.curErr("not a valid arithmetic operator: %#q", p.tok)
+		}
+	}
 	return expr, p.err
 }
 
@@ -536,6 +553,14 @@ type Parser struct {
 
 	// position of [Parser.r], to be converted to [Parser.pos] later
 	offs, line, col int64
+
+	// fragmentPos is where the input this parser reads sits inside a
+	// larger source, for a sub-parser handed a piece the outer parser
+	// has already lexed (#564). Every node then carries the position it
+	// would have had if it had been parsed in place, which is what makes
+	// a diagnostic about it point at the right column and what keeps
+	// [Node.Pos] ordered across the tree.
+	fragmentPos Pos
 
 	pos Pos // position of tok
 
@@ -616,6 +641,11 @@ func (p *Parser) reset() {
 	p.eqlOffs = 0
 	p.bs, p.bsp = nil, 0
 	p.offs, p.line, p.col = 0, 1, 1
+	if p.fragmentPos.IsValid() {
+		p.offs = int64(p.fragmentPos.Offset())
+		p.line = int64(p.fragmentPos.Line())
+		p.col = int64(p.fragmentPos.Col())
+	}
 	p.r, p.w = 0, 0
 	p.err, p.readErr, p.readEOF = nil, nil, false
 	p.quote, p.forbidNested = noState, false
@@ -733,9 +763,19 @@ const (
 	paramExpRepl
 	paramExpExp
 	arrayElems
+	// subscriptWord lexes the *text* of a subscript that is not an
+	// arithmetic expression — `m[hello world]` — where every character
+	// up to the matching `]` is ordinary but quotes and expansions are
+	// still special. It is paramExpExp without `}` ending the word,
+	// which is why it cannot simply reuse it: a subscript is scanned to
+	// its bracket, so a brace in it is a brace (#564).
+	subscriptWord
 
 	allKeepSpaces = runeByRune | paramExpRepl | dblQuotes | hdocBody |
-		hdocBodyTabs | paramExpRepl | paramExpExp
+		hdocBodyTabs | paramExpRepl | paramExpExp | subscriptWord
+	// allWholeText is where a `/` is an ordinary character rather than
+	// the start of a replacement.
+	allWholeText = paramExpExp | subscriptWord
 	allRegTokens = noState | unquotedWordCont | subCmd | subCmdBckquo | subCmdBraces |
 		hdocWord | switchCase | arrayElems | testExpr
 	allArithmExpr = arithmExpr | arithmExprLet | arithmExprCmd | paramExpArithm
@@ -2004,28 +2044,208 @@ func (p *Parser) paramExpExp(outer quoteState) *Expansion {
 func (p *Parser) eitherIndex(deferEmpty bool) (ArithmExpr, bool) {
 	old := p.quote
 	lpos := p.pos
-	p.quote = paramExpArithm
-	p.next()
-	if p.tok == star || p.tok == at {
-		p.tok, p.val = _LitWord, p.tok.String()
+	if p.lang.in(LangZsh) && p.r == '(' {
+		return p.zshFlagsIndex(lpos, old)
+	}
+	startPos, raw, closed := p.subscriptText()
+	empty := raw == ""
+	if !closed {
+		// The brackets never closed. An empty subscript is the error the
+		// arithmetic parser used to give — nothing followed the `[` —
+		// and anything else is an unmatched bracket, named after the
+		// token the scan ran into.
+		p.quote = paramExpArithm
+		p.next()
+		p.quote = old
+		if empty {
+			p.followErrExp(lpos, leftBrack)
+		} else {
+			p.arithmMatchingErr(lpos, leftBrack, rightBrack)
+		}
+		return nil, false
+	}
+	if empty && !deferEmpty {
+		p.quote = old
+		p.posErr(lpos, "%#q must be followed by an expression", leftBrack)
+		return nil, false
 	}
 	var expr ArithmExpr
-	empty := false
-	if p.tok == rightBrack {
-		// Nothing but whitespace, if anything: the closing bracket sits
-		// one column past the opening one when there was not even that.
-		empty = p.pos == posAddCol(lpos, 1)
-		if empty && !deferEmpty {
-			p.quote = old
-			p.posErr(lpos, "%#q must be followed by an expression", leftBrack)
-			return nil, false
-		}
-	} else {
-		expr = p.followArithm(leftBrack, lpos)
+	if !empty {
+		expr = p.subscriptExpr(startPos, raw)
 	}
+	// The scan stopped *on* the closing bracket rather than consuming
+	// it, so the token the caller matches against still has to be read —
+	// as a token, which only the state a subscript is read in makes it:
+	// outside one a `]` is an ordinary character, and the outer state is
+	// runeByRune for a `${name[i]}`, where nothing is a token at all.
+	p.quote = paramExpArithm
+	p.next()
 	p.quote = old
 	p.matchedArithm(lpos, leftBrack, rightBrack)
 	return expr, empty
+}
+
+// zshFlagsIndex reads a zsh subscript that opens with flags —
+// `${signals[(i)QUIT]}` — through the arithmetic parser, the way every
+// subscript used to be read.
+//
+// Flags are the one shape the raw scan cannot find the end of: the `)`
+// closing the flag list would read as the end of the construct the
+// subscript sits in, and zsh's flag argument is a *pattern* rather than
+// a word, so [Parser.zshSubFlags] lexes it as raw text of its own. The
+// shape is recognizable before the scan starts — a `(` immediately after
+// the `[` — which is exactly when the arithmetic parser reached
+// zshSubFlags before (#564).
+func (p *Parser) zshFlagsIndex(lpos Pos, old quoteState) (ArithmExpr, bool) {
+	p.quote = paramExpArithm
+	p.next()
+	expr := p.followArithm(leftBrack, lpos)
+	p.quote = old
+	p.matchedArithm(lpos, leftBrack, rightBrack)
+	return expr, false
+}
+
+// subscriptText scans a subscript's raw source to its matching `]`,
+// which is how bash reads one: whether the text is an arithmetic
+// expression or an associative key is not knowable until the array it
+// belongs to is known, so nothing can be decided while reading it
+// (#564). The scan honours quotes, escapes and nested brackets, since
+// `m[x[1]]` names the key `x[1]` and `m[$(echo "a]b")]` names `a]b`.
+//
+// It reports where the text starts, for the sub-parse, and whether the
+// bracket was found at all — a scan that runs into the end of the input,
+// or out of the construct the subscript sits in, stops there and leaves
+// the caller to report it.
+//
+// Only `]`, a quote and a backslash are significant to the scan, because
+// only those are significant to bash's: every metacharacter is ordinary
+// text in a subscript, measured, even the ones that end the construct the
+// subscript is written in. `m[a}b]` inside `${m[a}b]}` is the key `a}b`,
+// and `m[a)b]` is the key `a)b` inside `$( … )` and inside `m=( … )`
+// alike. Arithmetic is the exception, and not because of the subscript:
+// bash finds the end of a `$(( … ))` by matching parentheses before
+// anything inside it is read, so `$((m[a)b]))` is a syntax error there
+// while the same subscript is a key everywhere else. That is why a `)`
+// only stops the scan when the subscript sits in arithmetic.
+func (p *Parser) subscriptText() (Pos, string, bool) {
+	oldQuote := p.quote
+	p.quote = runeByRune
+	defer func() { p.quote = oldQuote }()
+	p.pos = p.nextPos()
+	startPos := p.pos
+	p.newLit(p.r)
+	depth := 0
+	// closers is what a nested construct inside the subscript is waiting
+	// for, so that the `)` of a `$(…)` or of a parenthesized arithmetic
+	// subexpression is not read as the end of the arithmetic the
+	// subscript itself is in.
+	var closers []rune
+	for {
+		switch p.r {
+		case runeEOF:
+			return startPos, p.endLit(), false
+		case '(':
+			closers = append(closers, ')')
+		case ')':
+			if len(closers) == 0 {
+				if oldQuote&allArithmExpr != 0 {
+					return startPos, p.endLit(), false
+				}
+				break
+			}
+			if closers[len(closers)-1] == ')' {
+				closers = closers[:len(closers)-1]
+			}
+		case '`':
+			if len(closers) > 0 && closers[len(closers)-1] == '`' {
+				closers = closers[:len(closers)-1]
+			} else {
+				closers = append(closers, '`')
+			}
+		case '\\':
+			p.rune() // whatever follows is literal, including `]`
+		case '\'':
+			for p.rune(); p.r != runeEOF && p.r != '\''; p.rune() {
+			}
+			if p.r == runeEOF {
+				return startPos, p.endLit(), false
+			}
+		case '"':
+			for p.rune(); p.r != runeEOF && p.r != '"'; p.rune() {
+				if p.r == '\\' {
+					p.rune()
+				}
+			}
+			if p.r == runeEOF {
+				return startPos, p.endLit(), false
+			}
+		case '[':
+			depth++
+		case ']':
+			if depth == 0 {
+				return startPos, p.endLit(), true
+			}
+			depth--
+		}
+		p.rune()
+	}
+}
+
+// subscriptExpr is the subscript's text as a node: an arithmetic
+// expression when it reads as one, and otherwise the word it spells,
+// which is what lets `m[hello world]` and `m[%]` be keys instead of
+// parse errors (#564). An indexed array reaching a word that is not
+// arithmetic is bash's runtime `arithmetic syntax error in expression`,
+// raised where the assignment runs.
+//
+// Both halves are parsed by a sub-parser seeded with the text's real
+// position, so a diagnostic about a subscript names the column it is at.
+func (p *Parser) subscriptExpr(startPos Pos, raw string) ArithmExpr {
+	// [Parser.Arithmetic] takes the whole text or nothing, so a subscript
+	// that only *starts* as arithmetic — `hello world` reads `hello` and
+	// stops — falls through to the word rather than silently losing its
+	// second half.
+	if expr, err := p.fragment(startPos).Arithmetic(strings.NewReader(raw)); err == nil {
+		return expr
+	}
+	sub := p.fragment(startPos)
+	w, err := sub.wholeWord(strings.NewReader(raw))
+	if err != nil {
+		// The text cannot be read either way — an unterminated quote or
+		// expansion inside it — and that is a parse error like any
+		// other, reported where it is.
+		p.err = err
+		return nil
+	}
+	return w
+}
+
+// fragment is a parser for a piece of the input this one has already
+// lexed, positioned as if the piece had been parsed in place.
+func (p *Parser) fragment(startPos Pos) *Parser {
+	sub := NewParser(Variant(p.lang))
+	if p.posix {
+		POSIXMode(true)(sub)
+	}
+	sub.fragmentPos = startPos
+	return sub
+}
+
+// wholeWord parses the input as a single word: spaces are ordinary
+// characters and quotes are not, which is a subscript's text and a
+// `${name+word}`'s word alike.
+func (p *Parser) wholeWord(r io.Reader) (*Word, error) {
+	p.reset()
+	p.f = &File{}
+	p.src = r
+	p.rune()
+	p.quote = subscriptWord
+	p.next()
+	w := p.getWord()
+	if p.err == nil && p.tok != _EOF {
+		p.curErr("%#q is not a valid subscript", p.tok)
+	}
+	return w, p.err
 }
 
 func (p *Parser) zshSubFlags() *FlagsArithm {
