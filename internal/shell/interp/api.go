@@ -319,6 +319,10 @@ type Runner struct {
 	// passes them on to the commands it runs.
 	extraFiles map[int]io.ReadWriteCloser
 
+	// origExtraFiles is what [InheritedFiles] was given: the descriptors
+	// the process was started with, which a Reset has to put back.
+	origExtraFiles map[int]io.ReadWriteCloser
+
 	// frames is the execution-context stack, innermost first: one entry per
 	// function call, one per `source`, and one for the script itself. It is
 	// what FUNCNAME, BASH_SOURCE, BASH_LINENO and `caller` all read (#266).
@@ -1025,6 +1029,35 @@ func IgnoredSignals(names []string) RunnerOption {
 	}
 }
 
+// InheritedFiles seeds the descriptors above 2 with files the process
+// already had open — what a shell inherits from whoever started it, so
+// that `koi 3<&0 script` can do `exec <&3` (#419).
+//
+// This is the shell's business rather than the interpreter's, which is
+// why it is an option and not a scan done here: a program embedding a
+// runner has descriptors of its own open and handing them to a script
+// would be a surprise, not a feature.
+//
+// The files are the caller's; the runner never closes them.
+func InheritedFiles(files map[int]*os.File) RunnerOption {
+	return func(r *Runner) error {
+		if len(files) == 0 {
+			return nil
+		}
+		r.origExtraFiles = make(map[int]io.ReadWriteCloser, len(files))
+		for fd, f := range files {
+			if fd <= 2 || f == nil {
+				// 0, 1 and 2 are StdIO's, and a descriptor which is not
+				// there is not a descriptor.
+				continue
+			}
+			r.origExtraFiles[fd] = f
+		}
+		r.extraFiles = maps.Clone(r.origExtraFiles)
+		return nil
+	}
+}
+
 func StdIO(in io.Reader, out, err io.Writer) RunnerOption {
 	return func(r *Runner) error {
 		stdin, _err := stdinFile(in)
@@ -1585,8 +1618,11 @@ func (r *Runner) Reset() {
 
 		// What the process inherited is constructor state as well: a
 		// Reset that forgot it would let a script trap a signal the
-		// shell was told to ignore (#441).
+		// shell was told to ignore (#441), or stop seeing a descriptor
+		// it was started with (#419).
 		sigIgnoredAtEntry: r.sigIgnoredAtEntry,
+		origExtraFiles:    r.origExtraFiles,
+		extraFiles:        maps.Clone(r.origExtraFiles),
 
 		dirStack: r.dirStack[:0],
 		usedNew:  r.usedNew,

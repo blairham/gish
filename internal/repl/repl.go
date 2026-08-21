@@ -163,6 +163,9 @@ func runEditor(ctx context.Context, login bool) error {
 			invocation:  invokedStdin,
 		})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		// The descriptors koi was started with, so a caller's `3<&0`
+		// is visible to the script it started (#419).
+		interp.InheritedFiles(inheritedFDs()),
 		interp.ExecHandlers(execChain...),
 	}
 	runnerOpts = append(runnerOpts, jsonTraceOptions()...)
@@ -716,6 +719,9 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 	runner, err := interp.New(append(jsonTraceOptions(),
 		interp.Env(sessionEnv(sessionFlags{invocation: invokedStdin})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		// The descriptors koi was started with, so a caller's `3<&0`
+		// is visible to the script it started (#419).
+		interp.InheritedFiles(inheritedFDs()),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
 	)...)
@@ -899,6 +905,9 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		interp.HistoryHook(rec.record),
 		interp.Env(sessionEnv(sessionFlags{interactive: interactive, invocation: inv})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		// The descriptors koi was started with, so a caller's `3<&0`
+		// is visible to the script it started (#419).
+		interp.InheritedFiles(inheritedFDs()),
 		interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 		interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
 	)...)
@@ -970,6 +979,9 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		[]interp.RunnerOption{
 			interp.HistoryHook(rec.record),
 			interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+			// The descriptors koi was started with, so a caller's `3<&0`
+			// is visible to the script it started (#419).
+			interp.InheritedFiles(inheritedFDs()),
 			interp.ExecHandlers(builtins.ExecHandler, sandboxExecMiddleware),
 			interp.CallHandler(declCallHandler(historyCallHandler(fcCallHandler(overrideCallHandler(printfCallHandler(migrateCallHandler(evalSeparatorCallHandler(completeCallHandler(bindCallHandler(scriptTrapCallHandler(scriptShoptCallHandler(historyEnableCallHandler(setOptionCallHandler(blocksCallHandler(clipCallHandler(sessionsCallHandler(pickCallHandler(pluginCallHandler(lazyCallHandler(zCallHandler(explainCallHandler(toolCallHandler(promptCallHandler(sandboxCallHandler(trustCallHandler(doctorCallHandler(configCallHandler(ziCallHandler(panicProbeCallHandler(passthroughCall)))))))))))))))))))))))))))))),
 		},
