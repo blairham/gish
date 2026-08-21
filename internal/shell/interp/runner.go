@@ -253,7 +253,12 @@ func (r *Runner) expandErr(err error) {
 	if r.preRedirStderr != nil {
 		stderr = r.preRedirStderr
 	}
-	fmt.Fprintln(stderr, errMsg)
+	// Located like every other runtime diagnostic (#584). This family
+	// was the one #571 missed, because it prints here rather than
+	// through errf — so an unbound variable and a bad substitution, the
+	// two errors a real script hits most, named no file or line while
+	// the readonly-variable error one layer up did.
+	fmt.Fprintln(stderr, r.errLocation()+errMsg)
 	switch {
 	case errors.As(err, &expand.UnsetParameterError{}):
 		// nounset is genuinely fatal in bash: measured against 5.3, a
