@@ -1685,13 +1685,18 @@ var errorCases = []errorCase{
 		"a=(<)",
 		langErr("1:4: syntax error near unexpected token `<'", LangBash|LangMirBSDKorn|LangZsh),
 	),
+	// Both of these are bash's `unexpected EOF while looking for matching
+	// `]'`, measured — and the `)` is no part of it, because a `)` inside a
+	// subscript is ordinary text to bash: `a=([a)b]=1)` is the key `a)b`
+	// (#564). So the bracket that never closed is what koi names too,
+	// where it used to name whatever the scan happened to stop at.
 	errCase(
 		"a=([)",
-		langErr("1:4: `[` must be followed by an expression", LangBash|LangZsh),
+		langErr("1:4: reached EOF without matching `[` with `]`", LangBash|LangZsh),
 	),
 	errCase(
 		"a=([i)",
-		langErr("1:4: reached `)` without matching `[` with `]`", LangBash|LangZsh),
+		langErr("1:4: reached EOF without matching `[` with `]`", LangBash|LangZsh),
 	),
 	// `a=([i])` is deliberately absent, and its "TODO: why is this
 	// valid?" is answered: bash reads the bracket as an ordinary word,
@@ -1783,8 +1788,13 @@ var errorCases = []errorCase{
 		flipConfirmAll, // is cmd
 	),
 	errCase(
+		// bash: `unexpected EOF while looking for matching `]'`, measured
+		// — the same answer it gives `a[b`, and the same one koi now gives
+		// both. A subscript is read as text to its bracket (#564), so the
+		// inner `[` is a character in a key rather than a second subscript
+		// the arithmetic parser can object to.
 		"a[[",
-		langErr("1:3: `[` must follow a name like a[i]", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:2: reached EOF without matching `[` with `]`", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a[))",
@@ -1868,13 +1878,21 @@ var errorCases = []errorCase{
 		"coproc declare (",
 		langErr("1:16: `declare` must be followed by names or assignments", LangBash),
 	),
+	// `echo ${foo[1 2]}` is deliberately absent: bash parses it and answers
+	// while *expanding* it, because whether `1 2` is arithmetic or an
+	// associative key depends on `foo`, which only running knows (#564).
+	// With `foo` unset or indexed it is `1 2: arithmetic syntax error in
+	// expression (error token is "2")` at status 1, and with `foo`
+	// associative it is the key `1 2`. Both measured; both in interp's
+	// table.
 	errCase(
-		"echo ${foo[1 2]}",
-		langErr("1:14: not a valid arithmetic operator: `2`", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
+		// bash's answer here is a runtime `${foo[}: bad substitution`,
+		// which koi has nowhere to hang yet, so this stays a parse error —
+		// but of the bracket that never closed rather than of the `}` that
+		// used to stop the scan, since a `}` inside a subscript is
+		// ordinary text: `${m[a}b]}` reads the key `a}b` (#564).
 		"echo ${foo[}",
-		langErr("1:11: `[` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:11: reached EOF without matching `[` with `]`", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo ${foo]}",

@@ -1470,8 +1470,8 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		allOn := true
 		for _, arg := range args {
 			opt, supported := (*bool)(nil), true
+			var po posixOpt
 			if posixOpts {
-				var po posixOpt
 				opt, po = r.posixOptByName(arg)
 				supported = po.supported
 			} else {
@@ -1513,6 +1513,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 					return failf(1, "shopt: unsupported option %q\n", arg)
 				}
 				*opt = want
+				// `shopt -o -s vi` is `set -o vi` spelled the other way,
+				// so it owes the same exclusion (#576).
+				r.excludeEditMode(po.name, want)
 			default: // "" and -p
 				if !*opt {
 					allOn = false

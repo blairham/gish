@@ -59,13 +59,20 @@ type completionSpec struct {
 	letterSpelled map[string]bool
 }
 
-// completionSpecs maps command name to spec, plus the two catch-alls
-// bash keeps: `complete -D` (default, when no spec matches) and
-// `complete -E` (empty line).
+// completionSpecs maps command name to spec, plus the three catch-alls
+// bash keeps: `complete -D` (default, when no spec matches),
+// `complete -E` (empty line) and `complete -I` (the initial word).
 type completionRegistry struct {
 	byCommand map[string]completionSpec
 	fallback  *completionSpec
 	empty     *completionSpec
+	// initial is `complete -I`, bash 5.1's spec for the *first* word of a
+	// line. It is recorded so the option is not refused — bash accepts it
+	// and refusing what bash accepts is worse than the silence #556 fixed
+	// — and nothing consults it yet: the command position is answered by
+	// internal/complete's PATH/builtin/function providers, which never ask
+	// the registry (#609).
+	initial *completionSpec
 }
 
 var completions = &completionRegistry{byCommand: map[string]completionSpec{}}
@@ -86,106 +93,279 @@ func completeCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 		hc := interp.HandlerCtx(ctx)
 		switch args[0] {
 		case "complete":
-			return runCompleteBuiltin(hc.Stdout, hc.Stderr, args[1:]), nil
+			return runCompleteBuiltin(hc.Stdout, hc.Stderr, hc.ErrLocation, args[1:]), nil
 		case "compgen":
 			return runCompgen(ctx, hc, args[1:]), nil
 		case "compopt":
-			// Adjusting options mid-completion; accepted and ignored,
-			// since the only one that changes what the user sees here is
-			// nospace, and a wrong space is a papercut while an error in
-			// the middle of a completion is a broken shell.
-			return []string{"true"}, nil
+			return runCompopt(hc, args[1:]), nil
 		}
 		return next(ctx, args)
 	}
 }
 
+// The option grammar of the complete/compgen/compopt family (#556).
+//
+// koi read these argument lists with a switch over whole words and a
+// `default` that skipped anything else beginning with a dash. So an
+// option koi does not have was *dropped*: `complete -Z x` answered 0,
+// which says the registration happened, and a completion script whose
+// intent koi cannot honor got no registration and no sign of it. bash
+// refuses it — `complete: -Z: invalid option`, exit 2 — and a refusal is
+// the whole value here, because the caller is a generated script nobody
+// reads until it misbehaves.
+//
+// Refusing means parsing properly, and three rules had to be measured
+// before anything could be refused safely. Each of them is a line bash
+// *accepts*, so getting one wrong would trade a silent drop for a wrong
+// rejection, which is worse.
+
+// compOptSpec is one builtin's option vocabulary: the letters that stand
+// alone, the letters that take an argument, and whether a `+letter` word
+// is an option at all.
+type compOptSpec struct {
+	cmd   string
+	flags string
+	args  string
+	plus  bool
+}
+
+var (
+	// bash's own optstrings, letter for letter. compgen has no -p, -r,
+	// -D, -E or -I (measured: each is `invalid option`), and -V is
+	// compgen's alone — `complete -V` is a usage error, which is what
+	// bash's complete.tests records as "doesn't work for complete".
+	completeOpts = compOptSpec{cmd: "complete", flags: "abcdefgjkprsuvDEI", args: "oAGWPSXFC"}
+	compgenOpts  = compOptSpec{cmd: "compgen", flags: "abcdefgjksuv", args: "oAGWPSXFCV"}
+	compoptOpts  = compOptSpec{cmd: "compopt", flags: "DEI", args: "o", plus: true}
+)
+
+// compOptionNames is the `-o` vocabulary, and `compActionNames` the `-A`
+// one. bash refuses a name outside either with exit 2 — `compgen: bogus:
+// invalid action name` — and koi took both verbatim, so a misspelled
+// action was a generator that produced nothing. Both lists are closed in
+// bash 5.3 and every entry was confirmed against it by asking; ten of the
+// actions are recognized here and answer nothing yet (#606), which is a
+// separate honesty problem from accepting a name that does not exist.
+var (
+	compOptionNames = []string{
+		"bashdefault", "default", "dirnames", "filenames",
+		"noquote", "nosort", "nospace", "plusdirs",
+	}
+	compActionNames = []string{
+		"alias", "arrayvar", "binding", "builtin", "command", "directory",
+		"disabled", "enabled", "export", "file", "function", "group",
+		"helptopic", "hostname", "job", "keyword", "running", "service",
+		"setopt", "shopt", "signal", "stopped", "user", "variable",
+	}
+)
+
+// compFlag is one option as it was given: the letter, whether it arrived
+// as `+o` rather than `-o`, and its argument where it takes one.
+type compFlag struct {
+	letter byte
+	plus   bool
+	value  string
+}
+
+// compUsageError is an option error from this family. Every one of them
+// is exit 2, and bash prints a second usage line after the message —
+// that convention is #577's, so what is matched here is the status and
+// the wording of the first line.
+type compUsageError struct{ msg string }
+
+func (e compUsageError) Error() string { return e.msg }
+
+func compErrf(format string, a ...any) error {
+	return compUsageError{msg: fmt.Sprintf(format, a...)}
+}
+
+// parseCompArgs splits one invocation into its options and its operands
+// the way bash's internal_getopt does. The three measured rules:
+//
+//   - **Letters cluster.** `complete -df x` is `-d -f`, and `compgen
+//     -bWfoo` is `-b -W foo` — an argument-taking letter swallows the
+//     rest of its word. Reading `-df` as one unknown option would refuse
+//     a line the corpus writes.
+//   - **Options stop at the first operand.** `complete x -Z` registers
+//     the names `x` and `-Z`, and `compgen -W abc abc -Z` completes
+//     against `abc`; bash does not permute, so a dash-word after an
+//     operand is an operand. Without this rule the refusal would reject
+//     both.
+//   - **A `+`-word is an option only for compopt.** `complete +o nosort
+//     x` registers three names in bash — `+o`, `nosort` and `x` — rather
+//     than clearing an option, while `compopt +Z foo` really is `+Z:
+//     invalid option`. The usage line's `[-o|+o option]` belongs to
+//     compopt alone.
+func parseCompArgs(spec compOptSpec, args []string) ([]compFlag, []string, error) {
+	var flags []compFlag
+	for i := 0; i < len(args); i++ {
+		word := args[i]
+		plus := spec.plus && strings.HasPrefix(word, "+")
+		if word == "--" {
+			return flags, args[i+1:], nil
+		}
+		if len(word) < 2 || (!strings.HasPrefix(word, "-") && !plus) {
+			// An operand — including a bare `-` or `+`. Options end here.
+			return flags, args[i:], nil
+		}
+		for j := 1; j < len(word); j++ {
+			c := word[j]
+			sign := "-"
+			if plus {
+				sign = "+"
+			}
+			switch {
+			case strings.IndexByte(spec.args, c) >= 0:
+				value := word[j+1:]
+				if value == "" {
+					if i+1 >= len(args) {
+						return nil, nil, compErrf("%s: %s%c: option requires an argument", spec.cmd, sign, c)
+					}
+					i++
+					value = args[i]
+				}
+				flags = append(flags, compFlag{letter: c, plus: plus, value: value})
+				j = len(word) // the rest of the word was the argument
+			case strings.IndexByte(spec.flags, c) >= 0:
+				flags = append(flags, compFlag{letter: c, plus: plus})
+			default:
+				return nil, nil, compErrf("%s: %s%c: invalid option", spec.cmd, sign, c)
+			}
+		}
+	}
+	return flags, nil, nil
+}
+
+// validateCompFlags applies the checks bash makes on an option's *value*,
+// which fail the same way an unknown option did: a name outside the
+// closed list was accepted and then quietly did nothing.
+func validateCompFlags(cmd string, flags []compFlag) error {
+	for _, f := range flags {
+		switch f.letter {
+		case 'o':
+			if !slices.Contains(compOptionNames, f.value) {
+				return compErrf("%s: %s: invalid option name", cmd, f.value)
+			}
+		case 'A':
+			if !slices.Contains(compActionNames, f.value) {
+				return compErrf("%s: %s: invalid action name", cmd, f.value)
+			}
+		case 'V':
+			// A plain identifier, no subscript: bash refuses
+			// `compgen -V 'arr[2]'` where `printf -v` would take it.
+			if !validVarName(f.value) {
+				return compErrf("%s: `%s': not a valid identifier", cmd, f.value)
+			}
+		}
+	}
+	return nil
+}
+
+// validVarName reports whether s is a shell name — the check bash's
+// `compgen -V` makes, which is stricter than `printf -v`'s.
+func validVarName(s string) bool {
+	if s == "" || !isNameStart(s[0]) {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		if !isNameChar(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// compStatus answers with an arbitrary exit status, the way printf's and
+// history's handlers do: a CallHandler can only rewrite the call, and
+// `true`/`false` cover 0 and 1 but not bash's 2 for a usage error.
+func compStatus(status int) []string {
+	switch status {
+	case 0:
+		return []string{"true"}
+	case 1:
+		return []string{"false"}
+	}
+	return []string{"eval", fmt.Sprintf("(exit %d)", status)}
+}
+
+// runCompopt adjusts options mid-completion. The adjustment is still
+// accepted and ignored — the only one that changes what the user sees
+// here is nospace, and a wrong space is a papercut while an error in the
+// middle of a completion is a broken shell — but an option bash refuses
+// is now refused, and what compopt does not do is written down in #612
+// rather than answered with a 0.
+func runCompopt(hc interp.HandlerContext, args []string) []string {
+	flags, _, err := parseCompArgs(compoptOpts, args)
+	if err == nil {
+		err = validateCompFlags(compoptOpts.cmd, flags)
+	}
+	if err != nil {
+		hc.Errf("%v\n", err)
+		return compStatus(2)
+	}
+	return []string{"true"}
+}
+
 // runCompleteBuiltin parses a `complete` registration.
-func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
+// errLoc is the caller's interp.HandlerContext.ErrLocation, for the
+// same reason runBind takes one (#611).
+func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []string {
+	flags, operands, err := parseCompArgs(completeOpts, args)
+	if err == nil {
+		err = validateCompFlags(completeOpts.cmd, flags)
+	}
+	if err != nil {
+		fmt.Fprintf(errOut, "%s%v\n", errLoc, err)
+		return compStatus(2)
+	}
+
 	var spec completionSpec
-	var names []string
+	names := slices.Clone(operands)
 	remove, print := false, false
 	target := &spec
 
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		next := func() string {
-			if i+1 < len(args) {
-				i++
-				return args[i]
-			}
-			return ""
-		}
-		switch a {
-		case "-F":
-			target.function = next()
-		case "-C":
-			target.command = next()
-		case "-W":
-			target.words = append(target.words, strings.Fields(next())...)
-		case "-A":
-			target.actions = append(target.actions, next())
-		case "-o":
-			target.options = append(target.options, next())
-		case "-f":
-			target.actions = append(target.actions, "file")
-			if target.letterSpelled == nil {
-				target.letterSpelled = map[string]bool{}
-			}
-			target.letterSpelled["file"] = true
-		case "-d":
-			target.actions = append(target.actions, "directory")
-			if target.letterSpelled == nil {
-				target.letterSpelled = map[string]bool{}
-			}
-			target.letterSpelled["directory"] = true
-		case "-c":
-			target.actions = append(target.actions, "command")
-			if target.letterSpelled == nil {
-				target.letterSpelled = map[string]bool{}
-			}
-			target.letterSpelled["command"] = true
-		case "-b":
-			target.actions = append(target.actions, "builtin")
-			if target.letterSpelled == nil {
-				target.letterSpelled = map[string]bool{}
-			}
-			target.letterSpelled["builtin"] = true
-		case "-u", "-g", "-j", "-s", "-v", "-e", "-a", "-k":
-			// Users, groups, jobs, signals, variables, exports, aliases,
-			// keywords: recognized so they do not become command names,
-			// and left to compgen, which knows how to produce them.
+	for _, f := range flags {
+		switch f.letter {
+		case 'F':
+			target.function = f.value
+		case 'C':
+			target.command = f.value
+		case 'W':
+			target.words = append(target.words, strings.Fields(f.value)...)
+		case 'A':
+			target.actions = append(target.actions, f.value)
+		case 'o':
+			target.options = append(target.options, f.value)
+		case 'f', 'd', 'c', 'b', 'u', 'g', 'j', 's', 'v', 'e', 'a', 'k':
+			// The letter actions. Files, directories, commands and
+			// builtins koi generates itself; users, groups, jobs and
+			// signals it recognizes and does not answer yet (#606) —
+			// recognized either way, so they never become command names.
 			//
 			// Stored under the *long* name compgen and `-A` use, so a
 			// spec round-trips: kept as the bare letter, `complete -e`
 			// printed back as `complete -A e` (#533).
-			long := actionLongName(strings.TrimPrefix(a, "-"))
+			long := actionLongName(string(f.letter))
 			target.actions = append(target.actions, long)
-			if target.letterSpelled == nil {
-				target.letterSpelled = map[string]bool{}
-			}
-			target.letterSpelled[long] = true
-		case "-r":
+			target.markLetterSpelled(long)
+		case 'r':
 			remove = true
-		case "-p":
+		case 'p':
 			print = true
-		case "-D":
+		case 'D':
 			names = append(names, "\x00default")
-		case "-E":
+		case 'E':
 			names = append(names, "\x00empty")
-		case "-P":
-			target.prefix = next()
-		case "-S":
-			target.suffix = next()
-		case "-X":
-			target.filter = next()
-		case "-G":
-			target.glob = next()
-		default:
-			if strings.HasPrefix(a, "-") {
-				continue // an option we do not know is not a command name
-			}
-			names = append(names, a)
+		case 'I':
+			names = append(names, "\x00initial")
+		case 'P':
+			target.prefix = f.value
+		case 'S':
+			target.suffix = f.value
+		case 'X':
+			target.filter = f.value
+		case 'G':
+			target.glob = f.value
 		}
 	}
 
@@ -196,7 +376,7 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 		missing := false
 		for _, n := range names {
 			if _, ok := completions.byCommand[n]; !ok {
-				fmt.Fprintf(errOut, "complete: %s: no completion specification\n", n)
+				fmt.Fprintf(errOut, "%scomplete: %s: no completion specification\n", errLoc, n)
 				missing = true
 				continue
 			}
@@ -223,8 +403,11 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 		}
 		return []string{"true"}
 	case len(names) == 0:
+		// Options but no name to attach them to. bash's status here is 2,
+		// like every other usage error in this family (#556) — koi
+		// answered 1, which is a completion script's "no such spec".
 		fmt.Fprintln(errOut, "complete: usage: complete [-abcdefgjksuv] [-o option] [-F function] [-W wordlist] name ...")
-		return []string{"false"}
+		return compStatus(2)
 	}
 
 	for _, n := range names {
@@ -235,6 +418,9 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 		case "\x00empty":
 			s := spec
 			completions.empty = &s
+		case "\x00initial":
+			s := spec
+			completions.initial = &s
 		default:
 			completions.byCommand[n] = spec
 		}
@@ -258,11 +444,28 @@ func printCompletions(out io.Writer, only ...string) bool {
 	return len(names) == len(only) || len(only) == 0
 }
 
+// markLetterSpelled records that an action arrived as a bare letter, so
+// `complete -p` prints it back the way it was written (#533).
+func (spec *completionSpec) markLetterSpelled(action string) {
+	if spec.letterSpelled == nil {
+		spec.letterSpelled = map[string]bool{}
+	}
+	spec.letterSpelled[action] = true
+}
+
 // actionLongName maps a one-letter action to the name `-A` and compgen
 // use for it. The letters and the names are two spellings of one set,
 // and the spec keeps the names so that printing can choose the letter.
 func actionLongName(letter string) string {
 	switch letter {
+	case "f":
+		return "file"
+	case "d":
+		return "directory"
+	case "c":
+		return "command"
+	case "b":
+		return "builtin"
 	case "u":
 		return "user"
 	case "g":
@@ -362,55 +565,51 @@ func actionLetter(long string) string {
 // more often than the shell does — `compgen -W "$opts" -- "$cur"` is
 // the single most common line in the whole bash-completion corpus.
 func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []string {
-	var words []string
-	var actions []string
-	prefix, suffix, filter := "", "", ""
-	cur := ""
-	sawSeparator := false
+	flags, operands, err := parseCompArgs(compgenOpts, args)
+	if err == nil {
+		err = validateCompFlags(compgenOpts.cmd, flags)
+	}
+	if err != nil {
+		hc.Errf("%v\n", err)
+		return compStatus(2)
+	}
 
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		next := func() string {
-			if i+1 < len(args) {
-				i++
-				return args[i]
-			}
-			return ""
-		}
-		switch a {
-		case "--":
-			sawSeparator = true
-		case "-W":
-			words = append(words, compgenWords(ctx, hc, next())...)
-		case "-A":
-			actions = append(actions, next())
-		case "-f":
-			actions = append(actions, "file")
-		case "-d":
-			actions = append(actions, "directory")
-		case "-c":
-			actions = append(actions, "command")
-		case "-b":
-			actions = append(actions, "builtin")
-		case "-k":
-			actions = append(actions, "keyword")
-		case "-v":
-			actions = append(actions, "variable")
-		case "-e":
-			actions = append(actions, "export")
-		case "-P":
-			prefix = next()
-		case "-S":
-			suffix = next()
-		case "-X":
-			filter = next()
-		case "-o", "-C", "-F", "-G":
-			next() // options, external and function generators: not here
-		default:
-			if strings.HasPrefix(a, "-") && !sawSeparator {
-				continue
-			}
-			cur = a
+	// bash takes the *first* operand as the word being completed and
+	// ignores the rest; koi took the last, which only ever agreed by
+	// accident.
+	cur := ""
+	if len(operands) > 0 {
+		cur = operands[0]
+	}
+	if len(flags) == 0 {
+		// Nothing was asked for, so nothing failed: `compgen`, `compgen
+		// abc` and `compgen --` all answer 0 in bash, where a generator
+		// that produced nothing answers 1. koi answered 1 for both, which
+		// is a script's "no candidates" for a question never asked.
+		return []string{"true"}
+	}
+
+	var words, actions []string
+	prefix, suffix, filter, vname := "", "", "", ""
+	for _, f := range flags {
+		switch f.letter {
+		case 'W':
+			words = append(words, compgenWords(ctx, hc, f.value)...)
+		case 'A':
+			actions = append(actions, f.value)
+		case 'f', 'd', 'c', 'b', 'k', 'v', 'e', 'a', 'u', 'g', 'j', 's':
+			actions = append(actions, actionLongName(string(f.letter)))
+		case 'P':
+			prefix = f.value
+		case 'S':
+			suffix = f.value
+		case 'X':
+			filter = f.value
+		case 'V':
+			// A repeated -V takes the last name, as bash does.
+			vname = f.value
+		case 'o', 'C', 'F', 'G':
+			// Options, external and function generators: not here.
 		}
 	}
 
@@ -425,14 +624,60 @@ func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []
 		}
 		matched = append(matched, prefix+w+suffix)
 	}
+	slices.Sort(matched)
+	matched = slices.Compact(matched)
+
+	if vname != "" {
+		return compgenAssign(hc, vname, matched)
+	}
 	if len(matched) == 0 {
 		return []string{"false"} // bash: nothing generated is a failure
 	}
-	slices.Sort(matched)
-	for _, m := range slices.Compact(matched) {
+	for _, m := range matched {
 		fmt.Fprintln(hc.Stdout, m)
 	}
 	return []string{"true"}
+}
+
+// compgenAssign is `compgen -V name`: bash 5.3's option for putting the
+// candidates in an array instead of on stdout. It is the shape a
+// completion function reaches for to avoid `arr=( $(compgen …) )` — a
+// subshell, and with it the word splitting that turns one candidate
+// containing a space into two.
+//
+// Every rule here was measured rather than reasoned about, and three of
+// them are surprising. The array is **replaced**, not appended to. It is
+// **created even when nothing was generated**, so a caller reading
+// `${#arr[@]}` sees 0 rather than an unset name. And the status is
+// **still 1** in that case, which is what lets a caller test either the
+// status or the array and get the same answer. `-o nosort` makes no
+// difference — compgen does not sort in bash at all (#613) — and nothing
+// is printed.
+//
+// The assignment goes back through `eval` because a CallHandler cannot
+// reach the variable scope itself, and the scope is the point: bash's
+// `-V` inside a function with a `local` of that name writes the local
+// (printf -v's route, #55).
+func compgenAssign(hc interp.HandlerContext, name string, cands []string) []string {
+	quoted := make([]string, 0, len(cands))
+	for _, c := range cands {
+		q, err := syntax.Quote(c, syntax.LangBash)
+		if err != nil {
+			// A candidate with a null byte or invalid UTF-8 cannot travel
+			// through eval. Saying so beats assigning something subtly
+			// different from what was generated.
+			hc.Errf("compgen: cannot assign to %s: %v\n", name, err)
+			return compStatus(1)
+		}
+		quoted = append(quoted, q)
+	}
+	assign := name + "=(" + strings.Join(quoted, " ") + ")"
+	if len(cands) == 0 {
+		// The array still gets created, and the status is still the
+		// failure the empty listing would have been.
+		return []string{"eval", assign + "; (exit 1)"}
+	}
+	return []string{"eval", assign}
 }
 
 // compgenWords expands a -W wordlist, which arrives as one string and
@@ -532,6 +777,15 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 				})
 				slices.Sort(names)
 				out = append(out, slices.Compact(names)...)
+			}
+		case "alias":
+			// bash's own complete.tests asks for this one through `-V`
+			// (`compgen -a -X 'fo*' -V vv -P 'unalias -- ' f`), which is
+			// how a script builds the `unalias` line to undo its own
+			// definitions. The remaining action classes that answer
+			// nothing are #606.
+			if runner := sessionRunner(); runner != nil {
+				out = append(out, slices.Sorted(maps.Keys(runner.Aliases()))...)
 			}
 		case "function":
 			// The other way a harness asks which functions exist, alongside

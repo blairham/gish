@@ -247,19 +247,3 @@ func normalizeSpans(spans []editor.HighlightSpan) []editor.HighlightSpan {
 	}
 	return out
 }
-
-// editModeOf resolves the line editor's dialect (#163).
-//
-// vi mode is a documented abandonment cause in both directions: its
-// absence drove people back to zsh, and NO_COLOR-style all-or-nothing
-// switches are not how anyone expects to reach it. KOI_EDIT_MODE is
-// the knob, `config editmode vi` sets it, and `set -o vi` in an rc is
-// honored too — that line is in a great many inherited rc files, and
-// silently ignoring it would be the same class of trap the `alias`
-// no-op was.
-func editModeOf(runner *interp.Runner) editor.EditMode {
-	if strings.EqualFold(shellVar(runner, "KOI_EDIT_MODE", "emacs"), "vi") {
-		return editor.ModeVi
-	}
-	return editor.ModeEmacs
-}

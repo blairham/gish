@@ -109,9 +109,11 @@ func TestTransientPromptFollowsTheTheme(t *testing.T) {
 	}
 }
 
-// editModeOf decides whether the session is emacs or vi. `set -o vi` in
-// an inherited rc is the case that matters, and it reaches this through
-// KOI_EDIT_MODE.
+// editModeOf decides whether the session is emacs or vi, and it reads
+// the interpreter's own option bit — so the shell cannot be editing in
+// one mode while `set -o` reports the other (#576). KOI_EDIT_MODE is a
+// request resolved into that bit by applyEditModeVar, which is the path
+// an rc line or `config editmode vi` takes.
 func TestEditModeOf(t *testing.T) {
 	for value, want := range map[string]editor.EditMode{
 		"":         editor.ModeEmacs,
@@ -121,9 +123,64 @@ func TestEditModeOf(t *testing.T) {
 		"nonsense": editor.ModeEmacs,
 	} {
 		runner := runnerWithVars(t, map[string]string{"KOI_EDIT_MODE": value})
+		if got := applyEditModeVar(runner, ""); got != value {
+			t.Errorf("applyEditModeVar reported %q, want %q", got, value)
+		}
 		if got := editModeOf(runner); got != want {
 			t.Errorf("KOI_EDIT_MODE=%q resolved to %v, want %v", value, got, want)
 		}
+		// Whatever the variable asked for, the option has to say so:
+		// that is the half #576 was opened about.
+		if runner.OptionSet("vi") != (want == editor.ModeVi) {
+			t.Errorf("KOI_EDIT_MODE=%q left `set -o vi` reporting %v", value, runner.OptionSet("vi"))
+		}
+	}
+}
+
+// The other direction: `set -o vi` moves the editor, since the editor
+// reads the bit the interpreter just set (#576). Before this the mode
+// switched and the bit did not, so a script saving and restoring the
+// mode restored the wrong one.
+func TestSetOViMovesTheEditor(t *testing.T) {
+	runner := runnerWithVars(t, nil)
+	run := func(line string) {
+		t.Helper()
+		if err := runner.Run(t.Context(), parseLine(t, line)); err != nil {
+			t.Fatalf("%s: %v", line, err)
+		}
+	}
+	run("set -o vi")
+	if got := editModeOf(runner); got != editor.ModeVi {
+		t.Errorf("after `set -o vi` the editor is %v, want vi", got)
+	}
+	run("set -o emacs")
+	if got := editModeOf(runner); got != editor.ModeEmacs {
+		t.Errorf("after `set -o emacs` the editor is %v, want emacs", got)
+	}
+	run("set -o vi")
+	run("set +o vi")
+	if got := editModeOf(runner); got != editor.ModeEmacs {
+		t.Errorf("after `set +o vi` the editor is %v, want emacs", got)
+	}
+}
+
+// KOI_EDIT_MODE speaks when it *changes*. Reading it every prompt would
+// make it the source of truth again and undo the `set -o emacs` below at
+// the next prompt, which is the bug in the other direction (#576).
+func TestEditModeVarDoesNotOutrankALaterSetO(t *testing.T) {
+	runner := runnerWithVars(t, map[string]string{"KOI_EDIT_MODE": "vi"})
+	seen := applyEditModeVar(runner, "")
+	if got := editModeOf(runner); got != editor.ModeVi {
+		t.Fatalf("KOI_EDIT_MODE=vi resolved to %v, want vi", got)
+	}
+	if err := runner.Run(t.Context(), parseLine(t, "set -o emacs")); err != nil {
+		t.Fatal(err)
+	}
+	if seen = applyEditModeVar(runner, seen); seen != "vi" {
+		t.Errorf("the variable it saw is %q, want vi", seen)
+	}
+	if got := editModeOf(runner); got != editor.ModeEmacs {
+		t.Errorf("`set -o emacs` was undone by an unchanged KOI_EDIT_MODE: %v", got)
 	}
 }
 

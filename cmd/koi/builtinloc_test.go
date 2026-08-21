@@ -93,12 +93,20 @@ var nativeDiagCases = map[string]nativeDiagCase{
 		noDiag: "the `declare -F` rewrite (#215) complains only when there is no session runner, " +
 			"and a script always has one",
 	},
-	"bind": {noDiag: "an unknown option is silently accepted rather than diagnosed — filed as #556"},
-	// The three completion builtins share runCompleteBuiltin and share
-	// the same gap.
-	"complete": {noDiag: "an unknown option is silently accepted rather than diagnosed — filed as #556"},
-	"compgen":  {noDiag: "an unknown option is silently accepted rather than diagnosed — filed as #556"},
-	"compopt":  {noDiag: "an unknown option is silently accepted rather than diagnosed — filed as #556"},
+	"bind": {
+		noDiag: "a script has no line editor, so `bind` returns silently before it can " +
+			"diagnose anything — deliberate (#159): a tool's init sets a dozen bindings and " +
+			"checks none of them",
+	},
+
+	// The completion family got its refusals from #556 while this branch
+	// was open, and they arrived unlocated — which is this table working
+	// as intended. bash words all three identically, so it is the oracle
+	// for the diagnostic line; the usage line that follows in bash is
+	// #556's and #577's, not this issue's.
+	"complete": {script: "complete -Z foo", want: "complete: -Z: invalid option", bashOracle: true},
+	"compgen":  {script: "compgen -Z", want: "compgen: -Z: invalid option", bashOracle: true},
+	"compopt":  {script: "compopt -Z", want: "compopt: -Z: invalid option", bashOracle: true},
 }
 
 // TestNativeBuiltinDiagnosticsAreLocated is the positive half: in a
