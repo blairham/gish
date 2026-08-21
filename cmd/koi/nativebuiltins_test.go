@@ -241,3 +241,95 @@ func TestTimesShape(t *testing.T) {
 		t.Errorf("times output %q does not match bash's two-line shape", out)
 	}
 }
+
+// The shell syntax `help` answers for (#557). `help` is koi's own
+// surface — bash's text for these is GPLv3 and koi's is written from
+// scratch — so there is no oracle for the wording, and what can be
+// asserted instead is the property that makes the listing worth having:
+// every topic names a construct *this* shell runs.
+//
+// Each row is the topic as it is listed and a script that runs the
+// construct and prints one marker. The marker is deliberately not a
+// word the construct itself echoes back: `select w in ok` prints `1) ok`
+// in its menu, so a containment check for "ok" would pass without the
+// body ever running.
+const syntaxMark = "syntax-ok"
+
+var helpSyntaxProbes = map[string]string{
+	"!":         "! false && echo " + syntaxMark,
+	"%":         "sleep 0.2 & kill %1 && echo " + syntaxMark,
+	"(( ... ))": "(( 1 + 1 == 2 )) && echo " + syntaxMark,
+	"[[ ... ]]": "[[ abc =~ ^a.c$ ]] && echo " + syntaxMark,
+	"{ ... }":   "{ echo " + syntaxMark + "; }",
+	"case":      "case x in x) echo " + syntaxMark + ";; esac",
+	"coproc":    `coproc c { echo ` + syntaxMark + `; }; read -r r <&"${c[0]}"; echo "$r"`,
+	"for":       "for w in " + syntaxMark + `; do echo "$w"; done`,
+	"for ((":    "for ((i=0;i<1;i++)); do echo " + syntaxMark + "; done",
+	"function":  "function f { echo " + syntaxMark + "; }; f",
+	"if":        "if true; then echo " + syntaxMark + "; else echo wrong; fi",
+	"select":    `printf '1\n' | select w in a; do echo "` + syntaxMark + `:$w"; break; done`,
+	"time":      "time echo " + syntaxMark,
+	"until":     "i=0; until (( i )); do i=1; echo " + syntaxMark + "; done",
+	"variables": `[ -n "$PWD" ] && [ -n "$BASH_VERSION" ] && [ -n "$KOI_VERSION" ] && echo ` + syntaxMark,
+	"while":     "i=0; while (( ! i )); do i=1; echo " + syntaxMark + "; done",
+}
+
+// TestHelpSyntaxTopicsAreConstructsKoiRuns is the drift guard for the
+// syntax half of the help table, in both directions: every topic is
+// listed by `compgen -A helptopic`, answers `help` with real text, and
+// runs — and `suspend`, which bash lists and koi refuses, does neither.
+func TestHelpSyntaxTopicsAreConstructsKoiRuns(t *testing.T) {
+	t.Parallel()
+	koi := buildKoi(t)
+	dir := t.TempDir()
+
+	topics, _ := shellLines(t, koi, dir, "compgen -A helptopic")
+	if len(topics) == 0 {
+		t.Fatal("compgen -A helptopic listed nothing")
+	}
+
+	for topic, probe := range helpSyntaxProbes {
+		t.Run(topic, func(t *testing.T) {
+			t.Parallel()
+			if !slices.Contains(topics, topic) {
+				t.Errorf("help answers about %q but compgen -A helptopic does not offer it", topic)
+			}
+
+			out, status := shellRows(t, koi, dir, "help "+singleQuoted(topic))
+			if status != 0 {
+				t.Fatalf("help %q exited %d: %q", topic, status, out)
+			}
+			if len(out) < 2 {
+				t.Fatalf("help %q printed %q, want a synopsis and a description", topic, out)
+			}
+			if !strings.HasPrefix(out[0], topic+": ") || len(out[0]) <= len(topic)+2 {
+				t.Errorf("help %q headed its entry %q", topic, out[0])
+			}
+			if len(strings.TrimSpace(out[1])) < 20 {
+				t.Errorf("help %q described it as %q", topic, out[1])
+			}
+
+			ran, status := shellRows(t, koi, dir, probe)
+			if status != 0 || !slices.ContainsFunc(ran, func(s string) bool {
+				return strings.Contains(s, syntaxMark)
+			}) {
+				t.Errorf("help lists %q but %q gave %q (status %d)", topic, probe, ran, status)
+			}
+		})
+	}
+
+	// The other direction, and the reason this is not just a list: bash
+	// has a `suspend` topic and koi must not, because koi refuses the
+	// builtin. Both halves are asserted — "the listing lacks it" passes
+	// vacuously against an empty listing, which the length check above
+	// and the per-topic membership checks rule out — and the refusal is
+	// asserted by running it, so the day `suspend` starts working this
+	// fails instead of quietly going stale.
+	if slices.Contains(topics, "suspend") {
+		t.Error("compgen offers a `suspend` help topic for a builtin koi refuses")
+	}
+	out, status := runHermetic(t, koi, "suspend")
+	if status == 0 || !strings.Contains(out, "unsupported builtin") {
+		t.Errorf("suspend answered %q (status %d) — it works now, so it needs a help topic", out, status)
+	}
+}
