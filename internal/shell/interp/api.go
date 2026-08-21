@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	mathrand "math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -205,6 +206,13 @@ type Runner struct {
 	// varHooks are the callbacks [VarHook] installed, keyed by variable
 	// name. Constructor state, like the other hooks.
 	varHooks map[string]func(string, string)
+	// random backs $RANDOM: per-runner, so a subshell's draws do not
+	// advance this one's, and replaced outright when a script assigns
+	// RANDOM to seed it (#547).
+	random *mathrand.Rand
+	// unsetDynamic records the computed variables a script has unset,
+	// which ends their specialness for the rest of the shell.
+	unsetDynamic map[string]bool
 	// traceLine is the line of the statement being run, which PS4's
 	// $LINENO reports (#413) and which locates a diagnostic (#571).
 	traceLine uint
@@ -1987,9 +1995,13 @@ func (r *Runner) subshell(background bool) *Runner {
 	// Keep in sync with the Runner type. Manually copy fields, to not copy
 	// sensitive ones like [errgroup.Group], and to do deep copies of slices.
 	r2 := &Runner{
-		Dir:              r.Dir,
-		startTime:        r.startTime,
-		secondsBase:      r.secondsBase,
+		Dir:         r.Dir,
+		startTime:   r.startTime,
+		secondsBase: r.secondsBase,
+		// Deliberately not the generator: a subshell reads its own
+		// numbers, so `$(echo $RANDOM)` does not move the parent's
+		// sequence (#547). What a script unset stays unset, though.
+		unsetDynamic:     maps.Clone(r.unsetDynamic),
 		bashPIDValue:     nextBashPID(),
 		argv0:            r.argv0,
 		disabledBuiltins: maps.Clone(r.disabledBuiltins),

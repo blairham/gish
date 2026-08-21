@@ -302,6 +302,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 					continue
 				}
 				r.delVar(arg)
+				r.unsetDynamicVar(arg)
 			} else if _, ok := r.Funcs[arg]; ok && funcs {
 				delete(r.Funcs, arg)
 			}
