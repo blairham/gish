@@ -59,6 +59,22 @@ func TestExpansionErrorFatalityMatchesBash(t *testing.T) {
 		// parsing, which lost every line after it instead.
 		{"bad substitution continues in a file", "x=abc\necho \"[${x:}]\"\necho AFTER-MARK\n"},
 		{"nounset ends the file", "set -u\necho \"$nope\"\necho AFTER-MARK\n"},
+		// #602's two halves, which is why this table is where they are
+		// pinned: the wording is identical and the fatality is not. A
+		// suffix no operator spells is the recoverable kind — the
+		// command is lost, the file carries on — while a `${x@…}`
+		// transform bash has no letter for ends the shell exactly as
+		// nounset does. In a -c string both look the same, so only a
+		// script file can tell them apart.
+		{"bad operator suffix continues in a file", "H=1\necho ${H*}\necho AFTER-MARK\n"},
+		{"bad parameter name continues in a file", "set -- a\necho ${#1xyz}\necho AFTER-MARK\n"},
+		{"bad positional suffix continues in a file", "set -- a b c\necho \"${@*}\"\necho AFTER-MARK\n"},
+		{"empty @ transform ends the file", "V=1\necho ${V@}\necho AFTER-MARK\n"},
+		{"unknown @ transform ends the file", "x=hello\necho ${x@nope}\necho AFTER-MARK\n"},
+		{"@ transform on set positionals ends the file", "set -- a b c\necho \"${*@}\"\necho AFTER-MARK\n"},
+		// The same transform on a parameter with no value is not an
+		// error at all, so the file runs to the end at status 0.
+		{"unknown @ transform on an unset name is no error", "unset x\necho \"[${x@nope}]\"\necho AFTER-MARK\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1708,7 +1708,13 @@ zshPrefixLoop:
 		// In zsh some of these like ${@[-1]} or ${*[1,3]} work,
 		// so we don't do this sort of check at all.
 		if !p.lang.in(LangZsh) && pe.Param != nil && !ValidName(pe.Param.Value) {
-			p.posErr(p.nextPos(), "cannot index a special parameter name")
+			// Taken before the scan, which moves the lexer to the closing
+			// brace or to the end of the input.
+			brackPos := p.nextPos()
+			if bad := p.badParamExp(pe, old, brackPos, ""); bad != nil {
+				return bad
+			}
+			p.posErr(brackPos, "cannot index a special parameter name")
 		}
 		p.pos = p.nextPos()
 		p.rune()
@@ -1727,6 +1733,9 @@ zshPrefixLoop:
 		return pe
 	}
 	if p.tok != _EOF && (pe.Length || pe.Width || pe.IsSet) {
+		if bad := p.badParamExp(pe, old, p.pos, p.tok.String()); bad != nil {
+			return bad
+		}
 		p.curErr("cannot combine multiple parameter expansion operators")
 	}
 	switch p.tok {
@@ -1808,6 +1817,9 @@ zshPrefixLoop:
 	case at, star:
 		switch {
 		case p.tok == star && !pe.Excl:
+			if bad := p.badParamExp(pe, old, p.pos, p.tok.String()); bad != nil {
+				return bad
+			}
 			p.curErr("not a valid parameter expansion operator: %#q", p.tok)
 		case pe.Excl && p.r == '}':
 			p.checkLang(pe.Pos(), langBashLike, "`${!foo%s}`", p.tok)
@@ -1824,6 +1836,16 @@ zshPrefixLoop:
 		pe.Exp = p.paramExpExp(old)
 	case _EOF:
 	default:
+		// An illegalTok consumed nothing, so the scan starts on the rune
+		// the token was read from; anything else was consumed and its
+		// source is the token itself.
+		consumed := ""
+		if p.tok != illegalTok {
+			consumed = p.tok.String()
+		}
+		if bad := p.badParamExp(pe, old, p.pos, consumed); bad != nil {
+			return bad
+		}
 		if paramNameRune(tokRune) {
 			if pe.Param != nil {
 				p.curErr("%#q cannot be followed by a word", pe.Param.Value)
@@ -1958,7 +1980,21 @@ func (p *Parser) paramExpParameter(pe *ParamExp) *ParamExp {
 					// Zsh allows omitting the parameter name, e.g. ${:-word}.
 					return pe
 				}
-				p.posErr(pos, "invalid parameter name")
+				if p.lang.in(langBashLike) {
+					// A name bash cannot read is the same runtime verdict
+					// as an operator it cannot read: `${1xyz}` and
+					// `${#1xyz}` are "bad substitution" while expanding,
+					// which loses the command and not the file (#602).
+					// What was read stays as the name so the diagnostic
+					// can print it back; the rest of the text, if any, is
+					// the suffix the operator switch collects.
+					pe.Bad = true
+					if p.val == "" {
+						return pe
+					}
+				} else {
+					p.posErr(pos, "invalid parameter name")
+				}
 			}
 		}
 		pe.Param = p.lit(pos, p.val)
@@ -2011,7 +2047,14 @@ func (p *Parser) paramExpExp(outer quoteState) *Expansion {
 	p.sglQuoteLiteral = p.posix && dquoteLike(outer) && !patternParExpOp(op)
 	defer func() { p.sglQuoteLiteral = oldSgl }()
 	p.next()
-	if op == OtherParamOps {
+	// bash never looks at the `@` transform's letter while parsing: it
+	// takes the text between the `@` and the brace and decides when it
+	// expands, and on a parameter with no value it does not decide at all
+	// — `${x@nope}` on an unset x is the empty string at status 0, so
+	// refusing it here was strictly wrong rather than merely early
+	// (#602). The other languages keep the parse-time check: mksh has
+	// only `${x@#}`, and posix has no `@` operator to reach this with.
+	if op == OtherParamOps && !p.lang.in(langBashLike) {
 		if !p.tok.isLit() {
 			p.curErr("@ expansion operator requires a literal")
 		}
@@ -2189,6 +2232,95 @@ func (p *Parser) subscriptText() (Pos, string, bool) {
 		}
 		p.rune()
 	}
+}
+
+// braceText scans the raw source of a `${…}` suffix to the brace that
+// closes the expansion, which is how bash reads one: it takes the text
+// first and decides what the text means afterwards, so a suffix it is
+// going to refuse still has to be read to the end (#602). It reports the
+// text, which excludes the closing brace, and whether that brace was
+// found at all.
+//
+// Only a brace, a quote and a backslash are significant, because only
+// those are significant to bash's own scan, measured: `${H*"}"}`,
+// `${H*'}'}` and `${H*\}}` all end at the last brace, `${H*{a}}` counts
+// the one in between, and `${H*{a}` — where the count never comes back
+// down — is the same unmatched-brace error `${H*` is. The sibling scan
+// one layer in is [Parser.subscriptText], for the same reason.
+func (p *Parser) braceText() (string, bool) {
+	old := p.quote
+	p.quote = runeByRune
+	defer func() { p.quote = old }()
+	p.newLit(p.r)
+	depth := 0
+	for {
+		switch p.r {
+		case runeEOF:
+			return p.endLit(), false
+		case '\\':
+			p.rune() // whatever follows is literal, including `}`
+		case '\'':
+			for p.rune(); p.r != runeEOF && p.r != '\''; p.rune() {
+			}
+			if p.r == runeEOF {
+				return p.endLit(), false
+			}
+		case '"':
+			for p.rune(); p.r != runeEOF && p.r != '"'; p.rune() {
+				if p.r == '\\' {
+					p.rune()
+				}
+			}
+			if p.r == runeEOF {
+				return p.endLit(), false
+			}
+		case '{':
+			depth++
+		case '}':
+			if depth == 0 {
+				return p.endLit(), true
+			}
+			depth--
+		}
+		p.rune()
+	}
+}
+
+// badParamExp finishes a `${…}` whose suffix is text bash reads and only
+// refuses once it expands it, naming the whole expansion as written
+// (#602). It returns nil when this language has no such verdict to defer
+// to, leaving the caller's parse error in place.
+//
+// consumed is the source of the operator token the caller has already
+// lexed, if any, and pos is where that token — or the rune the scan is
+// about to start on — begins. Both go into [ParamExp.BadSuffix], which
+// is what prints the expansion back.
+//
+// Refusing these while parsing is what cost cond.tests and
+// more-exp.tests the rest of the file rather than the line, since koi
+// parses ahead of what it runs; the marker is #277's and the interpreter
+// already routes it to #469's input-unit abandonment.
+func (p *Parser) badParamExp(pe *ParamExp, outer quoteState, pos Pos, consumed string) *ParamExp {
+	if !p.lang.in(langBashLike) {
+		return nil
+	}
+	raw, closed := p.braceText()
+	if !closed {
+		// The brace never closed, which is an error in bash too — it is
+		// the input that ran out rather than a shape bash has a verdict
+		// for, so the caller's report stands.
+		return nil
+	}
+	pe.Bad = true
+	if raw = consumed + raw; raw != "" {
+		pe.BadSuffix = p.lit(pos, raw)
+	}
+	p.pos = p.nextPos()
+	p.tok = p.paramToken(p.r) // the `}` the scan stopped at
+	pe.Rbrace = p.pos
+	p.quote = outer
+	p.next()
+	return pe
 }
 
 // subscriptExpr is the subscript's text as a node: an arithmetic
