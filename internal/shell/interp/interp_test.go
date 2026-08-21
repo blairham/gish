@@ -2115,6 +2115,19 @@ q`,
 	{"echo `echo 'foo\\\nbar'`", "foobar\n"},
 	{"echo 'foo\\\nbar'", "foo\\\nbar\n"},
 	{"echo `echo \\`echo 'a\\\nb'\\``", "ab\n"},
+	// The same decision at command position (#277): `((` opens an
+	// arithmetic command only when its parens close together, and is
+	// two nested subshells otherwise — which is the ordinary shape of
+	// `((cd dir); cmd)` and `((a) && (b))`, not just of bash's suite.
+	{"((echo sh_a); (echo sh_b))", "sh_a\nsh_b\n"},
+	{"((echo sh_a) && (echo sh_b))", "sh_a\nsh_b\n"},
+	{"((true ) ); echo rc=$?", "rc=0\n"},
+	{"(( 1+1 )); echo rc=$?", "rc=0\n"},
+	{"(( 1 > 2 )); echo rc=$?", "rc=1\n"},
+	{"(( (1+2) )); echo rc=$?", "rc=0\n"},
+	{"x=5; (( x++ )); echo $x", "6\n"},
+	{"for ((i=0;i<2;i++)); do echo $i; done", "0\n1\n"},
+
 	// `$((` is arithmetic only when the two parens close together;
 	// otherwise it is a command substitution whose first command is a
 	// subshell (#424). bash decides the same way — by where the inner

@@ -1945,11 +1945,10 @@ var errorCases = []errorCase{
 	// never backtracks either: it decides by where the inner paren
 	// closes, which is a bounded lookahead rather than a retry (#424).
 	// The behavior is asserted against real bash in interp's table.
-	errCase(
-		`((echo a); (echo b))`,
-		langErr("1:8: not a valid arithmetic operator: `a`", LangBash|LangMirBSDKorn|LangZsh),
-		flipConfirmAll, // note that we don't backtrack
-	),
+	// The command-level `((` is the same decision and now answers the
+	// same way: bash runs `((echo a); (echo b))` as two subshells
+	// inside a third, and this errCase carried `flipConfirmAll` to say
+	// so.
 	errCase(
 		"for ((;;",
 		langErr("1:5: reached EOF without matching `((` with `))`", LangBash),

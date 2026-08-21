@@ -634,6 +634,15 @@ func (p *Parser) regToken(r rune) token {
 		return dollar
 	case '(':
 		if p.rune() == '(' && p.lang.in(langBashLike|LangMirBSDKorn|LangZsh) && p.quote != testExpr {
+			if p.dollarParenIsSubshell() {
+				// Two subshells rather than an arithmetic command, by
+				// the same rule as `$((` (#424): arithmetic closes with
+				// an *adjacent* `))`, so `((cd /tmp); pwd)` and
+				// `((echo a) && (echo b))` are the ordinary nesting
+				// they look like. The second `(` is left unconsumed
+				// for the subshell to take.
+				return leftParen
+			}
 			p.rune()
 			return dblLeftParen
 		}
