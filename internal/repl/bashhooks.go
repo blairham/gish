@@ -316,7 +316,7 @@ func shoptHandler(next interp.CallHandlerFunc, ownExtdebug bool) interp.CallHand
 		// interpreter implements it now (#393), and the rewrite could
 		// not carry -p's exit status through a pipeline anyway — it
 		// always answered 0 where bash answers the option's state.
-		if args[0] == "shopt" {
+		if args[0] == "shopt" && shoptIsSetting(args) {
 			if rest, handled := stripIgnorableShopts(args); handled {
 				if rest == nil {
 					return []string{"true"}, nil
@@ -354,6 +354,23 @@ func shoptHandler(next interp.CallHandlerFunc, ownExtdebug bool) interp.CallHand
 		}
 		return []string{"true"}, nil
 	}
+}
+
+// shoptIsSetting reports whether this shopt call sets options rather
+// than asking about them. The accept-and-ignore list answers a *request*
+// -- an init script setting a handful of cosmetics in a row -- and has
+// no business answering a question: dropping the name from `shopt -p
+// checkjobs` printed nothing where bash prints the option, and made
+// `shopt -q` answer 0 for an option that is off (#566). The interpreter
+// holds the state and prints it correctly when asked for every option,
+// so a query goes there.
+func shoptIsSetting(args []string) bool {
+	for _, a := range args[1:] {
+		if a == "-s" || a == "-u" {
+			return true
+		}
+	}
+	return false
 }
 
 // stripIgnorableShopts removes the accepted-and-ignored names. It
