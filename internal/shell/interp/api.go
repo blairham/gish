@@ -1187,6 +1187,32 @@ func bashOptNames() []int {
 	return indexes
 }
 
+// OptionNames lists every `set -o` name the interpreter recognizes, in
+// the order bash lists them — by name.
+//
+// Every name, not only the ones koi can change: what a completion is
+// answering is which options this shell *knows*, and refusing to list
+// one koi keeps at its default would offer a shorter menu than the
+// shell itself accepts. [Runner.Options] is the other question — what
+// each one is set to right now — and it is right for that one to skip
+// them.
+func OptionNames() []string {
+	out := make([]string, 0, len(posixOptsTable))
+	for _, i := range posixOptNames() {
+		out = append(out, posixOptsTable[i].name)
+	}
+	return out
+}
+
+// ShoptNames is [OptionNames] for the `shopt` table.
+func ShoptNames() []string {
+	out := make([]string, 0, len(bashOptsTable))
+	for _, i := range bashOptNames() {
+		out = append(out, bashOptsTable[i].name)
+	}
+	return out
+}
+
 // posixOptNames lists the options the way bash prints them, which is by
 // name rather than in the order the table happens to be in.
 func posixOptNames() []int {
