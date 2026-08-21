@@ -1316,6 +1316,18 @@ var runTests = []runTest{
 	{"d=([*]=q)", "[*]=q: cannot assign to non-numeric index\nexit status 1 #JUSTERR"},
 	{"d=([-1]=z)", "[-1]=z: bad array subscript\nexit status 1 #JUSTERR"},
 	{"d=([1]=ok [2]=fine); declare -p d", "declare -a d=([1]=\"ok\" [2]=\"fine\")\n"},
+	// A `[` inside a compound assignment opens a subscript only when the
+	// shape completes (#588): `[1]=14` does, a lone bracket does not, and
+	// bash reads the rest as ordinary words. koi used to refuse the line
+	// and — parsing ahead — the rest of the file.
+	{
+		"array=(42 [1]=14 [2]=44); declare -p array",
+		"declare -a array=([0]=\"42\" [1]=\"14\" [2]=\"44\")\n",
+	},
+	{`array2=(grep [ 123 ] \*); echo "${array2[@]}"`, "grep [ 123 ] *\n"},
+	{"a=(foo[0-9] bar); declare -p a", "declare -a a=([0]=\"foo[0-9]\" [1]=\"bar\")\n"},
+	{`a=("[1]=q"); declare -p a`, "declare -a a=([0]=\"[1]=q\")\n"},
+	{"a=([i]); declare -p a", "declare -a a=([0]=\"[i]\")\n"},
 	// `declare` answers 1 and carries on to the next name rather than
 	// abandoning the line, which is the split #308 measured for a
 	// readonly variable.
