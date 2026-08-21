@@ -1421,10 +1421,26 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 
 			switch mode {
 			case "-s", "-u":
+				want := mode == "-s"
 				if !supported {
+					// An option koi does not implement can never leave
+					// its default, so asking for the state it is already
+					// in is a request koi *is* satisfying — refusing
+					// there reports a failure for something that did
+					// happen (#542). `shopt -u xpg_echo` is the line
+					// scripts write defensively, and bash's own
+					// posixexp2.tests opens with it. Asking for the
+					// behavior koi does not have is the other question,
+					// and still gets the honest refusal.
+					//
+					// This is the rule `set -o` already followed: `set
+					// +o notify` is fine and `set -o notify` is not.
+					if *opt == want {
+						continue
+					}
 					return failf(1, "shopt: unsupported option %q\n", arg)
 				}
-				*opt = mode == "-s"
+				*opt = want
 			default: // "" and -p
 				if !*opt {
 					allOn = false

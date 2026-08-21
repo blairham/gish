@@ -2065,6 +2065,28 @@ q`,
 	{"(( )); echo rc=$?", "rc=1\n"},
 	{"if (( )); then echo t; else echo f; fi", "f\n"},
 
+	// Backslashes inside a ${x+word} (#541). The closing brace is
+	// escapable there and nowhere else, because an unescaped one would
+	// end the expansion; every other escape follows the quoting around
+	// the expansion rather than the word's own position.
+	{`x=y; echo "${x+\}z}"`, "}z\n"},
+	{`echo "\}"`, "\\}\n"},
+	{`x=y; echo "${x+\{z}"`, "\\{z\n"},
+	{`x=y; echo "${x+a\bz}"`, "a\\bz\n"},
+	{`x=y; echo "${x+a\"z}"`, "a\"z\n"},
+	// The word's escapes still quote, so an escaped space is not a
+	// field boundary while a bare one is.
+	{`x=y; printf '<%s> ' ${x+a\ b}; echo`, "<a b> \n"},
+	{`x=y; printf '<%s> ' ${x+a b}; echo`, "<a> <b> \n"},
+	{`unset w; printf '<%s> ' ${w-a\ b} x ${w-c\ d}; echo`, "<a b> <x> <c d> \n"},
+	// The two assignment operators are the exception in both halves:
+	// what comes back is the variable they just wrote, so quote removal
+	// has already happened and the value splits...
+	{`unset a; printf '<%s> ' ${a:=x\ y}; echo "[$a]"`, "<x> <y> [x y]\n"},
+	// ...while inside double quotes the word is read as the quotes say,
+	// so the backslash is part of the value that gets assigned.
+	{`unset v; printf '<%s> ' "${v=a\ b}" "${v=c\ d}"; echo`, "<a\\ b> <a\\ b> \n"},
+
 	// declare -F
 	{
 		`f() { :; }; declare -F f; echo "st=$?"`,
@@ -4885,12 +4907,29 @@ done <<< 2`,
 		"shopt: extglob: invalid option name\n #JUSTERR",
 	},
 	{
+		// bash accepts this and does not act on it either: login_shell
+		// is derived, not settable, so `shopt login_shell` still says
+		// off afterwards. koi refuses instead of pretending, which is
+		// the same posture as every other option it does not implement.
 		"shopt -s login_shell",
 		"shopt: unsupported option \"login_shell\"\nexit status 1 #IGNORE",
 	},
 	{
+		// Asking an unimplemented option for the state it is already in
+		// is a request koi does satisfy, so it is not an error (#542).
+		// bash is silent and answers 0.
 		"shopt -s interactive_comments",
-		"shopt: unsupported option \"interactive_comments\"\nexit status 1 #IGNORE",
+		"",
+	},
+	{
+		// Asking for behavior koi does not have is the other question,
+		// and still gets the honest refusal.
+		"shopt -s xpg_echo",
+		"shopt: unsupported option \"xpg_echo\"\nexit status 1 #IGNORE",
+	},
+	{
+		"shopt -u xpg_echo",
+		"",
 	},
 	{
 		"shopt -s nosuchname",

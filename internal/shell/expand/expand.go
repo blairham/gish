@@ -124,6 +124,12 @@ type Config struct {
 	// passed.
 	wordResult   *syntax.Word
 	wordResultPe *syntax.ParamExp
+	// wordResultAssigned says the answer arrived by way of an
+	// assignment — ${x=word}, ${x:=word} — where what the caller splits
+	// is the *variable's value*, quote removal having already happened.
+	// `${x:=a\ b}` is two fields where `${x+a\ b}` is one, which is
+	// otherwise indistinguishable and was measured per operator (#541).
+	wordResultAssigned bool
 
 	// paramOuterQuote is the quoting context surrounding the parameter
 	// expansion being evaluated — set around each paramExp call — and
@@ -137,6 +143,14 @@ type Config struct {
 	// which is how "${a#'f'}" strips an f.
 	paramOuterQuote quoteLevel
 	paramQuoteCtx   quoteLevel
+
+	// expWord marks that the word of a ${x+word}-family operator is
+	// being expanded, where the closing brace is escapable and nowhere
+	// else is: `"${x+\}z}"` prints `}z` while `"\}"` prints `\}`
+	// (#541). The brace has to be escapable there because it would
+	// otherwise end the expansion, which is the whole reason bash makes
+	// the exception.
+	expWord bool
 
 	// assignValue marks that a variable assignment's value is being
 	// expanded, where bash also tilde-expands after each unquoted colon
@@ -815,14 +829,28 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 				// not read as a tilde position.
 				s = cfg.expandTildesAfterColons(s, false)
 			}
-			if (ql == quoteDouble || ql == quoteHeredoc) && strings.Contains(s, "\\") {
+			// A ${x+word} inside double quotes reads its backslashes
+			// the way the quotes say, not the way the word's own
+			// position says (#541): "${v=a\ b}" assigns `a\ b`, where
+			// the same word unquoted assigns `a b`.
+			dquoted := ql == quoteDouble || ql == quoteHeredoc ||
+				(ql == quoteNone && cfg.paramQuoteCtx == quoteDouble)
+			if dquoted && strings.Contains(s, "\\") {
 				sb := cfg.strBuilder()
 				for i := 0; i < len(s); i++ {
 					b := s[i]
 					if b == '\\' && i+1 < len(s) {
 						switch s[i+1] {
 						case '"':
-							if ql != quoteDouble {
+							if ql == quoteHeredoc {
+								break
+							}
+							fallthrough
+						case '}':
+							// Escapable only inside the operator's word,
+							// where an unescaped brace would end the
+							// expansion; `"\}"` keeps its backslash.
+							if s[i+1] == '}' && !cfg.expWord {
 								break
 							}
 							fallthrough
@@ -1045,11 +1073,15 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 				}
 			}
 			if splitLits {
-				// A ${x+word} sub-expansion: quote removal has already
-				// happened by the time bash splits, so the stripped
-				// string splits at formerly-escaped whitespace too
-				// (#358, measured).
-				if strings.Contains(s, "\\") {
+				if !strings.Contains(s, "\\") {
+					splitAdd(s)
+					continue
+				}
+				if cfg.wordResultAssigned {
+					// An assignment's answer is the variable's value, so
+					// quote removal has already happened by the time
+					// bash splits and the stripped string splits at
+					// formerly-escaped whitespace too (#358, measured).
 					sb := cfg.strBuilder()
 					for i := 0; i < len(s); i++ {
 						b := s[i]
@@ -1062,9 +1094,34 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 						}
 						sb.WriteByte(b)
 					}
-					s = sb.String()
+					splitAdd(sb.String())
+					continue
 				}
-				splitAdd(s)
+				// Every other operator answers with the *word*, whose
+				// escapes still quote: `${x+a\ b}` is one field (#541).
+				// The escaped byte becomes its own quoted part, exactly
+				// as it does in an ordinary word below, while the runs
+				// between them still split.
+				runStart := 0
+				for i := 0; i < len(s); i++ {
+					if s[i] != '\\' {
+						continue
+					}
+					if i > runStart {
+						splitAdd(s[runStart:i])
+					}
+					if i+1 >= len(s) {
+						curField = append(curField, fieldPart{quote: quoteSingle, val: `\`})
+						runStart = len(s)
+						break
+					}
+					curField = append(curField, fieldPart{quote: quoteSingle, val: s[i+1 : i+2]})
+					i++
+					runStart = i + 1
+				}
+				if runStart < len(s) {
+					splitAdd(s[runStart:])
+				}
 				continue
 			}
 			if strings.Contains(s, "\\") {
@@ -1229,7 +1286,13 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 						if cfg.wordResultPe == pe {
 							w := cfg.wordResult
 							cfg.wordResult, cfg.wordResultPe = nil, nil
-							if err := processQuoted(w.Parts); err != nil {
+							// Still the operator's word, so its closing
+							// brace is still escapable (#541).
+							oldExp := cfg.expWord
+							cfg.expWord = true
+							err := processQuoted(w.Parts)
+							cfg.expWord = oldExp
+							if err != nil {
 								return err
 							}
 							continue
@@ -1300,7 +1363,10 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 				// — the flat string loses both.
 				w := cfg.wordResult
 				cfg.wordResult, cfg.wordResultPe = nil, nil
+				oldExp := cfg.expWord
+				cfg.expWord = true
 				subFields, err := cfg.wordFieldsBuf(w.Parts, false, true)
+				cfg.expWord = oldExp
 				if err != nil {
 					return nil, err
 				}

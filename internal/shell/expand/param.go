@@ -278,10 +278,10 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			syntax.AssignUnset, syntax.AssignUnsetOrNull:
 			literalCtx = cfg.paramOuterQuote
 		}
-		oldCtx := cfg.paramQuoteCtx
-		cfg.paramQuoteCtx = literalCtx
+		oldCtx, oldExp := cfg.paramQuoteCtx, cfg.expWord
+		cfg.paramQuoteCtx, cfg.expWord = literalCtx, literalCtx != quoteNone
 		arg, err := Literal(cfg, pe.Exp.Word)
-		cfg.paramQuoteCtx = oldCtx
+		cfg.paramQuoteCtx, cfg.expWord = oldCtx, oldExp
 		if err != nil {
 			return "", err
 		}
@@ -291,7 +291,14 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		markWord := func() {
 			if pe.Exp.Word != nil {
 				cfg.wordResult, cfg.wordResultPe = pe.Exp.Word, pe
+				cfg.wordResultAssigned = false
 			}
+		}
+		// markAssigned is markWord for the two operators whose answer is
+		// the variable they just wrote; see [Config.wordResultAssigned].
+		markAssigned := func() {
+			markWord()
+			cfg.wordResultAssigned = pe.Exp.Word != nil
 		}
 		switch op := pe.Exp.Op; op {
 		case syntax.AlternateUnsetOrNull:
@@ -341,7 +348,7 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 					return "", err
 				}
 				str = arg
-				markWord()
+				markAssigned()
 			}
 		case syntax.RemSmallPrefix, syntax.RemLargePrefix,
 			syntax.RemSmallSuffix, syntax.RemLargeSuffix:
