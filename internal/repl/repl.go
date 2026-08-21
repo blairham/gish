@@ -730,8 +730,6 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 	if login {
 		loadProfile(ctx, runner)
 	}
-	parser := syntax.NewParser()
-
 	// nil when no prompt is wanted at all, which is the common case.
 	var promptOut io.Writer
 	if interactive {
@@ -745,33 +743,55 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 
 	var exitErr error
 	showPrompt(prompt)
+	// The command stream: standard input, until a script redirects the
+	// shell's own fd 0 and the rest of it comes from somewhere else
+	// (#516). This loop already reads a line at a time, so it needs only
+	// to notice the switch — and to hand a mode a line turned on to the
+	// parser before the next line is read (#450). See stream.go.
+	cmdSrc := os.Stdin
 loop:
-	for stmts, err := range parser.InteractiveSeq(os.Stdin) {
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return err
-		}
-		if parser.Incomplete() {
-			showPrompt(contPrompt)
-			continue
-		}
-		for _, stmt := range stmts {
-			rewriteSubstrateGaps(stmt)
-			if err := safely("running the command", func() error { return runner.Run(ctx, stmt) }); err != nil {
-				if runner.Exited() {
-					exitErr = err
+	for {
+		parser := syntax.NewParser(runner.ParserOptions()...)
+		switched := false
+		for stmts, err := range parser.InteractiveSeq(cmdSrc) {
+			if err != nil {
+				if errors.Is(err, io.EOF) {
 					break loop
 				}
-				// Nonzero statuses are ordinary interactive life; only
-				// surface real interpreter errors.
-				if _, ok := errors.AsType[interp.ExitStatus](err); !ok {
-					fmt.Fprintln(os.Stderr, "koi:", err)
+				return err
+			}
+			if parser.Incomplete() {
+				showPrompt(contPrompt)
+				continue
+			}
+			for _, stmt := range stmts {
+				rewriteSubstrateGaps(stmt)
+				if err := safely("running the command", func() error { return runner.Run(ctx, stmt) }); err != nil {
+					if runner.Exited() {
+						exitErr = err
+						break loop
+					}
+					// Nonzero statuses are ordinary interactive life; only
+					// surface real interpreter errors.
+					if _, ok := errors.AsType[interp.ExitStatus](err); !ok {
+						fmt.Fprintln(os.Stderr, "koi:", err)
+					}
 				}
 			}
+			for _, opt := range runner.ParserOptions() {
+				opt(parser)
+			}
+			if next := runner.Stdin(); next != nil && next != cmdSrc {
+				// Whatever this parser had buffered belongs to the old
+				// stream, which nothing will read again.
+				cmdSrc, switched = next, true
+				break
+			}
+			showPrompt(prompt)
 		}
-		showPrompt(prompt)
+		if !switched {
+			break
+		}
 	}
 	if promptOut != nil {
 		fmt.Fprintln(promptOut)
@@ -847,17 +867,6 @@ func RunFile(ctx context.Context, path string, login, interactive bool, params .
 // fixed: for a script it is the path, and for -c it is whatever operand
 // the caller supplied.
 func runScript(ctx context.Context, r io.Reader, name string, login, interactive bool, inv invocation, params ...string) error {
-	// Read as bash reads (#276): the statements before the first syntax
-	// error run, and only then is the error reported. A .bashrc with one
-	// construct koi cannot read at the bottom used to be a total loss.
-	//
-	// The tee keeps the raw source for ambient history (#277): under
-	// `set -o history` bash records source lines, not a re-rendering, so
-	// the recorder needs the bytes the parser consumed.
-	var src bytes.Buffer
-	stmts, perr := interp.ParseAsRead(io.TeeReader(r, &src), name)
-	file := &syntax.File{Name: name, Stmts: stmts}
-	rewriteSubstrateGaps(file)
 	registerSubstrateBuiltins()
 	// A script file is a call frame; a command string is not. That is
 	// bash's own distinction and it decides whether FUNCNAME, BASH_SOURCE
@@ -871,12 +880,13 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	}
 	// The recorder closes over the runner assigned below: the hook only
 	// fires during Run, and HISTCONTROL/HISTIGNORE/HISTSIZE have to be
-	// read at record time because the script sets them as it goes.
+	// read at record time because the script sets them as it goes. Its
+	// source is handed over by the stream, which is still reading it.
 	var runner *interp.Runner
 	// This session records ambiently, so it has a per-process list for
 	// the $HISTFILE forms to hold positions over (#432).
 	historyAmbientSession()
-	rec := newHistoryRecorder(file, src.String(), func(name string) string {
+	rec := newHistoryRecorder(func() string { return "" }, func(name string) string {
 		return sessionVarOf(runner, name)
 	})
 	var err error
@@ -925,7 +935,12 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 		enableAliases(ctx, runner)
 		loadRC(ctx, runner)
 	}
-	err = safely("running "+name, func() error { return runner.Run(ctx, file) })
+	// Read as bash reads (#276): the statements before the first syntax
+	// error run, and only then is the error reported. A .bashrc with one
+	// construct koi cannot read at the bottom used to be a total loss.
+	// And read as it runs (#450, #516), so a line can change how the
+	// rest of the script is read — see stream.go.
+	err, perr := newScriptStream(runner, r, name, rec).run(ctx)
 	// bash reports the syntax error after the readable prefix has run,
 	// and exits 2 — the same status `koi -n` already answers. An `exit`
 	// in the prefix wins, because bash never read far enough to find the
@@ -941,12 +956,6 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 // error messages. Later opts override the default stdio, which keeps the
 // core loop testable without touching the real terminal.
 func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.RunnerOption) error {
-	// The tee keeps the raw source for ambient history under
-	// `set -o history` (#277), same as runScript.
-	var src bytes.Buffer
-	stmts, perr := interp.ParseAsRead(io.TeeReader(r, &src), name)
-	file := &syntax.File{Name: name, Stmts: stmts}
-	rewriteSubstrateGaps(file)
 	// The session-querying builtins (declare -F) need a runner on this
 	// path too: a script asks the same questions an interactive line does.
 	registerSubstrateBuiltins()
@@ -954,7 +963,7 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 	// This session records ambiently, so it has a per-process list for
 	// the $HISTFILE forms to hold positions over (#432).
 	historyAmbientSession()
-	rec := newHistoryRecorder(file, src.String(), func(name string) string {
+	rec := newHistoryRecorder(func() string { return "" }, func(name string) string {
 		return sessionVarOf(runner, name)
 	})
 	runner, err := interp.New(append(append(
@@ -971,7 +980,8 @@ func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.Run
 		return err
 	}
 	setSessionRunner(runner)
-	err = runner.Run(ctx, file)
+	// Read and run a line at a time, like runScript above (#450, #516).
+	err, perr := newScriptStream(runner, r, name, rec).run(ctx)
 	if perr != nil && !runner.Exited() {
 		return perr
 	}

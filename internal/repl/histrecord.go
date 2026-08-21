@@ -42,6 +42,12 @@ type histGroup struct {
 }
 
 type historyRecorder struct {
+	// src reads the script source as it has been read so far. The shell
+	// reads and runs a line at a time, so the source grows under the
+	// recorder; splitting it into lines is deferred to record time,
+	// where it is only paid when `set -o history` is actually on.
+	src    func() string
+	srcLen int
 	lines  []string // source split on \n; line n is lines[n-1]
 	groups []histGroup
 	byStmt map[*syntax.Stmt]int
@@ -71,66 +77,86 @@ func sessionVarOf(runner *interp.Runner, name string) string {
 	return ""
 }
 
-func newHistoryRecorder(file *syntax.File, src string, env func(string) string) *historyRecorder {
-	rec := &historyRecorder{
-		lines:  strings.Split(src, "\n"),
+func newHistoryRecorder(src func() string, env func(string) string) *historyRecorder {
+	return &historyRecorder{
+		src:    src,
 		byStmt: make(map[*syntax.Stmt]int),
 		sep:    make(map[uint]string),
 		env:    env,
 	}
+}
 
-	// Line boundaries inside a multi-line construct don't take the
-	// line-ending separators: bash joins them by parser state, and the
-	// three states were measured — an open quote or command substitution
-	// keeps its newline, a compound assignment collapses to a space, and
-	// a heredoc keeps its newlines plus one after the closing delimiter.
-	// Walk visits parents before children, so an inner construct's
-	// boundaries overwrite the outer one's, which is also bash's answer
-	// (the innermost state is the parser's state).
-	markBoundaries := func(node syntax.Node) {
-		syntax.Walk(node, func(n syntax.Node) bool {
-			switch x := n.(type) {
-			case *syntax.SglQuoted, *syntax.DblQuoted, *syntax.CmdSubst:
-				markRegion(rec.sep, n.Pos().Line(), x.End().Line(), "\n")
-			case *syntax.ArrayExpr:
-				markRegion(rec.sep, x.Pos().Line(), x.End().Line(), " ")
-			case *syntax.Redirect:
-				if x.Hdoc != nil {
-					// The body starts on the line after the operator and
-					// Hdoc.End() lands on the closing delimiter's line, so
-					// every boundary from the redirect's line down to the
-					// delimiter joins with a newline.
-					markRegion(rec.sep, x.OpPos.Line(), x.Hdoc.End().Line(), "\n")
-				}
-			}
-			return true
-		})
+// restart drops what the recorder knows and reads from src instead,
+// which is what a switch of the command stream calls for (#516): the new
+// stream has its own line numbering, and everything from the old one has
+// already run.
+func (rec *historyRecorder) restart(src func() string) {
+	rec.src, rec.srcLen, rec.lines = src, 0, nil
+	rec.groups, rec.done = nil, nil
+	clear(rec.byStmt)
+	clear(rec.sep)
+}
+
+// sourceLines is the source split into lines, resplit only when the
+// source has grown since the last look.
+func (rec *historyRecorder) sourceLines() []string {
+	if s := rec.src(); len(s) != rec.srcLen {
+		rec.srcLen = len(s)
+		rec.lines = strings.Split(s, "\n")
 	}
+	return rec.lines
+}
 
-	cur := -1
-	for _, st := range file.Stmts {
-		end := stmtEndLine(st)
-		if cur >= 0 && st.Pos().Line() <= rec.groups[cur].end {
-			// Same line as the running entry: extend it. bash's unit is
-			// the input line, so `done; echo tail` belongs to the loop's
-			// entry rather than starting its own.
-			if end > rec.groups[cur].end {
-				rec.groups[cur].end = end
-				rec.groups[cur].hdocTail = stmtEndsInHdoc(st, end)
-			}
-		} else {
-			rec.groups = append(rec.groups, histGroup{
-				start:    st.Pos().Line(),
-				end:      end,
-				hdocTail: stmtEndsInHdoc(st, end),
-			})
-			cur++
+// addLine records the statements of one input line as one history entry
+// to be. The shell hands them over before running them, which is also
+// the order the hook fires in.
+func (rec *historyRecorder) addLine(stmts []*syntax.Stmt) {
+	if len(stmts) == 0 {
+		return
+	}
+	g := histGroup{start: stmts[0].Pos().Line()}
+	for _, st := range stmts {
+		if end := stmtEndLine(st); end > g.end {
+			g.end = end
+			g.hdocTail = stmtEndsInHdoc(st, end)
 		}
-		rec.byStmt[st] = cur
-		markBoundaries(st)
+		rec.markBoundaries(st)
 	}
-	rec.done = make([]bool, len(rec.groups))
-	return rec
+	rec.groups = append(rec.groups, g)
+	rec.done = append(rec.done, false)
+	for _, st := range stmts {
+		rec.byStmt[st] = len(rec.groups) - 1
+	}
+}
+
+// markBoundaries records how the lines a statement spans are joined.
+//
+// Line boundaries inside a multi-line construct don't take the
+// line-ending separators: bash joins them by parser state, and the three
+// states were measured — an open quote or command substitution keeps its
+// newline, a compound assignment collapses to a space, and a heredoc
+// keeps its newlines plus one after the closing delimiter. Walk visits
+// parents before children, so an inner construct's boundaries overwrite
+// the outer one's, which is also bash's answer (the innermost state is
+// the parser's state).
+func (rec *historyRecorder) markBoundaries(node syntax.Node) {
+	syntax.Walk(node, func(n syntax.Node) bool {
+		switch x := n.(type) {
+		case *syntax.SglQuoted, *syntax.DblQuoted, *syntax.CmdSubst:
+			markRegion(rec.sep, n.Pos().Line(), x.End().Line(), "\n")
+		case *syntax.ArrayExpr:
+			markRegion(rec.sep, x.Pos().Line(), x.End().Line(), " ")
+		case *syntax.Redirect:
+			if x.Hdoc != nil {
+				// The body starts on the line after the operator and
+				// Hdoc.End() lands on the closing delimiter's line, so
+				// every boundary from the redirect's line down to the
+				// delimiter joins with a newline.
+				markRegion(rec.sep, x.OpPos.Line(), x.Hdoc.End().Line(), "\n")
+			}
+		}
+		return true
+	})
 }
 
 func markRegion(sep map[uint]string, start, end uint, s string) {
@@ -184,11 +210,12 @@ func (rec *historyRecorder) record(st *syntax.Stmt) {
 // record.
 func (rec *historyRecorder) render(g histGroup) string {
 	var b strings.Builder
+	lines := rec.sourceLines()
 	for l := g.start; l <= g.end; l++ {
-		if int(l) > len(rec.lines) {
+		if int(l) > len(lines) {
 			break // a truncated read; record what there is
 		}
-		line := rec.lines[l-1]
+		line := lines[l-1]
 		if l == g.end {
 			b.WriteString(line)
 			break

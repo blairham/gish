@@ -24,6 +24,25 @@ func KeepComments(enabled bool) ParserOption {
 	return func(p *Parser) { p.keepComments = enabled }
 }
 
+// POSIXMode makes the parser follow bash's `set -o posix` where posix
+// mode changes how a script is *tokenized*.
+//
+// It is not [Variant](LangPOSIX), which selects the POSIX shell language:
+// bash in posix mode still has `[[ ]]`, arrays and `$'…'`, and only a
+// handful of its rules move. What moves here is the one that a shell
+// which parses ahead cannot reach any other way — a single quote inside
+// a double-quoted `${...}` is an ordinary character rather than the
+// start of a quoted span (#450).
+//
+// Because a script turns the mode on as it runs, a shell applies this to
+// its live parser between input lines rather than only at NewParser:
+// bash reads a whole line before running any of it, so `set -o posix`
+// takes effect on the *next* line, which is what applying it between
+// lines reproduces.
+func POSIXMode(enabled bool) ParserOption {
+	return func(p *Parser) { p.posix = enabled }
+}
+
 // LangVariant describes a shell language variant to use when tokenizing and
 // parsing shell code. The zero value is [LangBash].
 //
@@ -271,6 +290,18 @@ func (p *Parser) Stmts(r io.Reader, fn func(*Stmt) bool) error {
 	return nil
 }
 
+// AtLineEnd reports whether the parser has finished reading an input
+// line: the token it stopped at is a newline or the end of the input.
+//
+// It is meant to be asked right after [Parser.StmtsSeq] yields, by a
+// shell which reads and runs a line at a time. `echo a; echo b` yields
+// twice with only the second at a line end, which is what makes the two
+// commands one unit — bash reads the whole line before running any of
+// it, so a statement can only change how the *next* line is read.
+func (p *Parser) AtLineEnd() bool {
+	return p.tok == _Newl || p.tok == _EOF
+}
+
 // StmtsSeq reads and parses statements one at a time via an iterator.
 func (p *Parser) StmtsSeq(r io.Reader) iter.Seq2[*Stmt, error] {
 	p.reset()
@@ -505,6 +536,12 @@ type Parser struct {
 
 	keepComments bool
 	lang         LangVariant
+	// posix is bash's `set -o posix`; see [POSIXMode].
+	posix bool
+	// sglQuoteLiteral is set while lexing the word of a `${name+word}`
+	// expansion which posix mode says quotes are not special in. See
+	// [POSIXMode] and [Parser.paramExpExp].
+	sglQuoteLiteral bool
 
 	stopAt []byte
 
@@ -1647,7 +1684,7 @@ zshPrefixLoop:
 		return pe
 	case caret, dblCaret, comma, dblComma: // upper/lower case
 		p.checkLang(p.pos, langBashLike, "this expansion operator")
-		pe.Exp = p.paramExpExp()
+		pe.Exp = p.paramExpExp(old)
 	case at, star:
 		switch {
 		case p.tok == star && !pe.Excl:
@@ -1660,11 +1697,11 @@ zshPrefixLoop:
 			p.checkLang(p.pos, langBashLike|LangMirBSDKorn, "this expansion operator")
 			fallthrough
 		default:
-			pe.Exp = p.paramExpExp()
+			pe.Exp = p.paramExpExp(old)
 		}
 	case plus, colPlus, minus, colMinus, quest, colQuest, assgn, colAssgn,
 		perc, dblPerc, hash, dblHash, colHash, colPipe, colStar:
-		pe.Exp = p.paramExpExp()
+		pe.Exp = p.paramExpExp(old)
 	case _EOF:
 	default:
 		if paramNameRune(tokRune) {
@@ -1805,13 +1842,50 @@ func (p *Parser) paramExpParameter(pe *ParamExp) *ParamExp {
 	return pe
 }
 
-func (p *Parser) paramExpExp() *Expansion {
+// dquoteLike reports whether state is one where an expansion is being
+// read inside double quotes. A here-document body counts: bash treats it
+// as a double-quoted context, and answers `${x+\'}` there the same way
+// (measured in both modes).
+func dquoteLike(state quoteState) bool {
+	switch state {
+	case dblQuotes, hdocBody, hdocBodyTabs:
+		return true
+	}
+	return false
+}
+
+// patternParExpOp reports whether op takes a pattern rather than a plain
+// word, which is where bash keeps single quotes special even in posix
+// mode -- quoting a pattern character is how it is made literal, so the
+// quotes are doing work that `${x-\'}`'s are not.
+func patternParExpOp(op ParExpOperator) bool {
+	switch op {
+	case RemSmallPrefix, RemLargePrefix, RemSmallSuffix, RemLargeSuffix,
+		UpperFirst, UpperAll, LowerFirst, LowerAll:
+		return true
+	}
+	return false
+}
+
+// paramExpExp parses the word of a `${name<op>word}` expansion. outer is
+// the lexer state the expansion itself was found in, which is what says
+// whether it is inside double quotes.
+func (p *Parser) paramExpExp(outer quoteState) *Expansion {
 	op := ParExpOperator(p.tok)
 	switch op {
 	case MatchEmpty, ArrayExclude, ArrayIntersect:
 		p.checkLang(p.pos, LangZsh, "${name%sarg}", op)
 	}
 	p.quote = paramExpExp
+	// In posix mode a single quote here is an ordinary character rather
+	// than the start of a quoted span, so `"${IFS+'bar} baz"` is a whole
+	// word instead of a scan to EOF looking for a closing quote (#450).
+	// It applies to the substitution operators only: bash keeps quotes
+	// special for the pattern ones, where the quoting decides what the
+	// pattern matches, and both halves were measured.
+	oldSgl := p.sglQuoteLiteral
+	p.sglQuoteLiteral = p.posix && dquoteLike(outer) && !patternParExpOp(op)
+	defer func() { p.sglQuoteLiteral = oldSgl }()
 	p.next()
 	if op == OtherParamOps {
 		if !p.tok.isLit() {
