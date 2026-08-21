@@ -254,7 +254,23 @@ var runTests = []runTest{
 	{"break", "break is only useful in a loop\n #JUSTERR"},
 	{"continue", "continue is only useful in a loop\n #JUSTERR"},
 	{"cd a b", "cd: too many arguments\nexit status 2 #JUSTERR"},
-	{"shift a", "usage: shift [n]\nexit status 2 #JUSTERR"},
+	// Every one of these is bash's answer, measured (#595). The two that
+	// matter most are the third and fourth: koi used to *panic* on a
+	// negative count, and to clear the parameters and answer 0 when the
+	// count ran past the end, where bash keeps them and answers 1.
+	{"shift a", "shift: a: numeric argument required\nexit status 2 #JUSTERR"},
+	{"shift 1+1", "shift: 1+1: numeric argument required\nexit status 2 #JUSTERR"},
+	{"set -- a b; shift -1", "shift: -1: shift count out of range\nexit status 1 #JUSTERR"},
+	{`set -- a b; shift 3; echo "st=$? [$*]"`, "st=1 [a b]\n"},
+	{`set -- a b; shift 2; echo "st=$? [$*]"`, "st=0 []\n"},
+	{`set -- a b; shift 0; echo "st=$? [$*]"`, "st=0 [a b]\n"},
+	{`set -- a b; shift; echo "st=$? [$*]"`, "st=0 [b]\n"},
+	// "too many arguments" abandons the input unit where the other two
+	// errors do not, so nothing after it on the line runs.
+	{
+		`set -- a b; shift 1 2; echo unreachable`,
+		"shift: too many arguments\nexit status 2 #JUSTERR",
+	},
 	{
 		"shouldnotexist",
 		"shouldnotexist: command not found\nexit status 127 #JUSTERR",
