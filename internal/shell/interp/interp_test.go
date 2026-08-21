@@ -5103,6 +5103,55 @@ set +o xtrace
 	{"set +B; echo a{1,2}", "a{1,2}\n"},
 	{"set +B; set -B; echo a{1,2}", "a1 a2\n"},
 	{"set +o braceexpand; echo x{y,z}", "x{y,z}\n"},
+	// The line editor's dialect (#576). koi switched its editor and left
+	// the bit where it was, so `set -o`, `shopt -o vi` and $SHELLOPTS all
+	// reported emacs in a shell editing in vi — and a script saving and
+	// restoring the mode restored the wrong one.
+	//
+	// The rule that is not an ordinary option's is that the two are
+	// mutually exclusive, one-directionally: turning either on turns the
+	// other off, and turning one off leaves the other alone.
+	{
+		`set -o vi; set -o | grep -E '^(emacs|vi) ' | awk '{print $1, $2}'`,
+		"emacs off\nvi on\n",
+	},
+	{
+		`set -o vi; set -o emacs; set -o | grep -E '^(emacs|vi) ' | awk '{print $1, $2}'`,
+		"emacs on\nvi off\n",
+	},
+	{
+		`set -o vi; set +o vi; set -o | grep -E '^(emacs|vi) ' | awk '{print $1, $2}'`,
+		"emacs off\nvi off\n",
+	},
+	{
+		`set -o emacs; set +o vi; set -o | grep -E '^(emacs|vi) ' | awk '{print $1, $2}'`,
+		"emacs on\nvi off\n",
+	},
+	{
+		`set -o vi; set -o emacs; set +o emacs; set -o | grep -E '^(emacs|vi) ' | awk '{print $1, $2}'`,
+		"emacs off\nvi off\n",
+	},
+	// `shopt -o` is the same switch spelled the other way, so it owes the
+	// same exclusion and the same answer.
+	{
+		`shopt -o -s vi; set -o | grep -E '^(emacs|vi) ' | awk '{print $1, $2}'`,
+		"emacs off\nvi on\n",
+	},
+	{
+		`set -o vi; shopt -o -u vi; set -o | grep -E '^(emacs|vi) ' | awk '{print $1, $2}'`,
+		"emacs off\nvi off\n",
+	},
+	{`shopt -o vi >/dev/null; echo st=$?`, "st=1\n"},
+	{`set -o vi; shopt -o vi >/dev/null; echo st=$?`, "st=0\n"},
+	// The save-and-restore idiom the issue was opened about: `set +o` is
+	// the form a script stores and replays.
+	{`set -o vi; set +o | grep -E ' (emacs|vi)$'`, "set +o emacs\nset -o vi\n"},
+	{`set -o vi; case :$SHELLOPTS: in *:vi:*) echo yes;; *) echo no;; esac`, "yes\n"},
+	// A function's `set -o vi` is the shell's, and a subshell's is its own
+	// — both ordinary option behavior, and both worth pinning since this
+	// option used to be answered somewhere else entirely.
+	{`f() { set -o vi; }; f; set -o | grep -E '^vi ' | awk '{print $2}'`, "on\n"},
+	{`(set -o vi); set -o | grep -E '^vi ' | awk '{print $2}'`, "off\n"},
 
 	// unset
 	{

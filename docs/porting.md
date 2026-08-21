@@ -40,7 +40,11 @@ macros (`Ctrl-X (` / `)`) and `Alt-*` insert-completions.
 ### Vi mode
 
 `set -o vi` in your rc works, and so do `config editmode vi` and
-`KOI_EDIT_MODE=vi`. Every line starts in insert mode, as in bash and
+`KOI_EDIT_MODE=vi`. Whichever you use, `set -o`, `shopt -o vi` and
+`$SHELLOPTS` report it, so the save-and-restore a script does around a
+mode change reads the mode the shell is actually in — and `set +o vi` or
+`set -o emacs` takes you back, as in bash, where the two are mutually
+exclusive. Every line starts in insert mode, as in bash and
 zsh; Escape enters normal mode, and the cursor changes shape so you can
 see which one you are in.
 
