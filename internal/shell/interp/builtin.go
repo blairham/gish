@@ -547,10 +547,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			break
 		}
 		if !IsBuiltin(args[0]) {
-			exit.code = 1
-			return exit
+			// bash says which name it refused; koi failed silently, so
+			// `builtin ls` looked like a builtin that produced nothing.
+			return failf(1, "builtin: %s: not a shell builtin\n", args[0])
 		}
-		exit = r.builtin(ctx, pos, args[0], args[1:])
+		// The name is checked before the call seam and dispatched after
+		// it: what makes something a builtin is the interpreter's list,
+		// but what *runs* may be the embedder's replacement (#565).
+		exit = r.callSkippingFuncs(ctx, pos, args)
 	case "type":
 		anyNotFound := false
 		mode := ""
@@ -1022,12 +1026,10 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}()
 		}
 		if !show {
-			if IsBuiltin(args[0]) {
-				return r.builtin(ctx, pos, args[0], args[1:])
-			}
-			r.exec(ctx, pos, args)
-			exit = r.exit
-			return exit
+			// Through the call seam, so a builtin the embedder replaced
+			// is the one `command` finds too (#565). Functions are what
+			// `command` skips, and neither branch below looks at them.
+			return r.callSkippingFuncs(ctx, pos, args)
 		}
 		last := uint8(0)
 		for _, arg := range args {

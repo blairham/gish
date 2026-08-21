@@ -3550,6 +3550,40 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	r.exec(ctx, pos, args)
 }
 
+// callSkippingFuncs runs args as a command with the function lookup
+// skipped, which is exactly what `command` and `builtin` mean.
+//
+// It goes through the CallHandler chain, because that is where a shell
+// which *replaces* one of these builtins puts its version: a name
+// [IsBuiltin] recognizes never reaches the ExecHandler, so the call seam
+// is the only route. Dispatching straight to [Runner.builtin] therefore
+// reached the implementation the embedder had replaced — `command printf`
+// and `builtin printf` ran a printf without `%q` or `--`, and `command
+// kill`, `command umask` and `command times` answered "unsupported
+// builtin" while the plain spellings worked (#565).
+//
+// The chain is name-dispatched, so running it again for the inner name
+// is not a second command: each handler either claims its own name or
+// passes the call on. A handler may answer and rewrite the call to
+// `true`/`false`, or rename it to something that belongs to the exec
+// seam; both land below.
+func (r *Runner) callSkippingFuncs(ctx context.Context, pos syntax.Pos, args []string) exitStatus {
+	if r.callHandler != nil {
+		var err error
+		args, err = r.callHandler(r.handlerCtx(ctx, handlerKindCall, pos), args)
+		if err != nil {
+			r.exit.fatal(err)
+			return r.exit
+		}
+	}
+	name := args[0]
+	if IsBuiltin(name) && !r.disabledBuiltins[name] {
+		return r.builtin(ctx, pos, name, args[1:])
+	}
+	r.exec(ctx, pos, args)
+	return r.exit
+}
+
 func (r *Runner) exec(ctx context.Context, pos syntax.Pos, args []string) {
 	r.execWith(ctx, pos, "", false, args)
 }
