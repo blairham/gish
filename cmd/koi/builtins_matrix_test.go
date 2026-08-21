@@ -274,6 +274,95 @@ kill -l 1; kill -l HUP; kill -l 9 15; kill -l 0
 kill -l 99 2>/dev/null; echo "badnum=$?"`,
 	},
 
+	{
+		// The half that needs koi as a subprocess: koi *replaces* several
+		// of the interpreter's builtins at the call seam (#565), so
+		// "disabled" has to bypass the replacement and not merely the
+		// interpreter's own dispatch -- otherwise `enable -n printf`
+		// still gets koi's printf, silently (#603).
+		//
+		// The stub on PATH is what makes this provable on every runner.
+		// Comparing output alone would not: GNU printf understands %q
+		// and BSD printf does not, so a %q case would answer differently
+		// on linux and darwin for reasons that have nothing to do with
+		// which implementation ran. The stub names itself.
+		name: "enable", script: `mkdir -p "$TMPD/bin"
+cat > "$TMPD/bin/printf" <<'STUB'
+#!/bin/sh
+echo EXTERNAL "$@"
+STUB
+chmod +x "$TMPD/bin/printf"
+PATH="$TMPD/bin:$PATH"
+printf 'BUILTIN-%s\n' one
+enable -n printf
+printf 'BUILTIN-%s\n' one
+command printf 'BUILTIN-%s\n' one
+builtin printf 'BUILTIN-%s\n' one 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'
+enable printf
+printf 'BUILTIN-%s\n' one`,
+	},
+	{
+		// Both halves of both states, because an assertion that a
+		// listing *lacks* a name passes vacuously against an empty
+		// listing (#574's trap).
+		name: "enable", script: `enable -n test
+echo "off: listed=$(enable | grep -c '^enable test$') disabled=$(enable -n | grep -c '^enable -n test$')"
+enable test
+echo "on:  listed=$(enable | grep -c '^enable test$') disabled=$(enable -n | grep -c '^enable -n test$')"
+enable -s | grep -c .
+enable -ps | head -2
+enable -nps; echo "nps=$?"`,
+	},
+	{
+		// `compgen -A disabled` becomes meaningful with `enable -n`, and
+		// `enabled` is its complement. `compgen -b` is deliberately
+		// unmoved: a disabled builtin is still a builtin *name*, which
+		// is bash's split too.
+		name: "enable", script: `enable -n test
+compgen -A disabled
+echo "enabled=$(compgen -A enabled | grep -c '^test$') builtin=$(compgen -b | grep -c '^test$')"
+enable test
+compgen -A disabled; echo "none=$?"
+echo "enabled=$(compgen -A enabled | grep -c '^test$')"`,
+	},
+	{
+		// The refusals, with the location prefix stripped: bash names
+		// the script and the line where koi's -c prints the message bare
+		// (#120, #571), so the words and the statuses are what is
+		// compared.
+		name: "enable", script: `enable -d test 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'; echo "d=${PIPESTATUS[0]}"
+enable -d notbuiltin 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'
+enable - 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'`,
+	},
+	{
+		// Two things bash cannot be the oracle for on an arbitrary
+		// runner, so both assert koi's own answer.
+		//
+		// The usage line is a bash *version* constant, like shopt's
+		// column width (#574): 5.3 spells it `[-a] [-dnps]` and the 3.2
+		// macOS ships spells it `[-pnds] [-a]`. koi follows the version
+		// it claims (#120), and interp's own table confirms it against
+		// bash 5.3.
+		//
+		// And -f is the deliberate divergence: bash reaches dlopen and
+		// reports a platform-specific loader error at status 1, while
+		// koi has no dynamic loading at all. The message is bash's *own*
+		// wording for that case -- what a bash compiled without dlopen
+		// prints, EX_USAGE included -- because refusing by name is the
+		// honest answer where "invalid option" would read as koi not
+		// knowing the flag.
+		name: "enable", script: `enable -x; echo "x=$?"
+enable -f; echo "noarg=$?"
+enable -f /nosuch.so printf; echo "load=$?"`,
+		koiOnly: true,
+		want: "enable: -x: invalid option\n" +
+			"enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\nx=2\n" +
+			"enable: -f: option requires an argument\n" +
+			"enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\nnoarg=2\n" +
+			"enable: dynamic loading not available\nload=2\n",
+		why: "the usage line is a bash version constant, and -f loads an object built against bash's internals",
+	},
+
 	// alias and unalias cannot be differential: koi expands aliases in
 	// interactive sessions only (#53/#163), and bash -c will not expand
 	// even with expand_aliases set, because the whole -c string is parsed
