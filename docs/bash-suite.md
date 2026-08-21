@@ -6,9 +6,9 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 
 | measure | result | what it answers |
 | --- | --- | --- |
-| **strict** | **17/83 files (20%)** | identical output *and* exit status for a whole file |
-| parsed | 65/83 files (78%) | koi can read the file at all |
-| line agreement | 7553/13655 lines (55%) | how much of bash's output koi reproduced exactly |
+| **strict** | **18/83 files (21%)** | identical output *and* exit status for a whole file |
+| parsed | 66/83 files (79%) | koi can read the file at all |
+| line agreement | 8142/13655 lines (59%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -19,7 +19,7 @@ denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
 directions. **Strict is a file count, and runtime behavior dominates
-it**: 48 files parse perfectly and then behave differently, against 18
+it**: 48 files parse perfectly and then behave differently, against 17
 koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
@@ -46,16 +46,16 @@ bash code uses them.
 
 | construct | files |
 | --- | --- |
-| `++` must follow a name | arith-for.tests, quotearray.tests |
 | `!` cannot form a statement alone | posixpipe.tests |
+| `%` must follow an expression | quotearray.tests |
+| `++` must follow a name | arith-for.tests |
 | `+=` must follow a name | arith.tests |
 | `-` cannot be followed by a word | more-exp.tests |
-| `=` must follow a name | new-exp.tests |
 | `[x]` must be followed by `=` | appendop.tests |
 | `select` must be followed by a literal | errors.tests |
 | a command can only contain words and redirects; encountered `(` | extglob.tests |
 | array element values must be words | array.tests |
-| not a valid arithmetic operator: `sh_352` | comsub-posix.tests |
+| nested parameter expansions are a zsh feature; tried parsing as bash | new-exp.tests |
 | not a valid arithmetic operator: `world` | assoc.tests |
 | not a valid parameter expansion operator: `*` | cond.tests |
 | not a valid parameter expansion operator: `~` | casemod.tests |
@@ -84,10 +84,13 @@ time.
 | `$'...'` in a parameter-expansion operator position | posixexp7.sub:58 |
 | `$` in a function name, `function sys$read { ...; }` | func5.sub:28 |
 
-All of them are the tokenizer's, which is the one substrate layer koi
-still consumes from upstream — so closing them means pinning the module
-to a commit that has the fix or lifting `syntax` the way `interp` and
-`expand` were lifted, rather than a change in this repository.
+All of them are the tokenizer's, which used to mean waiting on an
+upstream release: `syntax` was the one substrate layer koi still
+consumed from a module. It is in-tree now, so each of these is an
+ordinary change in this repository — and the table above is what that
+bought. The ones already closed that way are recorded in the git log
+rather than here, since this page is generated from a live run and only
+reports what is still true.
 
 ### An oracle note, not a koi bug
 
@@ -105,7 +108,7 @@ those lines as failures.
 
 ## Files that pass strictly
 
-`extglob2.tests`, `extglob3.tests`, `glob-bracket.tests`, `globstar.tests`, `herestr.tests`, `ifs-posix.tests`, `ifs.tests`, `invert.tests`, `iquote.tests`, `lastpipe.tests`, `nquote1.tests`, `nquote2.tests`, `nquote3.tests`, `nquote4.tests`, `nquote5.tests`, `precedence.tests`, `strip.tests`
+`extglob2.tests`, `extglob3.tests`, `glob-bracket.tests`, `globstar.tests`, `herestr.tests`, `ifs-posix.tests`, `ifs.tests`, `invert.tests`, `iquote.tests`, `lastpipe.tests`, `nquote1.tests`, `nquote2.tests`, `nquote3.tests`, `nquote4.tests`, `nquote5.tests`, `posixexp2.tests`, `precedence.tests`, `strip.tests`
 
 ## Why the suite is not in this repository
 
