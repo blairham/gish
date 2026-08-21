@@ -322,6 +322,12 @@ func Pattern(cfg *Config, word *syntax.Word) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return cfg.patternField(field), nil
+}
+
+// patternField renders an expanded field as a pattern, quoting the meta
+// characters of any part that was quoted in the source.
+func (cfg *Config) patternField(field []fieldPart) string {
 	sb := cfg.strBuilder()
 	for _, part := range field {
 		if part.quote > quoteNone {
@@ -337,7 +343,41 @@ func Pattern(cfg *Config, word *syntax.Word) (string, error) {
 	if n := len(s) - len(strings.TrimRight(s, `\`)); n%2 == 1 {
 		s += `\`
 	}
-	return s, nil
+	return s
+}
+
+// anchorPattern expands a replacement's pattern word, splitting off the
+// leading `#` or `%` that anchors the match to the start or the end of
+// the value: `${v/#aa/X}`, `${v/%aa/Y}` (#636). The anchor is returned
+// as its own character, zero when there is none.
+//
+// bash reads the anchor *after* expanding the word, not while parsing
+// it, which is measurable: `p='#aa'; ${v/$p/X}` anchors, so the anchor
+// cannot live in the parse tree. It has to be an **unquoted** character
+// though — `${v/"#"aa/X}` and `${v/\#aa/X}` both mean the literal `#` —
+// which is why this reads the expanded field part by part rather than
+// looking at the finished pattern string, where quoting a character that
+// is not a pattern meta leaves no trace.
+func (cfg *Config) anchorPattern(word *syntax.Word) (byte, string, error) {
+	if word == nil {
+		return 0, "", nil
+	}
+	field, err := cfg.wordFieldMode(word.Parts, quoteNone, true)
+	if err != nil {
+		return 0, "", err
+	}
+	var anchor byte
+	for i, part := range field {
+		if part.val == "" {
+			continue
+		}
+		if c := part.val[0]; part.quote == quoteNone && (c == '#' || c == '%') {
+			anchor = c
+			field[i].val = part.val[1:]
+		}
+		break
+	}
+	return anchor, cfg.patternField(field), nil
 }
 
 // Format expands a format string with a number of arguments, following the

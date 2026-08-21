@@ -476,13 +476,30 @@ func (cfg *Config) perElemOps(pe *syntax.ParamExp, elems []string) ([]string, er
 
 // replaceElems applies a ${var/pattern/repl} replacement to each element.
 func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string, error) {
-	orig, err := Pattern(cfg, repl.Orig)
+	var (
+		anchor byte
+		orig   string
+		err    error
+	)
+	if repl.All {
+		// `${v//#aa/X}` has no anchor: measured, `#` and `%` are
+		// ordinary characters in the double-slash form, so the whole
+		// word is the pattern.
+		orig, err = Pattern(cfg, repl.Orig)
+	} else {
+		anchor, orig, err = cfg.anchorPattern(repl.Orig)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if orig == "" {
+	if orig == "" && anchor == 0 {
 		return elems, nil // nothing to replace
 	}
+	// The replacement is expanded once and written verbatim per match,
+	// which is why an unquoted `&` — bash's "the text that matched",
+	// on by default since 5.2 — is still a literal ampersand here. It
+	// needs the same quote-awareness `anchorPattern` uses, on the other
+	// half of the operator, and is filed as #643 rather than folded in.
 	with, err := Literal(cfg, repl.With)
 	if err != nil {
 		return nil, err
@@ -504,21 +521,61 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 		if cLocale {
 			elem = LatinBytes(elem)
 		}
-		locs := findAllIndex(orig, elem, n)
-		sb := cfg.strBuilder()
-		last := 0
-		for _, loc := range locs {
-			sb.WriteString(elem[last:loc[0]])
-			sb.WriteString(with)
-			last = loc[1]
+		if anchor != 0 {
+			out[i] = replaceAnchored(orig, elem, with, anchor == '%')
+		} else {
+			locs := findAllIndex(orig, elem, n)
+			sb := cfg.strBuilder()
+			last := 0
+			for _, loc := range locs {
+				sb.WriteString(elem[last:loc[0]])
+				sb.WriteString(with)
+				last = loc[1]
+			}
+			sb.WriteString(elem[last:])
+			out[i] = sb.String()
 		}
-		sb.WriteString(elem[last:])
-		out[i] = sb.String()
 		if cLocale {
 			out[i] = BytesOfLatin(out[i])
 		}
 	}
 	return out, nil
+}
+
+// replaceAnchored replaces the single match of pat that starts at the
+// beginning of str, or — with atEnd — the one that finishes at its end,
+// which is what `${v/#pat/rep}` and `${v/%pat/rep}` ask for (#636).
+// A pattern that does not match there leaves the value alone, and an
+// empty pattern matches the empty string at that edge, so `${v/#/P}` is
+// a prepend and `${v/%/S}` an append — bash's answer, and a useful test
+// of whether the anchor is read at all.
+//
+// The match asked for is leftmost-*longest*, which is bash's rule. Every
+// pattern koi translates today produces the same answer either way,
+// because a glob's `*` becomes a greedy quantifier and there is no
+// alternation to choose between — `@(a|abc)` is not translated at all
+// yet, in the anchored form or the plain one — so Longest is set to ask
+// the engine for bash's semantics rather than to rely on that staying
+// true. There is no submatch to read back, since the whole match is the
+// span being replaced, which is what makes Longest usable at all.
+func replaceAnchored(pat, str, with string, atEnd bool) string {
+	expr, err := pattern.Regexp(pat, 0)
+	if err != nil {
+		return str
+	}
+	if atEnd {
+		expr = "(?:" + expr + ")$"
+	} else {
+		expr = "^(?:" + expr + ")"
+	}
+	// no need to check the error as Regexp returns one
+	rx := regexp.MustCompile(expr)
+	rx.Longest()
+	loc := rx.FindStringIndex(str)
+	if loc == nil {
+		return str
+	}
+	return str[:loc[0]] + with + str[loc[1]:]
 }
 
 // removePatternElems applies a pattern removal operator to each element.
