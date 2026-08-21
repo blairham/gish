@@ -856,6 +856,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		var names []string
 		fp := flagParser{remaining: args}
 		for fp.more() {
+			if fp.current == "" && strings.HasPrefix(fp.remaining[0], "+") {
+				// bash's getopt takes no `+` word here, so one is an
+				// operand and ends the options: `enable +x` answers
+				// `+x: not a shell builtin`. #556 measured the same rule
+				// for the completion builtins, where `+o` belongs to
+				// compopt alone.
+				break
+			}
 			switch flag := fp.flag(); flag {
 			case "-n":
 				disable = true

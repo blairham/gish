@@ -2054,8 +2054,11 @@ var runTests = []runTest{
 	// would read as koi not knowing the flag (#603).
 	{"enable -d test", "enable: test: not dynamically loaded\nexit status 1 #JUSTERR"},
 	{"enable -d nosuchxyz", "enable: nosuchxyz: not a shell builtin\nexit status 1 #JUSTERR"},
-	// A lone dash is a name in bash, not an option.
+	// A lone dash is a name in bash, not an option, and so is a `+`
+	// word -- which also ends the options, so the builtin after it is
+	// left alone rather than switched off.
 	{"enable -", "enable: -: not a shell builtin\nexit status 1 #JUSTERR"},
+	{"enable +n test", "enable: +n: not a shell builtin\nexit status 1 #JUSTERR"},
 	{
 		"enable -x",
 		"enable: -x: invalid option\n" +

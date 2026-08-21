@@ -332,7 +332,8 @@ echo "enabled=$(compgen -A enabled | grep -c '^test$')"`,
 		// compared.
 		name: "enable", script: `enable -d test 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'; echo "d=${PIPESTATUS[0]}"
 enable -d notbuiltin 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'
-enable - 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'`,
+enable - 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'
+enable +n test 2>&1 | sed 's|^[^ ]*: line [0-9]*: ||'; echo "plus=${PIPESTATUS[0]} still=$(enable -n | grep -c '^enable -n test$')"`,
 	},
 	{
 		// Two things bash cannot be the oracle for on an arbitrary
