@@ -1702,10 +1702,10 @@ var errorCases = []errorCase{
 		langErr("1:4: `[x]` must be followed by `=`", LangBash|LangZsh),
 		flipConfirmAll, // TODO: why is this valid?
 	),
-	errCase(
-		"a[i]=(y)",
-		langErr("1:5: arrays cannot be nested", LangBash),
-	),
+	// `a[i]=(y)` is deliberately absent: bash *parses* it and reports
+	// `a[i]: cannot assign list to array member` when the assignment
+	// runs (#582), so refusing it here cost the rest of the file. zsh
+	// runs it, and koi's parser keeps the shape for both.
 	errCase(
 		"a=([i]=(y))",
 		langErr("1:7: arrays cannot be nested", LangBash|LangZsh),

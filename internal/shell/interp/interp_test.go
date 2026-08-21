@@ -1298,6 +1298,28 @@ var runTests = []runTest{
 		`a=(x y); [ -v "a[-5]" ]`,
 		"a: bad array subscript\nexit status 1 #JUSTERR",
 	},
+	// A subscript is read when the assignment *runs*, not while parsing
+	// (#582), so these are runtime verdicts naming the subscript as it
+	// was written — and each one abandons the rest of the input unit,
+	// which is why nothing after them appears.
+	{"b=(x); b[]=1", "b[]: bad array subscript\nexit status 1 #JUSTERR"},
+	{"b=(x); b[  ]=9; echo \"${b[0]}\"", "9\n"},
+	{"b=(x y); b[*]=1", "b[*]: bad array subscript\nexit status 1 #JUSTERR"},
+	{"b=(x y); b[@]=1", "b[@]: bad array subscript\nexit status 1 #JUSTERR"},
+	{"b=(x y); b[-9]=1", "b[-9]: bad array subscript\nexit status 1 #JUSTERR"},
+	{"d[7]=(a b)", "d[7]: cannot assign list to array member\nexit status 1 #JUSTERR"},
+	{"declare -A m; m[k]=(a b)", "m[k]: cannot assign list to array member\nexit status 1 #JUSTERR"},
+	// An element's subscript is the same rule, and the diagnostic names
+	// the element rather than the variable, which is what tells a reader
+	// which element of many was wrong.
+	{"d=([]=y)", "[]=y: bad array subscript\nexit status 1 #JUSTERR"},
+	{"d=([*]=q)", "[*]=q: cannot assign to non-numeric index\nexit status 1 #JUSTERR"},
+	{"d=([-1]=z)", "[-1]=z: bad array subscript\nexit status 1 #JUSTERR"},
+	{"d=([1]=ok [2]=fine); declare -p d", "declare -a d=([1]=\"ok\" [2]=\"fine\")\n"},
+	// `declare` answers 1 and carries on to the next name rather than
+	// abandoning the line, which is the split #308 measured for a
+	// readonly variable.
+	{`declare a[]=x c=2; echo "c=[$c]"`, "a[]: bad array subscript\nc=[2]\n #JUSTERR"},
 
 	// declare -p output has to re-read as the value it printed (#383):
 	// a control character forces ANSI-C quoting, and the characters

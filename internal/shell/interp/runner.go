@@ -269,6 +269,13 @@ func (r *Runner) expandErr(err error) {
 	case strings.HasSuffix(errMsg, "readonly variable"),
 		strings.HasSuffix(errMsg, "arithmetic syntax error"),
 		strings.HasSuffix(errMsg, "bad substitution"),
+		// A subscript bash reads at assignment time rather than while
+		// parsing (#582): `b[]=x`, `b[*]=x`, `c[-9]=x`, `d[7]=(a b)`.
+		// Measured — the rest of the line goes with it, and the next
+		// line runs.
+		strings.HasSuffix(errMsg, "bad array subscript"),
+		strings.HasSuffix(errMsg, "cannot assign list to array member"),
+		strings.HasSuffix(errMsg, "cannot assign to non-numeric index"),
 		strings.HasSuffix(errMsg, "expression recursion level exceeded"):
 		// An arithmetic error in an expansion is the same input-unit
 		// abandonment (#366): bash's `echo "${x:bad}"` loses the rest
@@ -1110,6 +1117,9 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					return
 				}
 
+				if r.subscriptRefused(name, as) {
+					return
+				}
 				name, vr := r.assignVal(name, prev, as, "")
 				r.setVarWithIndex(prev, name, as.Index, vr)
 
@@ -1777,6 +1787,20 @@ assignLoop:
 				name = base
 				as.Index = &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: sub}}}
 			}
+		}
+		// The same runtime subscript verdicts a plain assignment gets
+		// (#582): `declare a[]=x` and `declare d[7]=(a b)` are bash's
+		// errors when the declaration runs. Unlike a plain assignment
+		// they do *not* abandon the rest of the line — measured, and
+		// the same split #308 found for a readonly variable — so this
+		// reports and answers 1 rather than going through expandErr.
+		if err := subscriptError(name, as); err != nil {
+			r.errf("%v\n", err)
+			r.exit.code = 1
+			// The *next* name still gets declared: `declare a[]=x c=2`
+			// sets c in bash, so this skips one assignment rather than
+			// the command.
+			continue assignLoop
 		}
 		// A function name is not a variable name: `foo-bar(){ :; }`
 		// defines and runs, so `export -f foo-bar` must not refuse it

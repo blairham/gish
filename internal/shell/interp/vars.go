@@ -620,11 +620,18 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 	case expand.Associative:
 		// if the existing variable is already an AssocArray, try our
 		// best to convert the key to a string
-		w, ok := index.(*syntax.Word)
-		if !ok {
+		k := ""
+		if w, ok := index.(*syntax.Word); ok {
+			k = r.literal(w)
+		} else if index != nil {
 			return
 		}
-		k := r.literal(w)
+		// A nil index is `m[  ]=v`, a subscript of nothing but
+		// whitespace: an empty arithmetic expression for an indexed
+		// array, and here the empty key. bash keeps the spaces
+		// themselves as the key, which is the same whitespace koi
+		// already drops from `m[  k  ]` (#582 records it) — dropping the
+		// assignment instead would be the silent failure.
 
 		// TODO: only clone when inside a subshell and getting a var from outside for the first time
 		prev.Map = maps.Clone(prev.Map)
@@ -635,12 +642,26 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 		r.setVar(name, prev)
 		return
 	}
+	// `*` and `@` are the whole-array subscripts, so they are a *key* for
+	// an associative array — handled above — and never an index. bash
+	// answers `b[*]: bad array subscript` rather than an arithmetic
+	// error, which is what koi's evaluator would otherwise say about a
+	// word it cannot read as a number (#582).
+	if w, ok := index.(*syntax.Word); ok {
+		switch r.literal(w) {
+		case "*", "@":
+			r.expandErr(fmt.Errorf("%s[%s]: bad array subscript", name, subscriptText(index)))
+			return
+		}
+	}
 	k := r.arithm(index)
 	if k < 0 {
 		// Negative indices count from one past the maximum index.
 		if k += shinternal.IndexedMax(list, indexes) + 1; k < 0 {
-			r.errf("%s: bad array subscript\n", name)
-			r.exit.code = 1
+			// Named as written, and it ends the input unit rather than
+			// only the command: bash abandons the rest of the line
+			// (#582, #469).
+			r.expandErr(fmt.Errorf("%s[%s]: bad array subscript", name, subscriptText(index)))
 			return
 		}
 	}
@@ -649,6 +670,96 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 	prev.List = list
 	prev.Indexes = indexes
 	r.setVar(name, prev)
+}
+
+// subscriptText renders a subscript the way it was written, so a
+// diagnostic can name it the way bash's does: `c[-2]`, `b[*]`, `d[7]`.
+// The empty string covers both the blank subscript and a shape the
+// printer cannot render, which is what `name[]` needs anyway.
+func subscriptText(index syntax.ArithmExpr) string {
+	if index == nil {
+		return ""
+	}
+	// The canonical function printer, not syntax.Printer.Print: the
+	// latter takes only whole nodes it knows how to lay out and answers
+	// "unsupported node type" for an arithmetic *expression*, so `c[-2]`
+	// would have printed as `c[]` — a diagnostic naming the wrong
+	// subscript. funcPrinter.arithm exists for exactly this (#386) and
+	// renders the same text the parser recorded.
+	p := &funcPrinter{wp: syntax.NewPrinter(syntax.SingleLine(true))}
+	p.arithm(index)
+	return p.sb.String()
+}
+
+// subscriptError is the assignment shapes bash rejects when the
+// assignment *runs* rather than while parsing (#582), or nil.
+//
+// Reporting is the caller's, because the two callers differ in what the
+// error costs: a plain assignment abandons the rest of the input unit
+// while `declare` answers 1 and carries on — the same split #308
+// measured for a readonly variable.
+func subscriptError(name string, as *syntax.Assign) error {
+	switch {
+	case as.BadIndex:
+		// `b[]=x`: brackets with nothing between them at all.
+		return fmt.Errorf("%s[]: bad array subscript", name)
+	case as.Index != nil && as.Array != nil:
+		// `d[7]=(a b)`: zsh assigns a list to a member, bash does not.
+		return fmt.Errorf("%s[%s]: cannot assign list to array member",
+			name, subscriptText(as.Index))
+	}
+	return nil
+}
+
+// elemSubscriptError is a compound assignment element's subscript
+// verdict, or nil: `[]=v` and a negative index out of range are both
+// "bad array subscript", and `[*]=v` — a whole-array subscript where a
+// number belongs — is bash's "cannot assign to non-numeric index"
+// (#582). All three name the element as written, which is what bash
+// prints and what tells a reader which element of many was wrong.
+func elemSubscriptError(r *Runner, elem *syntax.ArrayElem) error {
+	text := func() string {
+		return "[" + subscriptText(elem.Index) + "]=" + elemValueText(elem.Value)
+	}
+	if elem.BadIndex {
+		return fmt.Errorf("%s: bad array subscript", text())
+	}
+	w, ok := elem.Index.(*syntax.Word)
+	if !ok {
+		return nil
+	}
+	switch r.literal(w) {
+	case "*", "@":
+		return fmt.Errorf("%s: cannot assign to non-numeric index", text())
+	}
+	return nil
+}
+
+// elemValueText renders an element's value the way it was written, for
+// the diagnostic above.
+func elemValueText(val *syntax.Word) string {
+	if val == nil {
+		return ""
+	}
+	p := &funcPrinter{wp: syntax.NewPrinter(syntax.SingleLine(true))}
+	p.word(val)
+	return p.sb.String()
+}
+
+// subscriptRefused reports a plain assignment's bad subscript and says
+// whether the assignment must be abandoned.
+//
+// It goes through expandErr rather than errf because the message needs
+// the location every runtime diagnostic carries (#584) *and* the
+// input-unit abandonment bash performs here (#469), and that classifier
+// is where the two are decided together.
+func (r *Runner) subscriptRefused(name string, as *syntax.Assign) bool {
+	err := subscriptError(name, as)
+	if err == nil {
+		return false
+	}
+	r.expandErr(err)
+	return true
 }
 
 // cutElemSubscript splits an array element argument like `a[3]`, as used by
@@ -1023,6 +1134,8 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	// [5]=x resets our index counter, which otherwise advances for every
 	// value, starting after the maximum index of the base array.
 	index := shinternal.IndexedMax(list, indexes) + 1
+	// What a rejected element leaves behind, below.
+	baseList, baseIndexes := list, indexes
 	// Under declare -i, each element value is an arithmetic expression
 	// (#368): typeset -i x; x=([0]=7+11) stores 18, exactly as a scalar
 	// assignment under the attribute would.
@@ -1033,14 +1146,37 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 		return val
 	}
 	for _, elem := range elems {
+		// An element's subscript is read when the assignment runs, and a
+		// bad one costs the *whole* compound assignment: bash reports it
+		// and leaves an empty array behind, measured — `d=([]=a [1]=b)`
+		// answers `declare -a d=()` (#582). The diagnostic names the
+		// element as written rather than the variable.
+		if err := elemSubscriptError(r, elem); err != nil {
+			// Through expandErr: bash abandons the rest of the *line*
+			// for these, exactly as for a bad subscript on the left of
+			// the `=` — measured, `echo pre; d=([]=y); echo same` never
+			// prints `same`.
+			r.expandErr(err)
+			// What survives is what the variable already held: an
+			// append keeps its base (`d=(x); d+=([]=y)` answers
+			// `[0]="x"`) and a plain assignment is left empty, since
+			// its base is nothing. Every element of this assignment is
+			// discarded, not only the bad one — measured.
+			list, indexes = baseList, baseIndexes
+			break
+		}
 		if elem.Index != nil {
 			// Index resets our index with a literal value.
 			index = r.arithm(elem.Index)
 			if index < 0 {
 				// Negative indices count from one past the maximum index.
 				if index += shinternal.IndexedMax(list, indexes) + 1; index < 0 {
-					r.errf("%s: bad array subscript\n", name)
-					r.exit.code = 1
+					// Named as the element was written, like the
+					// verdicts above it (#582), and abandoning the line
+					// the same way.
+					r.expandErr(fmt.Errorf("[%s]=%s: bad array subscript",
+						subscriptText(elem.Index), elemValueText(elem.Value)))
+					list, indexes = baseList, baseIndexes
 					break
 				}
 			}
