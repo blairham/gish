@@ -203,6 +203,26 @@ shopt -q checkjobs; echo "q=$?"
 shopt -q -o pipefail; echo "qo=$?"
 shopt -u histappend; echo "unset=$?"; shopt -p histappend`,
 	},
+	{
+		// An option whose behavior belongs to the line editor rather
+		// than to the interpreter still holds its bit, in both
+		// directions (#575). This case has to run through the *shell*
+		// and not interp's table, because the layer that used to throw
+		// the request away is internal/repl's accept-and-ignore list —
+		// the interpreter never saw it.
+		name: "shopt", script: `shopt -s cdspell histverify; shopt -u checkwinsize progcomp
+shopt -p cdspell; shopt -p histverify; shopt -p checkwinsize; shopt -p progcomp
+shopt -q cdspell; echo "q=$?"; shopt -q progcomp; echo "qoff=$?"`,
+	},
+	{
+		// The other half of the same rule, and the reason it is not
+		// "accept everything": an option that would change what a
+		// *script* observes is refused rather than tracked. bash accepts
+		// this one, so bash cannot be the oracle for it.
+		name: "shopt", script: `shopt -s xpg_echo; echo "st=$?"`,
+		koiOnly: true, want: "shopt: unsupported option \"xpg_echo\"\nst=1\n",
+		why: "xpg_echo changes what echo does, so tracking the bit would claim a mode koi is not in (#575)",
+	},
 	{name: "source", script: `echo 'echo sourced' > "$TMPD/s.sh"; . "$TMPD/s.sh"`},
 	{name: "test", script: `test -d /tmp && echo isdir; test -z "" && echo empty`},
 	{name: "trap", script: `trap 'echo trapped' EXIT; echo body`},

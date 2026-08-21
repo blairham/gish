@@ -284,14 +284,18 @@ func doubleQuoteLiteral(s string) string {
 // this list, even when unimplemented: silently accepting `autocd` or
 // `failglob` would make the shell behave differently from what the user
 // just asked for, without saying so.
+// The list shrank by fourteen names in #575, and the reason is the #566
+// lesson one layer down: the interpreter now *records* the bit for the
+// options whose behavior belongs to the line editor rather than to it, so
+// stripping those requests here no longer avoided an error — it threw
+// away a state change the interpreter would have made honestly, and
+// `shopt -u histverify; shopt -p histverify` answered `-s`. What is left
+// is only what the interpreter still refuses: an option koi keeps at a
+// default it cannot leave, where an init script's request is silent
+// rather than an error in the middle of somebody's tool setup.
 var ignorableShopts = map[string]bool{
-	"checkwinsize": true, "histappend": true, "histreedit": true,
-	"histverify": true, "cmdhist": true, "lithist": true,
-	"promptvars": true, "progcomp": true, "hostcomplete": true,
-	"no_empty_cmd_completion": true, "force_fignore": true,
-	"complete_fullquote": true, "checkhash": true, "checkjobs": true,
-	"globasciiranges": true, "sourcepath": true, "interactive_comments": true,
-	"login_shell": true, "shift_verbose": true, "progcomp_alias": true,
+	"checkhash": true, "globasciiranges": true, "sourcepath": true,
+	"interactive_comments": true, "login_shell": true, "shift_verbose": true,
 }
 
 // shoptCallHandler is the *interactive* chain's shopt seam: it claims

@@ -5152,6 +5152,21 @@ done <<< 2`,
 		"shopt -s interactive_comments",
 		"",
 	},
+	// An option whose behavior belongs to the line editor holds its bit
+	// (#575): the state is real, only the acting-on-it is somewhere else.
+	// Both directions, since the `-u` half is what an init script writes
+	// against a default that is on.
+	{"shopt -s cdspell; shopt -p cdspell", "shopt -s cdspell\n"},
+	{"shopt -s cdspell; shopt -u cdspell; shopt -p cdspell", "shopt -u cdspell\nexit status 1"},
+	{"shopt -u checkwinsize; shopt -p checkwinsize", "shopt -u checkwinsize\nexit status 1"},
+	{"shopt -s histverify; shopt -q histverify", ""},
+	{"shopt -s autocd checkjobs; shopt -p autocd; shopt -p checkjobs", "shopt -s autocd\nshopt -s checkjobs\n"},
+	{
+		// It reaches BASHOPTS too, since that is the same bits read a
+		// second way.
+		"shopt -s cdspell; case :$BASHOPTS: in *:cdspell:*) echo listed ;; esac",
+		"listed\n",
+	},
 	{
 		// Asking for behavior koi does not have is the other question,
 		// and still gets the honest refusal.
