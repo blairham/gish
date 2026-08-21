@@ -239,26 +239,15 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		return "", fmt.Errorf("unsupported")
 	case pe.Slice != nil:
 		if callVarInd {
-			// The offset and length are in characters, not bytes.
-			rs := []rune(str)
-			slicePos := func(n int) int {
-				if n < 0 {
-					n = len(rs) + n
-					if n < 0 {
-						n = len(rs)
-					}
-				} else if n > len(rs) {
-					n = len(rs)
-				}
-				return n
+			// The offset and length are in characters, not bytes — and
+			// in the C locale a character *is* a byte (#470), the same
+			// rule ${#x} and pattern matching follow.
+			hasOffset, hasLength := pe.Slice.Offset != nil, pe.Slice.Length != nil
+			if cfg.CLocale() {
+				str = string(sliceUnits([]byte(str), sliceOffset, sliceLen, hasOffset, hasLength))
+			} else {
+				str = string(sliceUnits([]rune(str), sliceOffset, sliceLen, hasOffset, hasLength))
 			}
-			if pe.Slice.Offset != nil {
-				rs = rs[slicePos(sliceOffset):]
-			}
-			if pe.Slice.Length != nil {
-				rs = rs[:slicePos(sliceLen)]
-			}
-			str = string(rs)
 		} // else, elems are already sliced
 	case pe.Repl != nil:
 		elems, err := cfg.replaceElems(pe.Repl, elems)
@@ -484,8 +473,19 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 	if repl.All {
 		n = -1
 	}
+	// In the C locale a character is a byte, so `?` replaces one byte
+	// of a two-byte character (#470). Re-reading every side as one rune
+	// per byte is what makes the rune-wise matcher behave that way, and
+	// the answer is read back the same way.
+	cLocale := cfg.CLocale()
+	if cLocale {
+		orig, with = LatinBytes(orig), LatinBytes(with)
+	}
 	out := make([]string, len(elems))
 	for i, elem := range elems {
+		if cLocale {
+			elem = LatinBytes(elem)
+		}
 		locs := findAllIndex(orig, elem, n)
 		sb := cfg.strBuilder()
 		last := 0
@@ -496,6 +496,9 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 		}
 		sb.WriteString(elem[last:])
 		out[i] = sb.String()
+		if cLocale {
+			out[i] = BytesOfLatin(out[i])
+		}
 	}
 	return out, nil
 }
@@ -504,9 +507,17 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 func (cfg *Config) removePatternElems(op syntax.ParExpOperator, arg string, elems []string) []string {
 	suffix := op == syntax.RemSmallSuffix || op == syntax.RemLargeSuffix
 	small := op == syntax.RemSmallPrefix || op == syntax.RemSmallSuffix
+	// Byte-wise in the C locale, like every other pattern here (#470).
+	if cfg.CLocale() {
+		arg = LatinBytes(arg)
+	}
 	out := make([]string, len(elems))
 	for i, elem := range elems {
-		out[i] = removePattern(elem, arg, suffix, small)
+		if !cfg.CLocale() {
+			out[i] = removePattern(elem, arg, suffix, small)
+			continue
+		}
+		out[i] = BytesOfLatin(removePattern(LatinBytes(elem), arg, suffix, small))
 	}
 	return out
 }
@@ -526,9 +537,19 @@ func (cfg *Config) caseConvElems(op syntax.ParExpOperator, arg string, elems []s
 	}
 	rx := regexp.MustCompile(expr)
 
+	// The C locale has no case beyond ASCII — bash leaves every other
+	// byte alone — and its characters are bytes, so both the matching
+	// and the mapping are per byte there (#470).
+	cLocale := cfg.CLocale()
+	if cLocale {
+		caseFunc = asciiOnly(caseFunc)
+	}
 	out := make([]string, len(elems))
 	for i, elem := range elems {
 		rs := []rune(elem)
+		if cLocale {
+			rs = []rune(LatinBytes(elem))
+		}
 		for ri, r := range rs {
 			if rx.MatchString(string(r)) {
 				rs[ri] = caseFunc(r)
@@ -538,6 +559,9 @@ func (cfg *Config) caseConvElems(op syntax.ParExpOperator, arg string, elems []s
 			}
 		}
 		out[i] = string(rs)
+		if cLocale {
+			out[i] = BytesOfLatin(out[i])
+		}
 	}
 	return out
 }

@@ -2041,6 +2041,21 @@ q`,
 	{`shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[x]\n"},
 	{`set -m; shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[]\n"},
 
+	// The same rule reaches every operator that counts characters, not
+	// only `?` and ${#x} (#470): a slice, a pattern removal, a
+	// replacement and a case conversion are all byte-wise there, and
+	// the C locale has no case beyond ASCII.
+	{`export LC_ALL=C; a=абв; echo "${a:0:2}"`, "\xd0\xb0\n"},
+	{`export LC_ALL=en_US.UTF-8; a=абв; echo "${a:0:2}"`, "аб\n"},
+	{`export LC_ALL=C; a=абв; echo "${a#?}"`, "\xb0бв\n"},
+	{`export LC_ALL=en_US.UTF-8; a=абв; echo "${a#?}"`, "бв\n"},
+	{`export LC_ALL=C; a=абв; echo "${a%?}"`, "аб\xd0\n"},
+	{`export LC_ALL=C; a=абв; echo "${a//?/x}"`, "xxxxxx\n"},
+	{`export LC_ALL=en_US.UTF-8; a=абв; echo "${a//?/x}"`, "xxx\n"},
+	{`export LC_ALL=C; a=абв; echo "${a/б/Y}"`, "аYв\n"},
+	{`export LC_ALL=C; a=aÿb; echo "${a^^}"`, "AÿB\n"},
+	{`export LC_ALL=en_US.UTF-8; a=aÿb; echo "${a^^}"`, "AŸB\n"},
+
 	// In the C locale a character is a byte (#470): koi was UTF-8
 	// everywhere, so a script that sets LC_ALL=C to make its own output
 	// stable got UTF-8 answers anyway.
