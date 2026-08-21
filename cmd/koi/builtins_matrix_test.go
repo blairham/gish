@@ -185,10 +185,12 @@ case $a in ?) echo one;; ??) echo two;; esac`,
 	{name: "return", script: `f() { return 7; }; f; echo "status=$?"`},
 	{name: "set", script: `set -- a b c; echo "$#-$1-$3"`},
 	{name: "shift", script: `set -- a b c; shift; echo "$1-$#"`},
-	{
-		name: "shopt", script: `shopt -s nullglob; shopt nullglob`,
-		knownGap: "bash pads the option name to a fixed column; the interpreter uses a single tab",
-	},
+	// The `-p` spelling rather than the column listing, deliberately:
+	// the column width is a bash *version* constant (#574) and the
+	// oracle here is whatever bash the machine has, so the listing's
+	// shape is asserted in TestShoptListingMatchesBash5, which can skip
+	// an oracle that predates it. This case is about the option moving.
+	{name: "shopt", script: `shopt -s nullglob; shopt -p nullglob`},
 	{
 		// A query about an option koi accepts and ignores is still a
 		// question, and the answer is the interpreter's to give (#566).

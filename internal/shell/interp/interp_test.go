@@ -5076,10 +5076,44 @@ done <<< 2`,
 		// off by default, as in bash 5.3 — koi had it on (#393), and a
 		// default is as visible to a script as a setting. Settable
 		// since #412, which is the fix it governs.
-		// The column width is koi's deliberate divergence (see
-		// setOptColumn), so this one cannot be bash-confirmed.
+		// Padded to bash 5's twenty columns since #574, so this is
+		// bash-confirmed rather than #IGNOREd.
 		"shopt inherit_errexit",
-		"inherit_errexit\toff\nexit status 1 #IGNORE bash pads the shopt listing to twenty columns",
+		"inherit_errexit     \toff\nexit status 1",
+	},
+	// With no names, `-s` and `-u` filter the listing rather than
+	// requesting anything, and koi printed nothing at all (#574). The
+	// assertions are on what the filter must not contain, since the
+	// count of options in each state is a thing koi and bash can
+	// legitimately differ on while the filtering itself cannot.
+	// Each state has a pair: the filter contains what it should and not
+	// what it should not. Only the negative half would pass vacuously
+	// against the very bug this fixes, since an empty listing contains
+	// nothing either.
+	{"shopt -s | grep -q 'on$'", ""},
+	{"shopt -s | grep -q 'off$'", "exit status 1"},
+	{"shopt -u | grep -q 'off$'", ""},
+	{"shopt -u | grep -q 'on$'", "exit status 1"},
+	{"shopt -s -p | grep -q '^shopt -s '", ""},
+	{"shopt -s -p | grep -q '^shopt -u '", "exit status 1"},
+	{"shopt -u -p | grep -q '^shopt -u '", ""},
+	{"shopt -u -p | grep -q '^shopt -s '", "exit status 1"},
+	{"shopt -o -s | grep -q 'on$'", ""},
+	{"shopt -o -s | grep -q 'off$'", "exit status 1"},
+	{"shopt -o -u | grep -q 'off$'", ""},
+	{"shopt -o -u | grep -q 'on$'", "exit status 1"},
+	{"shopt -s nullglob; shopt -s -p | grep -q '^shopt -s nullglob$'", ""},
+	{"shopt -s nullglob; shopt -u -p | grep -q nullglob", "exit status 1"},
+	{
+		// Names turn it back into a request, and -p is ignored there:
+		// this sets nullglob and prints nothing.
+		"shopt -s -p nullglob; shopt -p nullglob",
+		"shopt -s nullglob\n",
+	},
+	{
+		// bash refuses the pair rather than letting the last one win.
+		"shopt -s -u nullglob",
+		"shopt: cannot set and unset shell options simultaneously\nexit status 1 #JUSTERR",
 	},
 	{
 		"shopt -o -s pipefail; shopt -o pipefail | grep -q 'on$'",
