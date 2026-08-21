@@ -101,10 +101,13 @@ time.
 | ` + "`$'...'`" + ` in a parameter-expansion operator position | posixexp7.sub:58 |
 | ` + "`$`" + ` in a function name, ` + "`function sys$read { ...; }`" + ` | func5.sub:28 |
 
-All of them are the tokenizer's, which is the one substrate layer koi
-still consumes from upstream — so closing them means pinning the module
-to a commit that has the fix or lifting ` + "`syntax`" + ` the way ` + "`interp`" + ` and
-` + "`expand`" + ` were lifted, rather than a change in this repository.
+All of them are the tokenizer's, which used to mean waiting on an
+upstream release: ` + "`syntax`" + ` was the one substrate layer koi still
+consumed from a module. It is in-tree now, so each of these is an
+ordinary change in this repository — and the table above is what that
+bought. The ones already closed that way are recorded in the git log
+rather than here, since this page is generated from a live run and only
+reports what is still true.
 
 ### An oracle note, not a koi bug
 
