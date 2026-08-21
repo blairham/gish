@@ -1328,6 +1328,38 @@ var runTests = []runTest{
 	{"a=(foo[0-9] bar); declare -p a", "declare -a a=([0]=\"foo[0-9]\" [1]=\"bar\")\n"},
 	{`a=("[1]=q"); declare -p a`, "declare -a a=([0]=\"[1]=q\")\n"},
 	{"a=([i]); declare -p a", "declare -a a=([0]=\"[i]\")\n"},
+	// A loop variable can be a word, and bash refuses it when the loop
+	// *runs* — naming the text as written, since it never expands it
+	// (#593). The rest of the line still runs, so these are ordinary
+	// errors rather than #469's abandonment.
+	{
+		`for $1 in a; do :; done; echo "after=$?"`,
+		"`$1': not a valid identifier\nafter=1\n #JUSTERR",
+	},
+	{
+		`for x$1 in a; do :; done; echo "after=$?"`,
+		"`x$1': not a valid identifier\nafter=1\n #JUSTERR",
+	},
+	{
+		`for "x" in a; do echo "q=$x"; done; echo "after=$?"`,
+		"`\"x\"': not a valid identifier\nafter=1\n #JUSTERR",
+	},
+	{
+		`select $1 in a; do :; done; echo "after=$?"`,
+		"`$1': not a valid identifier\nafter=1\n #JUSTERR",
+	},
+	// Reported when the function is *called*, not when it is defined:
+	// the definition succeeds, so a caller only finds out by running it.
+	{
+		`f() { for $1 in a; do :; done; }; f; echo "called=$?"`,
+		"`$1': not a valid identifier\ncalled=1\n #JUSTERR",
+	},
+	{"for x in a b; do echo \"ok=$x\"; done", "ok=a\nok=b\n"},
+	// A bare `let` is its builtin's own complaint rather than a syntax
+	// error, so it parses and answers 1 with the line carrying on.
+	{`let; echo "after=$?"`, "let: expression expected\nafter=1\n #JUSTERR"},
+	{`x=$(let); echo "[$x] st=$?"`, "let: expression expected\n[] st=1\n #JUSTERR"},
+	{`let 1+1; echo "st=$?"`, "st=0\n"},
 	// `declare` answers 1 and carries on to the next name rather than
 	// abandoning the line, which is the split #308 measured for a
 	// readonly variable.

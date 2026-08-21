@@ -1008,10 +1008,12 @@ var errorCases = []errorCase{
 		"for i in 1 2 3; echo $i;",
 		langErr("1:1: `for foo [in words]` must be followed by `do`"),
 	),
-	errCase(
-		"for 'i' in 1 2 3; do echo $i; done",
-		langErr("1:1: `for` must be followed by a literal"),
-	),
+	// `for 'i' in …` and its `select` twin are deliberately absent: bash
+	// reads any word where the name belongs and refuses it when the loop
+	// *runs* — `` `'i'': not a valid identifier ``, quoting the text as
+	// written since it never expands it — so the parse error cost the
+	// rest of the file (#593). The bare `for` above still errors, since
+	// there is no word there at all.
 	errCase(
 		"for in 1 2 3; do echo $i; done",
 		langErr("1:1: `for foo` must be followed by `in`, `do`, `;`, or a newline"),
@@ -1039,10 +1041,6 @@ var errorCases = []errorCase{
 	errCase(
 		"select i in 1 2 3; echo $i;",
 		langErr("1:1: `select foo [in words]` must be followed by `do`", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
-		"select 'i' in 1 2 3; do echo $i; done",
-		langErr("1:1: `select` must be followed by a literal", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"select in 1 2 3; do echo $i; done",
@@ -1484,10 +1482,10 @@ var errorCases = []errorCase{
 		"foo |& bar",
 		langErr("1:5: `|` must be followed by a statement", LangPOSIX),
 	),
-	errCase(
-		"let",
-		langErr("1:1: `let` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
-	),
+	// A bare `let` is deliberately absent: bash parses it and its
+	// *builtin* answers `let: expression expected` with status 1 (#593).
+	// `let ))` and `` `let` { foo; } `` below are still parse errors,
+	// because bash calls those syntax errors too.
 	errCase(
 		"let a+ b",
 		langErr("1:6: `+` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
@@ -1523,8 +1521,11 @@ var errorCases = []errorCase{
 		langErr("1:6: `+` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
+		// Still a parse error, as in bash — only the wording moved, since
+		// the empty clause is now legal and the stray `))` is what the
+		// statement parser objects to (#593).
 		"let ))",
-		langErr("1:1: `let` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:5: statements must be separated by &, ; or a newline", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"`let !`",
@@ -1540,12 +1541,11 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"`let` { foo; }",
-		langErr("1:2: `let` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:14: `}` can only be used to close a block", LangBash|LangMirBSDKorn|LangZsh),
 	),
-	errCase(
-		"$(let)",
-		langErr("1:3: `let` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
-	),
+	// `$(let)` follows the bare `let` above: bash parses it and the
+	// builtin reports `let: expression expected` while the substitution
+	// answers empty (#593).
 	errCase(
 		"[[",
 		langErr("1:1: `[[` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),

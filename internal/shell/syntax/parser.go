@@ -2730,8 +2730,27 @@ func (p *Parser) loop(fpos Pos) Loop {
 
 func (p *Parser) wordIter(ftok string, fpos Pos) *WordIter {
 	wi := &WordIter{}
-	if wi.Name = p.getLit(); wi.Name == nil {
+	// The whole word, then decide what it is. bash reads *any* word here
+	// and refuses it when the loop runs — `for $1 in a` reports
+	// `` `$1': not a valid identifier ``, with the text as written since
+	// it never expands it, and the shell carries on (#593). Refusing at
+	// parse time cost the rest of the file, which is #277's shape; the
+	// interpreter already gives that exact message for a literal that is
+	// not a name (#409).
+	//
+	// A word rather than a literal is also what makes `for x$1 in a`
+	// one name instead of the literal `x` followed by a stray `$1`.
+	switch w := p.getWord(); {
+	case w == nil:
 		p.followErr(fpos, ftok, noQuote("a literal"))
+	case len(w.Parts) == 1:
+		if lit, ok := w.Parts[0].(*Lit); ok {
+			wi.Name = lit
+		} else {
+			wi.BadName = w
+		}
+	default:
+		wi.BadName = w
 	}
 	if p.got(semicolon) {
 		p.got(_Newl)
@@ -3070,7 +3089,12 @@ func (p *Parser) letClause(s *Stmt) {
 		}
 		lc.Exprs = append(lc.Exprs, x)
 	}
-	if len(lc.Exprs) == 0 {
+	if len(lc.Exprs) == 0 && !p.stopToken() && !p.peekRedir() {
+		// Something is there and it is not an expression, which bash
+		// also calls a syntax error. A bare `let` is different: bash
+		// parses it and the *builtin* answers `let: expression
+		// expected` with status 1, so the empty clause is kept and the
+		// interpreter reports it (#593).
 		p.followErrExp(lc.Let, "let")
 	}
 	p.postNested(old)

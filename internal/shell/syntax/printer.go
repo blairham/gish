@@ -871,7 +871,11 @@ func (p *Printer) cmdSubst(cs *CmdSubst) {
 func (p *Printer) loop(loop Loop) {
 	switch loop := loop.(type) {
 	case *WordIter:
-		p.writeLit(loop.Name.Value)
+		if loop.Name != nil {
+			p.writeLit(loop.Name.Value)
+		} else {
+			p.word(loop.BadName)
+		}
 		if loop.InPos.IsValid() {
 			p.spacedString(" in", Pos{})
 			p.wordJoin(loop.Items)

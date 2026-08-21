@@ -307,7 +307,11 @@ func (p *funcPrinter) cmd(cmd syntax.Command) {
 		p.sb.WriteString(word)
 		switch loop := c.Loop.(type) {
 		case *syntax.WordIter:
-			p.sb.WriteString(loop.Name.Value)
+			if loop.Name != nil {
+				p.sb.WriteString(loop.Name.Value)
+			} else {
+				p.word(loop.BadName)
+			}
 			if len(loop.Items) > 0 {
 				p.sb.WriteString(" in")
 				for _, w := range loop.Items {

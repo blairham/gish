@@ -466,17 +466,32 @@ func (*CStyleLoop) loopNode() {}
 // for clause. If InPos is an invalid position, the "in" token was missing, so
 // the iteration is over the shell's positional parameters.
 type WordIter struct {
-	Name  *Lit
+	Name *Lit
+
+	// BadName is the word written where a name belongs — `for $1 in a`
+	// — which bash reads and then refuses when the loop *runs*, naming
+	// the text as written since it never expands it. Name is nil when
+	// this is set, and exactly one of the two always is (#593).
+	BadName *Word
+
 	InPos Pos // position of "in"
 	Items []*Word
 }
 
-func (w *WordIter) Pos() Pos { return w.Name.Pos() }
+// nameNode is whichever of Name and BadName this iteration has.
+func (w *WordIter) nameNode() Node {
+	if w.Name != nil {
+		return w.Name
+	}
+	return w.BadName
+}
+
+func (w *WordIter) Pos() Pos { return w.nameNode().Pos() }
 func (w *WordIter) End() Pos {
 	if len(w.Items) > 0 {
 		return wordLastEnd(w.Items)
 	}
-	return posMax(w.Name.End(), posAddCol(w.InPos, 2))
+	return posMax(w.nameNode().End(), posAddCol(w.InPos, 2))
 }
 
 // CStyleLoop represents the behavior of a for clause similar to the C
@@ -1085,12 +1100,20 @@ func (c *CoprocClause) End() Pos { return c.Stmt.End() }
 //
 // This node will only appear with [LangBash] and [LangMirBSDKorn].
 type LetClause struct {
-	Let   Pos
+	Let Pos
+
+	// Exprs can be empty: a bare `let` parses, and bash's own builtin
+	// answers `let: expression expected` when it runs (#593).
 	Exprs []ArithmExpr
 }
 
 func (l *LetClause) Pos() Pos { return l.Let }
-func (l *LetClause) End() Pos { return l.Exprs[len(l.Exprs)-1].End() }
+func (l *LetClause) End() Pos {
+	if len(l.Exprs) == 0 {
+		return posAddCol(l.Let, 3) // past `let`
+	}
+	return l.Exprs[len(l.Exprs)-1].End()
+}
 
 // BraceExp represents a Bash brace expression, such as "{a,f}" or "{1..10}".
 //

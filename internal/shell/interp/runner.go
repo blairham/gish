@@ -1436,7 +1436,18 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.ForClause:
 		switch y := cm.Loop.(type) {
 		case *syntax.WordIter:
-			name := y.Name.Value
+			name := ""
+			if y.Name != nil {
+				name = y.Name.Value
+			} else {
+				// A word where a name belongs (#593). bash names the
+				// text as written and never expands it, so this renders
+				// the node rather than evaluating it — and then falls
+				// into the same refusal a bad literal gets.
+				var sb strings.Builder
+				printNode(&sb, y.BadName)
+				name = sb.String()
+			}
 			if !syntax.ValidName(name) {
 				// Assigning to `1` is nonsense bash refuses up front,
 				// where koi ran the loop and quietly shadowed the
@@ -1572,6 +1583,14 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 	case *syntax.ArithmCmd:
 		r.exit.oneIf(r.arithm(cm.X) == 0)
 	case *syntax.LetClause:
+		if len(cm.Exprs) == 0 {
+			// A bare `let` is bash's builtin refusing its own argument
+			// count, not a syntax error (#593): status 1, and the line
+			// carries on.
+			r.errf("let: expression expected\n")
+			r.exit.code = 1
+			return
+		}
 		var val int
 		for _, expr := range cm.Exprs {
 			val = r.arithm(expr)
