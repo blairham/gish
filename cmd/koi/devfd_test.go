@@ -107,6 +107,16 @@ type devFDCase struct {
 	// want is a line the *oracle's* output must contain, so a case
 	// cannot pass by both shells saying nothing.
 	want string
+	// shapes narrows which reading shapes the case is measured in.
+	// Empty means all four.
+	shapes []readingShape
+}
+
+func (c devFDCase) inShapes() []readingShape {
+	if len(c.shapes) > 0 {
+		return c.shapes
+	}
+	return allShapes
 }
 
 var devFDCases = []devFDCase{
@@ -195,6 +205,13 @@ var devFDCases = []devFDCase{
 		name: "re-opening standard input by name",
 		body: "echo one\nexec 0< /dev/stdin\necho two\necho three\n",
 		want: "three",
+		// Not in the shape where fd 0 is the script *file*: whether
+		// re-opening a seekable file by its /dev/fd name shares the
+		// offset or starts again at zero is the platform's answer, not
+		// the shell's, and asking it would make this case measure the
+		// operating system. Every other shape has a pipe or /dev/null
+		// on fd 0, where both answers are the same.
+		shapes: []readingShape{shapeFile, shapePipe, shapeDashC},
 	},
 	{
 		// A descriptor opened from another one by name is still a real
@@ -223,13 +240,13 @@ var devFDCases = []devFDCase{
 
 func TestShellDescriptorPathsMatchBash(t *testing.T) {
 	if testing.Short() {
-		t.Skip("differential /dev/fd behaviour skipped in -short")
+		t.Skip("differential /dev/fd behavior skipped in -short")
 	}
 	koi := buildKoi(t)
 	bash := requireBash(t)
 
 	for _, tc := range devFDCases {
-		for _, shape := range allShapes {
+		for _, shape := range tc.inShapes() {
 			t.Run(tc.name+" ("+string(shape)+")", func(t *testing.T) {
 				bashOut, bashCode := runShape(t, t.TempDir(), bash, shape, tc.body)
 				koiOut, koiCode := runShape(t, t.TempDir(), koi, shape, tc.body)
