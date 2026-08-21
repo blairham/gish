@@ -8,7 +8,7 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 | --- | --- | --- |
 | **strict** | **18/83 files (21%)** | identical output *and* exit status for a whole file |
 | parsed | 68/83 files (81%) | koi can read the file at all |
-| line agreement | 8187/13655 lines (59%) | how much of bash's output koi reproduced exactly |
+| line agreement | 8355/13655 lines (61%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
