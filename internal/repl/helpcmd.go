@@ -37,6 +37,21 @@ type helpTopic struct {
 	desc string
 }
 
+// helpNotes holds the longer explanation a couple of topics need, keyed
+// by the listed name and printed under the one-liner.
+//
+// It is a second map rather than a third field on helpTopic because
+// almost ninety entries are positional literals and none of them wants
+// one. It exists because a usage line is *data* and an explanation is
+// not (#611): `fc` used to print eleven lines of prose about koi's
+// history positions in place of bash's one-line usage, and the prose has
+// to land somewhere. `help <name>` is that somewhere — the surface a
+// person asks when they want to be explained to, and the one nothing
+// matches against.
+var helpNotes = map[string][]string{
+	"fc": fcNotes,
+}
+
 // helpTopics covers every implemented shell builtin, every koi-native
 // builtin, and the koi commands with no help subcommand of their own.
 // helpcmd_test.go fails when a builtin ships without an entry here.
@@ -91,7 +106,7 @@ var helpTopics = map[string]helpTopic{
 	// koi-native builtins.
 	"bg":       {"bg [%job]", "resume a stopped job in the background"},
 	"builtins": {"builtins", "list every builtin this session answers, grouped by origin"},
-	"fc":       {"fc -l [first [last]]", "list command history; the editing forms are not implemented"},
+	"fc":       {"fc [-e ename] [-lnr] [first] [last] or fc -s [pat=rep] [command]", "list command history; only the listing half (-l) is implemented"},
 	"fg":       {"fg [%job]", "resume a job in the foreground"},
 	"help":     {"help [name]", "explain a builtin; koi commands also answer `<name> help`"},
 	"jobs":     {"jobs", "list background and stopped jobs"},
@@ -216,8 +231,15 @@ func runHelp(ctx context.Context, next interp.CallHandlerFunc, args []string) ([
 			fmt.Fprintf(hc.Stdout, "%s: run `%s help` for its usage\n", name, name)
 		case found:
 			fmt.Fprintf(hc.Stdout, "%s: %s\n    %s\n", listed, topic.use, topic.desc)
+			for _, line := range helpNotes[listed] {
+				if line == "" {
+					fmt.Fprintln(hc.Stdout)
+					continue
+				}
+				fmt.Fprintf(hc.Stdout, "    %s\n", line)
+			}
 		default:
-			fmt.Fprintf(hc.Stderr, "help: no help topic for %q — try `man %s`\n", name, name)
+			hc.Errf("help: no help topic for %q — try `man %s`\n", name, name)
 			ok = false
 		}
 	}

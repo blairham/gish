@@ -32,15 +32,16 @@ func printfCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 		opts, ok := parsePrintfArgs(args[1:])
 		if !ok {
-			fmt.Fprintln(hc.Stderr, builtins.ErrUsage)
+			// bash prints printf's usage line bare, measured (#611).
+			hc.RawErrf("%v\n", builtins.ErrUsage)
 			return printfStatus(2), nil
 		}
 		if !opts.assign {
-			if err := builtins.Printf(hc.Stdout, hc.Stderr, opts.operands); err != nil {
+			if err := builtins.Printf(hc.Stdout, hc.Stderr, hc.ErrLocation, opts.operands); err != nil {
 				// bash separates the two: no format at all is a usage
 				// error and exits 2, a bad conversion exits 1.
 				if errors.Is(err, builtins.ErrUsage) {
-					fmt.Fprintln(hc.Stderr, err)
+					hc.RawErrf("%v\n", err)
 					return printfStatus(2), nil
 				}
 				// A failed write means the reader went away — the head of a
@@ -50,7 +51,7 @@ func printfCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 				// goroutines. A bad number has already been reported by the
 				// builtin, in bash's order; only a bad format is left to say.
 				if !errors.Is(err, builtins.ErrWrite) && !errors.Is(err, builtins.ErrBadNumber) {
-					fmt.Fprintln(hc.Stderr, err)
+					hc.Errf("%v\n", err)
 				}
 				return []string{"false"}, nil
 			}
@@ -111,16 +112,16 @@ func parsePrintfArgs(args []string) (printfOpts, bool) {
 func printfAssign(hc interp.HandlerContext, opts printfOpts) ([]string, error) {
 	if !validAssignTarget(opts.target) {
 		// bash's own wording, because scripts grep for it.
-		fmt.Fprintf(hc.Stderr, "printf: `%s': not a valid identifier\n", opts.target)
+		hc.Errf("printf: `%s': not a valid identifier\n", opts.target)
 		return printfStatus(2), nil
 	}
 	if len(opts.operands) == 0 {
-		fmt.Fprintln(hc.Stderr, builtins.ErrUsage)
+		hc.RawErrf("%v\n", builtins.ErrUsage)
 		return printfStatus(2), nil
 	}
 
 	var buf bytes.Buffer
-	perr := builtins.Printf(&buf, hc.Stderr, opts.operands)
+	perr := builtins.Printf(&buf, hc.Stderr, hc.ErrLocation, opts.operands)
 
 	// The value is quoted; the target is validated but not quoted,
 	// because a subscript has to keep being evaluated — bash resolves
@@ -134,7 +135,7 @@ func printfAssign(hc interp.HandlerContext, opts printfOpts) ([]string, error) {
 		// Unquotable output is a null byte or invalid UTF-8. bash stores
 		// it; we cannot express it through eval, so say so rather than
 		// assigning something subtly different.
-		fmt.Fprintf(hc.Stderr, "printf: cannot assign to %s: %v\n", opts.target, qerr)
+		hc.Errf("printf: cannot assign to %s: %v\n", opts.target, qerr)
 		return printfStatus(1), nil
 	}
 	assign := opts.target + "=" + quoted
@@ -146,7 +147,7 @@ func printfAssign(hc interp.HandlerContext, opts printfOpts) ([]string, error) {
 		// A bad number has already said so on stderr; anything else
 		// still needs reporting.
 		if !errors.Is(perr, builtins.ErrBadNumber) {
-			fmt.Fprintln(hc.Stderr, perr)
+			hc.Errf("%v\n", perr)
 		}
 		return []string{"eval", assign + "; (exit 1)"}, nil
 	}

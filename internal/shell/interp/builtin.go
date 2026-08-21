@@ -1593,7 +1593,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		// bash diagnoses all three of these; koi answered 0 for every
 		// one (#407).
 		if len(args) == 0 {
-			return failf(2, "unalias: usage: unalias [-a] name [name ...]\n")
+			// A usage line is not a diagnostic, so it carries no
+			// location — measured: bare `unalias` in a script prints the
+			// line and nothing else, where koi prefixed it with
+			// `file: line N:` (#611). This is the only one of the three
+			// where the usage line stands alone rather than following a
+			// message of its own.
+			r.rawErrf("unalias: usage: unalias [-a] name [name ...]\n")
+			exit.code = 2
+			return exit
 		}
 		fp := flagParser{remaining: args}
 		for fp.more() {

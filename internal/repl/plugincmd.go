@@ -189,7 +189,7 @@ func pluginCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 func runPlugin(ctx context.Context, hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "plugin:", err)
+		hc.Errf("plugin: %v\n", err)
 		return []string{"false"}
 	}
 	if pluginMgr == nil {
@@ -217,7 +217,7 @@ func runPlugin(ctx context.Context, hc interp.HandlerContext, args []string) []s
 		// The interactive manager (#90). It edits the same manifest the
 		// other subcommands do — the form is a way of filling it in, not
 		// a second source of truth.
-		return runPluginBrowse(handlerIO{Stdin: hc.Stdin, Stdout: hc.Stdout, Stderr: hc.Stderr},
+		return runPluginBrowse(handlerIO{Stdin: hc.Stdin, Stdout: hc.Stdout, Stderr: hc.Stderr, ErrLocation: hc.ErrLocation},
 			pluginMgr.path, pluginMgr.man)
 
 	case args[0] == "add" && len(args) >= 2:

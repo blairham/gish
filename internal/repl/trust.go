@@ -53,7 +53,7 @@ func sessionRunner() *interp.Runner { return sessionRunnerRef.Load() }
 
 func runTrust(ctx context.Context, hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "trust:", err)
+		hc.Errf("trust: %v\n", err)
 		return []string{"false"}
 	}
 	if envMgr == nil || sessionRunner() == nil {
@@ -118,13 +118,13 @@ func reviewPending(ctx context.Context, hc interp.HandlerContext, runner *interp
 	case "a":
 		msg, err := envMgr.allowPending(ctx, runner)
 		if err != nil {
-			fmt.Fprintln(hc.Stderr, "trust:", err)
+			hc.Errf("trust: %v\n", err)
 			return []string{"false"}
 		}
 		fmt.Fprintln(hc.Stdout, msg)
 	case "r":
 		if _, err := envMgr.revokeDir(ctx, runner, pending.forDir); err != nil {
-			fmt.Fprintln(hc.Stderr, "trust:", err)
+			hc.Errf("trust: %v\n", err)
 			return []string{"false"}
 		}
 		fmt.Fprintf(hc.Stdout, "revoked %s\n", displayPath(pending.forDir))

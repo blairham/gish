@@ -45,7 +45,6 @@ package repl
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -295,6 +294,6 @@ func historyReadAll(lines []string, runner *interp.Runner) {
 // historyNoFile reports the missing-HISTFILE case the way bash does,
 // naming the variable rather than the flag.
 func historyNoFile(hc interp.HandlerContext, flag string) []string {
-	fmt.Fprintf(hc.Stderr, "history: %s: no file given and HISTFILE is unset\n", flag)
+	hc.Errf("history: %s: no file given and HISTFILE is unset\n", flag)
 	return historyStatus(1)
 }

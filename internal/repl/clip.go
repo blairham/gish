@@ -54,14 +54,15 @@ func runClip(hc interp.HandlerContext, args []string) []string {
 			fmt.Fprintln(hc.Stdout, clipUsage)
 			return []string{"true"}
 		default:
-			fmt.Fprintf(hc.Stderr, "clip: unknown argument %q\n%s\n", a, clipUsage)
+			hc.Errf("clip: unknown argument %q\n", a)
+			hc.RawErrf("%s\n", clipUsage)
 			return []string{"false"}
 		}
 	}
 
 	text, err := io.ReadAll(hc.Stdin)
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, "clip:", err)
+		hc.Errf("clip: %v\n", err)
 		return []string{"false"}
 	}
 	if len(text) == 0 {
@@ -78,7 +79,7 @@ func runClip(hc interp.HandlerContext, args []string) []string {
 		// line when someone typed it, so scripts never break and humans
 		// are never confused.
 		if term.IsTerminal(os.Stderr) {
-			fmt.Fprintln(hc.Stderr, "clip: no terminal to copy through")
+			hc.Errf("clip: no terminal to copy through\n")
 		}
 		return []string{"true"}
 	}
@@ -88,7 +89,7 @@ func runClip(hc interp.HandlerContext, args []string) []string {
 		set = term.SetPrimary
 	}
 	if err := set(out, strings.TrimRight(string(text), "\n")); err != nil {
-		fmt.Fprintln(hc.Stderr, "clip:", err)
+		hc.Errf("clip: %v\n", err)
 		return []string{"false"}
 	}
 	return []string{"true"}

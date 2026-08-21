@@ -38,7 +38,7 @@ func ziCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 			}
 		})
 		if mgrErr != nil {
-			fmt.Fprintln(hc.Stderr, "zi:", mgrErr)
+			hc.Errf("zi: %v\n", mgrErr)
 			return []string{"false"}, nil
 		}
 		return runZi(mgr, hc, args[1:]), nil
@@ -66,7 +66,7 @@ Ices use Zi spelling: zi ice wait"1" lucid from"gh-r" pick"bin/fzf"
 //nolint:gocognit // one flat subcommand dispatch reads better unsplit
 func runZi(mgr plugmgr.Manager, hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "zi:", err)
+		hc.Errf("zi: %v\n", err)
 		return []string{"false"}
 	}
 	if len(args) == 0 {

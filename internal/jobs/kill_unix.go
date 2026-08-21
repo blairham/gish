@@ -65,7 +65,7 @@ func (t *Table) Kill(_ context.Context, hc interp.HandlerContext, args []string)
 		case args[0] == "-s" && len(args) > 1:
 			s, ok := parseSignal(args[1])
 			if !ok {
-				fmt.Fprintf(hc.Stderr, "kill: %s: invalid signal specification\n", args[1])
+				hc.Errf("kill: %s: invalid signal specification\n", args[1])
 				return interp.ExitStatus(1)
 			}
 			sig, args = s, args[2:]
@@ -76,7 +76,8 @@ func (t *Table) Kill(_ context.Context, hc interp.HandlerContext, args []string)
 		default:
 			s, ok := parseSignal(strings.TrimPrefix(args[0], "-"))
 			if !ok {
-				fmt.Fprintf(hc.Stderr, "kill: %s: invalid signal specification\n%s\n", args[0], killUsage)
+				hc.Errf("kill: %s: invalid signal specification\n", args[0])
+				hc.RawErrf("%s\n", killUsage)
 				return interp.ExitStatus(1)
 			}
 			sig, args = s, args[1:]
@@ -85,14 +86,16 @@ func (t *Table) Kill(_ context.Context, hc interp.HandlerContext, args []string)
 
 targets:
 	if len(args) == 0 {
-		fmt.Fprintln(hc.Stderr, killUsage)
+		// bash prints the usage line bare for a bare `kill` — a usage
+		// line is not a diagnostic and carries no location (#611).
+		hc.RawErrf("%s\n", killUsage)
 		return interp.ExitStatus(2)
 	}
 
 	failed := false
 	for _, target := range args {
 		if err := t.signalTarget(target, sig); err != nil {
-			fmt.Fprintf(hc.Stderr, "kill: %s\n", err)
+			hc.Errf("kill: %s\n", err)
 			failed = true
 		}
 	}
@@ -191,7 +194,7 @@ func translateSignals(hc interp.HandlerContext, args []string) error {
 			}
 			name := signalName(syscall.Signal(n))
 			if name == "" {
-				fmt.Fprintf(hc.Stderr, "kill: %s: invalid signal specification\n", arg)
+				hc.Errf("kill: %s: invalid signal specification\n", arg)
 				failed = true
 				continue
 			}
@@ -200,7 +203,7 @@ func translateSignals(hc interp.HandlerContext, args []string) error {
 		}
 		sig, ok := parseSignal(arg)
 		if !ok {
-			fmt.Fprintf(hc.Stderr, "kill: %s: invalid signal specification\n", arg)
+			hc.Errf("kill: %s: invalid signal specification\n", arg)
 			failed = true
 			continue
 		}

@@ -4,7 +4,6 @@ package builtins
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 )
@@ -13,6 +12,6 @@ import (
 // anyway, so the name resolves and says what is missing rather than
 // reporting "executable file not found".
 func Umask(_ context.Context, hc interp.HandlerContext, _ []string) error {
-	fmt.Fprintln(hc.Stderr, "umask: not supported on this platform")
+	hc.Errf("umask: not supported on this platform\n")
 	return interp.ExitStatus(1)
 }
