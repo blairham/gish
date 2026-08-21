@@ -69,10 +69,11 @@ func TestNonBuiltinFallsThrough(t *testing.T) {
 func TestInterpListsAccurate(t *testing.T) {
 	t.Parallel()
 
-	// jobs is deliberately absent: it is implemented now (#302), and it was
-	// this list disagreeing with the interpreter that made `type jobs`,
-	// `compgen -b` and running it give three different answers.
-	for _, name := range []string{"fg", "bg", "umask", "times", "fc"} {
+	// jobs, fg and bg are deliberately absent: all three are implemented
+	// now (#302, #397), and it was this list disagreeing with the
+	// interpreter that made `type jobs`, `compgen -b` and running it give
+	// three different answers.
+	for _, name := range []string{"umask", "times", "fc"} {
 		var errOut strings.Builder
 		runner, err := interp.New(interp.StdIO(nil, io.Discard, &errOut))
 		if err != nil {

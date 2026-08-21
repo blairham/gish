@@ -67,8 +67,9 @@ func TestSetRefusesWhatItCannotDo(t *testing.T) {
 	koi := buildKoi(t)
 	dir := t.TempDir()
 
+	// `set -m` used to be the first row here and is implemented now
+	// (#397), which is the outcome the rule is aimed at, twice over.
 	for _, tc := range []struct{ script, want string }{
-		{"set -m", "monitor"},
 		{"set -v", "verbose"},
 		{"set -H", "histexpand"},
 		{"set +h", "hashall"},

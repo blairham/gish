@@ -3,9 +3,11 @@
 package interp
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // The `jobs` listing format, measured against bash 5.3 rather than inferred:
@@ -217,4 +219,121 @@ func (b *bgProc) finished() bool {
 	default:
 		return false
 	}
+}
+
+// jobControlBuiltin implements `fg` and `bg` for a script (#397).
+//
+// Both are gated on job control, which is off in a script until it writes
+// `set -m` — bash answers "no job control" otherwise, and koi answered
+// "unsupported builtin", which is a usage error where bash has an
+// ordinary status a script can act on.
+//
+// With job control on, what each can honestly do here follows from koi's
+// jobs being goroutines rather than process groups. `fg` waits for the
+// job and answers with its status, which is what foregrounding *is* to a
+// script — there is no terminal to hand over in a script, and bash's own
+// output for it is the job's command line, which is reproduced. `bg` has
+// nothing to resume: a goroutine is never stopped, so every job it can
+// name is already running, and that is the case bash reports with a
+// status of 0.
+func (r *Runner) jobControlBuiltin(ctx context.Context, name string, args []string) exitStatus {
+	var exit exitStatus
+	failf := func(code uint8, format string, a ...any) exitStatus {
+		r.errf(format, a...)
+		exit.code = code
+		return exit
+	}
+	if !r.opts[optMonitor] {
+		return failf(1, "%s: no job control\n", name)
+	}
+	spec := ""
+	if len(args) > 0 {
+		spec = args[0]
+	}
+	if _, err := strconv.Atoi(spec); err == nil {
+		// bash takes a bare number, warns, and carries on; the warning
+		// is the whole point, since `fg 1` reads as a pid.
+		r.errf("%s: warning: %s: job specification requires leading `%%'\n", name, spec)
+		spec = "%" + spec
+	}
+	var (
+		i  int
+		ok bool
+	)
+	if spec == "" {
+		if i, ok = r.bgCurrent(0); !ok {
+			return failf(1, "%s: current: no such job\n", name)
+		}
+	} else if i, ok = r.bgIndex(spec); !ok {
+		return failf(1, "%s: %s: no such job\n", name, spec)
+	}
+	if r.bgProcs[i].reaped {
+		// A job already waited for is gone as far as bash is concerned,
+		// whatever its number used to be.
+		return failf(1, "%s: %s: no such job\n", name, jobSpecOf(spec, i))
+	}
+	if name == "bg" {
+		return failf(0, "bg: job %d already in background\n", i+1)
+	}
+	// bash prints the job's command line as it brings it forward, which
+	// is how a script's log says which job it is now waiting on.
+	r.outf("%s\n", r.bgProcs[i].cmd)
+	select {
+	case <-r.bgProcs[i].done:
+	case <-ctx.Done():
+		exit.fatal(ctx.Err())
+		return exit
+	}
+	r.bgProcs[i].reaped = true
+	return *r.bgProcs[i].exit
+}
+
+// jobSpecOf names a job the way the message about it should: as the
+// caller spelled it, or as "current" when they did not spell it at all.
+func jobSpecOf(spec string, i int) string {
+	if spec == "" {
+		return "current"
+	}
+	return spec
+}
+
+// SignalJob delivers a signal to a background job named by a jobspec —
+// `kill %1`, `kill -TERM %%` — and is how the shell around the
+// interpreter answers for jobs it does not own (#397).
+//
+// koi's background jobs are goroutines rather than process groups, so
+// what a signal can honestly do here is end one: the job's context is
+// cancelled, which is the same mechanism that interrupts a running
+// command, and which reaches a real child through the exec handler.
+// The job then reports 128+n, the status a signaled process has.
+//
+// Signal 0 asks whether the job exists and changes nothing, as it does
+// for a process. A signal that would *stop* or *continue* a job is
+// refused rather than ignored: there is no stopped state for a
+// goroutine, and a `kill -STOP` that quietly did nothing would be worse
+// than one that says so.
+func (r *Runner) SignalJob(spec string, sig syscall.Signal) error {
+	i, ok := r.bgIndex(spec)
+	if !ok {
+		return fmt.Errorf("%s: no such job", spec)
+	}
+	select {
+	case <-r.bgProcs[i].done:
+		// A job that has finished is still a job bash will name — and
+		// still one it answers 0 for, whether or not a wait has already
+		// collected it. There is simply nothing left to signal.
+		return nil
+	default:
+	}
+	if sig == 0 {
+		return nil
+	}
+	if verb, ok := jobStopSignal(sig); ok {
+		return fmt.Errorf("%s: cannot %s a job: koi runs background jobs in this process", spec, verb)
+	}
+	if bg := &r.bgProcs[i]; bg.cancel != nil {
+		bg.killed.Store(int32(sig))
+		bg.cancel()
+	}
+	return nil
 }

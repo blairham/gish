@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
@@ -601,14 +602,18 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 		st2 := *st
 		st2.Background = false
 		st2.Disown = false
+		jobCtx, cancel := context.WithCancel(ctx)
 		bg := bgProc{
-			done: make(chan struct{}),
-			exit: new(exitStatus),
-			cmd:  stmtSource(st),
+			done:   make(chan struct{}),
+			exit:   new(exitStatus),
+			cmd:    stmtSource(st),
+			cancel: cancel,
+			killed: new(atomic.Int32),
 		}
 		r.bgProcs = append(r.bgProcs, bg)
 		go func() {
-			r2.Run(ctx, &st2)
+			defer cancel()
+			r2.Run(jobCtx, &st2)
 			r2.runSubshellExitTrap(ctx)
 			r2.exit.exiting = false  // subshells don't exit the parent shell
 			r2.exit.aborting = false // nor unwind it: an abort inside a subshell ends that subshell
@@ -617,6 +622,11 @@ func (r *Runner) stmt(ctx context.Context, st *syntax.Stmt) {
 			// caller carries on (#422).
 			r2.exit.returning = false
 			*bg.exit = r2.exit
+			if sig := bg.killed.Load(); sig != 0 {
+				// A signaled job reports 128+n whatever the cancelled
+				// command left behind, which is what `wait` hands back.
+				*bg.exit = exitStatus{code: uint8(128 + sig)}
+			}
 			close(bg.done)
 		}()
 	} else {
@@ -1232,11 +1242,16 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			})
 			r.pipeStatus = nil
 			var r3 *Runner
-			if r.opts[optLastPipe] {
+			if r.opts[optLastPipe] && !r.opts[optMonitor] {
 				// lastpipe: the final stage runs in the current shell, so
 				// `cmd | read x` keeps x. Until #277 this was the only
 				// behavior, which answered the most famous bash gotcha
 				// un-bash-ly by default.
+				//
+				// bash additionally requires job control to be off, since
+				// with it on the stage has to be its own process group —
+				// measured: `set -m; shopt -s lastpipe; echo x | read v`
+				// leaves v empty (#397).
 				oldIn := r.stdin
 				r.stdin = pr
 				r.stmt(ctx, cm.Y)

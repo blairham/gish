@@ -16,7 +16,11 @@ func Supported() bool { return false }
 
 // Table is inert off unix: spawning falls through to the next handler
 // and the builtins report the limitation.
-type Table struct{}
+type Table struct {
+	// signalHook is the same fallback the unix table has; see
+	// [Table.SetSignalHook].
+	signalHook SignalHook
+}
 
 func NewTable(_ *os.File) *Table { return &Table{} }
 

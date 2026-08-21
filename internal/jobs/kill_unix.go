@@ -112,6 +112,11 @@ func (t *Table) signalTarget(target string, sig syscall.Signal) error {
 	if strings.HasPrefix(target, "%") {
 		job := t.pick([]string{target})
 		if job == nil {
+			if t.signalHook != nil {
+				// Not this table's job, which in a script means it is
+				// the interpreter's (#397).
+				return t.signalHook(target, sig)
+			}
 			return fmt.Errorf("%s: no such job", target)
 		}
 		if job.Pgid == 0 {

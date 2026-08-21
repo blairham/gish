@@ -96,6 +96,10 @@ type Table struct {
 	bgJobs      map[uint]*Job
 	lastCapture []byte
 	lastTrunc   bool
+
+	// signalHook answers for a %jobspec this table does not know; see
+	// [Table.SetSignalHook].
+	signalHook SignalHook
 }
 
 // NewTable creates the session job table. tty is the controlling
