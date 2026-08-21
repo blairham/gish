@@ -69,9 +69,17 @@ fix lands should be the one the fix is about.
 	gaps := ParseGaps(results)
 	if len(gaps) > 0 {
 		b.WriteString("## What the parser cannot read\n\n")
-		b.WriteString(`Each of these stops a whole file. They are the sharpest fix targets
-this suite produces, because bash's own suite is the evidence that real
-bash code uses them.
+		b.WriteString(`Each of these stops a whole *static check*, which is what this
+census asks — ` + "`koi -n`" + ` (#233). They are the sharpest fix targets this
+suite produces, because bash's own suite is the evidence that real bash
+code uses them.
+
+One row can appear here while the file still *runs*: a **recoverable**
+error costs the line and lets reading continue (#581), and ` + "`bash -n`" + `
+answers the same way about the same files — it reports four such errors
+in array.tests and exits 1 — so a static check cannot count them as
+read. Where that happens the line-agreement column is the number that
+moved, not this one.
 
 `)
 		b.WriteString("| construct | files |\n| --- | --- |\n")

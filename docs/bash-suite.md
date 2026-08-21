@@ -8,7 +8,7 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 | --- | --- | --- |
 | **strict** | **19/83 files (22%)** | identical output *and* exit status for a whole file |
 | parsed | 69/83 files (83%) | koi can read the file at all |
-| line agreement | 8788/13655 lines (64%) | how much of bash's output koi reproduced exactly |
+| line agreement | 9451/13655 lines (69%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -40,9 +40,17 @@ fix lands should be the one the fix is about.
 
 ## What the parser cannot read
 
-Each of these stops a whole file. They are the sharpest fix targets
-this suite produces, because bash's own suite is the evidence that real
-bash code uses them.
+Each of these stops a whole *static check*, which is what this
+census asks — `koi -n` (#233). They are the sharpest fix targets this
+suite produces, because bash's own suite is the evidence that real bash
+code uses them.
+
+One row can appear here while the file still *runs*: a **recoverable**
+error costs the line and lets reading continue (#581), and `bash -n`
+answers the same way about the same files — it reports four such errors
+in array.tests and exits 1 — so a static check cannot count them as
+read. Where that happens the line-agreement column is the number that
+moved, not this one.
 
 | construct | files |
 | --- | --- |
@@ -53,12 +61,12 @@ bash code uses them.
 | `[x]` must be followed by `=` | appendop.tests |
 | `select` must be followed by a literal | errors.tests |
 | a command can only contain words and redirects; encountered `(` | extglob.tests |
-| array element values must be words | array.tests |
 | invalid parameter name | more-exp.tests |
 | not a valid arithmetic operator: `world` | assoc.tests |
 | not a valid parameter expansion operator: `*` | cond.tests |
 | reached EOF without closing quote `"` | posixexp2.tests |
 | reached EOF without matching `${` with `}` | posixexp.tests |
+| syntax error near unexpected token `&' | array.tests |
 | unclosed here-document `` | heredoc.tests |
 
 ### Constructs the file census does not name
