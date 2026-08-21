@@ -67,6 +67,17 @@ type HandlerContext struct {
 	// It may be invalid if the operation has no relevant position information.
 	Pos syntax.Pos
 
+	// ErrLocation is the prefix a diagnostic about this operation should
+	// carry, in the form `source: line N: `, which is how bash tells a
+	// reader where in a script something went wrong. It is empty when
+	// the shell has no file to name — a command string, standard input,
+	// an interactive line — in which case a diagnostic starts with the
+	// message.
+	//
+	// Handlers which print their own diagnostics should write it first;
+	// [DefaultExecHandler] does.
+	ErrLocation string
+
 	// TODO(v4): use an os.File for stdin below directly.
 
 	// Stdin is the interpreter's current standard input reader.
@@ -166,7 +177,7 @@ func DefaultExecHandler(killTimeout time.Duration) ExecHandlerFunc {
 		hc := HandlerCtx(ctx)
 		path, err := LookPathDir(hc.Dir, hc.Env, args[0])
 		if err != nil {
-			fmt.Fprintln(hc.Stderr, err)
+			fmt.Fprintf(hc.Stderr, "%s%v\n", hc.ErrLocation, err)
 			return ExitStatus(execErrorStatus(err))
 		}
 		cmd := exec.CommandContext(ctx, path)
@@ -225,7 +236,7 @@ func DefaultExecHandler(killTimeout time.Duration) ExecHandlerFunc {
 			// there and executable, so whatever stopped it is the
 			// "cannot execute" case rather than the missing one, and
 			// bash's status for that is 126.
-			fmt.Fprintf(hc.Stderr, "%s: %v\n", args[0], err.Err)
+			fmt.Fprintf(hc.Stderr, "%s%s: %v\n", hc.ErrLocation, args[0], err.Err)
 			return ExitStatus(126)
 		default:
 			// The command exited with success, but WaitDelay elapsed with its

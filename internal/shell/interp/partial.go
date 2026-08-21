@@ -116,6 +116,20 @@ func (sr *ScriptReader) named(err error) error {
 // sourced file is parsed here rather than by the shell around the
 // interpreter.
 func (r *Runner) runReading(ctx context.Context, sr *ScriptReader) error {
+	// A file has its own line numbers whatever it was reached from, so a
+	// `source` inside an eval'd string does not inherit the string's
+	// shift (#571).
+	oldLine, oldExpand := r.lineOffset, uint64(0)
+	r.lineOffset = 0
+	if r.ecfg != nil {
+		oldExpand, r.ecfg.LineOffset = r.ecfg.LineOffset, 0
+	}
+	defer func() {
+		r.lineOffset = oldLine
+		if r.ecfg != nil {
+			r.ecfg.LineOffset = oldExpand
+		}
+	}()
 	for stmts, err := range sr.Lines() {
 		if err != nil {
 			return err

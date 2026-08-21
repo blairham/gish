@@ -818,7 +818,13 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		// the shape that matters — one construct koi cannot read at the
 		// bottom of a generated hook used to discard the whole hook.
 		stmts, perr := ParseAsRead(strings.NewReader(src), "")
+		// The string is numbered as if it were spliced in where the
+		// eval stands, which is how bash numbers it: `eval` on line 2
+		// reports its string's second line as line 3, for $LINENO and
+		// for a diagnostic's location alike (#571).
+		restore := r.shiftLines(pos.Line())
 		r.stmts(ctx, stmts)
+		restore()
 		if perr != nil && !r.exit.exiting {
 			return failf(SyntaxErrorStatus, "eval: %v\n", perr)
 		}
@@ -1498,7 +1504,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				// The listing form; koi read it as an alias named -p.
 			default:
 				r.errf("alias: %s: invalid option\n", flag)
-				r.errf("alias: usage: alias [-p] [name[=value] ... ]\n")
+				r.rawErrf("alias: usage: alias [-p] [name[=value] ... ]\n")
 				return exitStatus{code: 2}
 			}
 		}
@@ -1546,7 +1552,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				return exit
 			default:
 				r.errf("unalias: %s: invalid option\n", flag)
-				r.errf("unalias: usage: unalias [-a] name [name ...]\n")
+				r.rawErrf("unalias: usage: unalias [-a] name [name ...]\n")
 				return exitStatus{code: 2}
 			}
 		}
@@ -1573,7 +1579,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				// default signal
 			default:
 				r.errf("trap: %q: invalid option\n", flag)
-				r.errf("trap: usage: trap [-lp] [[arg] signal_spec ...]\n")
+				r.rawErrf("trap: usage: trap [-lp] [[arg] signal_spec ...]\n")
 				exit.code = 2
 				return exit
 			}
@@ -2424,20 +2430,32 @@ func (r *Runner) cdPathLookup(ctx context.Context, path string) (string, bool) {
 	return "", false
 }
 
+// cdErr reports why a directory could not be entered, naming it as it
+// was written and using strerror's wording rather than Go's (#571).
+func (r *Runner) cdErr(cmd, path string, err error) uint8 {
+	r.errf("%s: %s: %s\n", cmd, path, openReason(err))
+	return 1
+}
+
 func (r *Runner) changeDir(ctx context.Context, cmd, path string) uint8 {
+	// The wording and the order are bash's: the directory named as it
+	// was written, then strerror's phrasing, and a file that is not a
+	// directory says so rather than claiming it does not exist (#571).
 	if path == "" {
-		r.errf("%s: empty directory path\n", cmd)
+		r.errf("%s: null directory\n", cmd)
 		return 1
 	}
 	apath := r.absPath(path)
 	info, err := r.stat(ctx, apath)
-	if err != nil || !info.IsDir() {
-		r.errf("%s: no such file or directory: %q\n", cmd, path)
+	switch {
+	case err != nil:
+		return r.cdErr(cmd, path, err)
+	case !info.IsDir():
+		r.errf("%s: %s: Not a directory\n", cmd, path)
 		return 1
 	}
-	if r.access(ctx, apath, AccessExec) != nil {
-		r.errf("%s: permission denied: %q\n", cmd, path)
-		return 1
+	if err := r.access(ctx, apath, AccessExec); err != nil {
+		return r.cdErr(cmd, path, err)
 	}
 	r.Dir = apath
 	r.setVarString("OLDPWD", r.envGet("PWD"))

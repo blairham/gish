@@ -6,9 +6,9 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 
 | measure | result | what it answers |
 | --- | --- | --- |
-| **strict** | **18/83 files (21%)** | identical output *and* exit status for a whole file |
+| **strict** | **19/83 files (22%)** | identical output *and* exit status for a whole file |
 | parsed | 69/83 files (83%) | koi can read the file at all |
-| line agreement | 8571/13655 lines (62%) | how much of bash's output koi reproduced exactly |
+| line agreement | 8788/13655 lines (64%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -19,7 +19,7 @@ denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
 directions. **Strict is a file count, and runtime behavior dominates
-it**: 51 files parse perfectly and then behave differently, against 14
+it**: 50 files parse perfectly and then behave differently, against 14
 koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
@@ -105,7 +105,7 @@ those lines as failures.
 
 ## Files that pass strictly
 
-`extglob2.tests`, `extglob3.tests`, `glob-bracket.tests`, `globstar.tests`, `herestr.tests`, `ifs-posix.tests`, `ifs.tests`, `invert.tests`, `iquote.tests`, `lastpipe.tests`, `nquote1.tests`, `nquote2.tests`, `nquote3.tests`, `nquote4.tests`, `nquote5.tests`, `posixexp2.tests`, `precedence.tests`, `strip.tests`
+`case.tests`, `extglob2.tests`, `extglob3.tests`, `glob-bracket.tests`, `globstar.tests`, `herestr.tests`, `ifs-posix.tests`, `ifs.tests`, `invert.tests`, `iquote.tests`, `lastpipe.tests`, `nquote1.tests`, `nquote2.tests`, `nquote3.tests`, `nquote4.tests`, `nquote5.tests`, `posixexp2.tests`, `precedence.tests`, `strip.tests`
 
 ## Why the suite is not in this repository
 

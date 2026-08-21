@@ -245,7 +245,7 @@ func (r *Runner) popd(ctx context.Context, args []string) exitStatus {
 				return exitStatus{code: 1}
 			}
 			r.errf("popd: %s: invalid argument\n", args[0])
-			r.errf("popd: usage: popd [-n] [+N | -N]\n")
+			r.rawErrf("popd: usage: popd [-n] [+N | -N]\n")
 			return exitStatus{code: 2}
 		}
 		if len(r.dirStack) < 2 {

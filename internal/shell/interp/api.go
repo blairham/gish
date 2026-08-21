@@ -206,8 +206,12 @@ type Runner struct {
 	// name. Constructor state, like the other hooks.
 	varHooks map[string]func(string, string)
 	// traceLine is the line of the statement being run, which PS4's
-	// $LINENO reports (#413).
+	// $LINENO reports (#413) and which locates a diagnostic (#571).
 	traceLine uint
+	// lineOffset numbers a separately parsed chunk — an eval'd string, a
+	// trap action — as if it were spliced in where it was written. See
+	// [Runner.shiftLines].
+	lineOffset uint
 	// preRedirStderr is where an expansion error is reported: the
 	// stderr in force before the current statement's own redirections
 	// (#469).
