@@ -2027,15 +2027,36 @@ q`,
 	{"set -m; fg; echo f=$?", "fg: current: no such job\nf=1\n #JUSTERR"},
 	{"set -m; fg %9; echo f=$?", "fg: %9: no such job\nf=1\n #JUSTERR"},
 	// Foregrounding a job in a script is waiting for it, and bash's own
-	// output for it is the job's command line.
-	{"set -m; sleep 0.01 & fg; echo f=$?", "sleep 0.01\nf=0\n"},
-	{"set -m; { exit 3; } & fg; echo f=$?", "{ exit 3; }\nf=3\n"},
-	{"set -m; sleep 0.01 & fg %1; echo f=$?", "sleep 0.01\nf=0\n"},
+	// output for it is the job's command line. The sleeps are what make
+	// these deterministic: a job that finishes before `fg` reaches it is
+	// a *different* answer below, and CI found that race before the
+	// timing here was pinned.
+	{"set -m; sleep 0.2 & fg; echo f=$?", "sleep 0.2\nf=0\n"},
+	{"set -m; { sleep 0.2; exit 3; } & fg; echo f=$?", "{ sleep 0.2; exit 3; }\nf=3\n"},
+	{"set -m; sleep 0.2 & fg %1; echo f=$?", "sleep 0.2\nf=0\n"},
+	// A job which has already finished has two further answers, and
+	// which one depends on whether its completion has been *reported*:
+	// listing a job is what drops it from the table.
+	{
+		"set -m; { exit 3; } & sleep 0.2; fg; echo f=$?",
+		"fg: job has terminated\nf=1\n #JUSTERR",
+	},
+	{
+		// #IGNORE rather than #JUSTERR because the harness's
+		// error check reads the *first* line, and here that is the
+		// listing. Measured by hand against bash 5.3, which answers
+		// exactly this: the listing, then "fg: current: no such job".
+		"set -m; { exit 3; } & sleep 0.2; jobs; fg; echo f=$?",
+		"[1]+  Exit 3                     { exit 3; }\nfg: current: no such job\nf=1\n #IGNORE",
+	},
 	// A job already waited for is gone, whatever its number was.
 	{"set -m; sleep 0.01 & wait; fg; echo f=$?", "fg: current: no such job\nf=1\n #JUSTERR"},
+	// And a finished job is named by what it answered, not by "Done".
+	{"{ exit 3; } & sleep 0.2; jobs", "[1]+  Exit 3                     { exit 3; }\n"},
+	{"{ exit 0; } & sleep 0.2; jobs", "[1]+  Done                       { exit 0; }\n"},
 	// Nothing koi runs in the background is ever stopped, so every job
 	// bg can name is already running — the case bash answers 0 for.
-	{"set -m; sleep 0.01 & bg; echo b=$?", "bg: job 1 already in background\nb=0\n #JUSTERR"},
+	{"set -m; sleep 0.2 & bg; echo b=$?", "bg: job 1 already in background\nb=0\n #JUSTERR"},
 	// Job control turns lastpipe off, which is bash's rule and the one
 	// observable consequence of `set -m` in koi.
 	{`shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[x]\n"},
@@ -2115,6 +2136,19 @@ q`,
 	{"echo `echo 'foo\\\nbar'`", "foobar\n"},
 	{"echo 'foo\\\nbar'", "foo\\\nbar\n"},
 	{"echo `echo \\`echo 'a\\\nb'\\``", "ab\n"},
+	// The same decision at command position (#277): `((` opens an
+	// arithmetic command only when its parens close together, and is
+	// two nested subshells otherwise — which is the ordinary shape of
+	// `((cd dir); cmd)` and `((a) && (b))`, not just of bash's suite.
+	{"((echo sh_a); (echo sh_b))", "sh_a\nsh_b\n"},
+	{"((echo sh_a) && (echo sh_b))", "sh_a\nsh_b\n"},
+	{"((true ) ); echo rc=$?", "rc=0\n"},
+	{"(( 1+1 )); echo rc=$?", "rc=0\n"},
+	{"(( 1 > 2 )); echo rc=$?", "rc=1\n"},
+	{"(( (1+2) )); echo rc=$?", "rc=0\n"},
+	{"x=5; (( x++ )); echo $x", "6\n"},
+	{"for ((i=0;i<2;i++)); do echo $i; done", "0\n1\n"},
+
 	// `$((` is arithmetic only when the two parens close together;
 	// otherwise it is a command substitution whose first command is a
 	// subshell (#424). bash decides the same way — by where the inner

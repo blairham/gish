@@ -156,11 +156,14 @@ func TestJobsListingMatchesBash(t *testing.T) {
 func TestJobsReportsACompletedJobOnce(t *testing.T) {
 	t.Parallel()
 
+	// The listing is checked by job number rather than by the status
+	// word, which names what the job answered — "Done" only when that
+	// was zero, and this one reads at EOF and exits 1.
 	got := runShell(t, `{ read -r _ < /dev/null; } & wait; jobs; echo ---; jobs`)
-	if !strings.Contains(got, "Done") {
+	if !strings.Contains(got, "[1]") {
 		t.Fatalf("the finished job was never reported: %q", got)
 	}
-	if after := got[strings.Index(got, "---"):]; strings.Contains(after, "Done") {
+	if after := got[strings.Index(got, "---"):]; strings.Contains(after, "[1]") {
 		t.Errorf("the same completion was reported twice: %q", got)
 	}
 }

@@ -123,9 +123,17 @@ func (r *Runner) jobLine(i int, long bool) string {
 	job := &r.bgProcs[i]
 	status := jobStatusDone
 	cmd := job.cmd
-	if !job.finished() {
+	switch {
+	case !job.finished():
 		status = jobStatusRun
 		cmd += " &"
+	case job.exit.code != 0:
+		// bash names the status a finished job answered with, and only
+		// calls it "Done" when that was zero. A signalled job is spelled
+		// per platform there (`Terminated: 15` on darwin, `Terminated`
+		// on linux); koi reports the 128+n it stored, which is portable
+		// and true, rather than picking one of the two.
+		status = fmt.Sprintf("Exit %d", job.exit.code)
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "[%d]%s", i+1, r.jobMark(i))
@@ -271,6 +279,20 @@ func (r *Runner) jobControlBuiltin(ctx context.Context, name string, args []stri
 		// A job already waited for is gone as far as bash is concerned,
 		// whatever its number used to be.
 		return failf(1, "%s: %s: no such job\n", name, jobSpecOf(spec, i))
+	}
+	select {
+	case <-r.bgProcs[i].done:
+		// A job that has finished has three states in bash and they
+		// answer differently, which is only visible with the timing
+		// pinned: still running is foregrounded below; finished but
+		// never listed is "job has terminated"; and finished *and*
+		// already listed is gone, because reporting a job's completion
+		// is what drops it from the table.
+		if r.bgProcs[i].reported {
+			return failf(1, "%s: %s: no such job\n", name, jobSpecOf(spec, i))
+		}
+		return failf(1, "%s: job has terminated\n", name)
+	default:
 	}
 	if name == "bg" {
 		return failf(0, "bg: job %d already in background\n", i+1)
