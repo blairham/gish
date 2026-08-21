@@ -572,6 +572,31 @@ func actionLetter(long string) string {
 // builtin in its own right because completion functions call it far
 // more often than the shell does — `compgen -W "$opts" -- "$cur"` is
 // the single most common line in the whole bash-completion corpus.
+//
+// **Nothing here sorts or de-duplicates** (#613). bash prints candidates
+// in the order its generators produced them and keeps duplicates, and
+// koi sorted the whole list and collapsed it, which #269 recorded as
+// cosmetic. Two things make it not cosmetic. `-V` puts the list in an
+// **array**, so the order is addressable — `${arr[0]}` is the first
+// candidate, and bash's own complete.tests reads it — and a completion
+// function offering `${arr[0]}` as its best guess would offer koi's
+// alphabetical first instead of the one the caller put first. And **a
+// wordlist's order is the caller's answer**: `compgen -W "$opts"` is the
+// commonest line in the corpus and `$opts` is routinely written
+// most-likely-first.
+//
+// Order is therefore each generator's own, and each one is measured
+// against bash rather than assumed: the wordlist and the keyword table
+// keep their written order, the signal table is signal-number order, the
+// job table is newest-first, the system databases are file order, and
+// the ones bash sorts — builtins, variables, exports, aliases,
+// functions, `set -o` and `shopt` names, help topics, readline bindings —
+// are sorted where they are produced. The one deliberate divergence is
+// `-f`/`-d`: bash's is a raw readdir, which on this machine answers
+// `mdir zfile mfile zdir adir afile`, and Go's `os.ReadDir` sorts. That
+// is a property of the C library rather than of the shell, and a sorted
+// listing is the more useful of the two, so the sets are compared and the
+// order is asserted to be sorted rather than to be bash's.
 func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []string {
 	flags, operands, err := parseCompArgs(compgenOpts, args)
 	if err == nil {
@@ -621,7 +646,13 @@ func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []
 		}
 	}
 
-	out := append(words, actionCandidates(hc, actions, cur)...) //nolint:gocritic // a fresh slice is intended
+	// The actions generate first and the wordlist last, whatever order
+	// the options were given in: `compgen -W "zz aa" -f` and `compgen -f
+	// -W "zz aa"` both answer with the file names and then zz aa. bash
+	// does not permute here either — the sequence is a property of its
+	// generator, not of the argv — and koi had the wordlist first, which
+	// only ever agreed because the whole list was then sorted (#613).
+	out := append(actionCandidates(hc, actions, cur), words...) //nolint:gocritic // a fresh slice is intended
 	var matched []string
 	for _, w := range out {
 		if !strings.HasPrefix(w, cur) {
@@ -632,8 +663,6 @@ func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []
 		}
 		matched = append(matched, prefix+w+suffix)
 	}
-	slices.Sort(matched)
-	matched = slices.Compact(matched)
 
 	if vname != "" {
 		return compgenAssign(hc, vname, matched)
@@ -767,9 +796,15 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 			// listing a keyword koi dropped on the floor would have been
 			// the wrong kind of parity — and it is here now that koi runs
 			// it (#287).
+			//
+			// In bash's own order, which is its reserved-word table's
+			// rather than anything derivable: `in` sits after `until do
+			// done` and the punctuation trails at the end. That was
+			// invisible while compgen sorted its output (#613), and it is
+			// the order bash's complete.tests prints.
 			out = append(out, "if", "then", "else", "elif", "fi", "case", "esac",
-				"for", "while", "until", "do", "done", "function", "select", "time",
-				"coproc", "!", "[[", "]]", "{", "}", "in")
+				"for", "select", "while", "until", "do", "done", "in",
+				"function", "time", "{", "}", "!", "[[", "]]", "coproc")
 		case "variable", "export":
 			// Runner.Vars holds the environment koi was launched with and is
 			// not updated as it runs, so reading it answered with real names
