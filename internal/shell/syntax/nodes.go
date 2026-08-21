@@ -294,6 +294,13 @@ type Assign struct {
 	Index  ArithmExpr // [i], ["k"]
 	Value  *Word      // =val
 	Array  *ArrayExpr // =(arr)
+
+	// BadIndex marks `name[]=value` — brackets with nothing at all
+	// between them, which bash reports when the assignment *runs*
+	// (`name[]: bad array subscript`) and not while parsing (#582).
+	// `name[  ]=value` is not this: whitespace is an empty arithmetic
+	// expression, so it is index 0 and Index is nil.
+	BadIndex bool
 }
 
 func (a *Assign) Pos() Pos {
@@ -990,6 +997,12 @@ type ArrayElem struct {
 	Index    ArithmExpr
 	Value    *Word
 	Comments []Comment
+
+	// BadIndex marks `[]=value` inside a compound assignment — brackets
+	// with nothing at all between them, which bash reports when the
+	// assignment runs (`[]=value: bad array subscript`) rather than
+	// while parsing (#582). See [Assign.BadIndex].
+	BadIndex bool
 }
 
 func (a *ArrayElem) Pos() Pos {

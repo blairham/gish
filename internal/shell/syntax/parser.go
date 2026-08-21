@@ -1655,7 +1655,7 @@ zshPrefixLoop:
 		if p.lang.in(LangZsh) && p.r == '[' && (len(p.val) != 1 || !positionalRuneParam(p.val[0])) {
 			p.pos = p.nextPos()
 			p.rune()
-			pe.Index = p.eitherIndex()
+			pe.Index, _ = p.eitherIndex(false)
 		}
 		p.quote = old
 		p.next()
@@ -1672,7 +1672,10 @@ zshPrefixLoop:
 		}
 		p.pos = p.nextPos()
 		p.rune()
-		pe.Index = p.eitherIndex()
+		// `${b[]}` is bash's "bad substitution" at runtime and koi has
+		// nowhere to hang that yet, so it stays a parse error (#582):
+		// only an assignment target defers the empty case.
+		pe.Index, _ = p.eitherIndex(false)
 	}
 	tokRune := p.r
 	p.pos = p.nextPos()
@@ -1985,7 +1988,20 @@ func (p *Parser) paramExpExp(outer quoteState) *Expansion {
 	return &Expansion{Op: op, Word: p.getWord()}
 }
 
-func (p *Parser) eitherIndex() ArithmExpr {
+// eitherIndex parses a subscript — `[i]` or `["k"]` — and reports
+// whether the brackets held *nothing at all*.
+//
+// That second answer exists because bash distinguishes `[]` from `[ ]`
+// (#582), which looks arbitrary until you see where it comes from: the
+// subscript is a word evaluated when the assignment or expansion runs,
+// and bash checks it for emptiness before evaluating. So `b[]=x` is a
+// runtime `b[]: bad array subscript` while `b[  ]=x` writes index 0,
+// since an empty arithmetic expression is zero — the same rule that
+// makes `$(( ))` answer 0. A nil expression carries the blank case,
+// which every arithmetic reader already treats as zero; the caller
+// decides what to do about the empty one, and only an assignment target
+// can defer it.
+func (p *Parser) eitherIndex(deferEmpty bool) (ArithmExpr, bool) {
 	old := p.quote
 	lpos := p.pos
 	p.quote = paramExpArithm
@@ -1993,10 +2009,23 @@ func (p *Parser) eitherIndex() ArithmExpr {
 	if p.tok == star || p.tok == at {
 		p.tok, p.val = _LitWord, p.tok.String()
 	}
-	expr := p.followArithm(leftBrack, lpos)
+	var expr ArithmExpr
+	empty := false
+	if p.tok == rightBrack {
+		// Nothing but whitespace, if anything: the closing bracket sits
+		// one column past the opening one when there was not even that.
+		empty = p.pos == posAddCol(lpos, 1)
+		if empty && !deferEmpty {
+			p.quote = old
+			p.posErr(lpos, "%#q must be followed by an expression", leftBrack)
+			return nil, false
+		}
+	} else {
+		expr = p.followArithm(leftBrack, lpos)
+	}
 	p.quote = old
 	p.matchedArithm(lpos, leftBrack, rightBrack)
-	return expr
+	return expr, empty
 }
 
 func (p *Parser) zshSubFlags() *FlagsArithm {
@@ -2111,8 +2140,15 @@ func (p *Parser) getAssign(needEqual bool) *Assign {
 		// hasValidIdent already checks p.r is '['
 		p.rune()
 		p.pos = posAddCol(p.pos, 1)
-		as.Index = p.eitherIndex()
+		as.Index, as.BadIndex = p.eitherIndex(true)
 		if p.spaced || p.stopToken() {
+			if as.BadIndex {
+				// `a[]` with no assignment is not a target at all, so
+				// there is nothing to defer the empty subscript to and
+				// it keeps being a parse error (#582).
+				p.posErr(as.Name.End(), "%#q must be followed by an expression", leftBrack)
+				return nil
+			}
 			if needEqual {
 				p.followErr(as.Pos(), "a[b]", assgn)
 			} else {
@@ -2121,13 +2157,14 @@ func (p *Parser) getAssign(needEqual bool) *Assign {
 			}
 		}
 		if p.tok == assgnParen {
-			if !p.lang.in(LangZsh) {
-				p.curErr("arrays cannot be nested")
-				return nil
-			}
-			// zsh allows a[i]=(values...).
-			// assgnParen consumed both '=' and '(',
-			// so rewrite as leftParen for array parsing below.
+			// `a[i]=(values)` is zsh's, and in bash it is an error the
+			// *assignment* reports — `a[i]: cannot assign list to array
+			// member` — so the shape is parsed in both and the verdict
+			// belongs to the interpreter (#582). Refusing it here cost
+			// the rest of the file for a construct bash reads.
+			//
+			// assgnParen consumed both '=' and '(', so rewrite as
+			// leftParen for the array parsing below.
 			p.tok = leftParen
 			p.pos = posAddCol(p.pos, 1)
 		} else {
@@ -2170,7 +2207,10 @@ func (p *Parser) getAssign(needEqual bool) *Assign {
 			ae.Comments, p.accComs = p.accComs, nil
 			if p.tok == leftBrack {
 				left := p.pos
-				ae.Index = p.eitherIndex()
+				// `[]=v` inside a compound assignment is bash's
+				// runtime error rather than a parse error (#582), the
+				// same as a bare `name[]=v`.
+				ae.Index, ae.BadIndex = p.eitherIndex(true)
 				if p.tok == assgnParen {
 					p.curErr("arrays cannot be nested")
 					return nil

@@ -201,7 +201,7 @@ func (p *Parser) arithmExprValue(compact bool) ArithmExpr {
 			break
 		}
 		pe := &ParamExp{Short: true, Param: l}
-		pe.Index = p.eitherIndex()
+		pe.Index, _ = p.eitherIndex(false)
 		x = p.wordOne(pe)
 	case bckQuote:
 		if p.quote == arithmExprLet && p.openBquotes > 0 {
