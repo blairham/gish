@@ -30,11 +30,14 @@ import (
 // Four-space indent per level; every statement in a block terminated by
 // a semicolon except the last; a trailing space after the `()` and
 // after the opening brace, which is why the shapes above are written
-// with explicit markers. Three normalizations are bash's own and are
+// with explicit markers. Four normalizations are bash's own and are
 // reproduced because they change the text: `elif` renders as a nested
 // `else if`, a nested function declaration gains the `function`
-// keyword, and a duplicating redirection grows its default descriptor
-// (`>&2` prints as `1>&2`).
+// keyword, a duplicating redirection grows its default descriptor
+// (`>&2` prints as `1>&2`), and every other redirection gains a space
+// before its word (`>/dev/null` prints as `> /dev/null`) — so a
+// definition's redirections are matched against what bash *prints*
+// rather than against the source that was read (#631).
 
 // funcPrinter renders one function body in bash's canonical shape.
 type funcPrinter struct {
@@ -87,24 +90,52 @@ func printFuncCanonical(name string, body *syntax.Stmt, keyword bool) string {
 
 // block renders a function body: the `{ … }` wrapper plus its
 // statements. The body of a function is always a block in bash's
-// output, even when the source wrote a subshell.
+// output, even when the source wrote a subshell or a bare compound
+// command — `f() ( … )` prints as a subshell *inside* braces.
+//
+// Where a body's redirections land depends on that wrapping, and both
+// halves are bash's, measured (#631). A block body wrote its own
+// braces, so a redirection on the definition belongs to them and prints
+// after the closing one: `} 1>&2`. Any other body is wrapped by bash,
+// so the redirection stays on the statement it was written on and
+// prints inside: `    ( echo hi ) 1>&2`.
 func (p *funcPrinter) block(body *syntax.Stmt) {
 	stmts := []*syntax.Stmt{body}
-	switch cmd := body.Cmd.(type) {
-	case *syntax.Block:
+	blockBody := false
+	if cmd, ok := body.Cmd.(*syntax.Block); ok {
 		stmts = cmd.Stmts
-	case *syntax.Subshell:
-		// `f() ( … )` keeps its subshell, printed on one line.
-		p.indent()
-		p.stmt(body)
-		p.sb.WriteString("\n")
-		return
+		blockBody = true
 	}
 	p.sb.WriteString("{ \n")
 	p.depth++
 	p.stmts(stmts, true)
 	p.depth--
 	p.sb.WriteString("}")
+	if blockBody {
+		p.defRedirs(body.Redirs)
+	}
+}
+
+// defRedirs renders the redirections a function *definition* carries,
+// after the closing brace of its body block.
+//
+// A here-document is skipped rather than printed. bash puts its body on
+// the lines *after* the one the operator is on, and this printer writes
+// a line at a time with nothing pending, so `} <<EOF` with no body
+// behind it would be a definition koi's own parser rejects — breaking
+// the one property printFuncCanonicalRoundTrips exists to hold. Skipping
+// leaves that shape answering exactly as it did before #631; bash's own
+// answer is measured in #638, together with the same dropped body on a
+// statement *inside* a function, which is where most of it lives and
+// which is why it is a separate fix rather than half of this one.
+func (p *funcPrinter) defRedirs(rs []*syntax.Redirect) {
+	for _, rd := range rs {
+		if rd.Op == syntax.Hdoc || rd.Op == syntax.DashHdoc {
+			continue
+		}
+		p.sb.WriteString(" ")
+		p.redir(rd)
+	}
 }
 
 // stmts renders a run of statements, one per line. Every one is
