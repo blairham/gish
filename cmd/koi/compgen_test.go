@@ -221,3 +221,70 @@ func difference(a, b []string) []string {
 	}
 	return out
 }
+
+// The `-A` actions that name a *shell table* rather than the file system
+// (#277): `setopt`, `shopt`, `enabled`, `disabled` and `helptopic` all
+// answered nothing, which is indistinguishable from a shell with no
+// options and no builtins — and it is what a completion script asks
+// before offering `set -o <TAB>`.
+//
+// Two of them can match bash exactly, because koi recognizes every name
+// bash does even where it keeps one at its default; the other two are
+// koi's own set by the same rule that makes `compgen -b` answer 51 to
+// bash's 61 (#269), so they are asserted against koi rather than
+// compared.
+func TestCompgenOptionActionsMatchBash(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	for _, action := range []string{"setopt", "shopt", "disabled"} {
+		got, _ := shellLines(t, koi, dir, "compgen -A "+action)
+		want, _ := shellLines(t, bash, dir, "compgen -A "+action)
+		for _, name := range difference(want, got) {
+			t.Errorf("bash lists %s %q and koi does not", action, name)
+		}
+		for _, name := range difference(got, want) {
+			t.Errorf("koi lists %s %q and bash does not", action, name)
+		}
+		if action != "disabled" && len(got) == 0 {
+			t.Errorf("compgen -A %s listed nothing, which is what this test exists to catch", action)
+		}
+	}
+}
+
+// The two whose answer is this shell's own set, checked for being true
+// rather than for being bash's: a name listed here has to be one koi
+// can act on, which is the property that makes the listing worth having.
+func TestCompgenListsOnlyWhatKoiHas(t *testing.T) {
+	t.Parallel()
+	koi := buildKoi(t)
+	dir := t.TempDir()
+
+	topics, _ := shellLines(t, koi, dir, "compgen -A helptopic")
+	if len(topics) == 0 {
+		t.Fatal("compgen -A helptopic listed nothing")
+	}
+	for _, topic := range topics {
+		if _, status := shellLines(t, koi, dir, "help "+singleQuoted(topic)); status != 0 {
+			t.Errorf("compgen offers help topic %q, which help itself does not answer", topic)
+		}
+	}
+
+	enabled, _ := shellLines(t, koi, dir, "compgen -A enabled")
+	builtinList, _ := shellLines(t, koi, dir, "compgen -b")
+	for _, name := range difference(enabled, builtinList) {
+		t.Errorf("compgen -A enabled lists %q, which is not a builtin here", name)
+	}
+	for _, name := range difference(builtinList, enabled) {
+		// koi has no `enable -n`, so every builtin it has is enabled;
+		// the two lists are the same one until that changes.
+		t.Errorf("compgen -b lists %q but -A enabled does not", name)
+	}
+}
+
+// singleQuoted wraps a topic for the shell, since some of them are
+// punctuation the shell would otherwise read.
+func singleQuoted(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

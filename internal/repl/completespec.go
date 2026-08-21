@@ -489,8 +489,21 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 			for _, c := range complete.Commands("", path, builtins.ShellBuiltins()) {
 				out = append(out, c.Value)
 			}
-		case "builtin":
+		case "builtin", "enabled":
+			// `enabled` is the same list: koi has no `enable -n`, so no
+			// builtin is ever switched off — which is also why
+			// `disabled` below answers nothing rather than being absent.
 			out = append(out, builtins.ShellBuiltins()...)
+		case "disabled":
+		case "setopt":
+			out = append(out, interp.OptionNames()...)
+		case "shopt":
+			out = append(out, interp.ShoptNames()...)
+		case "helptopic":
+			// What `help` can answer about, which is this shell's set
+			// rather than bash's: koi has fewer builtins and some of
+			// its own (#269's rule, applied to a third listing).
+			out = append(out, slices.Sorted(maps.Keys(helpTopics))...)
 		case "keyword":
 			// All twenty-two of bash's. coproc was the one deliberate
 			// omission — this action answers what *this* shell has, and
