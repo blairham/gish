@@ -3680,6 +3680,43 @@ q`,
 		"trap 'echo D' DEBUG; ( echo sub )",
 		"sub\n",
 	},
+
+	// Which commands the DEBUG trap fires for (#614). The rule is leaf,
+	// not compound, and the leaves are not all a CallExpr — a function
+	// that declares its locals traced none of those lines, which for a
+	// debugger stepping through a body is the whole preamble.
+	{
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; declare -i n=1; echo $n",
+		"D:[declare -i n=1]\nD:[echo $n]\n1\n",
+	},
+	{
+		"set -T; trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; f(){ local a=1; declare -i b=2; echo $a$b; }; f",
+		"D:[f]\nD:[f]\nD:[local a=1]\nD:[declare -i b=2]\nD:[echo $a$b]\n12\n",
+	},
+	{
+		"set -T; trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; f(){ export E=1; readonly R=2; echo $E$R; }; f",
+		"D:[f]\nD:[f]\nD:[export E=1]\nD:[readonly R=2]\nD:[echo $E$R]\n12\n",
+	},
+	{
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; [[ x == y ]]; let q=2+3; echo $q",
+		"D:[[[ x == y ]]]\nD:[let q=2+3]\nD:[echo $q]\n5\n",
+	},
+	{
+		// `(( ))` traces too, and is counted rather than spelled: bash
+		// answers BASH_COMMAND with the arithmetic *as written* while
+		// koi prints it back from the parse tree with normalized
+		// spacing, so `(( a+1 ))` reads `((a + 1))` here — the same
+		// root cause as #598, and the timing is what this asserts.
+		"set -T; trap 'echo D' DEBUG; [[ x == x ]]; let a=1; (( a+1 )); echo done",
+		"D\nD\nD\nD\ndone\n",
+	},
+	{
+		// A compound command gets no trace of its own: the subshell,
+		// the block, the negation and `time` all reach the trap once,
+		// as their inner command.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; { echo blk; }; ! false",
+		"D:[echo blk]\nblk\nD:[false]\n",
+	},
 	{
 		// The trap fires for the command that removes it, which is the
 		// order bash runs them in rather than an accident.
@@ -3734,6 +3771,50 @@ q`,
 	{
 		"f(){ trap 'echo T' RETURN; :; }; f; trap -p RETURN",
 		"T\ntrap -- 'echo T' RETURN\n",
+	},
+
+	// Where a RETURN trap says it is, and where the DEBUG trap says the
+	// function starts (#614). `print_return_trap $LINENO` is bash's own
+	// debugger idiom; koi answered the line the *trap* was written on,
+	// so every frame in a run reported the same number.
+	{
+		"set -T\ntrap 'echo \"R:$LINENO\"' RETURN\nf() {\n  echo body\n}\nf",
+		"body\nR:3\n",
+	},
+	{
+		// Installed after the function, so the trap's own line is past
+		// the body rather than before it: a number taken from the trap
+		// would read 5 here and 2 in the case above.
+		"set -T\nf() {\n  echo body\n}\ntrap 'echo \"R:$LINENO\"' RETURN\nf",
+		"body\nR:2\n",
+	},
+	{
+		// Each frame reports its own, innermost first.
+		"set -T\ntrap 'echo \"R:$LINENO\"' RETURN\nouter() { inner; }\ninner() { echo work; }\nouter",
+		"work\nR:4\nR:3\n",
+	},
+	{
+		// The action reads BASH_COMMAND as the last command the frame
+		// ran, which is why RETURN counts as a trap that wants it
+		// maintained.
+		"set -T; trap 'echo \"R:[$BASH_COMMAND]\"' RETURN; f(){ echo one; echo two; }; f",
+		"one\ntwo\nR:[echo two]\n",
+	},
+	{
+		// Entering a function is its own DEBUG event, reporting the
+		// line the body starts on — so a call on line 6 traces 6 in the
+		// caller's frame and then 3 in the function's, which is how a
+		// stepping debugger follows execution into a call.
+		"set -T\ntrap 'echo \"D:$LINENO\"' DEBUG\nf() {\n  echo body\n}\nf",
+		"D:6\nD:3\nD:4\nbody\n",
+	},
+	{
+		// extdebug: declining the function-entry trace skips the whole
+		// body *and* the RETURN trap, which is what makes it a
+		// debugger's "skip this call". `keep` shows both still happen
+		// when the trace does not decline.
+		"shopt -s extdebug\nset -T\nd() { [ \"$1\" = enter ] && return 1; return 0; }\ntrap 'd $BASH_COMMAND' DEBUG\ntrap 'echo LEFT:$LINENO' RETURN\nenter() { echo NOPE; }\nkeep() { echo yes; }\nenter\nkeep\necho st=$?",
+		"yes\nLEFT:7\nst=0\n",
 	},
 	{
 		// bare `trap` prints the same listing as `trap -p`.
