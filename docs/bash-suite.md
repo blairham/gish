@@ -7,8 +7,8 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 | measure | result | what it answers |
 | --- | --- | --- |
 | **strict** | **18/83 files (21%)** | identical output *and* exit status for a whole file |
-| parsed | 66/83 files (79%) | koi can read the file at all |
-| line agreement | 8142/13655 lines (59%) | how much of bash's output koi reproduced exactly |
+| parsed | 68/83 files (81%) | koi can read the file at all |
+| line agreement | 8187/13655 lines (59%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -19,7 +19,7 @@ denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
 directions. **Strict is a file count, and runtime behavior dominates
-it**: 48 files parse perfectly and then behave differently, against 17
+it**: 50 files parse perfectly and then behave differently, against 15
 koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
@@ -50,18 +50,16 @@ bash code uses them.
 | `%` must follow an expression | quotearray.tests |
 | `++` must follow a name | arith-for.tests |
 | `+=` must follow a name | arith.tests |
-| `-` cannot be followed by a word | more-exp.tests |
 | `[x]` must be followed by `=` | appendop.tests |
 | `select` must be followed by a literal | errors.tests |
 | a command can only contain words and redirects; encountered `(` | extglob.tests |
 | array element values must be words | array.tests |
+| invalid parameter name | more-exp.tests |
 | nested parameter expansions are a zsh feature; tried parsing as bash | new-exp.tests |
 | not a valid arithmetic operator: `world` | assoc.tests |
 | not a valid parameter expansion operator: `*` | cond.tests |
-| not a valid parameter expansion operator: `~` | casemod.tests |
 | reached EOF without closing quote `"` | posixexp2.tests |
 | reached EOF without matching `${` with `}` | posixexp.tests |
-| reached `)` without matching `((` with `))` | parser.tests |
 | unclosed here-document `` | heredoc.tests |
 
 ### Constructs the file census does not name
