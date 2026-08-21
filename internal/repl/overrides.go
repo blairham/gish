@@ -2,6 +2,8 @@ package repl
 
 import (
 	"context"
+	"fmt"
+	"syscall"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 
@@ -53,10 +55,21 @@ func overrideCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 // non-interactive paths.
 //
 // kill gets an empty job table: signaling a pid needs no table at all
-// and that is what scripts use, while a %job spec correctly finds
-// nothing to name. umask needs no shell state whatsoever.
+// and that is what scripts use. A %job spec is the interpreter's to
+// answer — a script's background commands are its goroutines, not this
+// table's process groups (#397) — so the table is given a hook back to
+// the session runner rather than a job of its own. umask needs no shell
+// state whatsoever.
 func registerScriptOverrides() {
-	builtins.Register("__koi_kill", (&jobs.Table{}).Kill)
+	table := &jobs.Table{}
+	table.SetSignalHook(func(spec string, sig syscall.Signal) error {
+		runner := sessionRunner()
+		if runner == nil {
+			return fmt.Errorf("%s: no such job", spec)
+		}
+		return runner.SignalJob(spec, sig)
+	})
+	builtins.Register("__koi_kill", table.Kill)
 	builtins.Register("__koi_umask", builtins.Umask)
 	builtins.Register("__koi_times", builtins.Times)
 	builtins.Register("__koi_newgrp", builtins.Newgrp)

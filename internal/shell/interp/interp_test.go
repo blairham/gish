@@ -2018,6 +2018,29 @@ q`,
 	{"sleep 0.01 & disown; jobs", ""},
 	{"disown; echo d=$?", "disown: current: no such job\nd=1\n #JUSTERR"},
 
+	// Job control is something a script can ask for (#397): `set -m` was
+	// refused outright, which made the line fatal in the scripts most
+	// likely to write it.
+	{"set -m; echo m=$?", "m=0\n"},
+	{"fg; echo f=$?", "fg: no job control\nf=1\n #JUSTERR"},
+	{"bg; echo b=$?", "bg: no job control\nb=1\n #JUSTERR"},
+	{"set -m; fg; echo f=$?", "fg: current: no such job\nf=1\n #JUSTERR"},
+	{"set -m; fg %9; echo f=$?", "fg: %9: no such job\nf=1\n #JUSTERR"},
+	// Foregrounding a job in a script is waiting for it, and bash's own
+	// output for it is the job's command line.
+	{"set -m; sleep 0.01 & fg; echo f=$?", "sleep 0.01\nf=0\n"},
+	{"set -m; { exit 3; } & fg; echo f=$?", "{ exit 3; }\nf=3\n"},
+	{"set -m; sleep 0.01 & fg %1; echo f=$?", "sleep 0.01\nf=0\n"},
+	// A job already waited for is gone, whatever its number was.
+	{"set -m; sleep 0.01 & wait; fg; echo f=$?", "fg: current: no such job\nf=1\n #JUSTERR"},
+	// Nothing koi runs in the background is ever stopped, so every job
+	// bg can name is already running — the case bash answers 0 for.
+	{"set -m; sleep 0.01 & bg; echo b=$?", "bg: job 1 already in background\nb=0\n #JUSTERR"},
+	// Job control turns lastpipe off, which is bash's rule and the one
+	// observable consequence of `set -m` in koi.
+	{`shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[x]\n"},
+	{`set -m; shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[]\n"},
+
 	// In the C locale a character is a byte (#470): koi was UTF-8
 	// everywhere, so a script that sets LC_ALL=C to make its own output
 	// stable got UTF-8 answers anyway.

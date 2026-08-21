@@ -487,6 +487,15 @@ type bgProc struct {
 	// no longer waited for (#397).
 	disowned bool
 
+	// cancel ends the job, and killed carries the signal number a `kill
+	// %n` asked for so the job can report 128+n the way a signaled
+	// process does (#397). koi's jobs are goroutines, so the signal is
+	// delivered as a cancelled context — which is how the shell already
+	// interrupts a running command — and reaches a real child through
+	// the exec handler's own context.
+	cancel context.CancelFunc
+	killed *atomic.Int32
+
 	// inherited marks a job this shell can *see* but is not the parent of.
 	// A command substitution gets one of these per job of the shell that
 	// spawned it, because `jobs` inside `$(...)` reports the caller's jobs
@@ -1280,7 +1289,18 @@ var posixOptsTable = [...]posixOpt{
 	// stays in this block only because the table is positional (the opt*
 	// constants below index into it) and moving it would renumber them.
 	{'b', "notify", false, false},
-	{'m', "monitor", false, false},
+	// Job control, which a script asks for with `set -m` (#397). koi
+	// refused it, so the line was fatal — and the scripts that write it
+	// are the ones that most want the shell to keep going.
+	//
+	// What it means here is narrower than in bash and is worth stating,
+	// because the difference is invisible until it matters: koi's
+	// background jobs are goroutines rather than process groups of their
+	// own, so `-m` does not change how a job is placed or signaled. What
+	// it does change is what a script can *say*: `fg` and `bg` are gated
+	// on job control being on, exactly as in bash, and `lastpipe` stops
+	// applying, which is bash's rule too and is observable.
+	{'m', "monitor", false, true},
 	{'H', "histexpand", false, false},
 	{' ', "history", false, true},
 	{' ', "emacs", false, false},
@@ -1359,9 +1379,8 @@ var bashOptsTable = [...]bashOpt{
 		// `cmd | read x` kept x and `cat f | while read l; do n=$((n+1));
 		// done` kept n, which is the single most famous bash gotcha
 		// answered un-bash-ly. bash additionally requires job control to
-		// be inactive for lastpipe to take effect; the interpreter never
-		// has job control (monitor is unsupported here — the shell around
-		// it owns jobs), so the option is honored whenever set.
+		// be inactive for lastpipe to take effect, and so does koi since
+		// `set -m` became settable (#397).
 		name:         "lastpipe",
 		defaultState: false,
 		supported:    true,

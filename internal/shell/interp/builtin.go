@@ -58,12 +58,12 @@ var builtinNames = map[string]bool{
 	// POSIX Shell builtins, from section 1.d obtained in September 2025 from:
 	// https://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html#tag_18_09_01_01
 	"alias":   true,
-	"bg":      false,
+	"bg":      true,
 	"cd":      true,
 	"command": true,
 	"false":   true,
 	"fc":      false,
-	"fg":      false,
+	"fg":      true,
 	"getopts": true,
 	"hash":    true,
 	"jobs":    true,
@@ -1902,6 +1902,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 
 	case "jobs":
 		return r.jobsBuiltin(args)
+
+	case "fg", "bg":
+		return r.jobControlBuiltin(ctx, name, args)
 
 	case "disown":
 		// Forget a job, so it is no longer listed and no longer waited
