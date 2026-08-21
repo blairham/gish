@@ -4,7 +4,6 @@ package jobs
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 )
@@ -14,6 +13,6 @@ import (
 // missing rather than reporting "executable file not found" — the same
 // rule the native builtin matrix pins for every other command.
 func (t *Table) Kill(_ context.Context, hc interp.HandlerContext, _ []string) error {
-	fmt.Fprintln(hc.Stderr, "kill: not supported on this platform")
+	hc.Errf("kill: not supported on this platform\n")
 	return interp.ExitStatus(1)
 }

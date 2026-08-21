@@ -57,12 +57,13 @@ type parallelOpts struct {
 func parallelBuiltin(ctx context.Context, hc interp.HandlerContext, args []string) error {
 	opts, template, inputs, err := parseParallelArgs(args)
 	if err != nil {
-		fmt.Fprintf(hc.Stderr, "parallel: %v\n%s\n", err, parallelUsage)
+		hc.Errf("parallel: %v\n", err)
+		hc.RawErrf("%s\n", parallelUsage)
 		return interp.ExitStatus(2)
 	}
 	if inputs == nil { // no ::: — the stdin-fed variant
 		if inputs, err = readInputLines(hc.Stdin); err != nil {
-			fmt.Fprintln(hc.Stderr, "parallel:", err)
+			hc.Errf("parallel: %v\n", err)
 			return interp.ExitStatus(2)
 		}
 	}
@@ -248,7 +249,10 @@ func runTask(ctx context.Context, hc interp.HandlerContext, opts parallelOpts, e
 		res.stdout, res.stderr = []byte(stdout.String()), []byte(stderr.String())
 		var exitErr *exec.ExitError
 		if err != nil && !errors.As(err, &exitErr) { // couldn't start, not a task failure
-			res.stderr = fmt.Appendf(res.stderr, "parallel: %s: %v\n", input, err)
+			// Located like the streaming path's copy of this diagnostic
+			// (#611): it is buffered rather than written now, so the
+			// prefix has to travel with it.
+			res.stderr = fmt.Appendf(res.stderr, "%sparallel: %s: %v\n", hc.ErrLocation, input, err)
 		}
 		return res
 	}
@@ -257,7 +261,7 @@ func runTask(ctx context.Context, hc interp.HandlerContext, opts parallelOpts, e
 	errPipe, _ := cmd.StderrPipe() //nolint:errcheck
 	if err := cmd.Start(); err != nil {
 		outMu.Lock()
-		fmt.Fprintf(hc.Stderr, "parallel: %s: %v\n", input, err)
+		hc.Errf("parallel: %s: %v\n", input, err)
 		outMu.Unlock()
 		return taskResult{status: 127}
 	}

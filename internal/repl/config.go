@@ -109,7 +109,7 @@ func configCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 func runConfig(hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "config:", err)
+		hc.Errf("config: %v\n", err)
 		return []string{"false"}
 	}
 	if len(args) == 0 {
@@ -232,11 +232,11 @@ func persistPairs(hc interp.HandlerContext, pairs [][2]string) (assigns []string
 	for _, p := range pairs {
 		quoted, err := syntax.Quote(p[1], syntax.LangBash)
 		if err != nil {
-			fmt.Fprintln(hc.Stderr, "config:", err)
+			hc.Errf("config: %v\n", err)
 			return nil, false
 		}
 		if _, err := writeRCSetting(p[0], quoted); err != nil {
-			fmt.Fprintln(hc.Stderr, "config:", err)
+			hc.Errf("config: %v\n", err)
 			return nil, false
 		}
 		assigns = append(assigns, p[0]+"="+quoted)

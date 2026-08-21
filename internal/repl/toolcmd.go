@@ -43,7 +43,7 @@ func toolCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 func runTool(hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "tool:", err)
+		hc.Errf("tool: %v\n", err)
 		return []string{"false"}
 	}
 	roots := tools.InstallRoots()
@@ -184,12 +184,14 @@ func showToolOverview(hc interp.HandlerContext, roots []string) {
 // mise, ubi, and asdf already own full time.
 func printInstallDelegation(hc interp.HandlerContext, tool, version, repo string) {
 	v := strings.TrimPrefix(version, "v")
-	fmt.Fprintf(hc.Stderr, "tool: koi switches versions, it does not install them.\n")
-	fmt.Fprintf(hc.Stderr, "  ubi  --project %s --tag %s --in %s\n",
+	hc.Errf("tool: koi switches versions, it does not install them.\n")
+	// The one-liners under it are a continuation rather than
+	// diagnostics of their own, so they go unlocated (#611).
+	hc.RawErrf("  ubi  --project %s --tag %s --in %s\n",
 		repo, version, asdfBinDir(tool, v))
-	fmt.Fprintf(hc.Stderr, "  mise use -g %s@%s        (if mise has a backend for it)\n", tool, v)
-	fmt.Fprintf(hc.Stderr, "  asdf plugin add %s && asdf install %s %s\n", tool, tool, v)
-	fmt.Fprintf(hc.Stderr, "Any of those installs into a tree koi already resolves; `tool list %s` will show it.\n", tool)
+	hc.RawErrf("  mise use -g %s@%s        (if mise has a backend for it)\n", tool, v)
+	hc.RawErrf("  asdf plugin add %s && asdf install %s %s\n", tool, tool, v)
+	hc.RawErrf("Any of those installs into a tree koi already resolves; `tool list %s` will show it.\n", tool)
 }
 
 // asdfBinDir is where a manually installed version must land for the

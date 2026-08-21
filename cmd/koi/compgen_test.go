@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -597,4 +598,313 @@ func TestCompgenWithNoGeneratorSucceeds(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The ten `-A` actions that were recognized and answered nothing (#606).
+//
+// #277 fixed five actions that name a *shell table*; these are the rest,
+// and they split three ways, which is why they are three tests rather
+// than one loop. Four of them read the system — users, groups, services
+// and hosts — and are compared against bash, because bash's answer there
+// is not bash's opinion: `compgen -u` is getpwent(3) and `compgen -A
+// hostname` is $HOSTFILE, so the same database is the honest answer and a
+// refusal saying koi does not look would be a worse one. `signal`, `job`,
+// `running`, `stopped`, `arrayvar` and `binding` are koi's own tables and
+// are asserted against koi by #269's rule.
+//
+// Every one of these asserts *non-empty* as well as whatever else it
+// claims, because an empty listing is the bug: "koi lists nothing bash
+// does not" passes vacuously against a shell that answers nothing, which
+// is exactly the state this issue was opened about.
+
+// compgenSystemActions are the four that read a database outside the
+// shell. The comparison is a subset claim rather than equality, and the
+// reason is measured: getpwent consults the directory service on a mac
+// or an LDAP-joined box, so bash answered 265 users where /etc/passwd
+// holds 132 — koi reads the files, since enumerating through libc means
+// cgo and Go's os/user has no enumeration to borrow. A name koi lists
+// and bash does not is still a failure, and that is the direction a
+// misparse breaks in (a leading-whitespace `1023/tcp # Reserved` line in
+// darwin's /etc/services answers twenty service names getservent never
+// reports).
+func TestCompgenSystemActionsMatchBash(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	// The letter spellings are here for a reason of their own: bash's
+	// `-s` is **service**, and `signal` has no letter at all. koi mapped
+	// `-s` to `signal`, so the letter form of one action generated the
+	// other's candidates — invisible while both answered nothing, and a
+	// wrong answer the moment either started working.
+	for _, tc := range []struct{ action, opt string }{
+		{"user", "-A user"},
+		{"user", "-u"},
+		{"group", "-A group"},
+		{"group", "-g"},
+		{"service", "-A service"},
+		{"service", "-s"},
+		{"hostname", "-A hostname"},
+	} {
+		action := tc.action
+		t.Run(action+" "+tc.opt, func(t *testing.T) {
+			t.Parallel()
+			script := "compgen " + tc.opt
+			got, gotStatus := shellLines(t, koi, dir, script)
+			want, wantStatus := shellLines(t, bash, dir, script)
+			if len(want) == 0 {
+				t.Skipf("bash lists no %s here (%s): no oracle", action, bashVersion(t, bash))
+			}
+			if len(got) == 0 {
+				t.Fatalf("%s listed nothing where bash listed %d — the silence this fixes", script, len(want))
+			}
+			// Duplicates and order are #613's, and koi still collapses
+			// both, so the sets are what is compared here.
+			for _, name := range difference(uniqueLines(got), uniqueLines(want)) {
+				t.Errorf("koi lists %s %q and bash does not", action, name)
+			}
+			if gotStatus != wantStatus {
+				t.Errorf("%s: koi status %d, bash %d", script, gotStatus, wantStatus)
+			}
+		})
+	}
+}
+
+// The host database is the one of the four whose file koi can *own*, so
+// it is compared for equality rather than containment — and the parse it
+// pins has a rule nobody would guess. readline skips a line's first
+// field only when it starts with a digit, so `1.2.3.4 host` lists `host`
+// alone while `::1 gamma` lists **both**: an IPv6 address is a hostname
+// candidate in bash. A `#` at the start of a field ends the line and
+// `a#b` is one name.
+func TestCompgenHostnameReadsHostfileLikeBash(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	hosts := filepath.Join(dir, "hosts")
+	if err := os.WriteFile(hosts, []byte(
+		"1.2.3.4 alpha beta\n"+
+			"# a comment line\n"+
+			"\n"+
+			"::1 gamma\n"+
+			"fe80::1%lo0 delta\n"+
+			"5.6.7.8\tepsilon\t# trailing comment\n"+
+			"abc.def zeta\n"+
+			"10.0.0.1 eta#theta\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct{ name, script string }{
+		{"the file bash reads", `HOSTFILE=` + hosts + `; compgen -A hostname`},
+		{"a prefix", `HOSTFILE=` + hosts + `; compgen -A hostname al`},
+		{"a prefix nothing matches", `HOSTFILE=` + hosts + `; compgen -A hostname zzz; echo "rc=$?"`},
+		// A file that is not there generates nothing and answers 1, with
+		// no diagnostic: the caller is a completion function.
+		{"a file that is not there", `HOSTFILE=` + filepath.Join(dir, "nope") + `; compgen -A hostname; echo "rc=$?"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, gotStatus := shellLines(t, koi, dir, tc.script)
+			want, wantStatus := shellLines(t, bash, dir, tc.script)
+			if strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Errorf("%s:\n  koi:  %q\n  bash: %q", tc.script, got, want)
+			}
+			if gotStatus != wantStatus {
+				t.Errorf("%s: koi status %d, bash %d", tc.script, gotStatus, wantStatus)
+			}
+		})
+	}
+}
+
+// `-A signal` is koi's own trap table, and the assertion runs in both
+// directions because either alone passes vacuously. Nothing listed may
+// be a name bash does not have (that would be an invented signal), and
+// nothing in koi's own `trap -l` may be missing (that is the silence).
+// Every name is then handed to `trap`, which is the property that makes
+// the listing worth having: a completion offering a signal the shell
+// would refuse is the failure the empty answer was hiding.
+func TestCompgenSignalActionIsKoisTrapTable(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	got, _ := shellLines(t, koi, dir, "compgen -A signal")
+	want, _ := shellLines(t, bash, dir, "compgen -A signal")
+	if len(got) == 0 {
+		t.Fatal("compgen -A signal listed nothing, which is what this test exists to catch")
+	}
+	for _, name := range difference(got, want) {
+		t.Errorf("koi lists signal %q and bash does not", name)
+	}
+
+	// The fake traps are part of bash's listing and part of koi's, so
+	// they are named rather than left to the subset check — they are the
+	// four every `trap` in a real script uses.
+	for _, pseudo := range []string{"EXIT", "DEBUG", "ERR", "RETURN"} {
+		if !slices.Contains(got, pseudo) {
+			t.Errorf("compgen -A signal does not offer %q, which koi's trap accepts", pseudo)
+		}
+	}
+
+	// koi's own listing is the other direction: every signal `trap -l`
+	// prints has to be offered, SIG-prefixed as bash spells it.
+	listed, _ := shellRows(t, koi, dir, "trap -l")
+	tableNames := 0
+	for _, row := range listed {
+		for _, field := range strings.Fields(row) {
+			if !strings.HasPrefix(field, "SIG") {
+				continue
+			}
+			tableNames++
+			if !slices.Contains(got, field) {
+				t.Errorf("trap -l prints %q and compgen -A signal does not offer it", field)
+			}
+		}
+	}
+	if tableNames == 0 {
+		t.Error("trap -l printed no signal names, so the direction above proved nothing")
+	}
+
+	for _, name := range got {
+		out, status := runShell(t, koi, "trap : "+name)
+		if status != 0 {
+			t.Errorf("compgen offers signal %q, which trap refuses: %q", name, out)
+		}
+	}
+}
+
+// `-A job` and its two filtered forms, against bash. The candidate is
+// the job's **first word**, which is measured rather than assumed: bash
+// answers `sleep` for `sleep 5 | cat` and `{` for `{ sleep 5; }`, where
+// the plausible guess is the whole command line.
+//
+// Every background command redirects both descriptors, which is the
+// harness's need rather than the shell's: a child holding the test's
+// stdout keeps the pipe open until it exits, so an unredirected `sleep 5
+// &` would cost this test five seconds per case in both shells.
+func TestCompgenJobActionsMatchBash(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+	bg := ` >/dev/null 2>&1 &`
+
+	for _, tc := range []struct{ name, script string }{
+		{"one job", `sleep 5` + bg + ` compgen -A job`},
+		// Distinct first words, because two `sleep` jobs are two
+		// identical candidates and koi still collapses those (#613).
+		{"two jobs", `/bin/sleep 5` + bg + ` sleep 6` + bg + ` compgen -A job`},
+		{"a compound job", `{ sleep 5; }` + bg + ` compgen -A job`},
+		// Both stages redirect, for the reason above: the *first* stage's
+		// stderr is the test's too, and one unredirected descriptor is
+		// five seconds.
+		{"a pipeline job", `sleep 5 2>/dev/null | cat` + bg + ` compgen -A job`},
+		{"the letter form", `sleep 5` + bg + ` compgen -j`},
+		{"running only", `sleep 5` + bg + ` compgen -A running`},
+		{"a prefix that matches", `sleep 5` + bg + ` compgen -A job sle`},
+		{"a prefix that does not", `sleep 5` + bg + ` compgen -A job zzz; echo "rc=$?"`},
+		// No jobs is a generator that came up empty: 1, not the 0 of a
+		// question never asked.
+		{"no jobs at all", `compgen -A job; echo "rc=$?"`},
+		{"no stopped jobs", `sleep 5` + bg + ` compgen -A stopped; echo "rc=$?"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, gotStatus := shellLines(t, koi, dir, tc.script)
+			want, wantStatus := shellLines(t, bash, dir, tc.script)
+			if strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Errorf("%s:\n  koi:  %q\n  bash: %q", tc.script, got, want)
+			}
+			if gotStatus != wantStatus {
+				t.Errorf("%s: koi status %d, bash %d", tc.script, gotStatus, wantStatus)
+			}
+		})
+	}
+}
+
+// `-A stopped` answers nothing in a koi script, and that is a fact about
+// koi rather than a gap: a script's jobs are goroutines, so `kill -STOP
+// %1` is *refused* rather than ignored (#397) and there genuinely is
+// never a stopped job to list. Asserted as a pair — the empty listing
+// beside the refusal that makes it true — because the empty half alone
+// is indistinguishable from the bug.
+func TestCompgenStoppedIsEmptyBecauseNothingStops(t *testing.T) {
+	t.Parallel()
+	koi := buildKoi(t)
+
+	out, status := runShell(t, koi, `set -m; sleep 5 >/dev/null 2>&1 & kill -STOP %1; echo "kill=$?"; compgen -A stopped; echo "stopped=$?"`)
+	if !strings.Contains(out, "cannot stop a job") {
+		t.Errorf("koi did not refuse to stop a job, so an empty -A stopped is a gap: %q", out)
+	}
+	if !strings.Contains(out, "kill=1") {
+		t.Errorf("koi's refusal did not answer 1: %q", out)
+	}
+	if !strings.Contains(out, "stopped=1") {
+		t.Errorf("compgen -A stopped did not answer 1 with nothing generated: %q", out)
+	}
+	if status != 0 {
+		t.Errorf("the script itself failed (status %d): %q", status, out)
+	}
+}
+
+// The two remaining actions whose answer is this shell's own set, each
+// checked for being *true* rather than for being bash's.
+func TestCompgenKoiOwnActionsAreTrue(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	// `binding` is readline's function names, and koi's line editor has
+	// the ones #96 and #118 gave it — the list comes from the keymap
+	// itself, so a name here is a chord the editor really honors. It may
+	// never contain a name readline does not have, which is the
+	// direction an invented name breaks in.
+	bindings, _ := shellLines(t, koi, dir, "compgen -A binding")
+	readline, _ := shellLines(t, bash, dir, "compgen -A binding")
+	if len(bindings) == 0 {
+		t.Fatal("compgen -A binding listed nothing, which is what this test exists to catch")
+	}
+	if len(readline) == 0 {
+		t.Skipf("bash lists no bindings here (%s): no oracle for the subset claim", bashVersion(t, bash))
+	}
+	for _, name := range difference(bindings, readline) {
+		t.Errorf("koi lists binding %q, which readline does not have", name)
+	}
+	// A spot list rather than the whole keymap: these are the chords the
+	// editor's own tests drive, so a mis-wired name shows up here rather
+	// than only in a review.
+	for _, name := range []string{"accept-line", "backward-char", "kill-line", "yank", "undo", "transpose-chars"} {
+		if !slices.Contains(bindings, name) {
+			t.Errorf("compgen -A binding does not offer %q, which koi's editor does", name)
+		}
+	}
+
+	// `arrayvar` is the array-valued half of `-A variable`, so every name
+	// it offers has to be one koi will show as an array, and the arrays a
+	// script just made have to be in it. Both halves, because "no plain
+	// variable is listed" passes vacuously against an empty listing.
+	arrays, _ := shellLines(t, koi, dir, `a=(1 2); declare -A m=([k]=v); s=plain; compgen -A arrayvar`)
+	if len(arrays) == 0 {
+		t.Fatal("compgen -A arrayvar listed nothing")
+	}
+	for _, want := range []string{"a", "m"} {
+		if !slices.Contains(arrays, want) {
+			t.Errorf("compgen -A arrayvar does not list %q, which the script just created", want)
+		}
+	}
+	if slices.Contains(arrays, "s") {
+		t.Error("compgen -A arrayvar lists a plain string variable")
+	}
+	for _, name := range arrays {
+		out, status := runShell(t, koi, `a=(1 2); declare -A m=([k]=v); s=plain; declare -p `+name)
+		if status != 0 || (!strings.Contains(out, "declare -a") && !strings.Contains(out, "declare -A")) {
+			t.Errorf("compgen -A arrayvar offers %q, which declare -p does not call an array: %q", name, out)
+		}
+	}
+}
+
+// uniqueLines collapses a sorted listing, so a set comparison is not
+// tripped by bash keeping duplicates where koi does not (#613).
+func uniqueLines(lines []string) []string {
+	return slices.Compact(slices.Clone(lines))
 }

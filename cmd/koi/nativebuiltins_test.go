@@ -143,30 +143,32 @@ func TestNativeBuiltinsBehave(t *testing.T) {
 	}
 }
 
+// interceptedNative is the names koi intercepts, from the CallHandler
+// chain and the native registry. Kept as one list so the matrices can be
+// checked against it: adding an interception without a case fails here
+// rather than going unnoticed, and cmd/koi/builtinloc_test.go reads the
+// same list to demand a diagnostic-location case for each (#611).
+var interceptedNative = []string{
+	"blocks", "builtins", "clip", "config", "doctor", "explain",
+	"fc", "help", "kill", "newgrp", "p10k", "parallel", "pick",
+	"plugin", "plugins",
+	"sandbox", "sessions", "times", "tool", "trust", "umask", "z",
+	"zi",
+}
+
 // TestNativeBuiltinsAreListed keeps the `builtins` listing honest: a
 // name the shell intercepts but does not list is undiscoverable, and a
 // name it lists but does not intercept is a lie.
 func TestEveryNativeCaseIsCovered(t *testing.T) {
 	t.Parallel()
 
-	// The names koi intercepts, from the CallHandler chain and the
-	// native registry. Kept here as the thing the matrix is checked
-	// against, so adding an interception without a case fails the build
-	// of this list rather than going unnoticed.
-	intercepted := []string{
-		"blocks", "builtins", "clip", "config", "doctor", "explain",
-		"fc", "help", "kill", "newgrp", "p10k", "parallel", "pick",
-		"plugin", "plugins",
-		"sandbox", "sessions", "times", "tool", "trust", "umask", "z",
-		"zi",
-	}
-	for _, name := range intercepted {
+	for _, name := range interceptedNative {
 		if _, ok := nativeCases[name]; !ok {
 			t.Errorf("%s is intercepted but has no case in nativeCases", name)
 		}
 	}
 	for name := range nativeCases {
-		if !slices.Contains(intercepted, name) {
+		if !slices.Contains(interceptedNative, name) {
 			t.Errorf("nativeCases has %s, which nothing intercepts", name)
 		}
 	}

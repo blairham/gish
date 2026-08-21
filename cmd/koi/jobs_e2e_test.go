@@ -373,3 +373,61 @@ func processExists(t *testing.T, pattern string) bool {
 	}
 	return false
 }
+
+// `compgen -A job` and its filtered forms read the *interactive* job
+// table (#606), which is the half a `-c` test cannot reach: a script's
+// jobs are goroutines the interpreter owns, and only a session with a
+// terminal has process groups that can be stopped and resumed. So the
+// two filtered actions have no other way to be exercised — nothing in a
+// script is ever stopped — and the state they report has to move when
+// the job does rather than be answered once.
+//
+// The job is spelled `/bin/sh` rather than `sh` on purpose, and the
+// reason is the same split-sentinel rule the markers follow: the
+// candidate is the job's *first word*, and a bare `sh` is a substring of
+// `bash` and of half the paths a prompt might carry, so a match would
+// prove nothing. Nothing in the probe lines below contains `/bin/sh`,
+// and runProbe clears the buffer before each one, so the only way it can
+// appear is as a candidate.
+const compgenJobCmd = `/bin/sh -c 'printf "res%s\n" JOBUP; sleep 45'`
+
+func TestCompgenJobActionsReadTheInteractiveTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := startPTY(t, ptyOptions{})
+	s.waitForPrompt()
+
+	s.send(compgenJobCmd + "\r")
+	s.waitFor("resJOBUP") // the child is live, not merely spawned
+	s.stopForeground()
+
+	// Stopped, so `-A stopped` answers and `-A running` does not. Both
+	// directions per state, because "the listing does not contain it"
+	// passes against a listing that is empty for the wrong reason — and
+	// runProbe waited on its own marker, so the line certainly arrived.
+	s.runProbe(`compgen -A stopped; printf "res%s\n" C1`, "resC1")
+	if !s.seen("/bin/sh") {
+		t.Errorf("compgen -A stopped did not offer the stopped job:\n%s", s.plain())
+	}
+	s.runProbe(`compgen -A running; printf "res%s\n" C2`, "resC2")
+	if s.seen("/bin/sh") {
+		t.Errorf("compgen -A running offered a stopped job:\n%s", s.plain())
+	}
+	s.runProbe(`compgen -A job; printf "res%s\n" C3`, "resC3")
+	if !s.seen("/bin/sh") {
+		t.Errorf("compgen -A job did not offer the job at all:\n%s", s.plain())
+	}
+
+	// Resumed, and the two answers swap. This is what proves the table is
+	// read on each call rather than a listing being remembered.
+	s.runProbe(`bg; printf "res%s\n" B2`, "resB2")
+	s.runProbe(`compgen -A running; printf "res%s\n" C4`, "resC4")
+	if !s.seen("/bin/sh") {
+		t.Errorf("compgen -A running did not offer the resumed job:\n%s", s.plain())
+	}
+	s.runProbe(`compgen -A stopped; printf "res%s\n" C5`, "resC5")
+	if s.seen("/bin/sh") {
+		t.Errorf("compgen -A stopped offered a job that is running again:\n%s", s.plain())
+	}
+}

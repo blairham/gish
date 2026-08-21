@@ -48,7 +48,7 @@ func blocksCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 func runBlocks(hc interp.HandlerContext, args []string) []string {
 	store := openHistory()
 	if store == nil {
-		fmt.Fprintln(hc.Stderr, "blocks: no history store")
+		hc.Errf("blocks: no history store\n")
 		return []string{"false"}
 	}
 	defer store.Close() //nolint:errcheck // read-only
@@ -57,7 +57,7 @@ func runBlocks(hc interp.HandlerContext, args []string) []string {
 	if bs == nil { // `koi -c blocks` runs without the session's store
 		var err error
 		if bs, err = blocks.OpenDefault(); err != nil {
-			fmt.Fprintln(hc.Stderr, "blocks:", err)
+			hc.Errf("blocks: %v\n", err)
 			return []string{"false"}
 		}
 	}
@@ -85,7 +85,8 @@ func runBlocks(hc interp.HandlerContext, args []string) []string {
 	case (args[0] == "rerun" || args[0] == "run") && len(args) == 2:
 		return rerunBlock(hc, store, args[1])
 	}
-	fmt.Fprintf(hc.Stderr, "blocks: unknown usage\n%s\n", blocksUsage)
+	hc.Errf("blocks: unknown usage\n")
+	hc.RawErrf("%s\n", blocksUsage)
 	return []string{"false"}
 }
 
@@ -100,7 +101,7 @@ func rerunBlock(hc interp.HandlerContext, store *history.Store, ref string) []st
 	entries := withOutput(store)
 	n, err := strconv.Atoi(ref)
 	if err != nil || n < 1 || n > len(entries) {
-		fmt.Fprintf(hc.Stderr, "blocks: no block %s (see `blocks list`)\n", ref)
+		hc.Errf("blocks: no block %s (see `blocks list`)\n", ref)
 		return []string{"false"}
 	}
 	command := entries[n-1].Command
@@ -160,7 +161,7 @@ func showBlock(hc interp.HandlerContext, store *history.Store, bs *blocks.Store,
 	entries := withOutput(store)
 	idx, err := blockIndex(id, len(entries))
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, "blocks:", err)
+		hc.Errf("blocks: %v\n", err)
 		return []string{"false"}
 	}
 	e := entries[idx]
@@ -169,7 +170,7 @@ func showBlock(hc interp.HandlerContext, store *history.Store, bs *blocks.Store,
 	if !ok {
 		// Derived state: the output aged out or was pruned, and the
 		// history entry is still perfectly good.
-		fmt.Fprintf(hc.Stderr, "blocks: output for %q is no longer stored\n", truncateCommand(e.Command))
+		hc.Errf("blocks: output for %q is no longer stored\n", truncateCommand(e.Command))
 		return []string{"false"}
 	}
 

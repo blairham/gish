@@ -353,7 +353,9 @@ func (t *Table) ExecMiddleware(next interp.ExecHandlerFunc) interp.ExecHandlerFu
 func (t *Table) spawn(hc interp.HandlerContext, job *Job, args []string, stdin, stdout, stderr *os.File) error {
 	path, err := interp.LookPathDir(hc.Dir, hc.Env, args[0])
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, err)
+		// Located the way DefaultExecHandler locates the same lookup
+		// failure (#571, #611) — this is the job-control path around it.
+		hc.Errf("%v\n", err)
 		return interp.ExitStatus(127)
 	}
 
@@ -420,7 +422,7 @@ func (t *Table) spawn(hc interp.HandlerContext, job *Job, args []string, stdin, 
 	// must not die because the line's context ended (#3's cancel).
 	if err := cmd.Start(); err != nil {
 		job.mu.Unlock()
-		fmt.Fprintf(hc.Stderr, "%v\n", err)
+		hc.Errf("%v\n", err)
 		return interp.ExitStatus(127)
 	}
 	pid := cmd.Process.Pid
@@ -624,7 +626,7 @@ func (t *Table) Jobs(_ context.Context, hc interp.HandlerContext, _ []string) er
 func (t *Table) Fg(_ context.Context, hc interp.HandlerContext, args []string) error {
 	job := t.pick(args)
 	if job == nil {
-		fmt.Fprintln(hc.Stderr, "fg: no current job")
+		hc.Errf("fg: no current job\n")
 		return interp.ExitStatus(1)
 	}
 	fmt.Fprintln(hc.Stdout, job.Command)
@@ -646,11 +648,11 @@ func (t *Table) Fg(_ context.Context, hc interp.HandlerContext, args []string) e
 func (t *Table) Bg(_ context.Context, hc interp.HandlerContext, args []string) error {
 	job := t.pick(args)
 	if job == nil {
-		fmt.Fprintln(hc.Stderr, "bg: no current job")
+		hc.Errf("bg: no current job\n")
 		return interp.ExitStatus(1)
 	}
 	if state, _ := job.snapshot(); state != Stopped {
-		fmt.Fprintf(hc.Stderr, "bg: job %d already running\n", job.ID)
+		hc.Errf("bg: job %d already running\n", job.ID)
 		return interp.ExitStatus(1)
 	}
 	t.resume(job, false)

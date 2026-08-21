@@ -2,7 +2,6 @@ package builtins
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
 )
@@ -21,7 +20,6 @@ import (
 // /usr/bin/newgrp with "unsupported builtin". Saying what koi does not
 // do, and where the real one is, beats a message that reads like a bug.
 func Newgrp(_ context.Context, hc interp.HandlerContext, _ []string) error {
-	fmt.Fprintln(hc.Stderr,
-		"newgrp: not provided by koi — it changes the process group id and re-execs the shell; run /usr/bin/newgrp directly")
+	hc.Errf("newgrp: not provided by koi — it changes the process group id and re-execs the shell; run /usr/bin/newgrp directly\n")
 	return interp.ExitStatus(1)
 }

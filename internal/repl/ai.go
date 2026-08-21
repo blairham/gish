@@ -214,12 +214,12 @@ func explainCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 		}
 		hc := interp.HandlerCtx(ctx)
 		if aiMgr == nil || sessionRunner() == nil {
-			fmt.Fprintln(hc.Stderr, "explain: no AI provider in this session")
+			hc.Errf("explain: no AI provider in this session\n")
 			return []string{"false"}, nil
 		}
 		explanation, err := aiMgr.explain(ctx, sessionRunner())
 		if err != nil {
-			fmt.Fprintln(hc.Stderr, "explain:", err)
+			hc.Errf("explain: %v\n", err)
 			return []string{"false"}, nil
 		}
 		fmt.Fprintln(hc.Stdout, explanation)

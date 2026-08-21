@@ -1257,6 +1257,57 @@ func ShoptNames() []string {
 	return out
 }
 
+// TrapNames lists every spec `trap` accepts, in the order bash's
+// `compgen -A signal` lists them: EXIT first, the real signals in signal
+// -number order with readline's SIG prefix, then the three fake traps
+// (#606).
+//
+// This shell's set, not bash's, on the rule [OptionNames] states: koi's
+// table is the portable one internal/jobs states the case for, so it is
+// shorter than bash's on any given platform, and a completion offering a
+// name `trap` would then refuse is worse than one that is short. The
+// prefix is bash's spelling rather than the table's — `trap -l` prints
+// `SIGHUP` too — and `trap` takes it either way.
+func TrapNames() []string {
+	sigs := signalList()
+	out := make([]string, 0, len(sigs)+4)
+	out = append(out, "EXIT")
+	for _, s := range sigs {
+		out = append(out, "SIG"+s.name)
+	}
+	return append(out, "DEBUG", "ERR", "RETURN")
+}
+
+// JobEntry is one row of the shell's job table, for the consumers that
+// are not the `jobs` builtin: the command as it was written and whether
+// it is still running (#606).
+type JobEntry struct {
+	Command string
+	Running bool
+}
+
+// JobEntries reports the jobs this shell would list, newest first.
+//
+// Newest first because that is the order bash's own `compgen -A job`
+// answers in — measured, and the opposite of the `jobs` listing's — and
+// a completion offering the most recent job first is the one a `fg`
+// wants. The visibility rules are the `jobs` builtin's: a disowned job
+// is gone (#397), and a finished one that has already been reported is
+// off the table. Nothing here marks a job as reported, because asking
+// what the table holds must not change what the next `jobs` prints.
+func (r *Runner) JobEntries() []JobEntry {
+	out := make([]JobEntry, 0, len(r.bgProcs))
+	for i := len(r.bgProcs) - 1; i >= 0; i-- {
+		job := &r.bgProcs[i]
+		running := !job.finished()
+		if job.disowned || (!running && job.reported) {
+			continue
+		}
+		out = append(out, JobEntry{Command: job.cmd, Running: running})
+	}
+	return out
+}
+
 // posixOptNames lists the options the way bash prints them, which is by
 // name rather than in the order the table happens to be in.
 func posixOptNames() []int {

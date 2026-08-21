@@ -41,7 +41,8 @@ func Umask(_ context.Context, hc interp.HandlerContext, args []string) error {
 			args = args[1:]
 			goto operand
 		default:
-			fmt.Fprintf(hc.Stderr, "umask: %s: invalid option\n%s\n", args[0], umaskUsage)
+			hc.Errf("umask: %s: invalid option\n", args[0])
+			hc.RawErrf("%s\n", umaskUsage)
 			return interp.ExitStatus(2)
 		}
 		args = args[1:]
@@ -49,7 +50,9 @@ func Umask(_ context.Context, hc interp.HandlerContext, args []string) error {
 
 operand:
 	if len(args) > 1 {
-		fmt.Fprintln(hc.Stderr, umaskUsage)
+		// A usage line standing on its own is not a diagnostic and
+		// carries no location, the way bare `unalias` prints one (#611).
+		hc.RawErrf("%s\n", umaskUsage)
 		return interp.ExitStatus(2)
 	}
 
@@ -60,7 +63,7 @@ operand:
 		syscall.Umask(current)
 		mode, err := parseUmask(args[0], current)
 		if err != nil {
-			fmt.Fprintf(hc.Stderr, "umask: %s: %v\n", args[0], err)
+			hc.Errf("umask: %s: %v\n", args[0], err)
 			return interp.ExitStatus(1)
 		}
 		syscall.Umask(mode)

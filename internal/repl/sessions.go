@@ -52,7 +52,7 @@ func sessionsCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 func runSessions(ctx context.Context, hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "sessions:", err)
+		hc.Errf("sessions: %v\n", err)
 		return []string{"false"}
 	}
 	store, err := session.OpenDefault()
@@ -163,13 +163,13 @@ func showSession(hc interp.HandlerContext, r session.Record) {
 // #12 exists to gate.
 func restoreSession(ctx context.Context, hc interp.HandlerContext, r session.Record) []string {
 	if r.Cwd == "" {
-		fmt.Fprintln(hc.Stderr, "sessions: that record has no directory")
+		hc.Errf("sessions: that record has no directory\n")
 		return []string{"false"}
 	}
 	if _, err := os.Stat(r.Cwd); err != nil {
 		// The directory is gone — a deleted checkout, an unmounted
 		// volume. Say so rather than dropping the user somewhere else.
-		fmt.Fprintf(hc.Stderr, "sessions: %s is gone (%v)\n", displayPath(r.Cwd), err)
+		hc.Errf("sessions: %s is gone (%v)\n", displayPath(r.Cwd), err)
 		return []string{"false"}
 	}
 
