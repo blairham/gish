@@ -671,7 +671,7 @@ func pluginsBuiltin(host *pluginhost.Host, cmdIndex *pluginhost.CommandIndex, di
 			// typo. Every neighboring builtin says what is unavailable
 			// and why (`trust: env plugins are not available in this
 			// session`); this now does too.
-			fmt.Fprintln(hc.Stderr, "plugins: the plugin host runs only in an interactive session")
+			hc.Errf("plugins: the plugin host runs only in an interactive session\n")
 			return interp.ExitStatus(1)
 		}
 		_ = host.Discover() //nolint:errcheck // newly installed plugins picked up best-effort

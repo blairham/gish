@@ -14,17 +14,19 @@ import (
 // Scoped deliberately to the listing half. `fc -l` is what people
 // actually type — "what did I just run, with numbers I can refer to" —
 // and it needs nothing but the history store. The editing forms (bare
-// fc, and `fc -s`) re-execute a command, which means reaching into the
-// REPL's own run loop rather than adding a builtin; they report what
-// they do not do instead of half-working, because a history editor that
-// silently ran the wrong entry would be worse than one that is absent.
+// fc, `fc -e` and `fc -s`) re-execute a command, which means reaching
+// into the REPL's own run loop rather than adding a builtin; they report
+// what they do not do instead of half-working, because a history editor
+// that silently ran the wrong entry would be worse than one that is
+// absent.
 //
 // Numbering counts from the oldest entry held, so the numbers `fc -l`
 // prints are the ones its own range arguments accept. bash numbers
 // across the whole session history; koi's store is shared across
 // sessions (#40), so the numbers are positions in the recent window
-// rather than a global sequence — stated in the help rather than left
-// for someone to infer from a mismatch.
+// rather than a global sequence — stated by `help fc` rather than left
+// for someone to infer from a mismatch, and deliberately *not* by the
+// usage line (see fcUsage).
 
 // fcCount bounds the window fc works over, matching the picker's own
 // bound so the two agree about what "recent" means.
@@ -34,20 +36,41 @@ const fcCount = 5000
 // bash.
 const fcDefaultList = 16
 
-const fcUsage = `usage: fc -l [-nr] [first] [last]
+// fcUsage is bash's own usage line, byte for byte (#611).
+//
+// It used to be eleven lines of prose explaining koi's history positions
+// and why the editing forms are absent — honest, and in the wrong place,
+// the same mistake as #574's `("on" not supported)` annotation. A usage
+// line is *data*: it is the most-read output of a failing builtin and a
+// caller may match it, so eleven lines where bash prints one is a
+// divergence on the one form of the command everybody sees. The
+// explanation moved to `help fc`, which is where someone goes to be
+// explained to; the refusal message below is where the honesty about
+// what fc does not do belongs.
+//
+// It advertises `-e` and `-s`, which koi does not implement, because it
+// is bash's line rather than a description of koi — and neither answers
+// "invalid option": both are recognized and refused by name.
+const fcUsage = "fc: usage: fc [-e ename] [-lnr] [first] [last] or fc -s [pat=rep] [command]"
 
-  fc -l              list the last 16 commands, numbered
-  fc -l 5            list from entry 5 to the end
-  fc -l 5 10         list entries 5 through 10
-  fc -l -n           omit the numbers
-  fc -l -r           newest first
+// fcNotes are the koi-specific facts about fc, printed by `help fc`.
+// They are what the usage line used to carry.
+var fcNotes = []string{
+	"Numbers are positions in the recent history window, not a",
+	"session-global sequence: koi's history is shared across sessions",
+	"(#40), so `fc -l` numbers what it can see rather than a count that",
+	"survives a reboot.",
+	"",
+	"Only the listing half is implemented. The editing forms (fc with no",
+	"-l, fc -e, and fc -s) re-execute a command, which belongs to the",
+	"shell's run loop rather than to a builtin; they say so rather than",
+	"half-working, because a history editor that silently ran the wrong",
+	"entry would be worse than one that is absent.",
+}
 
-Numbers are positions in the recent history window, not a session-global
-sequence: koi's history is shared across sessions (#40).
-
-Editing forms (fc without -l, and fc -s) are not implemented — they
-re-execute a command, which belongs to the shell's run loop rather than
-to a builtin.`
+// fcNotImplemented is what every editing form answers with. One string,
+// so the four ways of asking for one give the same answer.
+const fcNotImplemented = "fc: only the listing form is implemented; use `fc -l`"
 
 // fcCallHandler intercepts `fc`, which the interpreter claims but does
 // not implement.
@@ -77,7 +100,7 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 			break
 		}
 		// Flags cluster: -ln and -l -n mean the same thing.
-		for _, r := range flag[1:] {
+		for i, r := range flag[1:] {
 			switch r {
 			case 'l':
 				list = true
@@ -85,16 +108,32 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 				numbered = false
 			case 'r':
 				reverse = true
+			case 'e':
+				// bash's -e takes an editor name, and a missing one is a
+				// usage error rather than an invalid option — measured
+				// against bash 5.3 rather than derived from -s, which
+				// takes no argument at all.
+				if flag[2+i:] == "" && len(args) < 2 {
+					hc.Errf("fc: -e: option requires an argument\n")
+					hc.RawErrf("%s\n", fcUsage)
+					return []string{"false"}
+				}
+				// An editor is an editing form, so it gets the refusal
+				// rather than "invalid option": the option exists, the
+				// behavior behind it does not.
+				hc.Errf("%s\n", fcNotImplemented)
+				return []string{"false"}
 			case 's':
 				// Recognized so it gets the real explanation rather than
 				// "invalid option", which would suggest a typo.
-				fmt.Fprintln(hc.Stderr, "fc: only the listing form is implemented; use `fc -l`")
+				hc.Errf("%s\n", fcNotImplemented)
 				return []string{"false"}
-			case 'h', '?':
-				fmt.Fprintln(hc.Stdout, fcUsage)
-				return []string{"true"}
 			default:
-				fmt.Fprintf(hc.Stderr, "fc: -%c: invalid option\n%s\n", r, fcUsage)
+				// The status stays 1 where bash answers 2: a builtin's
+				// exit status for a bad option is #577's subject, and
+				// this change is about what is printed.
+				hc.Errf("fc: -%c: invalid option\n", r)
+				hc.RawErrf("%s\n", fcUsage)
 				return []string{"false"}
 			}
 		}
@@ -104,7 +143,7 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 	if !list {
 		// Being explicit beats "unsupported builtin": the reader learns
 		// which half exists and what to type instead.
-		fmt.Fprintln(hc.Stderr, "fc: only the listing form is implemented; use `fc -l`")
+		hc.Errf("%s\n", fcNotImplemented)
 		return []string{"false"}
 	}
 
@@ -133,7 +172,8 @@ func runFC(hc interp.HandlerContext, args []string) []string {
 	base := historyBase()
 	first, last, err := fcRange(args, len(entries), base)
 	if err != nil {
-		fmt.Fprintf(hc.Stderr, "fc: %v\n%s\n", err, fcUsage)
+		hc.Errf("fc: %v\n", err)
+		hc.RawErrf("%s\n", fcUsage)
 		return []string{"false"}
 	}
 

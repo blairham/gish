@@ -146,7 +146,8 @@ func runPick(hc interp.HandlerContext, args []string) []string {
 			fmt.Fprintln(hc.Stdout, pickUsage)
 			return []string{"true"}
 		default:
-			fmt.Fprintf(hc.Stderr, "pick: unknown argument %q\n%s\n", args[0], pickUsage)
+			hc.Errf("pick: unknown argument %q\n", args[0])
+			hc.RawErrf("%s\n", pickUsage)
 			return []string{"false"}
 		}
 	}
@@ -165,14 +166,14 @@ func runPick(hc interp.HandlerContext, args []string) []string {
 	// is on the right-hand side of a pipe.
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, "pick: no terminal to read keys from")
+		hc.Errf("pick: no terminal to read keys from\n")
 		return []string{"false"}
 	}
 	defer tty.Close()
 
 	selected, ok, usable := ui.Pick(tty, hc.Stdout, items, opts)
 	if !usable {
-		fmt.Fprintln(hc.Stderr, "pick: needs an interactive terminal")
+		hc.Errf("pick: needs an interactive terminal\n")
 		return []string{"false"}
 	}
 	if !ok || len(selected) == 0 {

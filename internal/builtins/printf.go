@@ -36,7 +36,13 @@ import (
 // than an error.
 
 // Printf writes the POSIX printf(1) rendering of format/args to w, and
-// any complaint about a numeric argument to errw.
+// any complaint about a numeric argument to errw, prefixed with errLoc.
+//
+// errLoc is [interp.HandlerContext.ErrLocation]: bash locates a
+// builtin's diagnostics too, and printf's are written from in here
+// rather than by the caller, so the prefix has to travel with them
+// (#611). It is a string rather than the handler context because the
+// rendering half of printf has no business knowing about a shell.
 //
 // Two writers rather than one because bash writes each complaint *as it
 // reads the argument*, before the formatted line is flushed — so
@@ -48,7 +54,7 @@ import (
 // A non-nil error is a usage error, a bad format, or ErrBadNumber
 // meaning "already reported, exit 1". Output written before any of them
 // stands, which is what bash does.
-func Printf(w, errw io.Writer, args []string) error {
+func Printf(w, errw io.Writer, errLoc string, args []string) error {
 	if len(args) == 0 {
 		return ErrUsage
 	}
@@ -67,7 +73,7 @@ func Printf(w, errw io.Writer, args []string) error {
 	// POSIX: the format is reused until the arguments are consumed. One
 	// pass always happens, even with no arguments at all.
 	for first := true; first || len(rest) > 0; first = false {
-		consumed, stop, badHere, err := printfOnce(w, errw, format, rest)
+		consumed, stop, badHere, err := printfOnce(w, errw, errLoc, format, rest)
 		anyBad = anyBad || badHere
 		if err != nil {
 			// Fatal: a bad format, or a reader that went away. The
@@ -98,7 +104,7 @@ func Printf(w, errw io.Writer, args []string) error {
 // printfOnce renders the format once, reporting how many arguments it
 // used, whether a \c asked for output to stop entirely, and any numeric
 // arguments bash would have complained about.
-func printfOnce(w, errw io.Writer, format string, args []string) (consumed int, stop bool, bad bool, err error) {
+func printfOnce(w, errw io.Writer, errLoc, format string, args []string) (consumed int, stop bool, bad bool, err error) {
 	var sb strings.Builder
 	// present distinguishes an argument that is the empty string from
 	// one that was never supplied. bash complains about `printf %d ""`
@@ -116,7 +122,7 @@ func printfOnce(w, errw io.Writer, format string, args []string) (consumed int, 
 	report := func(e error) {
 		if e != nil {
 			bad = true
-			fmt.Fprintln(errw, e)
+			fmt.Fprintf(errw, "%s%v\n", errLoc, e)
 		}
 	}
 

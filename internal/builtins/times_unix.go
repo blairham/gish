@@ -24,11 +24,11 @@ import (
 func Times(_ context.Context, hc interp.HandlerContext, _ []string) error {
 	var self, children syscall.Rusage
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &self); err != nil {
-		fmt.Fprintf(hc.Stderr, "times: %v\n", err)
+		hc.Errf("times: %v\n", err)
 		return interp.ExitStatus(1)
 	}
 	if err := syscall.Getrusage(syscall.RUSAGE_CHILDREN, &children); err != nil {
-		fmt.Fprintf(hc.Stderr, "times: %v\n", err)
+		hc.Errf("times: %v\n", err)
 		return interp.ExitStatus(1)
 	}
 	fmt.Fprintf(hc.Stdout, "%s %s\n", clockTime(self.Utime), clockTime(self.Stime))

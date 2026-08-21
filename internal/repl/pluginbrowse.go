@@ -56,7 +56,7 @@ func runPluginBrowse(hc handlerIO, path string, m *manifest.Manifest) []string {
 	if !browsable(hc.Stdin, hc.Stdout) {
 		// No terminal to host a form. The plain listing is the honest
 		// fallback and is what scripts and CI should see anyway.
-		fmt.Fprintln(hc.Stderr, "plugin browse: needs an interactive terminal — showing the list instead")
+		hc.Errf("plugin browse: needs an interactive terminal — showing the list instead\n")
 		return listPlugins(hc, m)
 	}
 
@@ -98,7 +98,7 @@ func runPluginBrowse(hc handlerIO, path string, m *manifest.Manifest) []string {
 		return []string{"true"}
 	}
 	if err := m.Save(path); err != nil {
-		fmt.Fprintln(hc.Stderr, "plugin browse:", err)
+		hc.Errf("plugin browse: %v\n", err)
 		return []string{"false"}
 	}
 	fmt.Fprintf(hc.Stdout, "%d change(s) saved to %s\n", changed, displayPath(path))
@@ -192,7 +192,7 @@ func browseEmpty(hc handlerIO, path string, m *manifest.Manifest) []string {
 		}
 	}
 	if err := m.Save(path); err != nil {
-		fmt.Fprintln(hc.Stderr, "plugin browse:", err)
+		hc.Errf("plugin browse: %v\n", err)
 		return []string{"false"}
 	}
 	fmt.Fprintf(hc.Stdout, "added %d to %s\n", added, displayPath(path))
@@ -205,6 +205,16 @@ func browseEmpty(hc handlerIO, path string, m *manifest.Manifest) []string {
 type handlerIO struct {
 	Stdin          io.Reader
 	Stdout, Stderr io.Writer
+	// ErrLocation is the caller's interp.HandlerContext.ErrLocation,
+	// carried so a diagnostic raised here says where it came from like
+	// every other builtin's does (#611).
+	ErrLocation string
+}
+
+// Errf writes a located diagnostic, mirroring
+// interp.HandlerContext.Errf.
+func (hc handlerIO) Errf(format string, a ...any) {
+	fmt.Fprint(hc.Stderr, hc.ErrLocation+fmt.Sprintf(format, a...))
 }
 
 // listPlugins is the plain fallback: the same information, zero escape

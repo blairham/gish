@@ -64,7 +64,7 @@ func promptCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 func runPrompt(hc interp.HandlerContext, name string, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
+		hc.Errf("%s: %v\n", name, err)
 		return []string{"false"}
 	}
 
@@ -107,7 +107,8 @@ func runPrompt(hc interp.HandlerContext, name string, args []string) []string {
 		return configurePrompt(hc, name)
 	}
 
-	fmt.Fprintln(hc.Stderr, promptUsage(name))
+	// A usage line standing alone is not a diagnostic (#611).
+	hc.RawErrf("%s\n", promptUsage(name))
 	return []string{"false"}
 }
 
@@ -196,20 +197,20 @@ func importP10k(hc interp.HandlerContext, name string, args []string) []string {
 	case 0:
 		p, err := promptengine.DefaultZshConfigPath()
 		if err != nil {
-			fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
+			hc.Errf("%s: %v\n", name, err)
 			return []string{"false"}
 		}
 		path = p
 	case 1:
 		path = args[0]
 	default:
-		fmt.Fprintln(hc.Stderr, promptUsage(name))
+		hc.RawErrf("%s\n", promptUsage(name))
 		return []string{"false"}
 	}
 
 	imported, err := promptengine.ImportZshConfig(path)
 	if err != nil {
-		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
+		hc.Errf("%s: %v\n", name, err)
 		return []string{"false"}
 	}
 
@@ -219,7 +220,7 @@ func importP10k(hc interp.HandlerContext, name string, args []string) []string {
 	cfg.Merge(imported)
 	saved, err := promptengine.SaveNativeConfig(cfg)
 	if err != nil {
-		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
+		hc.Errf("%s: %v\n", name, err)
 		return []string{"false"}
 	}
 
@@ -267,7 +268,7 @@ type p10kQuestion struct {
 func configurePrompt(hc interp.HandlerContext, name string) []string {
 	choose := p10kChooser(hc)
 	if choose == nil {
-		fmt.Fprintf(hc.Stderr, "%[1]s configure needs a terminal; use `%[1]s preset <name>` instead\n", name)
+		hc.Errf("%[1]s configure needs a terminal; use `%[1]s preset <name>` instead\n", name)
 		return []string{"false"}
 	}
 
@@ -321,7 +322,7 @@ func configurePrompt(hc interp.HandlerContext, name string) []string {
 
 	path, err := promptengine.SaveNativeConfig(cfg)
 	if err != nil {
-		fmt.Fprintf(hc.Stderr, "%s: %v\n", name, err)
+		hc.Errf("%s: %v\n", name, err)
 		return []string{"false"}
 	}
 	fmt.Fprintf(hc.Stdout, "saved %s\n", displayPath(path))

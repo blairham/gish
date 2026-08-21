@@ -85,7 +85,7 @@ func zCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 
 func runZ(hc interp.HandlerContext, args []string) []string {
 	fail := func(err error) []string {
-		fmt.Fprintln(hc.Stderr, "z:", err)
+		hc.Errf("z: %v\n", err)
 		return []string{"false"}
 	}
 	if jumpMgr == nil {

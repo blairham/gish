@@ -62,12 +62,12 @@ var ziNoticeShown bool
 func ziMigrate(mgr plugmgr.Manager, hc interp.HandlerContext) []string {
 	lister, ok := mgr.(plugmgr.ObjectLister)
 	if !ok || pluginMgr == nil {
-		fmt.Fprintln(hc.Stderr, "zi: migration is unavailable in this session")
+		hc.Errf("zi: migration is unavailable in this session\n")
 		return []string{"false"}
 	}
 	objects, err := lister.Objects()
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, "zi:", err)
+		hc.Errf("zi: %v\n", err)
 		return []string{"false"}
 	}
 	added, kept := 0, 0
@@ -90,7 +90,7 @@ func ziMigrate(mgr plugmgr.Manager, hc interp.HandlerContext) []string {
 		return []string{"true"}
 	}
 	if err := pluginMgr.man.Save(pluginMgr.path); err != nil {
-		fmt.Fprintln(hc.Stderr, "zi:", err)
+		hc.Errf("zi: %v\n", err)
 		return []string{"false"}
 	}
 	fmt.Fprintf(hc.Stdout, "migrated %d plugin(s) into %s — review it, then drop the zi lines from your rc\n",

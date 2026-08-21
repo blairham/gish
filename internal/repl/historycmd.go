@@ -210,7 +210,8 @@ func runHistory(hc interp.HandlerContext, args []string) []string {
 			clear = true
 		case "-d":
 			if len(args) == 0 {
-				fmt.Fprintf(hc.Stderr, "history: -d: option requires an argument\n%s\n", historyUsage)
+				hc.Errf("history: -d: option requires an argument\n")
+				hc.RawErrf("%s\n", historyUsage)
 				return historyStatus(2)
 			}
 			del, args = args[0], args[1:]
@@ -221,14 +222,15 @@ func runHistory(hc interp.HandlerContext, args []string) []string {
 		case "-a", "-n", "-r", "-w":
 			fileFlags = append(fileFlags, flag)
 		default:
-			fmt.Fprintf(hc.Stderr, "history: %s: invalid option\n%s\n", flag, historyUsage)
+			hc.Errf("history: %s: invalid option\n", flag)
+			hc.RawErrf("%s\n", historyUsage)
 			return historyStatus(2)
 		}
 	}
 
 operands:
 	if len(fileFlags) > 1 {
-		fmt.Fprintln(hc.Stderr, "history: cannot use more than one of -anrw")
+		hc.Errf("history: cannot use more than one of -anrw\n")
 		return historyStatus(1)
 	}
 	if len(fileFlags) == 1 {
@@ -283,7 +285,7 @@ func historyList(hc interp.HandlerContext, args []string) []string {
 			// No usage line here, deliberately: bash prints it for a bad
 			// *option* and not for a bad operand, and the two were
 			// measured rather than assumed.
-			fmt.Fprintf(hc.Stderr, "history: %s: numeric argument required\n", args[0])
+			hc.Errf("history: %s: numeric argument required\n", args[0])
 			return historyStatus(2)
 		}
 		if n < len(entries) {
@@ -303,7 +305,7 @@ func historyDelete(hc interp.HandlerContext, spec string) []string {
 	if err != nil {
 		// bash's wording for -d differs from the one above: "invalid
 		// number", not "numeric argument required", and again no usage.
-		fmt.Fprintf(hc.Stderr, "history: %s: invalid number\n", spec)
+		hc.Errf("history: %s: invalid number\n", spec)
 		return historyStatus(1)
 	}
 	bad := false
@@ -324,7 +326,7 @@ func historyDelete(hc interp.HandlerContext, spec string) []string {
 		return append(list[:i-1:i-1], list[i:]...)
 	})
 	if bad {
-		fmt.Fprintf(hc.Stderr, "history: %s: history position out of range\n", spec)
+		hc.Errf("history: %s: history position out of range\n", spec)
 		return historyStatus(1)
 	}
 	return historyStatus(0)
@@ -362,7 +364,7 @@ func historyExpand(hc interp.HandlerContext, args []string) []string {
 		if err != nil {
 			// bash's wording is "history expansion failed"; the event it
 			// could not find is the useful half and it keeps that.
-			fmt.Fprintf(hc.Stderr, "history: %v\n", err)
+			hc.Errf("history: %v\n", err)
 			status = 1
 			continue
 		}
@@ -393,20 +395,20 @@ func historyFile(hc interp.HandlerContext, flag string, args []string) []string 
 	switch flag {
 	case "-a":
 		if err := historyAppendNew(hc, path); err != nil {
-			fmt.Fprintf(hc.Stderr, "history: %s: %v\n", path, err)
+			hc.Errf("history: %s: %v\n", path, err)
 			return historyStatus(1)
 		}
 		return historyStatus(0)
 	case "-n":
 		if err := historyReadNew(hc, path, runner); err != nil {
-			fmt.Fprintf(hc.Stderr, "history: %s: %v\n", path, err)
+			hc.Errf("history: %s: %v\n", path, err)
 			return historyStatus(1)
 		}
 		return historyStatus(0)
 	case "-r":
 		lines, err := historyFileLines(hc, path)
 		if err != nil {
-			fmt.Fprintf(hc.Stderr, "history: %s: %v\n", path, err)
+			hc.Errf("history: %s: %v\n", path, err)
 			return historyStatus(1)
 		}
 		historyReadAll(lines, runner)
@@ -421,7 +423,7 @@ func historyFile(hc interp.HandlerContext, flag string, args []string) []string 
 		b.WriteByte('\n')
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
-		fmt.Fprintf(hc.Stderr, "history: %s: %v\n", path, err)
+		hc.Errf("history: %s: %v\n", path, err)
 		return historyStatus(1)
 	}
 	return historyStatus(0)

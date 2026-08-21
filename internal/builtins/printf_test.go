@@ -20,7 +20,7 @@ func TestPrintfReusesFormat(t *testing.T) {
 	t.Parallel()
 
 	var sb strings.Builder
-	if err := Printf(&sb, io.Discard, []string{"%s-%s\n", "a", "b", "c", "d"}); err != nil {
+	if err := Printf(&sb, io.Discard, "", []string{"%s-%s\n", "a", "b", "c", "d"}); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := sb.String(), "a-b\nc-d\n"; got != want {
@@ -35,7 +35,7 @@ func TestPrintfRunsOutOfArguments(t *testing.T) {
 	t.Parallel()
 
 	var sb strings.Builder
-	if err := Printf(&sb, io.Discard, []string{"[%s][%d]\n", "onlyone"}); err != nil {
+	if err := Printf(&sb, io.Discard, "", []string{"[%s][%d]\n", "onlyone"}); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := sb.String(), "[onlyone][0]\n"; got != want {
@@ -48,7 +48,7 @@ func TestPrintfWithoutConversionsPrintsOnce(t *testing.T) {
 	t.Parallel()
 
 	var sb strings.Builder
-	if err := Printf(&sb, io.Discard, []string{"fixed\n", "ignored", "also"}); err != nil {
+	if err := Printf(&sb, io.Discard, "", []string{"fixed\n", "ignored", "also"}); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := sb.String(), "fixed\n"; got != want {
@@ -69,7 +69,7 @@ func TestPrintfStopsAtBackslashC(t *testing.T) {
 		{"in a %b argument", "keep", []string{"%b", `keep\cdropped`}},
 	} {
 		var sb strings.Builder
-		if err := Printf(&sb, io.Discard, tc.args); err != nil {
+		if err := Printf(&sb, io.Discard, "", tc.args); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 		if sb.String() != tc.want {
@@ -107,7 +107,7 @@ func BenchmarkPrintfSimple(b *testing.B) {
 	args := []string{"%s\n", "hello"}
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := Printf(io.Discard, io.Discard, args); err != nil {
+		if err := Printf(io.Discard, io.Discard, "", args); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -117,7 +117,7 @@ func BenchmarkPrintfFloatPrecision(b *testing.B) {
 	args := []string{"%08.3f|%+d|%x\n", "3.14159", "42", "255"}
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := Printf(io.Discard, io.Discard, args); err != nil {
+		if err := Printf(io.Discard, io.Discard, "", args); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -132,7 +132,7 @@ func BenchmarkPrintfFormatReuse(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := Printf(io.Discard, io.Discard, args); err != nil {
+		if err := Printf(io.Discard, io.Discard, "", args); err != nil {
 			b.Fatal(err)
 		}
 	}

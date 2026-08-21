@@ -93,7 +93,7 @@ func completeCallHandler(next interp.CallHandlerFunc) interp.CallHandlerFunc {
 		hc := interp.HandlerCtx(ctx)
 		switch args[0] {
 		case "complete":
-			return runCompleteBuiltin(hc.Stdout, hc.Stderr, args[1:]), nil
+			return runCompleteBuiltin(hc.Stdout, hc.Stderr, hc.ErrLocation, args[1:]), nil
 		case "compgen":
 			return runCompgen(ctx, hc, args[1:]), nil
 		case "compopt":
@@ -300,20 +300,22 @@ func runCompopt(hc interp.HandlerContext, args []string) []string {
 		err = validateCompFlags(compoptOpts.cmd, flags)
 	}
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, err)
+		hc.Errf("%v\n", err)
 		return compStatus(2)
 	}
 	return []string{"true"}
 }
 
 // runCompleteBuiltin parses a `complete` registration.
-func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
+// errLoc is the caller's interp.HandlerContext.ErrLocation, for the
+// same reason runBind takes one (#611).
+func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []string {
 	flags, operands, err := parseCompArgs(completeOpts, args)
 	if err == nil {
 		err = validateCompFlags(completeOpts.cmd, flags)
 	}
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		fmt.Fprintf(errOut, "%s%v\n", errLoc, err)
 		return compStatus(2)
 	}
 
@@ -374,7 +376,7 @@ func runCompleteBuiltin(out, errOut io.Writer, args []string) []string {
 		missing := false
 		for _, n := range names {
 			if _, ok := completions.byCommand[n]; !ok {
-				fmt.Fprintf(errOut, "complete: %s: no completion specification\n", n)
+				fmt.Fprintf(errOut, "%scomplete: %s: no completion specification\n", errLoc, n)
 				missing = true
 				continue
 			}
@@ -568,7 +570,7 @@ func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []
 		err = validateCompFlags(compgenOpts.cmd, flags)
 	}
 	if err != nil {
-		fmt.Fprintln(hc.Stderr, err)
+		hc.Errf("%v\n", err)
 		return compStatus(2)
 	}
 
@@ -664,7 +666,7 @@ func compgenAssign(hc interp.HandlerContext, name string, cands []string) []stri
 			// A candidate with a null byte or invalid UTF-8 cannot travel
 			// through eval. Saying so beats assigning something subtly
 			// different from what was generated.
-			fmt.Fprintf(hc.Stderr, "compgen: cannot assign to %s: %v\n", name, err)
+			hc.Errf("compgen: cannot assign to %s: %v\n", name, err)
 			return compStatus(1)
 		}
 		quoted = append(quoted, q)
