@@ -1593,6 +1593,76 @@ var runTests = []runTest{
 		"f () \n{ \n    a=(1 2);\n    x=$((1+2));\n    echo \"${a[@]}$x\"\n}\n",
 	},
 
+	// A definition's own redirections are part of the function (#631).
+	// They hang off the statement wrapping the body, one level up from
+	// where the body is rendered, and were dropped — so the printed
+	// definition was not the function that was defined, and eval'ing it
+	// elsewhere landed a function with different stdio.
+	{
+		`f(){ echo hi; } 1>&2; declare -f f`,
+		"f () \n{ \n    echo hi\n} 1>&2\n",
+	},
+	{
+		// bash re-spaces the operator it prints — `> /dev/null` from a
+		// source that wrote `>/dev/null` — while keeping a duplicating
+		// form tight, so what is matched is what bash prints.
+		`f(){ echo hi; } >/dev/null 2>&1; declare -f f`,
+		"f () \n{ \n    echo hi\n} > /dev/null 2>&1\n",
+	},
+	{
+		`f(){ cat; } < /dev/null; declare -f f`,
+		"f () \n{ \n    cat\n} < /dev/null\n",
+	},
+	{
+		// `type` prints through the same path, so the two agree, and a
+		// duplicating redirection grows its descriptor here too.
+		`f(){ echo hi; } >&2; type f`,
+		"f is a function\nf () \n{ \n    echo hi\n} 1>&2\n",
+	},
+	{
+		// A nested definition's redirection is indented with its own
+		// closing brace and still takes the statement's semicolon.
+		`outer(){ inner(){ echo hi; } 1>&2; inner; }; declare -f outer`,
+		"outer () \n{ \n    function inner () \n    { \n        echo hi\n    } 1>&2;\n    inner\n}\n",
+	},
+	{
+		// A body that is not a block is wrapped in braces by bash, so
+		// its redirection prints *inside* them, on the statement it was
+		// written on rather than after the brace bash supplied.
+		`f() ( echo hi ) 1>&2; declare -f f`,
+		"f () \n{ \n    ( echo hi ) 1>&2\n}\n",
+	},
+	{
+		`f() ( echo hi ); declare -f f`,
+		"f () \n{ \n    ( echo hi )\n}\n",
+	},
+	{
+		`f() if true; then echo a; fi 1>&2; declare -f f`,
+		"f () \n{ \n    if true; then\n        echo a;\n    fi 1>&2\n}\n",
+	},
+	{
+		`f(){ echo hi; } 2>&-; declare -f f`,
+		"f () \n{ \n    echo hi\n} 2>&-\n",
+	},
+	{
+		// A here-string is an ordinary word and prints inline; a
+		// here-document is the one shape that cannot (#638).
+		`f(){ cat; } <<< "hi"; declare -f f`,
+		"f () \n{ \n    cat\n} <<< \"hi\"\n",
+	},
+	{
+		`f(){ echo hi; } {fd}>/dev/null; declare -f f`,
+		"f () \n{ \n    echo hi\n} {fd}> /dev/null\n",
+	},
+	{
+		// The reason this is worse than cosmetic: `eval "$(declare -f
+		// f)"` is the documented way to move a function between shells,
+		// so a dropped redirection is a function that behaves
+		// differently where it lands — silently.
+		`f(){ echo hi; } 1>&2; eval "$(declare -f f)"; f 2>/dev/null; echo rc=$?`,
+		"rc=0\n",
+	},
+
 	// Nameref residuals (#389): a reference may name an array element,
 	// its target is validated, a self reference is refused, a nameref
 	// loop variable is re-targeted rather than written through, and
