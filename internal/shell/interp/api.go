@@ -857,7 +857,7 @@ func Params(args ...string) RunnerOption {
 			value := fp.value()
 			if value == "" && enable {
 				for _, i := range posixOptNames() {
-					r.printOptLine(posixOptsTable[i].name, setOptColumn, r.opts[i], true)
+					r.printOptLine(posixOptsTable[i].name, setOptColumn, r.opts[i])
 				}
 				continue
 			}

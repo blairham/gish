@@ -1368,6 +1368,12 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		for fp.more() {
 			switch flag := fp.flag(); flag {
 			case "-s", "-u":
+				if mode != "" && mode != flag {
+					// bash refuses the pair rather than letting the
+					// last one win, which is the only safe answer: a
+					// script that wrote both meant one of them.
+					return failf(1, "shopt: cannot set and unset shell options simultaneously\n")
+				}
 				mode = flag
 			case "-o":
 				posixOpts = true
@@ -1387,13 +1393,34 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			if quiet {
 				break
 			}
+			// With no names, `-s` and `-u` are not a request but a
+			// *filter*: bash lists the options in that state, which is
+			// how a script asks "what is on here?" without reading 59
+			// lines. koi printed nothing at all, status 0 — the empty
+			// answer reads as a shell with no options set (#574).
+			//
+			// Names change that back into a set operation, which is why
+			// this only applies here: `shopt -s -p cdspell` sets
+			// cdspell and prints nothing, measured.
+			listing := func(on bool) bool {
+				switch mode {
+				case "-s":
+					return on
+				case "-u":
+					return !on
+				}
+				return true
+			}
 			if posixOpts {
 				for _, i := range posixOptNames() {
+					if !listing(r.opts[i]) {
+						continue
+					}
 					if print {
 						r.outf("set %co %s\n", setSign(r.opts[i]), posixOptsTable[i].name)
 						continue
 					}
-					r.printOptLine(posixOptsTable[i].name, setOptColumn, r.opts[i], true)
+					r.printOptLine(posixOptsTable[i].name, setOptColumn, r.opts[i])
 				}
 			} else {
 				// Alphabetical, as bash prints it: koi's supported
@@ -1402,6 +1429,9 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				for _, i := range bashOptNames() {
 					opt := bashOptsTable[i]
 					on := r.opts[len(posixOptsTable)+i]
+					if !listing(on) {
+						continue
+					}
 					if print {
 						// -p prints each option as the command that
 						// would set it, which is what a script saves
@@ -1409,7 +1439,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 						r.outf("shopt %s %s\n", shoptState(on), opt.name)
 						continue
 					}
-					r.printOptLine(opt.name, shoptOptColumn, on, opt.supported)
+					r.printOptLine(opt.name, shoptOptColumn, on)
 				}
 			}
 			break
@@ -1475,14 +1505,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 						r.outf("set %co %s\n", setSign(*opt), arg)
 						continue
 					}
-					r.printOptLine(arg, setOptColumn, *opt, supported)
+					r.printOptLine(arg, setOptColumn, *opt)
 					continue
 				}
 				if print {
 					r.outf("shopt %s %s\n", shoptState(*opt), arg)
 					continue
 				}
-				r.printOptLine(arg, shoptOptColumn, *opt, supported)
+				r.printOptLine(arg, shoptOptColumn, *opt)
 			}
 		}
 		if mode == "" && !allOn {
@@ -2145,19 +2175,19 @@ func mapfileSplit(delim byte, dropDelim bool) bufio.SplitFunc {
 	}
 }
 
-// setOptColumn is the width bash pads a `set -o` name to before the tab.
-// Measured from bash 5.3 rather than chosen — a listing is something
-// scripts cut fields out of.
+// setOptColumn and shoptOptColumn are the widths bash pads a name to
+// before the tab in each listing. Measured from bash 5.3 rather than
+// chosen — a listing is something scripts cut fields out of.
 //
-// `shopt` pads too, to twenty, and koi deliberately does not follow it
-// there. The width is not stable across bash versions the way this one is:
-// matching 5.3's shopt makes koi differ from the 3.2 that ships on macOS,
-// which is what the CI runner has, so the choice is which bash to be wrong
-// against rather than whether. That difference is recorded as a known gap
-// in the builtins matrix and belongs to `shopt` rather than to #245.
+// shopt's width is *not* stable across bash versions: 5.x pads to twenty
+// and the 3.2 that ships on macOS pads to fifteen, so there is no width
+// that matches both. koi previously padded to zero, which resolved that
+// by matching neither (#574). It follows the version koi claims (#120),
+// and the builtins matrix asks the oracle which bash it is rather than
+// splitting the difference.
 const (
 	setOptColumn   = 15
-	shoptOptColumn = 0 // no padding; see above
+	shoptOptColumn = 20
 )
 
 // setSign and shoptState spell an option's state the way each listing
@@ -2210,13 +2240,17 @@ func (r *Runner) lookPathAll(name string, all bool) []string {
 	return out
 }
 
-func (r *Runner) printOptLine(name string, column int, enabled, supported bool) {
-	state := r.optStatusText(enabled)
-	if supported {
-		r.outf("%-*s\t%s\n", column, name, state)
-		return
-	}
-	r.outf("%-*s\t%s\t(%q not supported)\n", column, name, state, r.optStatusText(!enabled))
+// printOptLine prints one row of a `set -o` or `shopt` listing: the name
+// padded to the listing's column, a tab, and the state.
+//
+// It used to add `("on" not supported)` to the row of an option koi does
+// not implement. Well meant, and the wrong place for it (#574): a
+// listing is *data* — scripts cut fields out of it and diff it against a
+// saved copy — and the annotation made every such row differ from bash
+// on the most-read form of the command. The honesty belongs where the
+// answer is a refusal, and `shopt -s <unsupported>` still says so.
+func (r *Runner) printOptLine(name string, column int, enabled bool) {
+	r.outf("%-*s\t%s\n", column, name, r.optStatusText(enabled))
 }
 
 // unescapeRead drops the backslashes which escape another character, as "read"
