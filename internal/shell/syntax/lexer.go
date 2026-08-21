@@ -278,7 +278,15 @@ func (p *Parser) nextKeepSpaces() {
 		switch r {
 		case '}':
 			p.tok = p.paramToken(r)
-		case '`', '"', '$', '\'':
+		case '\'':
+			// posix mode makes this an ordinary character; see
+			// [POSIXMode] and [Parser.paramExpExp].
+			if p.sglQuoteLiteral {
+				p.advanceLitOther(r)
+				break
+			}
+			p.tok = p.regToken(r)
+		case '`', '"', '$':
 			p.tok = p.regToken(r)
 		default:
 			p.advanceLitOther(r)
@@ -1094,7 +1102,13 @@ loop:
 		switch r {
 		case '\\': // escaped byte follows
 			p.rune()
-		case '\'', '"', '`', '$':
+		case '\'':
+			if p.sglQuoteLiteral {
+				break // an ordinary character in posix mode
+			}
+			tok = _Lit
+			break loop
+		case '"', '`', '$':
 			tok = _Lit
 			break loop
 		case '}':

@@ -2,8 +2,10 @@ package interp
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
+	"iter"
 	"strings"
 
 	"github.com/blairham/koi-shell/internal/shell/syntax"
@@ -25,6 +27,112 @@ import (
 // answered 1, which is the same claim spelled two ways.
 const SyntaxErrorStatus = 2
 
+// ScriptReader reads a script the way bash reads one: a line at a time,
+// so that running a line can change how the next is read.
+//
+// That is what a shell needs and a parse-it-all-up-front reader cannot
+// give it. `set -o posix` changes how the rest of the script is
+// *tokenized* (#450), and `exec 0< file` changes where the rest of the
+// script is *read from* when the shell reads its commands from standard
+// input (#516) — both are decided between lines, which is why the line
+// is the unit here rather than the statement. bash reads a whole line
+// before running any of it, so `set -o posix; echo "${x+\'}"` on one
+// line still tokenizes the second command the old way; keeping a line's
+// statements together is what reproduces that.
+type ScriptReader struct {
+	parser *syntax.Parser
+	rd     io.Reader
+	name   string
+	// src is everything read so far. Statement positions are offsets
+	// into it, so a caller can slice a statement's source out of it —
+	// which is what ambient history recording does, and what
+	// relitHeredocs below needs.
+	src bytes.Buffer
+}
+
+// NewScriptReader prepares to read a script from r. name appears in
+// parse errors.
+func NewScriptReader(r io.Reader, name string, opts ...syntax.ParserOption) *ScriptReader {
+	return &ScriptReader{parser: syntax.NewParser(opts...), rd: r, name: name}
+}
+
+// Configure applies parser options to the live parser, which is how a
+// mode a script turns on mid-run reaches the rest of it. Call it between
+// lines: applying an option while a line is being tokenized would split
+// that line between two modes, which is not what any shell does.
+func (sr *ScriptReader) Configure(opts ...syntax.ParserOption) {
+	for _, opt := range opts {
+		opt(sr.parser)
+	}
+}
+
+// Source is everything read so far.
+func (sr *ScriptReader) Source() string { return sr.src.String() }
+
+// Lines yields the statements of each input line as it is read.
+//
+// A parse error is yielded once, with no statements, and ends the
+// iteration: the statements sharing the error's line are dropped,
+// because bash could not finish reading that line and so never ran them.
+func (sr *ScriptReader) Lines() iter.Seq2[[]*syntax.Stmt, error] {
+	return func(yield func([]*syntax.Stmt, error) bool) {
+		var line []*syntax.Stmt
+		for stmt, err := range sr.parser.StmtsSeq(io.TeeReader(sr.rd, &sr.src)) {
+			if err != nil {
+				yield(nil, sr.named(err))
+				return
+			}
+			relitHeredocs(stmt, sr.src.Bytes())
+			line = append(line, stmt)
+			if !sr.parser.AtLineEnd() {
+				continue // more of this line to read
+			}
+			if !yield(line, nil) {
+				return
+			}
+			line = nil
+		}
+	}
+}
+
+// named puts the script's name in a parse error, which StmtsSeq has no
+// way to do: a diagnostic would otherwise say "2:1:" where Parse says
+// "lib.sh:2:1:".
+func (sr *ScriptReader) named(err error) error {
+	var pe syntax.ParseError
+	if errors.As(err, &pe) && pe.Filename == "" && sr.name != "" {
+		pe.Filename = sr.name
+		return pe
+	}
+	return err
+}
+
+// runReading runs a script as it reads it, and returns the parse error
+// that stopped it, if any, after everything readable before it has run.
+//
+// This is `source`'s reader as well as a plain script's, which is what
+// makes `set -o posix` in a sourced file reach the rest of that file —
+// the #259 lesson that a fix belongs at the point of use, since a
+// sourced file is parsed here rather than by the shell around the
+// interpreter.
+func (r *Runner) runReading(ctx context.Context, sr *ScriptReader) error {
+	for stmts, err := range sr.Lines() {
+		if err != nil {
+			return err
+		}
+		r.stmts(ctx, stmts)
+		// Stop reading, not just running: an `exit`, a `return` out of a
+		// sourced file, an aborting error or a cancelled context all end
+		// the script here. `set -n` deliberately does not — reading the
+		// rest is the whole point of it.
+		if r.exit.exiting || r.exit.returning || r.exit.aborting || ctx.Err() != nil {
+			return nil
+		}
+		sr.Configure(r.ParserOptions()...)
+	}
+	return nil
+}
+
 // ParseAsRead parses r a statement at a time and returns the statements
 // bash would already have run when the first error stopped it.
 //
@@ -39,45 +147,13 @@ const SyntaxErrorStatus = 2
 // A nil error means the whole input parsed and stmts is all of it, which
 // is the ordinary case and the one that must stay exactly as it was.
 func ParseAsRead(r io.Reader, name string) (stmts []*syntax.Stmt, _ error) {
-	// The source is kept as it is read, so that relitHeredocs below can
-	// take a here-document body back out of it verbatim. Positions on the
-	// tree are offsets into this same stream, so they line up.
-	var src bytes.Buffer
-	var perr error
-	for stmt, err := range syntax.NewParser().StmtsSeq(io.TeeReader(r, &src)) {
+	for line, err := range NewScriptReader(r, name).Lines() {
 		if err != nil {
-			perr = err
-			break
+			return stmts, err
 		}
-		relitHeredocs(stmt, src.Bytes())
-		stmts = append(stmts, stmt)
+		stmts = append(stmts, line...)
 	}
-	if perr == nil {
-		return stmts, nil
-	}
-	// StmtsSeq has no name to put in the error, so a diagnostic would
-	// otherwise say "2:1:" where Parse says "lib.sh:2:1:".
-	var pe syntax.ParseError
-	if errors.As(perr, &pe) {
-		if pe.Filename == "" && name != "" {
-			pe.Filename = name
-			perr = pe
-		}
-		stmts = runnableBefore(stmts, pe.Pos.Line())
-	}
-	return stmts, perr
-}
-
-// runnableBefore drops the statements that share a line with the error,
-// which bash never got to run because it could not finish reading that
-// line.
-func runnableBefore(stmts []*syntax.Stmt, line uint) []*syntax.Stmt {
-	for i, stmt := range stmts {
-		if stmt.End().Line() >= line {
-			return stmts[:i]
-		}
-	}
-	return stmts
+	return stmts, nil
 }
 
 // relitHeredocs puts a here-document body back the way it was written,

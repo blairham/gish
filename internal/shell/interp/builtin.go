@@ -840,7 +840,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			return failf(1, "source: %v\n", err)
 		}
 		defer f.Close()
-		stmts, perr := ParseAsRead(f, path)
+		// Read and run a line at a time, the way bash reads a script: a
+		// sourced file that turns on `set -o posix` changes how the rest
+		// of itself is parsed (#450), and only a reader which runs as it
+		// reads can do that.
+		sr := NewScriptReader(f, path, r.ParserOptions()...)
 
 		// Keep the current versions of some fields we might modify.
 		oldParams := r.Params
@@ -877,7 +881,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			source:   sourceName,
 			callLine: pos.Line(),
 		})
-		r.stmts(ctx, stmts)
+		perr := r.runReading(ctx, sr)
 		// A sourced file's return fires RETURN too, and unlike a
 		// function it inherits the trap without needing "functrace".
 		r.runReturnTrap(ctx)

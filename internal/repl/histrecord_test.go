@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blairham/koi-shell/internal/shell/interp"
 	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
@@ -23,14 +24,19 @@ func resetSessionHistory(t *testing.T) {
 	})
 }
 
-func parseForHistory(t *testing.T, src string) (*syntax.File, *historyRecorder) {
+// parseForHistory feeds src to a recorder the way the shell does: a line
+// at a time, as it is read.
+func parseForHistory(t *testing.T, src string) *historyRecorder {
 	t.Helper()
-	f, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(src), "test")
-	if err != nil {
-		t.Fatal(err)
+	sr := interp.NewScriptReader(strings.NewReader(src), "test")
+	rec := newHistoryRecorder(sr.Source, func(string) string { return "" })
+	for stmts, err := range sr.Lines() {
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec.addLine(stmts)
 	}
-	rec := newHistoryRecorder(f, src, func(string) string { return "" })
-	return f, rec
+	return rec
 }
 
 // The entry text is raw source joined by bash's rules, every case here
@@ -105,15 +111,10 @@ func TestHistoryRecorderRendersAsBashRecords(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f, rec := parseForHistory(t, tc.src)
+			rec := parseForHistory(t, tc.src)
 			var got []string
-			for _, st := range f.Stmts {
-				gi, ok := rec.byStmt[st]
-				if !ok || rec.done[gi] {
-					continue
-				}
-				rec.done[gi] = true
-				got = append(got, rec.render(rec.groups[gi]))
+			for _, g := range rec.groups {
+				got = append(got, rec.render(g))
 			}
 			if len(got) != len(tc.want) {
 				t.Fatalf("entries = %q, want %q", got, tc.want)
@@ -133,7 +134,7 @@ func TestHistoryRecorderRendersAsBashRecords(t *testing.T) {
 // recorded.
 func TestHistoryRecorderIgnoresForeignStatements(t *testing.T) {
 	resetSessionHistory(t)
-	_, rec := parseForHistory(t, "echo mine\n")
+	rec := parseForHistory(t, "echo mine\n")
 	foreign, err := syntax.NewParser().Parse(strings.NewReader("echo theirs\n"), "rc")
 	if err != nil {
 		t.Fatal(err)

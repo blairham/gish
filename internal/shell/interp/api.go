@@ -662,6 +662,45 @@ func (r *Runner) DirStack() []string {
 	return slices.Clone(r.dirStack)
 }
 
+// ParserOptions are the parser options this runner's shell options
+// currently call for. A shell reading a script line by line applies them
+// to its parser between lines, so an option a script sets reaches the
+// rest of the script (#450).
+func (r *Runner) ParserOptions() []syntax.ParserOption {
+	return []syntax.ParserOption{syntax.POSIXMode(r.opts[optPosix])}
+}
+
+// Stdin is the file the runner's descriptor 0 currently refers to.
+//
+// It changes when a script redirects the *shell's* own fd 0, as
+// `exec 0< file` does. A shell reading its commands from standard input
+// watches this: redirecting fd 0 there switches the command stream, so
+// the rest of the script comes from the new file (#516). It is nil when
+// the runner was built without standard input.
+func (r *Runner) Stdin() *os.File { return r.stdin }
+
+// OptionSet reports whether the named `set -o` or `shopt` option is on
+// right now. An unknown or unsupported name reports false, which is what
+// an option that can never leave its default amounts to.
+//
+// Unlike [Runner.Options] this reads one name without building the whole
+// list, because a shell asks between input lines — `set -o posix`
+// changes how the rest of a script is *parsed* (#450), so the question
+// is asked once per line.
+func (r *Runner) OptionSet(name string) bool {
+	for i, opt := range posixOptsTable {
+		if opt.name == name {
+			return opt.supported && r.opts[i]
+		}
+	}
+	for i, opt := range bashOptsTable {
+		if opt.name == name {
+			return opt.supported && r.opts[len(posixOptsTable)+i]
+		}
+	}
+	return false
+}
+
 // OptionState is one named shell option and whether it is currently on.
 type OptionState struct {
 	Name string
@@ -1681,6 +1720,62 @@ func IsExitStatus(err error) (status uint8, ok bool) {
 // Calling Run on an entire [*File] implies an exit, meaning that an exit trap may
 // run.
 func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
+	r.runPrologue(ctx)
+	ended := false
+	switch node := node.(type) {
+	case *syntax.File:
+		r.filename = node.Name
+		r.stmtsTopLevel(ctx, node.Stmts)
+		// Running an entire file implies an exit; a statement or command
+		// only exits the shell via the exit builtin, errexit, and so on.
+		ended = true
+	case *syntax.Stmt:
+		r.stmt(ctx, node)
+	case syntax.Command:
+		r.cmd(ctx, node)
+	default:
+		return fmt.Errorf("node can only be File, Stmt, or Command: %T", node)
+	}
+	return r.runEpilogue(ctx, ended)
+}
+
+// RunStmts runs one chunk of a script which the shell is reading and
+// running as it goes — the statements of a single input line — without
+// implying that the script has ended (#450, #516).
+//
+// [Runner.Run] on a whole [*File] is the all-at-once form: it ends the
+// script in the same call, firing the EXIT trap. Reading incrementally
+// separates the two, so [Runner.Finish] is the other half and must be
+// called when the input runs out. name is the script's name, which is
+// what BASH_SOURCE reports for the frame.
+//
+// Like Run, the returned error carries the chunk's exit status, and
+// [Runner.Exited] reports whether the shell should stop.
+func (r *Runner) RunStmts(ctx context.Context, name string, stmts []*syntax.Stmt) error {
+	r.runPrologue(ctx)
+	r.filename = name
+	r.stmtsTopLevel(ctx, stmts)
+	return r.runEpilogue(ctx, false)
+}
+
+// Finish ends a script run made of [Runner.RunStmts] calls: it fires any
+// pending signal trap and the EXIT trap, and reports the script's status.
+//
+// It is a no-op beyond reporting that status when the script already
+// exited on its own, since the exit trap fired then.
+func (r *Runner) Finish(ctx context.Context) error {
+	if !r.didReset {
+		r.Reset()
+	}
+	r.fillExpandConfig(ctx)
+	// The last chunk's status is the script's, and is what the EXIT trap
+	// sees as $?.
+	r.exit = r.lastExit
+	return r.runEpilogue(ctx, true)
+}
+
+// runPrologue is the state every run boundary starts from.
+func (r *Runner) runPrologue(ctx context.Context) {
 	if !r.didReset {
 		r.Reset()
 	}
@@ -1691,22 +1786,14 @@ func (r *Runner) Run(ctx context.Context, node syntax.Node) error {
 	// silence this one's EXIT trap entirely.
 	r.exitTrapFired = false
 	r.filename = ""
-	switch node := node.(type) {
-	case *syntax.File:
-		r.filename = node.Name
-		r.stmtsTopLevel(ctx, node.Stmts)
-	case *syntax.Stmt:
-		r.stmt(ctx, node)
-	case syntax.Command:
-		r.cmd(ctx, node)
-	default:
-		return fmt.Errorf("node can only be File, Stmt, or Command: %T", node)
-	}
+}
+
+// runEpilogue closes a run boundary and reports its status. ended says
+// the script is over, which is what makes the EXIT trap fire.
+func (r *Runner) runEpilogue(ctx context.Context, ended bool) error {
 	// A bare Command bypasses stmt, which normally updates lastExit.
 	r.lastExit = r.exit
-	// Running an entire file implies an exit; a statement or command
-	// only exits the shell via the exit builtin, errexit, and so on.
-	if _, ok := node.(*syntax.File); ok || r.exit.exiting {
+	if ended || r.exit.exiting {
 		// A signal that arrived during the last command has had no
 		// statement boundary to fire at, so give it one — dropping a
 		// trap because its signal came in the script's final moment

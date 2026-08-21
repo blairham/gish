@@ -2821,3 +2821,48 @@ func countRecoveredPositions(x reflect.Value) int {
 	}
 	return 0
 }
+
+// bash's posix mode makes a single quote inside a double-quoted ${...}
+// an ordinary character, which is a *tokenizer* rule: the difference is
+// whether the parser goes looking for a closing quote (#450). Every
+// expectation below was measured against bash 5.3 run both ways.
+func TestPOSIXModeQuoteRule(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		// bash reports an unterminated quote in default mode for each
+		// of these; posix says whether it still does with the mode on.
+		posixErrs bool
+	}{
+		// The substitution operators: the quote is just a character.
+		{"plus", `echo "${x+'bar} baz"`, false},
+		{"colon-minus", `echo "${x:-'}"`, false},
+		{"assign", `echo "${x:='}"`, false},
+		{"quest", `echo "${x:?'}"`, false},
+		// The pattern operators keep quotes special, because there the
+		// quoting decides what the pattern matches.
+		{"remove prefix", `echo "${x#'}"`, true},
+		{"remove suffix", `echo "${x%'}"`, true},
+		{"upper", `echo "${x^'}"`, true},
+		{"lower", `echo "${x,'}"`, true},
+		{"replace", `echo "${x/'/y}"`, true},
+		// A here-document body is a double-quoted context too.
+		{"heredoc", "cat <<EOF\n${x+'}\nEOF\n", false},
+		// Outside double quotes the quote opens a span in both modes,
+		// which is what makes this a rule about the enclosing quoting
+		// rather than about ${...}.
+		{"unquoted", `echo ${x+'}`, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := NewParser().Parse(strings.NewReader(tc.in), ""); err == nil {
+				t.Fatalf("the default mode accepted %q, so this case tests nothing", tc.in)
+			}
+			_, err := NewParser(POSIXMode(true)).Parse(strings.NewReader(tc.in), "")
+			if gotErr := err != nil; gotErr != tc.posixErrs {
+				t.Fatalf("posix mode on %q: err = %v, want an error: %t", tc.in, err, tc.posixErrs)
+			}
+		})
+	}
+}
