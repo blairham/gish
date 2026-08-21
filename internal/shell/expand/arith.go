@@ -161,15 +161,22 @@ func Arithm(cfg *Config, expr syntax.ArithmExpr) (int, error) {
 	case *syntax.UnaryArithm:
 		switch expr.Op {
 		case syntax.Inc, syntax.Dec:
-			name := expr.X.(*syntax.Word).Lit()
-			old := atoi(cfg.envGet(name))
+			target, err := cfg.arithTarget(expr.X)
+			if err != nil {
+				return 0, err
+			}
+			cur, err := cfg.readTarget(target)
+			if err != nil {
+				return 0, err
+			}
+			old := atoi(cur)
 			val := old
 			if expr.Op == syntax.Inc {
 				val++
 			} else {
 				val--
 			}
-			if err := cfg.envSet(name, strconv.FormatInt(val, 10)); err != nil {
+			if err := cfg.writeTarget(target, strconv.FormatInt(val, 10)); err != nil {
 				return 0, err
 			}
 			if expr.Post {
@@ -328,8 +335,15 @@ func atoiLargeBase(s string, base int64) int64 {
 }
 
 func (cfg *Config) assgnArit(b *syntax.BinaryArithm) (int, error) {
-	name := b.X.(*syntax.Word).Lit()
-	val := atoi(cfg.envGet(name))
+	target, err := cfg.arithTarget(b.X)
+	if err != nil {
+		return 0, err
+	}
+	cur, err := cfg.readTarget(target)
+	if err != nil {
+		return 0, err
+	}
+	val := atoi(cur)
 	arg_, err := Arithm(cfg, b.Y)
 	if err != nil {
 		return 0, err
@@ -365,7 +379,7 @@ func (cfg *Config) assgnArit(b *syntax.BinaryArithm) (int, error) {
 	case syntax.ShrAssgn:
 		val >>= uint(arg)
 	}
-	if err := cfg.envSet(name, strconv.FormatInt(val, 10)); err != nil {
+	if err := cfg.writeTarget(target, strconv.FormatInt(val, 10)); err != nil {
 		return 0, err
 	}
 	return int(val), nil
@@ -434,4 +448,73 @@ func binArit(op syntax.BinAritOperator, x, y int) (int, error) {
 	default:
 		return 0, fmt.Errorf("unsupported binary arithmetic operator: %q", op)
 	}
+}
+
+// arithTarget is what an arithmetic assignment writes to: a variable,
+// and an element of it when the target is subscripted (#277).
+//
+// Two shapes reach here that a bare literal name does not cover, and
+// both used to be refused or to panic. `a[i]=9` names an element, which
+// is read and written like any other element rather than through the
+// variable's string form — that one answered "variable name must not be
+// empty", a koi bug rather than a diagnosis. And a name can be
+// *computed*: bash expands the word first, so `${v}ame=1` and `x$$=1`
+// assign to whatever the expansion spells, which is how bash's own
+// new-exp.tests writes `${_ENV[(_$-=0)+(_=1)]}`.
+type arithTarget struct {
+	name  string
+	index syntax.ArithmExpr // nil for a plain variable
+}
+
+func (cfg *Config) arithTarget(x syntax.ArithmExpr) (arithTarget, error) {
+	w, ok := x.(*syntax.Word)
+	if !ok {
+		return arithTarget{}, fmt.Errorf("cannot assign to %T", x)
+	}
+	if len(w.Parts) == 1 {
+		switch part := w.Parts[0].(type) {
+		case *syntax.Lit:
+			return arithTarget{name: part.Value}, nil
+		case *syntax.ParamExp:
+			// `a[i]` reaches the parser as a short parameter expansion
+			// with an index and nothing else; anything more is a value
+			// rather than a target, and the parser has already refused
+			// it as one.
+			if part.Short && part.Index != nil && part.Param != nil {
+				return arithTarget{name: part.Param.Value, index: part.Index}, nil
+			}
+		}
+	}
+	// A word with expansions in it: what it spells is the name, which is
+	// only knowable now.
+	name, err := Literal(cfg, w)
+	if err != nil {
+		return arithTarget{}, err
+	}
+	return arithTarget{name: name}, nil
+}
+
+// readTarget is the target's current value, empty when it is unset.
+func (cfg *Config) readTarget(t arithTarget) (string, error) {
+	if t.index == nil {
+		return cfg.envGet(t.name), nil
+	}
+	str, _, err := cfg.varInd(cfg.Env.Get(t.name), t.index)
+	return str, err
+}
+
+// writeTarget stores a value in the target, creating the array when the
+// target is an element of one — `a[9]=7` on an unset `a` is an array
+// with one element in bash, not an error.
+func (cfg *Config) writeTarget(t arithTarget, val string) error {
+	if t.index == nil {
+		if !syntax.ValidName(t.name) {
+			// bash reads an unusable name as a *number* and complains
+			// about that, since in its grammar the left side of an
+			// assignment is just another operand.
+			return fmt.Errorf("%s: not a valid name", t.name)
+		}
+		return cfg.envSet(t.name, val)
+	}
+	return cfg.assignElem(t.name, cfg.Env.Get(t.name), t.index, val)
 }

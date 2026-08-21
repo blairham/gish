@@ -300,17 +300,45 @@ func (p *Parser) arithmExprBinary(compact bool, nextOp func(bool) ArithmExpr, op
 
 func isArithName(left ArithmExpr) bool {
 	w, ok := left.(*Word)
-	if !ok || len(w.Parts) != 1 {
+	if !ok {
 		return false
+	}
+	if len(w.Parts) != 1 {
+		// A word in several parts is one an expansion runs through, so
+		// what it names is only knowable when it is evaluated; see the
+		// comment on the single-part expansion case below.
+		return hasExpansion(w)
 	}
 	switch wp := w.Parts[0].(type) {
 	case *Lit:
 		return ValidName(wp.Value)
 	case *ParamExp:
-		return wp.nakedIndex()
+		// `a[i]` is a target; anything else is a name bash computes.
+		// `${v}ame=1` assigns to whatever ${v} spells, and bash's own
+		// new-exp.tests turns on it (`${_ENV[(_$-=0)+(_=1)]}`), so
+		// refusing it at parse time forfeited the whole file (#277).
+		// A purely literal name that is *not* a name stays a parse
+		// error, which is narrower than bash — there `1x=5` is read as
+		// a number and complained about while evaluating.
+		_ = wp
+		return true
 	default:
-		return false
+		return hasExpansion(w)
 	}
+}
+
+// hasExpansion reports whether any part of the word is something other
+// than literal text, which is what makes the name it spells a runtime
+// question rather than a parse-time one.
+func hasExpansion(w *Word) bool {
+	for _, part := range w.Parts {
+		switch part.(type) {
+		case *Lit:
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Parser) followArithm(ftok token, fpos Pos) ArithmExpr {

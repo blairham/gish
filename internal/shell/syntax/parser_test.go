@@ -1153,16 +1153,11 @@ var errorCases = []errorCase{
 		"echo $((1=2))",
 		langErr("1:10: `=` must follow a name"),
 	),
-	errCase(
-		"echo $(($0=2))",
-		langErr("1:11: `=` must follow a name"),
-		flipConfirmAll,
-	),
-	errCase(
-		"echo $(($(a)=2))",
-		langErr("1:13: `=` must follow a name"),
-		flipConfirmAll,
-	),
+	// A name an expansion spells is only knowable when it is evaluated,
+	// so neither of these is a parse error: bash runs `$(($(echo a)=2))`
+	// and assigns 2 to `a`, and complains about `$(($0=2))` only while
+	// evaluating, because there $0 is a path rather than a name. Both
+	// carried `flipConfirmAll`, which said the same thing (#277).
 	// errCase(
 	// 	"echo $((1'2`))",
 	// 	// TODO: Take a look at this again, since this no longer fails
@@ -1511,10 +1506,8 @@ var errorCases = []errorCase{
 		"let 1++",
 		langErr("1:6: `++` must follow a name", LangBash|LangMirBSDKorn|LangZsh),
 	),
-	errCase(
-		"let $0++",
-		langErr("1:7: `++` must follow a name", LangBash|LangMirBSDKorn|LangZsh),
-	),
+	// `let $0++` is the same: bash reads it and complains about the
+	// value $0 spells, not about the shape.
 	errCase(
 		"let --(a)",
 		langErr("1:5: `--` must be followed by a literal", LangBash|LangMirBSDKorn|LangZsh),

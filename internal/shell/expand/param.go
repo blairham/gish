@@ -113,6 +113,14 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 
 	var sliceOffset, sliceLen int
 	if pe.Slice != nil {
+		if pe.Slice.Offset == nil && pe.Slice.Length == nil {
+			// `${x:}` — a slice with neither half. bash reads it and
+			// reports this while expanding, which ends the command and
+			// not the script (#277); the parser leaves the shape here
+			// rather than refusing it, so that a whole file is not lost
+			// to one line of it.
+			return "", fmt.Errorf("%s: bad substitution", nodeText(pe))
+		}
 		var err error
 		if pe.Slice.Offset != nil {
 			sliceOffset, err = Arithm(cfg, pe.Slice.Offset)

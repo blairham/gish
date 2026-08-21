@@ -2041,6 +2041,37 @@ q`,
 	{`shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[x]\n"},
 	{`set -m; shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[]\n"},
 
+	// koi's parser refused three shapes bash reads and complains about
+	// only while evaluating — and because koi parses ahead, refusing
+	// them lost the rest of the file rather than the line (#277).
+
+	// A name an arithmetic assignment writes can be *computed*, which
+	// is only knowable when the word is expanded.
+	{`v=n; echo $(( ${v}ame=5 )); echo "$name"`, "5\n5\n"},
+	{`echo $(( $(echo a)=2 )); echo "a=$a"`, "2\na=2\n"},
+	// And it can name an element, which used to answer "variable name
+	// must not be empty" — a koi bug wearing a diagnosis.
+	{`a=(1 2 3); i=1; echo $(( a[i]=9 )); echo "${a[1]}"`, "9\n9\n"},
+	{`a=(1 2 3); echo $(( a[1]+=5 )); echo "${a[*]}"`, "7\n1 7 3\n"},
+	{`a=(5 6); i=0; echo $(( a[i]++ )); echo "${a[0]}"`, "5\n6\n"},
+	{`declare -A m; m[k]=1; echo $(( m[k]+=2 )); echo "${m[k]}"`, "3\n3\n"},
+	{`echo $(( a[9]=7 )); echo "${a[9]}"`, "7\n7\n"},
+
+	// An empty slice length is zero rather than a syntax error, and an
+	// empty offset is zero when a length follows it.
+	{`x=abcdef; echo "[${x:1:}]"`, "[]\n"},
+	{`x=abcdef; echo "[${x::}]"`, "[]\n"},
+	{`x=abcdef; echo "[${x::3}]"`, "[abc]\n"},
+	{
+		// A slice with neither half is bash's "bad substitution", which
+		// abandons the input unit: in a command string that is the rest
+		// of the string, and in a *file* it is only the command — the
+		// half cmd/koi's fatality test covers, since a table case is a
+		// command string.
+		`x=abcdef; echo "[${x:}]"; echo after`,
+		"${x:}: bad substitution\nexit status 1 #JUSTERR",
+	},
+
 	// The same rule reaches every operator that counts characters, not
 	// only `?` and ${#x} (#470): a slice, a pattern removal, a
 	// replacement and a case conversion are all byte-wise there, and
