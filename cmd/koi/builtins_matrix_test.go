@@ -158,6 +158,18 @@ case $a in ?) echo one;; ??) echo two;; esac`,
 		name: "shopt", script: `shopt -s nullglob; shopt nullglob`,
 		knownGap: "bash pads the option name to a fixed column; the interpreter uses a single tab",
 	},
+	{
+		// A query about an option koi accepts and ignores is still a
+		// question, and the answer is the interpreter's to give (#566).
+		// The accept-and-ignore list used to swallow the name whatever
+		// the form, so these printed nothing and -q always said 0 --
+		// which is how a script testing an option it never set could
+		// take the wrong branch.
+		name: "shopt", script: `shopt -p checkjobs; shopt -p histappend; shopt -p checkwinsize
+shopt -q checkjobs; echo "q=$?"
+shopt -q -o pipefail; echo "qo=$?"
+shopt -u histappend; echo "unset=$?"; shopt -p histappend`,
+	},
 	{name: "source", script: `echo 'echo sourced' > "$TMPD/s.sh"; . "$TMPD/s.sh"`},
 	{name: "test", script: `test -d /tmp && echo isdir; test -z "" && echo empty`},
 	{name: "trap", script: `trap 'echo trapped' EXIT; echo body`},
