@@ -1576,7 +1576,14 @@ zshPrefixLoop:
 			}
 		case '!':
 			// Unlike the others, zsh has no $!foo prefix.
-			if !pe.Short && p.paramNameStart() {
+			//
+			// A `-` after it is the *operator* rather than the name of
+			// the parameter to indirect through, so `${!-word}` is `$!`
+			// with a default — which is what bash answers, and what
+			// more-exp.tests stopped on (#277). `$-` is a parameter, so
+			// without this exception it reads as one and the word after
+			// it has nowhere to go.
+			if !pe.Short && p.peek() != '-' && p.paramNameStart() {
 				p.checkLang(pe.Pos(), langBashLike|LangMirBSDKorn, "`${!foo}`")
 				pe.Excl = true
 			}

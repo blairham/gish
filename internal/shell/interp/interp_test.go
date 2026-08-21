@@ -2062,6 +2062,17 @@ q`,
 	{`shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[x]\n"},
 	{`set -m; shopt -s lastpipe; echo x | read v; echo "[$v]"`, "[]\n"},
 
+	// `${!-word}` is `$!` with a default, not an indirection through
+	// `$-` (#277): a `-` after the `!` is the operator. koi read it as
+	// the parameter, which left the word after it with nowhere to go
+	// and stopped more-exp.tests.
+	{`echo "[${!-posparams}]"`, "[posparams]\n"},
+	{`echo "[${!-}]"`, "[]\n"},
+	{`echo "[${!:-def}]"`, "[def]\n"},
+	// Indirection still reads a name, and its own default still works.
+	{`v=x; x=hi; echo "${!v}" "${!v-d}"`, "hi hi\n"},
+	{`v=nope; echo "[${!v-d}]"`, "[d]\n"},
+
 	// bash's case *toggle*, which koi did not have at all (#277):
 	// `${x~}` swaps the case of the first character and `${x~~}` of
 	// every one, both filtered by an optional pattern exactly as `^`
