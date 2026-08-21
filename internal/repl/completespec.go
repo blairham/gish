@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/syntax"
@@ -21,6 +22,7 @@ import (
 	"github.com/blairham/koi-shell/internal/builtins"
 	"github.com/blairham/koi-shell/internal/complete"
 	"github.com/blairham/koi-shell/internal/editor"
+	"github.com/blairham/koi-shell/internal/jobs"
 )
 
 // `complete` and `compgen` (#159): programmable completion, bash's own.
@@ -53,7 +55,7 @@ type completionSpec struct {
 	glob   string
 	// letterSpelled records which actions were written as a letter
 	// rather than as `-A name`. bash prints back the spelling it was
-	// given — `-s` stays `-s` and `-A signal` stays `-A signal` — so
+	// given — `-s` stays `-s` and `-A service` stays `-A service` — so
 	// the spelling is part of the spec rather than a detail of parsing
 	// (#533).
 	letterSpelled map[string]bool
@@ -143,9 +145,10 @@ var (
 // one. bash refuses a name outside either with exit 2 — `compgen: bogus:
 // invalid action name` — and koi took both verbatim, so a misspelled
 // action was a generator that produced nothing. Both lists are closed in
-// bash 5.3 and every entry was confirmed against it by asking; ten of the
-// actions are recognized here and answer nothing yet (#606), which is a
-// separate honesty problem from accepting a name that does not exist.
+// bash 5.3 and every entry was confirmed against it by asking, and every
+// one of the twenty-four now generates: the ten that were recognized and
+// answered nothing were #606, the same honesty problem as accepting a
+// name that does not exist, one step further in.
 var (
 	compOptionNames = []string{
 		"bashdefault", "default", "dirnames", "filenames",
@@ -473,7 +476,12 @@ func actionLongName(letter string) string {
 	case "j":
 		return "job"
 	case "s":
-		return "signal"
+		// `service`, not `signal`: bash's `-s` is /etc/services and
+		// `signal` has no letter at all (`compgen -s` answers with the
+		// service database — measured). koi mapped it to `signal`, so the
+		// letter form of one action generated the other's candidates,
+		// which while both answered nothing was invisible (#606).
+		return "service"
 	case "v":
 		return "variable"
 	case "e":
@@ -564,6 +572,31 @@ func actionLetter(long string) string {
 // builtin in its own right because completion functions call it far
 // more often than the shell does — `compgen -W "$opts" -- "$cur"` is
 // the single most common line in the whole bash-completion corpus.
+//
+// **Nothing here sorts or de-duplicates** (#613). bash prints candidates
+// in the order its generators produced them and keeps duplicates, and
+// koi sorted the whole list and collapsed it, which #269 recorded as
+// cosmetic. Two things make it not cosmetic. `-V` puts the list in an
+// **array**, so the order is addressable — `${arr[0]}` is the first
+// candidate, and bash's own complete.tests reads it — and a completion
+// function offering `${arr[0]}` as its best guess would offer koi's
+// alphabetical first instead of the one the caller put first. And **a
+// wordlist's order is the caller's answer**: `compgen -W "$opts"` is the
+// commonest line in the corpus and `$opts` is routinely written
+// most-likely-first.
+//
+// Order is therefore each generator's own, and each one is measured
+// against bash rather than assumed: the wordlist and the keyword table
+// keep their written order, the signal table is signal-number order, the
+// job table is newest-first, the system databases are file order, and
+// the ones bash sorts — builtins, variables, exports, aliases,
+// functions, `set -o` and `shopt` names, help topics, readline bindings —
+// are sorted where they are produced. The one deliberate divergence is
+// `-f`/`-d`: bash's is a raw readdir, which on this machine answers
+// `mdir zfile mfile zdir adir afile`, and Go's `os.ReadDir` sorts. That
+// is a property of the C library rather than of the shell, and a sorted
+// listing is the more useful of the two, so the sets are compared and the
+// order is asserted to be sorted rather than to be bash's.
 func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []string {
 	flags, operands, err := parseCompArgs(compgenOpts, args)
 	if err == nil {
@@ -613,7 +646,13 @@ func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []
 		}
 	}
 
-	out := append(words, actionCandidates(hc, actions, cur)...) //nolint:gocritic // a fresh slice is intended
+	// The actions generate first and the wordlist last, whatever order
+	// the options were given in: `compgen -W "zz aa" -f` and `compgen -f
+	// -W "zz aa"` both answer with the file names and then zz aa. bash
+	// does not permute here either — the sequence is a property of its
+	// generator, not of the argv — and koi had the wordlist first, which
+	// only ever agreed because the whole list was then sorted (#613).
+	out := append(actionCandidates(hc, actions, cur), words...) //nolint:gocritic // a fresh slice is intended
 	var matched []string
 	for _, w := range out {
 		if !strings.HasPrefix(w, cur) {
@@ -624,8 +663,6 @@ func runCompgen(ctx context.Context, hc interp.HandlerContext, args []string) []
 		}
 		matched = append(matched, prefix+w+suffix)
 	}
-	slices.Sort(matched)
-	matched = slices.Compact(matched)
 
 	if vname != "" {
 		return compgenAssign(hc, vname, matched)
@@ -759,9 +796,15 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 			// listing a keyword koi dropped on the floor would have been
 			// the wrong kind of parity — and it is here now that koi runs
 			// it (#287).
+			//
+			// In bash's own order, which is its reserved-word table's
+			// rather than anything derivable: `in` sits after `until do
+			// done` and the punctuation trails at the end. That was
+			// invisible while compgen sorted its output (#613), and it is
+			// the order bash's complete.tests prints.
 			out = append(out, "if", "then", "else", "elif", "fi", "case", "esac",
-				"for", "while", "until", "do", "done", "function", "select", "time",
-				"coproc", "!", "[[", "]]", "{", "}", "in")
+				"for", "select", "while", "until", "do", "done", "in",
+				"function", "time", "{", "}", "!", "[[", "]]", "coproc")
 		case "variable", "export":
 			// Runner.Vars holds the environment koi was launched with and is
 			// not updated as it runs, so reading it answered with real names
@@ -795,6 +838,125 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 			if runner := sessionRunner(); runner != nil {
 				out = append(out, slices.Sorted(maps.Keys(runner.Funcs))...)
 			}
+		case "arrayvar":
+			// The array-valued half of `variable`, and the same live view:
+			// an indexed or associative variable, whichever way it was
+			// created. bash lists its own BASH_* arrays here and koi lists
+			// the ones koi has, which is #269's rule — a name offered here
+			// has to be one this shell can subscript.
+			if runner := sessionRunner(); runner != nil {
+				var names []string
+				runner.Environ().Each(func(name string, vr expand.Variable) bool {
+					if vr.IsSet() && (vr.Kind == expand.Indexed || vr.Kind == expand.Associative) {
+						names = append(names, name)
+					}
+					return true
+				})
+				slices.Sort(names)
+				out = append(out, slices.Compact(names)...)
+			}
+		case "signal":
+			// koi's own trap table, SIG-prefixed, EXIT first and the fake
+			// traps last, which is bash's order (#606). The table is the
+			// portable set `trap -l` and `kill -l` print, so this list is
+			// shorter than bash's on any given platform and every name in
+			// it is one `trap` and `kill` accept — a completion offering a
+			// signal the shell would then refuse is the failure this
+			// action's silence was hiding.
+			out = append(out, interp.TrapNames()...)
+		case "job", "running", "stopped":
+			out = append(out, jobCandidates(a)...)
+		case "binding":
+			// The readline function names koi's line editor has operations
+			// for, from the keymap itself rather than from a list beside
+			// it. #269's rule for a third time: bash answers with
+			// readline's 144 and koi answers with what this editor does.
+			out = append(out, editor.FunctionNames()...)
+		case "user":
+			out = append(out, dbNames(passwdFile)...)
+		case "group":
+			out = append(out, dbNames(groupFile)...)
+		case "service":
+			out = append(out, serviceNames()...)
+		case "hostname":
+			out = append(out, hostNames(func(name string) string {
+				return sessionVarOf(sessionRunner(), name)
+			})...)
+		}
+	}
+	return out
+}
+
+// sessionJobsRef holds the interactive job table, for the surfaces that
+// answer questions *about* the session — the same shape and the same
+// reason as sessionRunnerRef. It is nil on every non-interactive path,
+// where the interpreter's own goroutine jobs are the whole table.
+var sessionJobsRef atomic.Pointer[jobs.Table]
+
+func setSessionJobs(t *jobs.Table) { sessionJobsRef.Store(t) }
+
+// jobCandidates answers `compgen -A job`, `-A running` and `-A stopped`.
+//
+// The candidate is the **first word** of the job's command line, not the
+// line: bash answers `sleep` for `sleep 9 | cat`, `{` for `{ sleep 8; }`
+// and `/bin/sleep` for `/bin/sleep 6`. Measured, because the plausible
+// guess is the whole command and a completion inserting `sleep 9 | cat`
+// as one word would be wrong in a way no test of the *set* would catch.
+//
+// The order is newest job first, also measured and also the opposite of
+// the obvious: three jobs started `aaa & bbb & ccc &` answer `ccc bbb
+// aaa`. Duplicates stay, since two `sleep` jobs are two candidates.
+//
+// koi has two job tables and both answer here, which is what #397 and #5
+// left: interactively a job is a process group in the jobs table, and in
+// a script it is a goroutine the interpreter owns. Whichever is serving
+// this session is the one asked — the interactive table first, since
+// when it exists it is the one `jobs` prints.
+func jobCandidates(action string) []string {
+	firstWord := func(cmd string) string {
+		if f := strings.Fields(cmd); len(f) > 0 {
+			return f[0]
+		}
+		return ""
+	}
+	var out []string
+	// `running` and `stopped` are the same table filtered, exactly as
+	// `jobs -r` and `jobs -s` filter the listing.
+	add := func(cmd, state string) {
+		if action != "job" && action != state {
+			return
+		}
+		if w := firstWord(cmd); w != "" {
+			out = append(out, w)
+		}
+	}
+	if table := sessionJobsRef.Load(); table != nil {
+		snapshot := table.Snapshot()
+		for i := len(snapshot) - 1; i >= 0; i-- {
+			job := snapshot[i]
+			switch job.State {
+			case jobs.Running.String():
+				add(job.Command, "running")
+			case jobs.Stopped.String():
+				add(job.Command, "stopped")
+			}
+		}
+		return out
+	}
+	if runner := sessionRunner(); runner != nil {
+		for _, job := range runner.JobEntries() {
+			// A goroutine job is never stopped — koi refuses `kill -STOP
+			// %n` rather than pretending (#397) — so `-A stopped` in a
+			// script answers nothing and exits 1, which is what bash
+			// answers in a script with no stopped jobs. A *finished* one
+			// is in `-A job` until it has been reported and in neither
+			// filtered listing, which is why the state it carries is
+			// neither of the two names.
+			state := "done"
+			if job.Running {
+				state = "running"
+			}
+			add(job.Command, state)
 		}
 	}
 	return out

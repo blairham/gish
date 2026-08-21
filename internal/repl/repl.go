@@ -130,6 +130,10 @@ func runEditor(ctx context.Context, login bool) error {
 	// process group and own the terminal while foreground; jobs/fg/bg
 	// are koi builtins reached via the CallHandler rewrite.
 	table := jobs.NewTable(os.Stdin)
+	// Published for the surfaces that answer questions *about* the
+	// session's jobs rather than acting on them — `compgen -A job` and
+	// its two filtered forms (#606).
+	setSessionJobs(table)
 	// Keep a live capture pty the same size as the real terminal. The
 	// editor's own resize handling only runs while it is reading, and a
 	// command that resizes its window mid-run still needs its stdout to

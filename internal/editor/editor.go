@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/blairham/koi-shell/internal/term"
@@ -638,65 +639,115 @@ type binding struct {
 	mod term.Mod
 }
 
-func defaultKeymap() map[binding]func(*Editor) {
-	return map[binding]func(*Editor){
-		{key: term.KeyTab}:                     (*Editor).completeTab,
-		{key: term.KeyEnter}:                   (*Editor).acceptOrNewline,
-		{key: term.KeyEnter, mod: term.ModAlt}: (*Editor).insertNewline,
+// keyEntry is one keymap row: the chord, the readline function name for
+// what it does, and the command itself.
+//
+// The name is here rather than in a list of its own because a parallel
+// list is a second claim to maintain, and the thing asking for these
+// names — `compgen -A binding` (#606) — is asking what this editor can
+// do. Naming it beside the key is what makes the answer checkable by
+// reading one line. A row with no name is a chord readline has no
+// function for: the Ctrl-X prefix, Alt-Enter's newline, and Ctrl-C,
+// which is the terminal's rather than the editor's.
+type keyEntry struct {
+	b    binding
+	name string
+	fn   func(*Editor)
+}
+
+func keymapEntries() []keyEntry {
+	return []keyEntry{
+		{binding{key: term.KeyTab}, "complete", (*Editor).completeTab},
+		{binding{key: term.KeyEnter}, "accept-line", (*Editor).acceptOrNewline},
+		{binding{key: term.KeyEnter, mod: term.ModAlt}, "", (*Editor).insertNewline},
 		// LF arrives as Ctrl-J (readline's accept-line); piped-into-pty
 		// input and some terminals send it instead of CR.
-		{r: 'j', mod: term.ModCtrl}:                (*Editor).acceptOrNewline,
-		{r: 'c', mod: term.ModCtrl}:                (*Editor).interrupt,
-		{r: 'd', mod: term.ModCtrl}:                (*Editor).deleteOrEOF,
-		{key: term.KeyBackspace}:                   (*Editor).deleteBack,
-		{r: 'h', mod: term.ModCtrl}:                (*Editor).deleteBack,
-		{key: term.KeyBackspace, mod: term.ModAlt}: (*Editor).killWordBack,
-		{key: term.KeyDelete}:                      (*Editor).deleteForward,
-		{key: term.KeyLeft}:                        func(e *Editor) { e.buf.MoveLeft() },
-		{r: 'b', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveLeft() },
-		{key: term.KeyRight}:                       (*Editor).moveRightOrAccept,
-		{r: 'f', mod: term.ModCtrl}:                (*Editor).moveRightOrAccept,
-		{key: term.KeyUp}:                          (*Editor).historyUp,
-		{r: 'p', mod: term.ModCtrl}:                (*Editor).historyUp,
-		{key: term.KeyDown}:                        (*Editor).historyDown,
-		{r: 'n', mod: term.ModCtrl}:                (*Editor).historyDown,
-		{r: 'r', mod: term.ModCtrl}:                (*Editor).startSearch,
-		{key: term.KeyHome}:                        func(e *Editor) { e.buf.MoveLineStart() },
-		{r: 'a', mod: term.ModCtrl}:                func(e *Editor) { e.buf.MoveLineStart() },
-		{key: term.KeyEnd}:                         (*Editor).moveLineEndOrAccept,
-		{r: 'e', mod: term.ModCtrl}:                (*Editor).moveLineEndOrAccept,
-		{r: 'b', mod: term.ModAlt}:                 func(e *Editor) { e.buf.MoveWordLeft() },
-		{r: 'f', mod: term.ModAlt}:                 func(e *Editor) { e.buf.MoveWordRight() },
-		{r: 'k', mod: term.ModCtrl}:                (*Editor).killToLineEnd,
-		{r: 'u', mod: term.ModCtrl}:                (*Editor).killToLineStart,
-		{r: 'w', mod: term.ModCtrl}:                (*Editor).killToWhitespace,
-		{r: 'd', mod: term.ModAlt}:                 (*Editor).killWordForward,
-		{r: 'y', mod: term.ModCtrl}:                (*Editor).yank,
-		{r: 'y', mod: term.ModAlt}:                 (*Editor).yankPop,
-		{r: '_', mod: term.ModCtrl}:                (*Editor).undoCmd,
-		{r: '/', mod: term.ModCtrl}:                (*Editor).undoCmd,
-		{r: 'l', mod: term.ModCtrl}:                (*Editor).clearScreen,
+		{binding{r: 'j', mod: term.ModCtrl}, "accept-line", (*Editor).acceptOrNewline},
+		{binding{r: 'c', mod: term.ModCtrl}, "", (*Editor).interrupt},
+		{binding{r: 'd', mod: term.ModCtrl}, "delete-char", (*Editor).deleteOrEOF},
+		{binding{key: term.KeyBackspace}, "backward-delete-char", (*Editor).deleteBack},
+		{binding{r: 'h', mod: term.ModCtrl}, "backward-delete-char", (*Editor).deleteBack},
+		{binding{key: term.KeyBackspace, mod: term.ModAlt}, "backward-kill-word", (*Editor).killWordBack},
+		{binding{key: term.KeyDelete}, "delete-char", (*Editor).deleteForward},
+		{binding{key: term.KeyLeft}, "backward-char", func(e *Editor) { e.buf.MoveLeft() }},
+		{binding{r: 'b', mod: term.ModCtrl}, "backward-char", func(e *Editor) { e.buf.MoveLeft() }},
+		{binding{key: term.KeyRight}, "forward-char", (*Editor).moveRightOrAccept},
+		{binding{r: 'f', mod: term.ModCtrl}, "forward-char", (*Editor).moveRightOrAccept},
+		{binding{key: term.KeyUp}, "previous-history", (*Editor).historyUp},
+		{binding{r: 'p', mod: term.ModCtrl}, "previous-history", (*Editor).historyUp},
+		{binding{key: term.KeyDown}, "next-history", (*Editor).historyDown},
+		{binding{r: 'n', mod: term.ModCtrl}, "next-history", (*Editor).historyDown},
+		{binding{r: 'r', mod: term.ModCtrl}, "reverse-search-history", (*Editor).startSearch},
+		{binding{key: term.KeyHome}, "beginning-of-line", func(e *Editor) { e.buf.MoveLineStart() }},
+		{binding{r: 'a', mod: term.ModCtrl}, "beginning-of-line", func(e *Editor) { e.buf.MoveLineStart() }},
+		{binding{key: term.KeyEnd}, "end-of-line", (*Editor).moveLineEndOrAccept},
+		{binding{r: 'e', mod: term.ModCtrl}, "end-of-line", (*Editor).moveLineEndOrAccept},
+		{binding{r: 'b', mod: term.ModAlt}, "backward-word", func(e *Editor) { e.buf.MoveWordLeft() }},
+		{binding{r: 'f', mod: term.ModAlt}, "forward-word", func(e *Editor) { e.buf.MoveWordRight() }},
+		{binding{r: 'k', mod: term.ModCtrl}, "kill-line", (*Editor).killToLineEnd},
+		{binding{r: 'u', mod: term.ModCtrl}, "unix-line-discard", (*Editor).killToLineStart},
+		{binding{r: 'w', mod: term.ModCtrl}, "unix-word-rubout", (*Editor).killToWhitespace},
+		{binding{r: 'd', mod: term.ModAlt}, "kill-word", (*Editor).killWordForward},
+		{binding{r: 'y', mod: term.ModCtrl}, "yank", (*Editor).yank},
+		{binding{r: 'y', mod: term.ModAlt}, "yank-pop", (*Editor).yankPop},
+		{binding{r: '_', mod: term.ModCtrl}, "undo", (*Editor).undoCmd},
+		{binding{r: '/', mod: term.ModCtrl}, "undo", (*Editor).undoCmd},
+		{binding{r: 'l', mod: term.ModCtrl}, "clear-screen", (*Editor).clearScreen},
 		// The muscle-memory set (#96).
-		{r: '.', mod: term.ModAlt}:  (*Editor).yankLastArg,
-		{r: '_', mod: term.ModAlt}:  (*Editor).yankLastArg,
-		{r: '#', mod: term.ModAlt}:  (*Editor).commentAccept,
-		{r: 't', mod: term.ModCtrl}: (*Editor).transposeChars,
-		{r: 'o', mod: term.ModCtrl}: (*Editor).operateAndGetNext,
-		{r: 'x', mod: term.ModCtrl}: (*Editor).startCtrlX,
+		{binding{r: '.', mod: term.ModAlt}, "yank-last-arg", (*Editor).yankLastArg},
+		{binding{r: '_', mod: term.ModAlt}, "yank-last-arg", (*Editor).yankLastArg},
+		{binding{r: '#', mod: term.ModAlt}, "insert-comment", (*Editor).commentAccept},
+		{binding{r: 't', mod: term.ModCtrl}, "transpose-chars", (*Editor).transposeChars},
+		{binding{r: 'o', mod: term.ModCtrl}, "operate-and-get-next", (*Editor).operateAndGetNext},
+		{binding{r: 'x', mod: term.ModCtrl}, "", (*Editor).startCtrlX},
 		// Round 2 (#118): the rest of readline's emacs keymap.
-		{r: 'u', mod: term.ModAlt}:                (*Editor).upcaseWord,
-		{r: 'l', mod: term.ModAlt}:                (*Editor).downcaseWord,
-		{r: 'c', mod: term.ModAlt}:                (*Editor).capitalizeWord,
-		{r: 't', mod: term.ModAlt}:                (*Editor).transposeWords,
-		{r: 'v', mod: term.ModCtrl}:               (*Editor).startQuotedInsert,
-		{r: 'q', mod: term.ModCtrl}:               (*Editor).startQuotedInsert,
-		{r: 'r', mod: term.ModAlt}:                (*Editor).revertLine,
-		{r: '<', mod: term.ModAlt}:                (*Editor).beginningOfHistory,
-		{r: '>', mod: term.ModAlt}:                (*Editor).endOfHistory,
-		{r: ']', mod: term.ModCtrl}:               func(e *Editor) { e.startCharSearch(false) },
-		{r: ']', mod: term.ModCtrl | term.ModAlt}: func(e *Editor) { e.startCharSearch(true) },
+		{binding{r: 'u', mod: term.ModAlt}, "upcase-word", (*Editor).upcaseWord},
+		{binding{r: 'l', mod: term.ModAlt}, "downcase-word", (*Editor).downcaseWord},
+		{binding{r: 'c', mod: term.ModAlt}, "capitalize-word", (*Editor).capitalizeWord},
+		{binding{r: 't', mod: term.ModAlt}, "transpose-words", (*Editor).transposeWords},
+		{binding{r: 'v', mod: term.ModCtrl}, "quoted-insert", (*Editor).startQuotedInsert},
+		{binding{r: 'q', mod: term.ModCtrl}, "quoted-insert", (*Editor).startQuotedInsert},
+		{binding{r: 'r', mod: term.ModAlt}, "revert-line", (*Editor).revertLine},
+		{binding{r: '<', mod: term.ModAlt}, "beginning-of-history", (*Editor).beginningOfHistory},
+		{binding{r: '>', mod: term.ModAlt}, "end-of-history", (*Editor).endOfHistory},
+		{binding{r: ']', mod: term.ModCtrl}, "character-search", func(e *Editor) { e.startCharSearch(false) }},
+		{binding{r: ']', mod: term.ModCtrl | term.ModAlt}, "character-search-backward", func(e *Editor) { e.startCharSearch(true) }},
 		// Ctrl-S is free: raw mode clears IXON, so flow control is not
 		// eating it — which is the only reason anyone believes it is lost.
-		{r: 's', mod: term.ModCtrl}: (*Editor).startForwardSearch,
+		{binding{r: 's', mod: term.ModCtrl}, "forward-search-history", (*Editor).startForwardSearch},
 	}
+}
+
+func defaultKeymap() map[binding]func(*Editor) {
+	entries := keymapEntries()
+	m := make(map[binding]func(*Editor), len(entries))
+	for _, e := range entries {
+		m[e.b] = e.fn
+	}
+	return m
+}
+
+// FunctionNames lists the readline function names this editor has an
+// operation for, sorted, which is what `compgen -A binding` answers
+// (#606).
+//
+// This editor's own set, on #269's rule: koi's keymap is readline's
+// emacs one as far as #96 and #118 took it, so the list is shorter than
+// readline's 144 and every name in it is a thing the editor does. What
+// it does *not* claim is that binding one of these names to a different
+// key works — `bind '"\C-a": beginning-of-line'` is still accepted and
+// ignored (#642) — so this answers which functions exist here, not
+// which are rebindable.
+func FunctionNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range keymapEntries() {
+		if e.name == "" || seen[e.name] {
+			continue
+		}
+		seen[e.name] = true
+		out = append(out, e.name)
+	}
+	slices.Sort(out)
+	return out
 }

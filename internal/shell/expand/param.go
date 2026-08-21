@@ -36,6 +36,49 @@ func (u UnsetParameterError) Error() string {
 	return fmt.Sprintf("%s: %s", u.Node.Param.Value, u.Message)
 }
 
+// BadOperatorError is a `${x@…}` whose transform bash has no letter for,
+// on a parameter that has a value. Unlike every other bad substitution it
+// is *fatal*: bash abandons the shell rather than the input unit, exactly
+// as an unbound variable under `set -u` does — measured in a script file,
+// inside a function, under `source` and in a subshell, where only that
+// subshell dies (#602). The shape errors are the recoverable kind and
+// stay a plain error; this one needs its own type so the interpreter can
+// tell them apart, since the wording is identical.
+type BadOperatorError struct {
+	Node *syntax.ParamExp
+}
+
+func (b BadOperatorError) Error() string {
+	return fmt.Sprintf("%s: bad substitution", nodeText(b.Node))
+}
+
+// paramTransformValid reports whether text is a `${x@…}` transform bash
+// has, which is the whole text between the `@` and the brace rather than
+// its first letter: `${x@QQ}`, `${x@"Q"}` and `${x@$q}` are all refused
+// where `${x@Q}` is not, so the operator is the source as written and
+// never an expansion of it (measured).
+func paramTransformValid(text string) bool {
+	switch text {
+	case "Q", "E", "P", "A", "K", "a", "k", "u", "U", "L":
+		return true
+	}
+	return false
+}
+
+// paramTransformNeedsValue reports whether a `${x@…}` transform looks at
+// the parameter's value at all. The four that do not are what bash asks
+// about *before* the value: a parameter with no value answers the empty
+// string for every other letter, valid or not, which is why `${x@nope}`
+// on an unset x is not an error — while `${n@a}` on a `declare -i n` that
+// was never assigned still answers `i` (both measured).
+func paramTransformNeedsValue(text string) bool {
+	switch text {
+	case "a", "A", "k", "K":
+		return false
+	}
+	return true
+}
+
 func overridingUnset(pe *syntax.ParamExp) bool {
 	if pe.Exp == nil {
 		return false
@@ -394,59 +437,126 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			syntax.ToggleFirst, syntax.ToggleAll:
 			str = join(cfg.caseConvElems(op, arg, elems))
 		case syntax.OtherParamOps:
-			switch arg {
-			case "Q":
-				str, err = syntax.Quote(str, syntax.LangBash)
-				if err != nil {
-					// Is this even possible? If a user runs into this panic,
-					// it's most likely a bug we need to fix.
-					panic(err)
-				}
-			case "E":
-				tail := str
-				var rns []rune
-				for tail != "" {
-					var rn rune
-					rn, _, tail, _ = strconv.UnquoteChar(tail, 0)
-					rns = append(rns, rn)
-				}
-				str = string(rns)
-			case "a":
-				// ${var@a} returns variable attribute flags.
-				// We use orig (before nameref resolve) for the attributes.
-				str = orig.Flags()
-			case "A":
-				// ${var@A} returns a declare statement that recreates the variable.
-				flags := orig.Flags()
-				quoted, err := syntax.Quote(str, syntax.LangBash)
-				if err != nil {
-					return "", err
-				}
-				if flags == "" {
-					str = fmt.Sprintf("%s=%s", name, quoted)
-				} else {
-					str = fmt.Sprintf("declare -%s %s=%s", flags, name, quoted)
-				}
-			case "P":
-				// TODO: implement prompt expansion (\u, \h, \w, etc.).
-			case "U":
-				str = strings.ToUpper(str)
-			case "u":
-				rs := []rune(str)
-				if len(rs) > 0 {
-					rs[0] = unicode.ToUpper(rs[0])
-					str = string(rs)
-				}
-			case "L":
-				str = strings.ToLower(str)
-			case "K", "k":
-				// TODO: implement, like @A but listing keys for assoc arrays.
-			default:
-				panic(fmt.Sprintf("unexpected @%s param expansion", arg))
+			str, err = cfg.paramTransform(pe, name, orig, str, set)
+			if err != nil {
+				return "", err
 			}
 		}
 	}
 	return str, nil
+}
+
+// paramTransform answers a `${x@…}`, whose operator bash reads as text
+// and judges when it runs rather than while parsing (#602).
+func (cfg *Config) paramTransform(pe *syntax.ParamExp, name string, orig Variable, str string, set bool) (string, error) {
+	// The transform is the source between the `@` and the brace, not what
+	// that source expands to.
+	xform := ""
+	if pe.Exp.Word != nil {
+		xform = nodeText(pe.Exp.Word)
+	}
+	if !set && paramTransformNeedsValue(xform) {
+		// No value, so bash answers before it has an opinion on the
+		// letter: the empty string, and no complaint even for a letter it
+		// does not have. `${x@Q}` on an unset x is empty rather than the
+		// two quotes it would answer for an empty value, for the same
+		// reason.
+		return "", nil
+	}
+	if !paramTransformValid(xform) {
+		return "", BadOperatorError{Node: pe}
+	}
+	switch xform {
+	case "Q", "E", "P", "U", "u", "L":
+		return paramTransformValue(xform, str), nil
+	case "a":
+		// ${var@a} returns variable attribute flags.
+		// We use orig (before nameref resolve) for the attributes.
+		return orig.Flags(), nil
+	case "A":
+		// ${var@A} returns a declare statement that recreates the variable.
+		flags := orig.Flags()
+		quoted, err := syntax.Quote(str, syntax.LangBash)
+		if err != nil {
+			return "", err
+		}
+		if flags == "" {
+			return fmt.Sprintf("%s=%s", name, quoted), nil
+		}
+		return fmt.Sprintf("declare -%s %s=%s", flags, name, quoted), nil
+	}
+	// "K" and "k" are valid and not implemented: like @A but listing the
+	// keys of an associative array.
+	// TODO: implement them.
+	return str, nil
+}
+
+// paramTransformValue is the half of a `${x@…}` that reads only the value
+// it is given, which is what makes it the per-element half too: bash
+// applies these to each element of a list, so `"${a[@]@Q}"` quotes every
+// element rather than quoting them joined (#602).
+func paramTransformValue(xform, str string) string {
+	switch xform {
+	case "Q":
+		quoted, err := syntax.Quote(str, syntax.LangBash)
+		if err != nil {
+			// Is this even possible? If a user runs into this panic,
+			// it's most likely a bug we need to fix.
+			panic(err)
+		}
+		return quoted
+	case "E":
+		tail := str
+		var rns []rune
+		for tail != "" {
+			var rn rune
+			rn, _, tail, _ = strconv.UnquoteChar(tail, 0)
+			rns = append(rns, rn)
+		}
+		return string(rns)
+	case "P":
+		// TODO: implement prompt expansion (\u, \h, \w, etc.).
+		return str
+	case "U":
+		return strings.ToUpper(str)
+	case "u":
+		rs := []rune(str)
+		if len(rs) > 0 {
+			rs[0] = unicode.ToUpper(rs[0])
+			return string(rs)
+		}
+		return str
+	case "L":
+		return strings.ToLower(str)
+	}
+	return str
+}
+
+// transformElems applies a `${a[@]@…}` to each element, which is how bash
+// applies one to a list. The four transforms that describe the *variable*
+// rather than its value — `a`, `A`, `k`, `K` — are not per-element and
+// stay on the flat path, where they are still a divergence (#647).
+func (cfg *Config) transformElems(pe *syntax.ParamExp, elems []string) ([]string, error) {
+	xform := ""
+	if pe.Exp.Word != nil {
+		xform = nodeText(pe.Exp.Word)
+	}
+	if !paramTransformNeedsValue(xform) {
+		return elems, nil
+	}
+	if len(elems) == 0 {
+		// No value, so bash never looks at the letter — the same rule
+		// [Config.paramTransform] follows for an unset parameter.
+		return elems, nil
+	}
+	if !paramTransformValid(xform) {
+		return nil, BadOperatorError{Node: pe}
+	}
+	out := make([]string, len(elems))
+	for i, elem := range elems {
+		out[i] = paramTransformValue(xform, elem)
+	}
+	return out, nil
 }
 
 func removePattern(str, pat string, fromEnd, shortest bool) string {
@@ -500,6 +610,8 @@ func (cfg *Config) perElemOps(pe *syntax.ParamExp, elems []string) ([]string, er
 			syntax.LowerFirst, syntax.LowerAll,
 			syntax.ToggleFirst, syntax.ToggleAll:
 			return cfg.caseConvElems(op, arg, elems), nil
+		case syntax.OtherParamOps:
+			return cfg.transformElems(pe, elems)
 		}
 	}
 	return elems, nil

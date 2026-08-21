@@ -807,6 +807,12 @@ func (p *Printer) paramExp(pe *ParamExp) {
 		p.minify = saved
 	}
 	p.wroteIndex(pe.Index)
+	if pe.BadSuffix != nil {
+		// The raw source of a suffix with no operator to spell it, kept
+		// so that `${H*}` prints back as written and the "bad
+		// substitution" diagnostic can name the whole expansion (#602).
+		p.w.WriteString(pe.BadSuffix.Value)
+	}
 	switch {
 	case len(pe.Modifiers) > 0:
 		for _, lit := range pe.Modifiers {

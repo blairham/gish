@@ -1479,6 +1479,14 @@ func (cfg *Config) listElems(pe *syntax.ParamExp) (elems []string, star, ok bool
 	if pe.Param == nil { // e.g. zsh's ${}; paramExp rejects it
 		return nil, false, false
 	}
+	if pe.Bad {
+		// `${@*}` and `${@[@]}` name a list and are still shapes bash
+		// refuses when it expands them (#602). The verdict lives in
+		// paramExp, so a list expansion has to decline and let the flat
+		// path reach it — otherwise the elements come out and the
+		// diagnostic never does.
+		return nil, false, false
+	}
 	switch name := pe.Param.Value; name {
 	case "*", "@":
 		return cfg.sliceElems(pe, cfg.Env.Get(name).List, nil, true), name == "*", true
