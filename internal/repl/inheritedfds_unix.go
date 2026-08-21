@@ -53,13 +53,46 @@ func scanInheritedFDs() map[int]*os.File {
 		if flags&unix.FD_CLOEXEC != 0 {
 			continue // ours, not the caller's
 		}
+		f := adopt(fd)
+		if f == nil {
+			continue
+		}
 		if found == nil {
 			found = make(map[int]*os.File)
 		}
-		// The name is for diagnostics only; nothing reopens by it.
-		found[fd] = os.NewFile(uintptr(fd), "/dev/fd/"+strconv.Itoa(fd))
+		found[fd] = f
 	}
 	return found
+}
+
+// adopt takes koi's own copy of an inherited descriptor, keyed in the
+// table by the number the *caller* used.
+//
+// The copy is what makes this safe to hold for a session: the shell's
+// handle stays valid whatever happens to the original, which a first cut
+// learned the hard way — a descriptor that was open at startup and
+// closed later left every exec afterwards failing with "bad file
+// descriptor", since the table is handed to each child whole. Duplicating
+// also asks the kernel to confirm the descriptor is real, rather than
+// inferring it from a directory listing.
+//
+// The copy is close-on-exec while the original was not, and that is not a
+// contradiction: children are given descriptors by number through the
+// table, where they arrive by dup2 with the flag cleared. Leaving the
+// copy inheritable would instead leak it into every process koi starts
+// under a number nobody asked for.
+func adopt(fd int) *os.File {
+	dup, err := unix.Dup(fd)
+	if err != nil {
+		return nil
+	}
+	if _, err := unix.FcntlInt(uintptr(dup), unix.F_SETFD, unix.FD_CLOEXEC); err != nil {
+		_ = unix.Close(dup)
+		return nil
+	}
+	// The name is for diagnostics only; nothing reopens by it, and it
+	// names the descriptor the caller passed rather than the copy.
+	return os.NewFile(uintptr(dup), "/dev/fd/"+strconv.Itoa(fd))
 }
 
 // fdDirs are the per-platform directories which list a process's own open
