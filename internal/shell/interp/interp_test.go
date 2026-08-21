@@ -517,7 +517,35 @@ var runTests = []runTest{
 	{"for i in 1 2; do\necho $LINENO\necho $LINENO\ndone", "2\n3\n2\n3\n"},
 	{"[[ -n $$ && $$ -gt 0 ]]", ""},
 	{"[[ $$ -eq $PPID ]]", "exit status 1"},
-	{"[[ $RANDOM -eq $RANDOM ]]", "exit status 1"},   // 1 in 32k chance of a collision, 0.003%
+	{"[[ $RANDOM -eq $RANDOM ]]", "exit status 1"}, // 1 in 32k chance of a collision, 0.003%
+	// Assigning RANDOM seeds it, which is the whole reason the idiom
+	// exists (#547). The claim is that a seed repeats *in koi* — never
+	// that it reproduces bash's digits, which are bash's generator and
+	// not part of its interface (#120) — so every case here compares
+	// two runs of the same seed rather than a literal.
+	{`RANDOM=42; a="$RANDOM $RANDOM $RANDOM"; RANDOM=42; [[ $a == "$RANDOM $RANDOM $RANDOM" ]]`, ""},
+	{`RANDOM=1+1; a=$RANDOM; RANDOM=2; [[ $a == "$RANDOM" ]]`, ""}, // the value is arithmetic
+	{`x=3; RANDOM=x; a=$RANDOM; RANDOM=3; [[ $a == "$RANDOM" ]]`, ""},
+	{`RANDOM=42; a=$RANDOM; RANDOM=43; [[ $a == "$RANDOM" ]]`, "exit status 1"},
+	// A subshell draws its own numbers and leaves this sequence where
+	// it was, which is what makes a seeded run repeatable at all.
+	{`RANDOM=7; x=$(echo $RANDOM); a="$RANDOM $RANDOM"; RANDOM=7; [[ $a == "$RANDOM $RANDOM" ]]`, ""},
+	{`RANDOM=5; [[ $RANDOM -ge 0 && $RANDOM -le 32767 ]]`, ""},
+	// Unsetting a computed variable ends its specialness for the rest
+	// of the shell: it reads empty, and an assignment makes it an
+	// ordinary variable rather than a seed.
+	{`unset RANDOM; echo "[$RANDOM]"`, "[]\n"},
+	{`unset RANDOM; RANDOM=5; echo "[$RANDOM]"`, "[5]\n"},
+	{`unset SECONDS; echo "[$SECONDS]"`, "[]\n"},
+	{`unset EPOCHSECONDS; echo "[$EPOCHSECONDS]"`, "[]\n"},
+	// SECONDS counts from where it is set. Its value is a whole
+	// integer or zero — not arithmetic, unlike RANDOM's, which is
+	// measured rather than reasoned from the one next to it.
+	{"SECONDS=100; echo $SECONDS", "100\n"},
+	{"SECONDS=-5; echo $SECONDS", "-5\n"},
+	{"SECONDS=1+1; echo $SECONDS", "0\n"},
+	{"SECONDS=abc; echo $SECONDS", "0\n"},
+	{"SECONDS=; echo $SECONDS", "0\n"},
 	{"[[ $SRANDOM -eq $SRANDOM ]]", "exit status 1"}, // 1 in 2**32 chance of a collision,
 
 	// Ensure that we consistently use 64 bits even on 32-bit platforms.

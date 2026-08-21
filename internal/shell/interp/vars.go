@@ -158,6 +158,15 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 	if name == "" {
 		panic("variable name must not be empty")
 	}
+	if r.unsetDynamic[name] {
+		// A computed variable a script has unset is an ordinary name
+		// for the rest of the shell: empty until something assigns it,
+		// and an ordinary variable when something does (#547).
+		if vr := r.writeEnv.Get(name); vr.Declared() {
+			return vr
+		}
+		return expand.Variable{}
+	}
 	var vr expand.Variable
 	switch name {
 	case "#":
@@ -202,8 +211,7 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 	case "PPID":
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(os.Getppid())
 	case "RANDOM": // not for cryptographic use
-		vr.Kind, vr.Str = expand.String, strconv.Itoa(mathrand.IntN(32767))
-		// TODO: support setting RANDOM to seed it
+		vr.Kind, vr.Str = expand.String, strconv.Itoa(r.randomValue())
 	case "SECONDS":
 		// The dynamic variables a script times itself with, and they
 		// were simply absent — an empty string in arithmetic is zero,
@@ -358,9 +366,107 @@ func (r *Runner) setVarString(name, value string) {
 	r.setVar(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
 }
 
+// dynamicVars are the variables the shell answers from its own state
+// rather than from the variable table. A script can unset one, which
+// ends its specialness for the rest of the shell (#547); the two that
+// take a *write* are handled in [Runner.setDynamic].
+//
+// The readonly ones (SHELLOPTS, BASHOPTS) are absent because unset
+// refuses them before reaching here, which is bash's answer too.
+var dynamicVars = map[string]bool{
+	"RANDOM": true, "SRANDOM": true, "SECONDS": true,
+	"EPOCHSECONDS": true, "EPOCHREALTIME": true, "BASHPID": true,
+	"GROUPS": true, "DIRSTACK": true, "FUNCNAME": true,
+	"BASH_SOURCE": true, "BASH_LINENO": true,
+}
+
+// LINENO is absent from that list on purpose: it is answered in
+// `expand`, which is the one parameter the environment interface cannot
+// satisfy, so the shell's record of what a script unset never reaches
+// the code that computes it. `unset LINENO` therefore still reports a
+// line, where bash reports nothing. Listing it here would record the
+// unset and change nothing, which is worse than the gap.
+
+// unsetDynamicVar records that a computed variable has been unset. It is
+// one-way: bash does not restore the specialness when the name is
+// assigned again, so `unset RANDOM; RANDOM=5` answers 5 forever after.
+func (r *Runner) unsetDynamicVar(name string) {
+	if !dynamicVars[name] {
+		return
+	}
+	if r.unsetDynamic == nil {
+		r.unsetDynamic = make(map[string]bool)
+	}
+	r.unsetDynamic[name] = true
+}
+
+// randomValue answers $RANDOM and advances the sequence.
+//
+// The generator belongs to this runner and is seeded from the system
+// until a script assigns RANDOM, so a subshell draws its own numbers
+// without moving this one along: `x=$(echo $RANDOM)` in a loop leaves
+// the parent's sequence where it was, which is what bash gets by
+// reseeding a forked child (#547).
+func (r *Runner) randomValue() int {
+	if r.random == nil {
+		r.random = mathrand.New(mathrand.NewPCG(mathrand.Uint64(), mathrand.Uint64()))
+	}
+	// bash's range is inclusive of 32767, and koi's was one short of it.
+	return r.random.IntN(32768)
+}
+
+// setDynamic handles a write to a computed variable, and reports whether
+// it took the assignment. Only two accept one: RANDOM seeds the
+// generator and SECONDS moves the origin it counts from. bash ignores a
+// write to the rest — LINENO, EPOCHSECONDS, BASHPID and friends keep
+// answering what they answered — so they are stored and shadowed, which
+// is what koi already did.
+func (r *Runner) setDynamic(name string, vr expand.Variable) bool {
+	if r.unsetDynamic[name] {
+		return false
+	}
+	switch name {
+	case "RANDOM":
+		// The value is arithmetic, so `RANDOM=1+1` and `RANDOM=2` seed
+		// alike; the sequence after it is repeatable, which is the
+		// whole reason the idiom exists (#547).
+		n, _ := strconv.Atoi(r.arithmStr(vr.Str))
+		r.random = mathrand.New(mathrand.NewPCG(uint64(n), randomSeedStream))
+		return true
+	case "SECONDS":
+		// Not arithmetic, measured: bash answers 0 for `SECONDS=1+1`
+		// and -5 for `SECONDS=-5`.
+		r.startTime, r.secondsBase = time.Now(), wholeInt(vr.Str)
+		return true
+	}
+	return false
+}
+
+// randomSeedStream is the second half of the seed, which selects a
+// stream rather than a position: PCG wants both, and a script supplies
+// one number. Any constant does, so long as it never changes — the
+// contract is that a seed repeats *in koi*, not that it matches bash's
+// digits (#120).
+const randomSeedStream = 0x9e3779b97f4a7c15
+
+// wholeInt reads a string that is entirely an integer, and answers zero
+// for anything else. Measured rather than assumed, and it is why SECONDS
+// is not the arithmetic RANDOM is: bash answers 0 for `SECONDS=1+1` and
+// for `SECONDS=abc`, and -5 for `SECONDS=-5`.
+func wholeInt(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 func (r *Runner) setVar(name string, vr expand.Variable) {
 	if r.opts[optAllExport] {
 		vr.Exported = true
+	}
+	if r.setDynamic(name, vr) {
+		return
 	}
 	if vr.CaseMod != 0 {
 		// -u/-l/-c transform on *every* assignment (#385), which is
