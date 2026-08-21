@@ -23,9 +23,12 @@ func (p *Parser) arithmExprAssign(compact bool) ArithmExpr {
 		if compact && p.spaced {
 			return value
 		}
-		if !isArithName(value) {
-			p.posErr(p.pos, "%#q must follow a name", p.tok)
-		}
+		// A target that is not a name is bash's *runtime* complaint —
+		// `$((1 ? 20 : x+=2))` reports "attempted assignment to
+		// non-variable" while evaluating, because bash parses arithmetic
+		// when it evaluates it (#597). Refusing here cost the rest of
+		// the file, since koi parses ahead; the shape is kept and the
+		// evaluator answers.
 		pos := p.pos
 		tok := p.tok
 		p.nextArithOp(compact)
@@ -298,6 +301,10 @@ func (p *Parser) arithmExprBinary(compact bool, nextOp func(bool) ArithmExpr, op
 	}
 }
 
+// isArithName reports whether a word could name something an operator
+// may write to. Only `++` and `--` ask any more: an assignment's target
+// is bash's verdict at evaluation time, so the parser stopped asking
+// (#597) and `expand`'s arithTarget answers instead.
 func isArithName(left ArithmExpr) bool {
 	w, ok := left.(*Word)
 	if !ok {
@@ -317,9 +324,6 @@ func isArithName(left ArithmExpr) bool {
 		// `${v}ame=1` assigns to whatever ${v} spells, and bash's own
 		// new-exp.tests turns on it (`${_ENV[(_$-=0)+(_=1)]}`), so
 		// refusing it at parse time forfeited the whole file (#277).
-		// A purely literal name that is *not* a name stays a parse
-		// error, which is narrower than bash — there `1x=5` is read as
-		// a number and complained about while evaluating.
 		_ = wp
 		return true
 	default:

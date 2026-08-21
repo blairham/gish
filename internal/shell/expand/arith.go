@@ -4,6 +4,7 @@
 package expand
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +14,27 @@ import (
 
 // TODO(v4): the arithmetic APIs should return int64 for portability with 32-bit systems,
 // even if Bash only supports native int sizes.
+
+// ArithError marks a diagnostic the arithmetic evaluator produced
+// itself, as against one raised by an expansion *inside* the
+// expression. The distinction is bash's, and it is about control flow
+// rather than wording (#597): in a word — `echo $((5 += 2))` — an
+// arithmetic error abandons the command and the rest of the line, while
+// `(( 5 += 2 ))` and `let 5+=2` are commands whose evaluation failed, so
+// they report under their own name, answer 1, and let the line carry on.
+// A bad substitution inside `(( ))` still abandons the line, which is
+// why the mark sits on the arithmetic errors rather than on the context
+// that evaluates them.
+type ArithError struct{ Err error }
+
+func (e ArithError) Error() string { return e.Err.Error() }
+
+func (e ArithError) Unwrap() error { return e.Err }
+
+// aerrf is [fmt.Errorf] for the evaluator's own diagnostics.
+func aerrf(format string, args ...any) error {
+	return ArithError{Err: fmt.Errorf(format, args...)}
+}
 
 // arithmWordStr evaluates the string a word in arithmetic context
 // expanded to, the way bash does: a name reads its value and evaluates
@@ -30,7 +52,7 @@ func (cfg *Config) arithmWordStr(str string) (int, error) {
 	// dead-ends answers 0 while one that cycles is an error, as 5.3's.
 	for i := 0; syntax.ValidName(str); i++ {
 		if i >= maxNameRefDepth {
-			return 0, fmt.Errorf("%s: expression recursion level exceeded", str)
+			return 0, aerrf("%s: expression recursion level exceeded", str)
 		}
 		str = strings.TrimSpace(cfg.envGet(str))
 		if str == "" {
@@ -47,18 +69,18 @@ func (cfg *Config) arithmWordStr(str string) (int, error) {
 	// than a silent zero (#366).
 	if cfg.arithStrDepth++; cfg.arithStrDepth > 128 {
 		cfg.arithStrDepth--
-		return 0, fmt.Errorf("%s: expression recursion level exceeded", str)
+		return 0, aerrf("%s: expression recursion level exceeded", str)
 	}
 	defer func() { cfg.arithStrDepth-- }()
 	expr, err := syntax.NewParser().Arithmetic(strings.NewReader(str))
 	if err != nil {
-		return 0, fmt.Errorf("%s: arithmetic syntax error", str)
+		return 0, aerrf("%s: arithmetic syntax error", str)
 	}
 	if expr == nil {
 		return 0, nil
 	}
 	if w, ok := expr.(*syntax.Word); ok && strings.TrimSpace(w.Lit()) == str {
-		return 0, fmt.Errorf("%s: arithmetic syntax error", str)
+		return 0, aerrf("%s: arithmetic syntax error", str)
 	}
 	return Arithm(cfg, expr)
 }
@@ -198,7 +220,7 @@ func Arithm(cfg *Config, expr syntax.ArithmExpr) (int, error) {
 		case syntax.Minus:
 			return -val, nil
 		default:
-			return 0, fmt.Errorf("unsupported unary arithmetic operator: %q", expr.Op)
+			return 0, aerrf("unsupported unary arithmetic operator: %q", expr.Op)
 		}
 	case *syntax.BinaryArithm:
 		switch expr.Op {
@@ -336,7 +358,21 @@ func atoiLargeBase(s string, base int64) int64 {
 
 func (cfg *Config) assgnArit(b *syntax.BinaryArithm) (int, error) {
 	target, err := cfg.arithTarget(b.X)
+	if err == nil && !target.assignable() {
+		err = errNotAssignable
+	}
+	if errors.Is(err, errNotAssignable) {
+		// bash's wording, and its shape: the whole assignment is named
+		// and the operator with its right-hand side is the "error
+		// token" (#597). koi's spacing is the printer's rather than the
+		// source's, which is the one part that can differ.
+		return 0, aerrf("%s: attempted assignment to non-variable (error token is %q)",
+			nodeText(b), b.Op.String()+" "+nodeText(b.Y))
+	}
 	if err != nil {
+		// Something else went wrong deciding what the target *is* — an
+		// expansion inside it failed — which is its own diagnostic
+		// rather than a verdict about the target.
 		return 0, err
 	}
 	cur, err := cfg.readTarget(target)
@@ -360,12 +396,12 @@ func (cfg *Config) assgnArit(b *syntax.BinaryArithm) (int, error) {
 		val *= arg
 	case syntax.QuoAssgn:
 		if arg == 0 {
-			return 0, fmt.Errorf("division by zero")
+			return 0, aerrf("division by zero")
 		}
 		val /= arg
 	case syntax.RemAssgn:
 		if arg == 0 {
-			return 0, fmt.Errorf("division by zero")
+			return 0, aerrf("division by zero")
 		}
 		val %= arg
 	case syntax.AndAssgn:
@@ -407,17 +443,17 @@ func binArit(op syntax.BinAritOperator, x, y int) (int, error) {
 		return x * y, nil
 	case syntax.Quo:
 		if y == 0 {
-			return 0, fmt.Errorf("division by zero")
+			return 0, aerrf("division by zero")
 		}
 		return x / y, nil
 	case syntax.Rem:
 		if y == 0 {
-			return 0, fmt.Errorf("division by zero")
+			return 0, aerrf("division by zero")
 		}
 		return x % y, nil
 	case syntax.Pow:
 		if y < 0 {
-			return 0, fmt.Errorf("exponent less than 0")
+			return 0, aerrf("exponent less than 0")
 		}
 		return intPow(x, y), nil
 	case syntax.Eql:
@@ -446,7 +482,7 @@ func binArit(op syntax.BinAritOperator, x, y int) (int, error) {
 		// x is executed but its result discarded
 		return y, nil
 	default:
-		return 0, fmt.Errorf("unsupported binary arithmetic operator: %q", op)
+		return 0, aerrf("unsupported binary arithmetic operator: %q", op)
 	}
 }
 
@@ -466,10 +502,27 @@ type arithTarget struct {
 	index syntax.ArithmExpr // nil for a plain variable
 }
 
+// errNotAssignable is "this is not somewhere a value can be stored",
+// which only an *assignment* cares about: `++5` reaches the same target
+// machinery and bash answers it differently, so the verdict is the
+// caller's to word (#597).
+var errNotAssignable = errors.New("not an assignment target")
+
+// assignable reports whether an assignment may write here. An element
+// is always assignable — the array is created if it has to be — and a
+// plain variable has to be a name, which for a computed target is only
+// knowable once the word has been expanded.
+func (t arithTarget) assignable() bool {
+	return t.index != nil || syntax.ValidName(t.name)
+}
+
 func (cfg *Config) arithTarget(x syntax.ArithmExpr) (arithTarget, error) {
 	w, ok := x.(*syntax.Word)
 	if !ok {
-		return arithTarget{}, fmt.Errorf("cannot assign to %T", x)
+		// Anything that is not a word is not a place at all: `(a)+=b`
+		// and `0 && B=42`, where assignment binds looser than `&&` so
+		// the target is the whole left side.
+		return arithTarget{}, errNotAssignable
 	}
 	if len(w.Parts) == 1 {
 		switch part := w.Parts[0].(type) {
@@ -512,7 +565,7 @@ func (cfg *Config) writeTarget(t arithTarget, val string) error {
 			// bash reads an unusable name as a *number* and complains
 			// about that, since in its grammar the left side of an
 			// assignment is just another operand.
-			return fmt.Errorf("%s: not a valid name", t.name)
+			return aerrf("%s: not a valid name", t.name)
 		}
 		return cfg.envSet(t.name, val)
 	}

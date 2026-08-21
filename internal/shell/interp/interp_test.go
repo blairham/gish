@@ -4548,12 +4548,78 @@ q`,
 		"1 0 2\n",
 	},
 	{
+		// An arithmetic error abandons the input unit, so the `echo $x`
+		// after it never runs and the -c string answers 1 (#597).
 		"x=0; echo $((1/0 && x++)); echo $x",
-		"division by zero\n0\n #JUSTERR",
+		"division by zero\nexit status 1 #JUSTERR",
 	},
 	{
 		"echo $(((1 & 2) != (1 | 2)))",
 		"1\n",
+	},
+	// Whether an arithmetic assignment's target is a variable is bash's
+	// verdict at *evaluation* time, not the parser's (#597). In a word it
+	// abandons the input unit, so the `echo post` after it never runs.
+	{
+		"echo $((5 += 2)); echo post",
+		"5 += 2: attempted assignment to non-variable (error token is \"+= 2\")\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $((7 = 43)); echo post",
+		"7 = 43: attempted assignment to non-variable (error token is \"= 43\")\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $((1 ? 20 : x+=2)); echo post",
+		"1 ? 20 : x += 2: attempted assignment to non-variable (error token is \"+= 2\")\nexit status 1 #JUSTERR",
+	},
+	{
+		// Assignment binds looser than `&&`, so the target here is the
+		// whole `0 && B` rather than the name — which is why bash refuses
+		// a line that looks like an ordinary short-circuit assignment.
+		"echo $((0 && B=42)); echo post",
+		"0 && B = 42: attempted assignment to non-variable (error token is \"= 42\")\nexit status 1 #JUSTERR",
+	},
+	{
+		// A literal that is not a name reaches the same verdict here;
+		// bash gets there by reading `1x` as a number and calling it
+		// "value too great for base", so the reason diverges while the
+		// refusal, the status and the abandonment agree.
+		"echo $((1x=5)); echo post",
+		"1x = 5: attempted assignment to non-variable (error token is \"= 5\")\nexit status 1 #JUSTERR",
+	},
+	{
+		// The same error in a command is only that command failing: it
+		// reports under the command's own name and the line carries on.
+		"(( 5 += 2 )); echo same=$?",
+		"((: 5 += 2: attempted assignment to non-variable (error token is \"+= 2\")\nsame=1\n #JUSTERR",
+	},
+	{
+		"let 5+=2; echo same=$?",
+		"let: 5 += 2: attempted assignment to non-variable (error token is \"+= 2\")\nsame=1\n #JUSTERR",
+	},
+	{
+		"for ((i=0; 5+=2; i++)); do echo body; done; echo same=$?",
+		"((: 5 += 2: attempted assignment to non-variable (error token is \"+= 2\")\nsame=1\n #JUSTERR",
+	},
+	{
+		// Division by zero is the same category and was missing from the
+		// abandonment list, so a word carried on where bash stopped.
+		"echo pre; echo $((1/0)); echo post",
+		"pre\ndivision by zero\nexit status 1 #JUSTERR",
+	},
+	// The targets that *are* variables keep working, which is the half a
+	// parse-time refusal was protecting.
+	{
+		"x=3; echo $((x += 2)); echo x=$x",
+		"5\nx=5\n",
+	},
+	{
+		"a=(1 2); echo $((a[1] += 5)); echo ${a[1]}",
+		"7\n7\n",
+	},
+	{
+		"echo $((x=y=3)); echo $x $y",
+		"3\n3 3\n",
 	},
 	{
 		"echo $a; echo $((a = 3 ^ 2)); echo $a",
@@ -4581,7 +4647,7 @@ q`,
 	},
 	{
 		"echo $((2 ** -1)); let x=2**-1",
-		"exponent less than 0\nexponent less than 0\nexit status 1 #JUSTERR",
+		"exponent less than 0\nexit status 1 #JUSTERR",
 	},
 	{
 		"echo $((1 ? 2 : 3)) $((0 ? 2 : 3))",
@@ -4745,12 +4811,16 @@ q`,
 		"}: arithmetic syntax error\nexit status 1 #JUSTERR",
 	},
 	{
+		// bash reports an arithmetic error under the name of the command
+		// that failed and carries on — `let:` and `((:` — while the same
+		// error inside a word abandons the unit, which is why the last
+		// `let` never runs (#597).
 		"let x=3; let 3/0; ((3/0)); echo $((x/y)); let x/=0",
-		"division by zero\ndivision by zero\ndivision by zero\ndivision by zero\nexit status 1 #JUSTERR",
+		"let: division by zero\n((: division by zero\ndivision by zero\nexit status 1 #JUSTERR",
 	},
 	{
 		"let x=3; let 3%0; ((3%0)); echo $((x%y)); let x%=0",
-		"division by zero\ndivision by zero\ndivision by zero\ndivision by zero\nexit status 1 #JUSTERR",
+		"let: division by zero\n((: division by zero\ndivision by zero\nexit status 1 #JUSTERR",
 	},
 	{
 		"let x=' 3'; echo $x",
