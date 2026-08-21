@@ -3,7 +3,10 @@
 
 package expand
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // CLocale reports whether the effective LC_CTYPE is the C/POSIX locale,
 // in which a character is a byte (#470).
@@ -67,3 +70,59 @@ func LatinBytes(s string) string {
 
 // utf8Self is the first byte value that is not its own rune.
 const utf8Self = 0x80
+
+// sliceUnits is `${x:offset:length}` over whatever a character is here:
+// runes normally, bytes in the C locale (#470). Both halves clamp the
+// way bash does — a negative offset counts from the end, and one past
+// the end is the end rather than an error.
+func sliceUnits[T any](units []T, offset, length int, hasOffset, hasLength bool) []T {
+	pos := func(n int) int {
+		if n < 0 {
+			if n = len(units) + n; n < 0 {
+				n = len(units)
+			}
+		} else if n > len(units) {
+			n = len(units)
+		}
+		return n
+	}
+	if hasOffset {
+		units = units[pos(offset):]
+	}
+	if hasLength {
+		units = units[:pos(length)]
+	}
+	return units
+}
+
+// BytesOfLatin is [LatinBytes] read back: every rune below 256 becomes
+// the byte it stood for, so a string built by matching or replacing
+// byte-wise returns to being the bytes it describes.
+func BytesOfLatin(s string) string {
+	if len(s) == utf8.RuneCountInString(s) {
+		return s // all one-byte runes already
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for _, r := range s {
+		if r < 0x100 {
+			sb.WriteByte(byte(r))
+			continue
+		}
+		// Not something LatinBytes produced; keep it as it is rather
+		// than truncating a character to its low byte.
+		sb.WriteRune(r)
+	}
+	return sb.String()
+}
+
+// asciiOnly restricts a case mapping to ASCII, which is all the C
+// locale has: bash uppercases `a` there and leaves `ÿ` alone.
+func asciiOnly(f func(rune) rune) func(rune) rune {
+	return func(r rune) rune {
+		if r >= utf8Self {
+			return r
+		}
+		return f(r)
+	}
+}

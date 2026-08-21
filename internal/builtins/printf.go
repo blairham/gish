@@ -205,11 +205,17 @@ func writeVerb(
 
 	switch verb {
 	case 'c', 'C':
-		// One character, not a string: width still applies.
-		r := ""
-		for _, ch := range text() {
-			r = string(ch)
-			break
+		// One *byte*, not one character, and not a string: bash hands
+		// the argument to printf(3)'s %c, which takes a char — so a
+		// multibyte character is cut to its first byte whatever the
+		// locale says, measured in both C and UTF-8 (#470). Width still
+		// applies.
+		// An empty or missing argument is a NUL byte rather than
+		// nothing: printf(3) writes the char it was given, and bash
+		// gives it one either way.
+		r := "\x00"
+		if s := text(); s != "" {
+			r = s[:1]
 		}
 		fmt.Fprintf(sb, spec+"s", r)
 	case 's', 'S':

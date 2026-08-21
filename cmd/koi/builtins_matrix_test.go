@@ -115,7 +115,10 @@ printf '%ld %lld %ls\n' 5 6 ab
 printf '%Q\n' 'a b'
 printf -- '--%b--\n' '\\'"'"'abcd'
 printf 'fmt:\\'"'"'b\n'
-printf '%10000000000d\n' 1 2>/dev/null; echo "rc=$?"`,
+printf '%10000000000d\n' 1 2>/dev/null; echo "rc=$?"
+printf '%c' абв | od -An -c | tr -s ' '
+LC_ALL=C printf '%c' абв | od -An -c | tr -s ' '
+printf '[%c%c]' "" x | od -An -c | tr -s ' '`,
 	},
 	{name: "pushd", script: `pushd /tmp >/dev/null && pwd | sed 's|/private||'`},
 	{name: "pwd", script: `cd /tmp && pwd | sed 's|/private||'`},
