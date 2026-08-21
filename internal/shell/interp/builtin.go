@@ -303,13 +303,20 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			// nameref and kept the variable it pointed at — after which
 			// every later use of the name was an ordinary variable and
 			// the rest of a script drifted (#277).
+			viaRef := false
 			if _, _, isElem := cutElemSubscript(arg); vars && !byRef && !isElem {
 				if vr := r.lookupVar(arg); vr.Kind == expand.NameRef && vr.Str != "" {
-					arg = vr.Str
+					arg, viaRef = vr.Str, true
 				}
 			}
 			if name, sub, ok := cutElemSubscript(arg); vars && ok {
-				r.unsetElem(name, sub)
+				// The status is the builtin's own: setting r.exit.code
+				// here would be overwritten by the exit this returns,
+				// so `unset x[2]` on a scalar answered 0 — a refusal
+				// reported and then reported as success (#610).
+				if !r.unsetElem(name, sub, viaRef) {
+					exit.code = 1
+				}
 			} else if vars && r.lookupVar(arg).IsSet() {
 				if r.lookupVar(arg).ReadOnly {
 					// The refusal is the command's, and it has to be

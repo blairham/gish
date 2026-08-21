@@ -293,7 +293,11 @@ func (r *Runner) expandErr(err error) {
 		// the next line. Measured against 5.3.
 		r.exit.code = 1
 		r.exit.aborting = true
-	case errMsg == "invalid indirect expansion":
+	case strings.HasSuffix(errMsg, "invalid indirect expansion"),
+		// bash's other wording for the same family, which names the
+		// *value* rather than the parameter and abandons the line the
+		// same way (#610): `x='a b'; echo ${!x}`.
+		strings.HasSuffix(errMsg, "invalid variable name"):
 		// An invalid indirect is the readonly-assignment shape (#308),
 		// not the nounset one: bash abandons the current input unit and
 		// goes back to reading, so a script file continues at the next
@@ -1938,6 +1942,30 @@ assignLoop:
 			r.unsetNameRef(name, as)
 			continue
 		}
+		if valType == "-n" {
+			// A reference cannot be an array or an array element (#610).
+			// bash names the element as written for a subscript and the
+			// variable for a name that already holds an array, answers 1,
+			// and leaves what it refused exactly as it was — so `typeset
+			// -n x=y` over `x=(the browns suck)` keeps the array rather
+			// than replacing it with a reference to y.
+			//
+			// Checked *before* the target validation below, because
+			// `typeset -n x[3]=x` is the array error in bash rather than
+			// the self-reference one — the order is measured, not derived.
+			if as.Index != nil {
+				r.errf("%s: %s[%s]: reference variable cannot be an array\n",
+					variant, name, subscriptText(as.Index))
+				r.exit.code = 1
+				continue assignLoop
+			}
+			switch r.lookupVar(name).Kind {
+			case expand.Indexed, expand.Associative:
+				r.errf("%s: %s: reference variable cannot be an array\n", variant, name)
+				r.exit.code = 1
+				continue assignLoop
+			}
+		}
 		if valType == "-n" && as.Value != nil {
 			// A nameref's target must be a name, optionally with a
 			// subscript, and may not be the reference itself (#389).
@@ -1960,10 +1988,37 @@ assignLoop:
 				continue
 			}
 		}
+		// A declaration follows a reference before it declares anything
+		// (#610). With `-n` absent, every attribute lands on the
+		// *target*: `typeset -n ref=foo; readonly ref` makes **foo**
+		// readonly, and `declare -i ref`, `declare -x ref` and even
+		// `declare -a ref` all reach through the same way — measured for
+		// each. koi marked the reference itself, which is one bug seen
+		// from both ends: an assignment through the reference was then
+		// allowed where bash refuses it, and re-pointing the reference
+		// was refused where bash allows it, since a reference's own
+		// readonly bit is what `for ref in one two three` trips over.
+		//
+		// A dangling reference resolves to nothing and keeps its own
+		// attributes, which is what `typeset -n foo1; typeset -r foo1`
+		// needs; assignVal follows the same rule for the value.
+		//
+		// A declaration creating a *new* local is the exception, and it
+		// has to be: there is no reference to follow yet, so `local ref`
+		// in a function shadows an outer nameref with an ordinary
+		// variable rather than reaching through it — measured, and
+		// following it would refuse the declaration whenever the outer
+		// reference's target happened to be readonly.
+		freshLocal := local && !global && !r.localInScope(name) &&
+			!r.declTempBound[name] && !inherit
+		written := name // the name as the caller spelled it, for diagnostics
+		if valType != "-n" && !freshLocal {
+			if n, _ := r.lookupVar(name).Resolve(r.writeEnv); n != "" {
+				name = n
+			}
+		}
 		vr := r.lookupVar(name)
-		freshLocal := false
-		if local && !global && !r.localInScope(name) && !r.declTempBound[name] && !inherit {
-			freshLocal = true
+		if freshLocal {
 			// A declaration that creates a *new* local starts from an
 			// unset variable rather than inheriting the outer one
 			// (#381): `V=abc; f(){ local V; echo "${V-unset}"; }`
@@ -1990,6 +2045,21 @@ assignLoop:
 			// g's `declare -g v=two` sets the global and leaves the
 			// local — and $v in both functions — untouched.
 			vr = r.globalVar(name)
+		}
+		// A declaration that assigns to a readonly variable is refused
+		// under the builtin's own name, and names the variable as it was
+		// *written* rather than the reference's target — measured for
+		// each of the three (#610). It answers 1 and carries on to the
+		// next name, the split #308 found for a plain assignment.
+		// `export` and `readonly` keep the bare wording setVar gives
+		// them, which is bash's for those two.
+		if !as.Naked && vr.ReadOnly {
+			switch variant {
+			case "declare", "typeset", "local":
+				r.errf("%s: %s: readonly variable\n", variant, written)
+				r.exit.code = 1
+				continue assignLoop
+			}
 		}
 		// The string form of a compound assignment (#379): a value that
 		// arrived through expansion as "( ... )" is parsed as an array

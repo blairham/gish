@@ -587,7 +587,7 @@ var runTests = []runTest{
 	{"set -- a bc; echo ${#@} ${#*} $#", "2 2 2\n"},
 	{
 		"echo ${!a}; echo more",
-		"invalid indirect expansion\nexit status 1 #JUSTERR",
+		"a: invalid indirect expansion\nexit status 1 #JUSTERR",
 	},
 	{
 		"a=b; echo ${!a}; b=c; echo ${!a}",
@@ -607,11 +607,11 @@ var runTests = []runTest{
 	// as an unset variable.
 	{
 		`foo=; echo "${!foo-def}"`,
-		"invalid indirect expansion\nexit status 1 #JUSTERR",
+		": invalid variable name\nexit status 1 #JUSTERR",
 	},
 	{
 		`x='a b'; echo "${!x}"`,
-		"invalid indirect expansion\nexit status 1 #JUSTERR",
+		"a b: invalid variable name\nexit status 1 #JUSTERR",
 	},
 	{
 		"a=foo_very_long; echo ${a:1}; echo ${a: -1}; echo ${a: -10}; echo ${a:5}",
@@ -1757,6 +1757,77 @@ var runTests = []runTest{
 	{
 		`a=([1]=x [3]=y); declare -n r=a; echo "${!r[@]}"`,
 		"1 3\n",
+	},
+
+	// A reference is resolved on read *and* on write (#610). Without
+	// -n, a declaration's attributes land on the target rather than on
+	// the reference, which is one bug seen from both ends: assigning
+	// through a reference to a readonly variable was allowed, and
+	// re-pointing a reference whose target is readonly was refused.
+	{
+		`bar=one; declare -n ref=bar; readonly ref; declare -p ref bar`,
+		"declare -n ref=\"bar\"\ndeclare -r bar=\"one\"\n",
+	},
+	{
+		// The value matters as much as the message: a silent assignment
+		// passes any test that only reads the diagnostic. The subshell
+		// keeps the abandonment (#308) from costing the rest of the line.
+		`bar=one; declare -n ref=bar; readonly ref; ( ref=two ); declare -p bar`,
+		"bar: readonly variable\n" + `declare -r bar="one"` + "\n #JUSTERR",
+	},
+	{
+		// Re-pointing is not an assignment to the target, so a for loop
+		// walks all three where koi answered `ref: readonly variable`
+		// and kept the first.
+		`readonly one=1 two=2; declare -n ref=one; readonly ref; for ref in one two; do echo "${!ref}=$ref"; done; declare -p ref`,
+		"one=1\ntwo=2\n" + `declare -n ref="two"` + "\n",
+	},
+	{
+		`b=1; declare -n r=b; declare -x r; declare -p r b`,
+		"declare -n r=\"b\"\ndeclare -x b=\"1\"\n",
+	},
+	// A reference cannot be an array or an array element, and what it
+	// refused is left exactly as it was.
+	{
+		`declare -a a=(x y); z=1; declare -n a=z; echo rc=$?; declare -p a`,
+		"declare: a: reference variable cannot be an array\nrc=1\n" +
+			`declare -a a=([0]="x" [1]="y")` + "\n #JUSTERR",
+	},
+	{
+		`z=1; declare -n r[3]=z; echo rc=$?; declare -p r`,
+		"declare: r[3]: reference variable cannot be an array\nrc=1\n" +
+			"declare: r: not found\nexit status 1 #JUSTERR",
+	},
+	{
+		// A reference's value is a name, so the integer attribute has
+		// nothing to evaluate and bash drops it.
+		`declare -i x=1; y=42; declare -n x=y; echo "$x"; declare -p x`,
+		"42\n" + `declare -n x="y"` + "\n",
+	},
+	// unset through a reference to an element of something that is not
+	// an array is silent, where the same subscript written out is not.
+	{
+		`y=42; declare -n r='y[2]'; unset r; echo "rc=$? y=$y"`,
+		"rc=0 y=42\n",
+	},
+	{
+		`y=42; unset 'y[2]'; echo "rc=$? y=$y"`,
+		"unset: y: not an array variable\nrc=1 y=42\n #JUSTERR",
+	},
+	// Arithmetic follows a reference in both directions.
+	{
+		`v=7; declare -n r=v; echo $((r+1)); (( r = 20 )); echo "$v"; (( r += 5 )); echo "$v"`,
+		"8\n20\n25\n",
+	},
+	// An indirect expansion may point at an array element, and a
+	// reference to a reference to one resolves through both.
+	{
+		`arr=(a b); i='arr[1]'; echo ${!i}`,
+		"b\n",
+	},
+	{
+		`bar=4; declare -n foo='bar[0]'; f(){ declare -n one=$1; echo "[$one]"; }; f foo`,
+		"[4]\n",
 	},
 
 	// The directory stack is bash's: entry 0 is the current directory,
