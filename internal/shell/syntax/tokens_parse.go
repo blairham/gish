@@ -160,6 +160,10 @@ func (o *ParExpOperator) UnmarshalText(text []byte) error {
 		*o = LowerAll
 	case "@":
 		*o = OtherParamOps
+	case "~":
+		*o = ToggleFirst
+	case "~~":
+		*o = ToggleAll
 	default:
 		return fmt.Errorf("invalid ParExpOperator: %q", text)
 	}

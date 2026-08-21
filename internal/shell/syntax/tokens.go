@@ -170,6 +170,14 @@ const (
 	globPlus  // +(
 	globAt    // @(
 	globExcl  // !(
+
+	// The case-toggle operators, which only ever appear inside a
+	// parameter expansion. They are their own tokens rather than the
+	// arithmetic `tilde`, whose value is fixed by [BitNegation]'s
+	// position; a token's *value* is what an operator constant is, so
+	// two spellings of `~` need two of them.
+	parTilde    // ~
+	parDblTilde // ~~
 )
 
 func (t token) isLit() bool {
@@ -267,6 +275,12 @@ const (
 	LowerFirst                                         // ,
 	LowerAll                                           // ,,
 	OtherParamOps                                      // @
+
+	// bash's case *toggle*: `${x~}` swaps the case of the first
+	// character and `${x~~}` of every one, both filtered by an optional
+	// pattern exactly as `^` and `,` are.
+	ToggleFirst = ParExpOperator(parTilde)    // ~
+	ToggleAll   = ParExpOperator(parDblTilde) // ~~
 )
 
 type UnAritOperator token

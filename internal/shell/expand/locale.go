@@ -5,6 +5,7 @@ package expand
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -125,4 +126,16 @@ func asciiOnly(f func(rune) rune) func(rune) rune {
 		}
 		return f(r)
 	}
+}
+
+// toggleCase swaps a character's case, which is what bash's `${x~}` and
+// `${x~~}` do. A character with no case is left alone.
+func toggleCase(r rune) rune {
+	switch {
+	case unicode.IsLower(r):
+		return unicode.ToUpper(r)
+	case unicode.IsUpper(r):
+		return unicode.ToLower(r)
+	}
+	return r
 }

@@ -1463,7 +1463,8 @@ func (cfg *Config) unquotedElemFields(pe *syntax.ParamExp) ([]string, bool) {
 		case syntax.RemSmallPrefix, syntax.RemLargePrefix,
 			syntax.RemSmallSuffix, syntax.RemLargeSuffix,
 			syntax.UpperFirst, syntax.UpperAll,
-			syntax.LowerFirst, syntax.LowerAll:
+			syntax.LowerFirst, syntax.LowerAll,
+			syntax.ToggleFirst, syntax.ToggleAll:
 		default:
 			return nil, false
 		}
