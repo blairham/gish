@@ -2582,7 +2582,7 @@ q`,
 	},
 	{
 		`cd ''`,
-		"cd: empty directory path\nexit status 1 #JUSTERR",
+		"cd: null directory\nexit status 1 #JUSTERR",
 	},
 	{
 		`HOME=/foo; echo $HOME`,
@@ -2590,15 +2590,16 @@ q`,
 	},
 	{
 		"cd noexist",
-		"cd: no such file or directory: \"noexist\"\nexit status 1 #JUSTERR",
+		"cd: noexist: No such file or directory\nexit status 1 #JUSTERR",
 	},
 	{
 		"mkdir -p a/b && cd a && cd b && cd ../..",
 		"",
 	},
 	{
+		// A file is not a missing directory, and bash says which it is.
 		">a && cd a",
-		"cd: no such file or directory: \"a\"\nexit status 1 #JUSTERR",
+		"cd: a: Not a directory\nexit status 1 #JUSTERR",
 	},
 	{
 		`[[ $PWD == "$(pwd)" ]]`,
@@ -2662,7 +2663,7 @@ q`,
 	{"pushd", "pushd: no other directory\nexit status 1 #JUSTERR"},
 	{"pushd -n", ""},
 	{"pushd foo bar", "pushd: too many arguments\nexit status 2 #JUSTERR"},
-	{"pushd does-not-exist; set -- $(dirs); echo $#", "pushd: no such file or directory: \"does-not-exist\"\n1\n #IGNORE"},
+	{"pushd does-not-exist; set -- $(dirs); echo $#", "pushd: does-not-exist: No such file or directory\n1\n #IGNORE"},
 	{"mkdir a; pushd a >/dev/null; set -- $(dirs); echo $#", "2\n"},
 	{"mkdir a; set -- $(pushd a); echo $#", "2\n"},
 	{
@@ -2683,7 +2684,7 @@ q`,
 	},
 	{
 		"mkdir a; pushd a >/dev/null; pushd >/dev/null; rm -r a; pushd",
-		"pushd: no such file or directory: ABS_PATH_A\nexit status 1 #JUSTERR",
+		"pushd: ABS_PATH_A: No such file or directory\nexit status 1 #JUSTERR",
 	},
 	{
 		`old=$(dirs); mkdir a; pushd -n a >/dev/null; set -- $(dirs); [[ $1 == "$old" ]]`,
@@ -2708,7 +2709,7 @@ q`,
 	},
 	{
 		"mkdir a; pushd a >/dev/null; pushd >/dev/null; rm -r a; popd",
-		"popd: no such file or directory: ABS_PATH_A\nexit status 1 #JUSTERR",
+		"popd: ABS_PATH_A: No such file or directory\nexit status 1 #JUSTERR",
 	},
 
 	// binary cmd
@@ -5947,8 +5948,12 @@ done <<< 2`,
 		"local: can only be used in a function\nexit status 1 #JUSTERR",
 	},
 	{
+		// The sourced file is named, and the line with it, as bash does
+		// (#571) — a diagnostic from a file the caller did not write is
+		// exactly where a location earns its keep. The other two cases
+		// above have no file to name, since a command string is not one.
 		"echo 'local a=b' >a; source ./a",
-		"local: can only be used in a function\nexit status 1 #JUSTERR",
+		"./a: line 1: local: can only be used in a function\nexit status 1 #JUSTERR",
 	},
 	{
 		"echo 'local a=b' >a; f() { source ./a; }; f; echo $a",
@@ -7234,23 +7239,23 @@ var runTestsUnix = []runTest{
 	// Note that these will succeed if we're root.
 	{
 		`mkdir a; chmod 0000 a; cd a`,
-		"cd: permission denied: \"a\"\nexit status 1 #JUSTERR",
+		"cd: a: Permission denied\nexit status 1 #JUSTERR",
 	},
 	{
 		`mkdir a; chmod 0222 a; cd a`,
-		"cd: permission denied: \"a\"\nexit status 1 #JUSTERR",
+		"cd: a: Permission denied\nexit status 1 #JUSTERR",
 	},
 	{
 		`mkdir a; chmod 0444 a; cd a`,
-		"cd: permission denied: \"a\"\nexit status 1 #JUSTERR",
+		"cd: a: Permission denied\nexit status 1 #JUSTERR",
 	},
 	{
 		`mkdir a; chmod 0010 a; cd a`,
-		"cd: permission denied: \"a\"\nexit status 1 #JUSTERR",
+		"cd: a: Permission denied\nexit status 1 #JUSTERR",
 	},
 	{
 		`mkdir a; chmod 0001 a; cd a`,
-		"cd: permission denied: \"a\"\nexit status 1 #JUSTERR",
+		"cd: a: Permission denied\nexit status 1 #JUSTERR",
 	},
 	{
 		`unset UID`,
@@ -7663,7 +7668,7 @@ func TestRunnerRun(t *testing.T) {
 
 			// Some builtins like "pushd" can show absolute paths as part of error messages.
 			// Allow a very simple search-and-replace for the equivalent to "$PWD/a".
-			want := strings.ReplaceAll(c.want, "ABS_PATH_A", fmt.Sprintf("%q", filepath.Join(tdir, "a")))
+			want := strings.ReplaceAll(c.want, "ABS_PATH_A", filepath.Join(tdir, "a"))
 
 			if i := strings.Index(want, " #"); i >= 0 {
 				want = want[:i]

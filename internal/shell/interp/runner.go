@@ -391,6 +391,7 @@ func (r *Runner) handlerCtx(ctx context.Context, kind handlerKind, pos syntax.Po
 		Env:            env,
 		Dir:            r.Dir,
 		Pos:            pos,
+		ErrLocation:    r.errLocation(),
 		Stdout:         r.stdout,
 		Stderr:         r.stderr,
 		LastExitStatus: int(r.lastExit.code),
@@ -553,8 +554,56 @@ func (r *Runner) outf(format string, a ...any) {
 	fmt.Fprintf(r.stdout, format, a...)
 }
 
+// errf writes a runtime diagnostic, located the way bash locates one.
+//
+// Use [Runner.rawErrf] for stderr that is not a diagnostic — a `select`
+// menu, or the usage line bash prints *after* one.
 func (r *Runner) errf(format string, a ...any) {
+	fmt.Fprint(r.stderr, r.errLocation()+fmt.Sprintf(format, a...))
+}
+
+// shiftLines numbers a separately parsed chunk as if it were spliced in
+// at base, the way bash numbers an eval'd string or a trap action. The
+// returned function puts the previous shift back.
+//
+// It moves $LINENO and the location a diagnostic carries together, since
+// they are two readings of the same number and a script that printed one
+// while koi reported the other would be worse than either.
+func (r *Runner) shiftLines(base uint) func() {
+	oldLine, oldExpand := r.lineOffset, uint64(0)
+	r.lineOffset = oldLine + base - 1
+	if r.ecfg != nil {
+		oldExpand = r.ecfg.LineOffset
+		r.ecfg.LineOffset = uint64(r.lineOffset)
+	}
+	return func() {
+		r.lineOffset = oldLine
+		if r.ecfg != nil {
+			r.ecfg.LineOffset = oldExpand
+		}
+	}
+}
+
+// rawErrf writes to stderr with no location prefix.
+func (r *Runner) rawErrf(format string, a ...any) {
 	fmt.Fprintf(r.stderr, format, a...)
+}
+
+// errLocation is bash's `source: line N: ` prefix on a runtime
+// diagnostic. bash builds it from BASH_SOURCE and LINENO, which is why a
+// command inside a function names the file the *function* lives in
+// rather than the file that called it (#571).
+//
+// It is empty when the shell has no file to name — a command string,
+// standard input, an interactive line. bash prints its own $0 there;
+// koi's is the name `koi` (#120), so the prefix would carry a line
+// number without anything a reader could open it in.
+func (r *Runner) errLocation() string {
+	frames := r.baseFrames()
+	if len(frames) == 0 || frames[0].source == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s: line %d: ", frames[0].source, r.traceLine)
 }
 
 // preRedirErrf writes to the stderr that was in force before the
@@ -565,7 +614,7 @@ func (r *Runner) preRedirErrf(format string, a ...any) {
 	if r.preRedirStderr != nil {
 		w = r.preRedirStderr
 	}
-	fmt.Fprintf(w, format, a...)
+	fmt.Fprint(w, r.errLocation()+fmt.Sprintf(format, a...))
 }
 
 func (r *Runner) stop(ctx context.Context) bool {
@@ -806,7 +855,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		return
 	}
 
-	r.traceLine = st.Pos().Line()
+	r.traceLine = st.Pos().Line() + r.lineOffset
 
 	oldIn, oldOut, oldErr := r.stdin, r.stdout, r.stderr
 	// An expansion error is reported to the stderr this statement had
@@ -1373,15 +1422,15 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					if menu {
 						// display menu
 						for i, word := range items {
-							r.errf("%d) %v\n", i+1, word)
+							r.rawErrf("%d) %v\n", i+1, word)
 						}
 						menu = false
 					}
-					r.errf("%s", ps3)
+					r.rawErrf("%s", ps3)
 
 					line, _, err := r.readLine(ctx, r.stdin, true, '\n', -1, false, 0)
 					if err != nil {
-						r.errf("\n")
+						r.rawErrf("\n")
 						r.exit.code = 1
 						break
 					}

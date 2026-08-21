@@ -101,7 +101,7 @@ func (r *Runner) ulimitBuiltin(args []string) exitStatus {
 				spec, ok := lookupUlimitSpec(letter)
 				if !ok {
 					r.errf("ulimit: invalid option %q\n", "-"+string(letter))
-					r.errf("ulimit: usage: ulimit [-SHa%s] [limit]\n", ulimitLetters())
+					r.rawErrf("ulimit: usage: ulimit [-SHa%s] [limit]\n", ulimitLetters())
 					exit.code = 2
 					return exit
 				}
