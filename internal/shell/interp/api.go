@@ -270,12 +270,14 @@ type Runner struct {
 	sigNames          map[os.Signal]string
 
 	// Where each non-command trap was set, for $LINENO inside its action
-	// (#352): bash counts an EXIT, RETURN, or signal trap's action lines
-	// from the line of the `trap` command that installed it, where DEBUG
-	// and ERR count from the line of the command that triggered them.
-	callbackExitLine   uint
-	callbackReturnLine uint
-	sigTrapLines       map[string]uint
+	// (#352): bash counts an EXIT or signal trap's action lines from the
+	// line of the `trap` command that installed it, where DEBUG and ERR
+	// count from the line of the command that triggered them. RETURN
+	// looked like it belonged in the first group and does not — it
+	// counts from the returning frame's own line, so its number comes
+	// from the call site rather than from here (#614).
+	callbackExitLine uint
+	sigTrapLines     map[string]uint
 
 	// exitTrapFired notes the EXIT trap already ran: `exit` inside a
 	// function fires it early, at the call, so the action still sees
