@@ -55,6 +55,14 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 	cfg.curParam = pe
 	defer func() { cfg.curParam = oldParam }()
 
+	if pe.Bad {
+		// A shape the parser could read and this language does not have
+		// — a nested `${${a}}` in bash. bash reports it here rather than
+		// while parsing, which ends the command and lets a script file
+		// carry on (#277). Before the Param check below, since a nested
+		// expansion has no name of its own.
+		return "", fmt.Errorf("%s: bad substitution", nodeText(pe))
+	}
 	if pe.Param == nil { // e.g. zsh's ${}
 		return "", fmt.Errorf("unsupported")
 	}

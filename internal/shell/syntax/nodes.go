@@ -670,6 +670,14 @@ type ParamExp struct {
 	Repl      *Replace         // ${a/x/y}
 	Names     ParNamesOperator // ${!prefix*} or ${!prefix@}
 	Exp       *Expansion       // ${a:-b}, ${a#b}, etc
+
+	// Bad marks an expansion this parser could read but the chosen
+	// language does not have — a nested `${${a}}` outside zsh — which
+	// bash reports as "bad substitution" while *expanding* rather than
+	// while parsing (#277). Keeping the shape and marking it is what
+	// lets a script lose the command instead of the file, since koi
+	// parses ahead of what it runs.
+	Bad bool
 }
 
 // simple returns true if the parameter expansion is of the form $name or ${name},
