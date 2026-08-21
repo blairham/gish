@@ -184,6 +184,20 @@ case $a in ?) echo one;; ??) echo two;; esac`,
 	},
 	{name: "return", script: `f() { return 7; }; f; echo "status=$?"`},
 	{name: "set", script: `set -- a b c; echo "$#-$1-$3"`},
+	{
+		// The editing-mode options, which have to run through the
+		// *shell* rather than interp's table for the same reason the
+		// cdspell case below does (#575, #576): the layer that used to
+		// throw the request away was internal/repl's rewrite of the four
+		// `set -o vi` forms to a KOI_EDIT_MODE assignment, so the
+		// interpreter never saw the `set` and the option kept saying
+		// emacs in a shell that was editing in vi.
+		name: "set", script: `set -o vi; set -o | grep -E '^(emacs|vi) '
+set -o emacs; set -o | grep -E '^(emacs|vi) '
+set -o vi; set +o vi; set -o | grep -E '^(emacs|vi) '
+set -o vi; case :$SHELLOPTS: in *:vi:*) echo "shellopts=yes";; *) echo "shellopts=no";; esac
+shopt -o vi >/dev/null; echo "q=$?"`,
+	},
 	{name: "shift", script: `set -- a b c; shift; echo "$1-$#"`},
 	// The `-p` spelling rather than the column listing, deliberately:
 	// the column width is a bash *version* constant (#574) and the
