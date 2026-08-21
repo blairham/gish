@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // The canonical function printer (#386).

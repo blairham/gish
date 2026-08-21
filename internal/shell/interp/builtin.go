@@ -21,7 +21,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // TODO: given the categories below, perhaps this should be more like:

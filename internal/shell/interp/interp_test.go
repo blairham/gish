@@ -24,8 +24,8 @@ import (
 	"github.com/blairham/koi-shell/internal/shell/expand"
 	"github.com/blairham/koi-shell/internal/shell/interp"
 	"github.com/blairham/koi-shell/internal/shell/shinternal"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 	"github.com/go-quicktest/qt"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 // runnerRunTimeout is the context timeout used by any tests calling [Runner.Run].
@@ -3080,8 +3080,14 @@ q`,
 	{
 		// Through a nameref the descriptor lands on the target. koi
 		// wrote the reference variable itself, destroying the reference.
-		"declare -n ref=target; exec {ref}</dev/null; echo \"target=${target-unset}\"",
-		"target=10\n",
+		//
+		// The *number* is not asserted: {var} takes the lowest free
+		// descriptor at or above 10, so it depends on what the process
+		// already has open — bash itself answered 11 rather than 10 on
+		// a CI runner. What this pins is that the target holds a
+		// descriptor and the reference was not clobbered.
+		"declare -n ref=target; exec {ref}</dev/null; [ \"${target-unset}\" -ge 10 ] && echo assigned",
+		"assigned\n",
 	},
 	{
 		// varredir_close asks for the other behavior, and was refused

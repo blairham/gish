@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 
 	"github.com/blairham/koi-shell/internal/acp"
 	"github.com/blairham/koi-shell/internal/history"

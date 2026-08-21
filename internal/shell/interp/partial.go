@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // Reading a script the way bash does (#276).

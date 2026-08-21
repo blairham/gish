@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // TestWaitAnyOutlivesItsCall covers the shape `wait -n` was added for: wait for

@@ -41,10 +41,10 @@ contents; each carries its provenance in the corpus.
 			fmt.Fprintf(&b, "| %s | %s | %s |\n", r.Name, r.Category, escapePipes(r.Diff()))
 		}
 		b.WriteString(`
-Parser gaps belong upstream at [mvdan/sh](https://github.com/mvdan/sh),
-whose ` + "`syntax`" + ` package koi consumes; interpreter and expansion fixes
-land in the shell packages maintained in-tree. Every gap is kept with a
-minimal reproduction. Shell-identity behavior (` + "`BASH_VERSION`" + ` and tool
+Parser gaps are koi's own since the substrate lift: ` + "`syntax`" + `,
+` + "`pattern`" + `, ` + "`interp`" + ` and ` + "`expand`" + ` are all maintained in
+` + "`internal/shell`" + `, so a parse gap and a runtime gap are the same kind of
+work now. Every gap is kept with a minimal reproduction. Shell-identity behavior (` + "`BASH_VERSION`" + ` and tool
 init hooks) is a deliberate decision, not a bug — see the decisions in
 [design.md](design.md).
 `)

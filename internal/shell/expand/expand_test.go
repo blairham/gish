@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 	"github.com/go-quicktest/qt"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 func parseWord(t *testing.T, src string) *syntax.Word {

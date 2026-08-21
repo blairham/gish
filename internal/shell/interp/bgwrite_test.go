@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/blairham/koi-shell/internal/shell/interp"
-	"mvdan.cc/sh/v3/syntax"
+	"github.com/blairham/koi-shell/internal/shell/syntax"
 )
 
 // TestBackgroundJobsDoNotShareALine checks that concurrent background jobs each
