@@ -1180,13 +1180,16 @@ var errorCases = []errorCase{
 		langErr("1:6: reached EOF without matching `${` with `}`"),
 	),
 	errCase(
+		// bash reads the whole `${…}` and calls a name it cannot read a
+		// runtime "bad substitution" (#602), so these parse in bash-like
+		// and are asserted by TestParamExpBad.
 		"echo ${à}",
-		langErr("1:8: invalid parameter name"),
+		langErr("1:8: invalid parameter name", LangPOSIX|LangMirBSDKorn),
 		langErr("1:8: not a valid parameter expansion operator: `à`", LangZsh), // not great, but seems like an edge case
 	),
 	errCase(
 		"echo ${1a}",
-		langErr("1:8: invalid parameter name"),
+		langErr("1:8: invalid parameter name", LangPOSIX|LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${foo-bar",
@@ -1215,8 +1218,8 @@ var errorCases = []errorCase{
 		// what is left to report is the truncated input -- the same
 		// answer "echo ${" gives.
 		"echo ${#${",
-		langErr("1:11: invalid parameter name"),
-		langErr("1:9: reached EOF without matching `${` with `}`", LangZsh),
+		langErr("1:11: invalid parameter name", LangPOSIX|LangMirBSDKorn),
+		langErr("1:9: reached EOF without matching `${` with `}`", LangBash|LangBats|LangZsh),
 	),
 	errCase(
 		"echo ${#$(",
@@ -1237,7 +1240,7 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo ${#<}",
-		langErr("1:9: not a valid parameter expansion operator: `<`"),
+		langErr("1:9: not a valid parameter expansion operator: `<`", LangPOSIX|LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${%<}",
@@ -1245,23 +1248,23 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo ${!<}",
-		langErr("1:9: not a valid parameter expansion operator: `<`", LangBash|LangMirBSDKorn),
+		langErr("1:9: not a valid parameter expansion operator: `<`", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${@foo}",
-		langErr("1:9: `@` cannot be followed by a word"),
+		langErr("1:9: `@` cannot be followed by a word", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo ${$needbraces}",
-		langErr("1:9: `$` cannot be followed by a word"),
+		langErr("1:9: `$` cannot be followed by a word", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo ${?foo}",
-		langErr("1:9: `?` cannot be followed by a word"),
+		langErr("1:9: `?` cannot be followed by a word", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo ${-foo}",
-		langErr("1:9: `-` cannot be followed by a word"),
+		langErr("1:9: `-` cannot be followed by a word", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		`echo ${"bad"}`,
@@ -1285,7 +1288,7 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo ${@[@]} ${@[*]}",
-		langErr("1:9: cannot index a special parameter name", LangBash|LangMirBSDKorn),
+		langErr("1:9: cannot index a special parameter name", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${${nested}[@]",
@@ -1293,39 +1296,39 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo ${*[@]} ${*[*]}",
-		langErr("1:9: cannot index a special parameter name", LangBash|LangMirBSDKorn),
+		langErr("1:9: cannot index a special parameter name", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${#[x]}",
-		langErr("1:9: cannot index a special parameter name", LangBash|LangMirBSDKorn),
+		langErr("1:9: cannot index a special parameter name", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${$[0]}",
-		langErr("1:9: cannot index a special parameter name", LangBash|LangMirBSDKorn),
+		langErr("1:9: cannot index a special parameter name", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${?[@]}",
-		langErr("1:9: cannot index a special parameter name", LangBash|LangMirBSDKorn),
+		langErr("1:9: cannot index a special parameter name", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${2[@]}",
-		langErr("1:9: cannot index a special parameter name", LangBash|LangMirBSDKorn),
+		langErr("1:9: cannot index a special parameter name", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${foo*}",
-		langErr("1:11: not a valid parameter expansion operator: `*`", LangBash|LangMirBSDKorn),
+		langErr("1:11: not a valid parameter expansion operator: `*`", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${foo;}",
-		langErr("1:11: not a valid parameter expansion operator: `;`", LangBash|LangMirBSDKorn),
+		langErr("1:11: not a valid parameter expansion operator: `;`", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${foo!}",
-		langErr("1:11: not a valid parameter expansion operator: `!`", LangBash|LangMirBSDKorn),
+		langErr("1:11: not a valid parameter expansion operator: `!`", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${#foo:-bar}",
-		langErr("1:12: cannot combine multiple parameter expansion operators", LangBash|LangMirBSDKorn),
+		langErr("1:12: cannot combine multiple parameter expansion operators", LangMirBSDKorn),
 	),
 	errCase(
 		"echo ${%foo:1:3}",
@@ -1896,7 +1899,7 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo ${foo]}",
-		langErr("1:11: not a valid parameter expansion operator: `]`", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:11: not a valid parameter expansion operator: `]`", LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo ${foo[]}",
@@ -1944,24 +1947,14 @@ var errorCases = []errorCase{
 		langErr("1:6: reached EOF without matching `${` with `}`", LangBash),
 	),
 	errCase(
+		// bash reads the transform's text and judges it when it expands,
+		// so what is left to report here is the input running out (#602).
 		"echo ${foo@",
-		langErr("1:11: @ expansion operator requires a literal", LangBash),
-	),
-	errCase(
-		"foo=force_expansion; echo ${foo@}",
-		langErr("1:33: @ expansion operator requires a literal", LangBash),
+		langErr("1:6: reached EOF without matching `${` with `}`", LangBash),
 	),
 	errCase(
 		"echo ${foo@Q",
 		langErr("1:6: reached EOF without matching `${` with `}`", LangBash),
-	),
-	errCase(
-		"foo=force_expansion; echo ${foo@bar}",
-		langErr("1:33: invalid @ expansion operator `bar`", LangBash),
-	),
-	errCase(
-		"foo=force_expansion; echo ${foo@'Q'}",
-		langErr("1:33: @ expansion operator requires a literal", LangBash),
 	),
 	// `echo $((echo a); (echo b))` was an error case here, marked "note
 	// that we don't backtrack". koi parses it as bash does — a command
@@ -2083,13 +2076,90 @@ var errorCases = []errorCase{
 		langErr("1:12: this expansion operator is a bash feature; tried parsing as LANG", LangMirBSDKorn),
 	),
 	errCase(
-		"foo=force_expansion; echo ${foo@#}",
-		langErr("1:33: this expansion operator is a mksh feature; tried parsing as LANG", LangBash),
-	),
-	errCase(
 		"`\"`\\",
 		langErr("1:2: reached \"`\" without closing quote `\"`"),
 	),
+}
+
+// TestParamExpBad covers the shapes bash reads to the closing brace and
+// only refuses when it expands them (#602). The claim is threefold: the
+// parse succeeds, the node is marked so expansion can refuse it, and the
+// printer gives the source back — because the diagnostic names the whole
+// expansion as written, so a shape that does not round-trip would name
+// something the user did not type.
+func TestParamExpBad(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{
+		// An operator this language does not have.
+		"${H*}", "${H!}", "${H&}", "${H(}", "${H)}", "${@*}", "${foo;}",
+		"${foo]}", "${#x*}",
+		// A prefix that cannot combine with an operator.
+		"${#foo:-bar}", "${#foo%x}", "${#x@}", "${#x/a/b}",
+		// A name this language cannot read.
+		"${1xyz}", "${#1xyz}", "${9x}", "${à}", "${a b}", "${x.y}",
+		"${@foo}", "${?foo}", "${-foo}", "${$needbraces}", "${#<}",
+		"${!<}",
+		// A special parameter with a subscript.
+		"${@[@]}", "${*[*]}", "${#[x]}", "${$[0]}", "${?[@]}", "${2[@]}",
+		// The suffix is raw source: quotes, escapes and nested braces are
+		// only there to find the brace that closes the expansion.
+		`${H*"}"}`, `${H*'}'}`, `${H*\}}`, "${H*{a}}", "${H*${a}}",
+		"${H*$(echo x)}",
+	} {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			src := "echo " + in
+			f, err := NewParser().Parse(newStrictReader(src), "")
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			var found int
+			Walk(f, func(node Node) bool {
+				if pe, ok := node.(*ParamExp); ok && pe.Bad {
+					found++
+				}
+				return true
+			})
+			if found != 1 {
+				t.Fatalf("want one marked expansion, got %d", found)
+			}
+			var sb strings.Builder
+			if err := NewPrinter(SingleLine(true)).Print(&sb, f); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSuffix(sb.String(), "\n"); got != src {
+				t.Fatalf("round-trip: want %q, got %q", src, got)
+			}
+		})
+	}
+}
+
+// TestParamExpBadUnclosed pins the other half: a `${` whose brace never
+// arrives is the input running out, not a shape with a runtime verdict,
+// so it stays a parse error.
+func TestParamExpBadUnclosed(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"echo ${H*":      "1:9: not a valid parameter expansion operator: `*`",
+		"echo ${H*{a}":   "1:9: not a valid parameter expansion operator: `*`",
+		"echo ${H*'}":    "1:9: not a valid parameter expansion operator: `*`",
+		`echo ${H*"}`:    "1:9: not a valid parameter expansion operator: `*`",
+		"echo ${à":       "1:8: not a valid parameter expansion operator: `à`",
+		"echo ${@[@]":    "1:9: cannot index a special parameter name",
+		"echo ${#foo:-b": "1:12: cannot combine multiple parameter expansion operators",
+		"echo ${foo":     "1:6: reached EOF without matching `${` with `}`",
+	} {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			_, err := NewParser().Parse(newStrictReader(in), "")
+			if err == nil {
+				t.Fatalf("want error %q, got none", want)
+			}
+			if got := err.Error(); got != want {
+				t.Fatalf("want error %q, got %q", want, got)
+			}
+		})
+	}
 }
 
 func TestInputName(t *testing.T) {

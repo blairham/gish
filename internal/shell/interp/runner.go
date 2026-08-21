@@ -266,6 +266,16 @@ func (r *Runner) expandErr(err error) {
 		// exit 1 both ways.
 		r.exit.code = 1
 		r.exit.exiting = true
+	case errors.As(err, &expand.BadOperatorError{}):
+		// A `${x@…}` whose transform bash has no letter for is the one
+		// bad substitution that is *fatal* rather than input-unit
+		// abandonment (#602): measured against 5.3, a script file dies
+		// at that line with its EXIT trap run, a function does not
+		// return, and only a subshell containing it is what dies. Same
+		// shape as nounset above, and it has to be matched by type
+		// because the wording is the recoverable family's.
+		r.exit.code = 1
+		r.exit.exiting = true
 	case strings.HasSuffix(errMsg, "readonly variable"),
 		strings.HasSuffix(errMsg, "bad substitution"),
 		// A subscript bash reads at assignment time rather than while

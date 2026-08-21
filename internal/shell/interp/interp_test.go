@@ -2325,6 +2325,124 @@ q`,
 		"${$(echo x)}: bad substitution\nexit status 1 #JUSTERR",
 	},
 
+	// The same category, reached by a suffix no operator spells rather
+	// than by a nested expansion (#602). bash reads the `${…}` to its
+	// closing brace and only then refuses it, which loses the command
+	// and not the file; koi refused every one of these while *parsing*,
+	// and parsing ahead, lost the file.
+	{
+		`H=1; echo ${H*}; echo after`,
+		"${H*}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`set -- a; echo ${#1xyz}; echo after`,
+		"${#1xyz}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`set -- a b c; echo "${@*}"; echo after`,
+		"${@*}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		// A name this parser cannot read is the same verdict as an
+		// operator it cannot read.
+		`echo ${1xyz}; echo after`,
+		"${1xyz}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`echo ${a b}; echo after`,
+		"${a b}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		// A special parameter with a subscript, and a prefix that cannot
+		// combine with an operator.
+		`set -- a b; echo ${@[@]}; echo after`,
+		"${@[@]}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`foo=bar; echo ${#foo:-x}; echo after`,
+		"${#foo:-x}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		// The suffix is raw source, so the quotes and the nested brace
+		// only serve to find the brace that closes the expansion.
+		`echo ${H*"}"}; echo after`,
+		`${H*"}"}: bad substitution` + "\nexit status 1 #JUSTERR",
+	},
+	{
+		`echo ${H*{a}}; echo after`,
+		"${H*{a}}: bad substitution\nexit status 1 #JUSTERR",
+	},
+
+	// A `${x@…}` transform bash has no letter for is the one bad
+	// substitution that is *fatal* rather than input-unit abandonment,
+	// and it is only a verdict at all when the parameter has a value
+	// (#602). Every letter and none were measured, set and unset.
+	{
+		`V=1; echo ${V@}; echo after`,
+		"${V@}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`x=hello; echo ${x@b}; echo after`,
+		"${x@b}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`x=hello; echo ${x@nope}; echo after`,
+		"${x@nope}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		// An empty value is still a value.
+		`x=; echo ${x@b}; echo after`,
+		"${x@b}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`set -- a b c; echo "${*@}"; echo after`,
+		"${*@}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		// The operator is the source as written, never an expansion of
+		// it: a quoted or substituted letter is not the letter.
+		`q=Q; x=hello; echo ${x@$q}; echo after`,
+		"${x@$q}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{
+		`x=hello; echo ${x@"Q"}; echo after`,
+		`${x@"Q"}: bad substitution` + "\nexit status 1 #JUSTERR",
+	},
+	{
+		// With no value bash never looks at the letter, so this is not
+		// an error at all -- which is why refusing it while parsing was
+		// strictly wrong rather than merely early.
+		`unset x; echo "[${x@nope}]"; echo after`,
+		"[]\nafter\n",
+	},
+	{`unset x; echo "[${x@}]"`, "[]\n"},
+	{`set --; echo "[${*@}]"`, "[]\n"},
+	{`unset a; echo "[${a[@]@nope}]"`, "[]\n"},
+	{`a=(); echo "[${a[@]@nope}]"`, "[]\n"},
+	{
+		// An unset parameter answers the empty string rather than the
+		// two quotes an empty *value* would give.
+		`unset x; echo "[${x@Q}]"`,
+		"[]\n",
+	},
+	{`x=; echo "[${x@Q}]"`, "['']\n"},
+	{
+		// The four transforms that describe the variable rather than its
+		// value are asked before the value is, so a declared-but-unset
+		// name still answers its flags.
+		`declare -i n; echo "[${n@a}]"`,
+		"[i]\n",
+	},
+	{`declare -i n; echo "[${n@b}]"`, "[]\n"},
+	{
+		// A list transform applies to each element, not to the elements
+		// joined.
+		`a=(AB cd); echo "[${a[@]@L}]"`,
+		"[ab cd]\n",
+	},
+	{`a=(ab cd); echo "[${a[@]@u}]"`, "[Ab Cd]\n"},
+	{`a=(1 2); echo "[${a[@]@nope}]"`, "${a[@]@nope}: bad substitution\nexit status 1 #JUSTERR"},
+
 	// The same rule reaches every operator that counts characters, not
 	// only `?` and ${#x} (#470): a slice, a pattern removal, a
 	// replacement and a case conversion are all byte-wise there, and
