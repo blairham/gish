@@ -1670,11 +1670,30 @@ zshPrefixLoop:
 		colonPos := p.pos
 		p.quote = paramExpArithm
 		if p.next(); p.tok != colon {
-			pe.Slice.Offset = p.followArithm(colon, colonPos)
+			// `${x:}` is not a parse error in bash: it reads it and
+			// reports "bad substitution" while expanding, which ends
+			// the command rather than the script (#277). A slice with
+			// neither half is that shape, and the interpreter answers
+			// for it.
+			if p.tok != rightBrace {
+				pe.Slice.Offset = p.followArithm(colon, colonPos)
+			}
 		}
 		colonPos = p.pos
 		if p.got(colon) {
-			pe.Slice.Length = p.followArithm(colon, colonPos)
+			// An empty length is zero — `${x:1:}` and `${x::}` are
+			// valid and answer the empty string — so it is a real zero
+			// in the tree rather than an absent length, which would
+			// mean "to the end".
+			if p.tok == rightBrace {
+				pe.Slice.Length = &Word{Parts: []WordPart{&Lit{
+					ValuePos: p.pos,
+					ValueEnd: p.pos,
+					Value:    "0",
+				}}}
+			} else {
+				pe.Slice.Length = p.followArithm(colon, colonPos)
+			}
 		}
 		// Need to use a different matched style so arithm errors
 		// get reported correctly

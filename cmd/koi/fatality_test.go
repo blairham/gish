@@ -53,6 +53,11 @@ func TestExpansionErrorFatalityMatchesBash(t *testing.T) {
 		{"invalid name target continues in a file", "foo='a b'\necho \"${!foo}\"\necho AFTER-MARK\n"},
 		{"unset nameref indirect continues in a file", "bar=one\ntypeset -n foo=bar\nunset -n foo\necho \"${!foo-def}\"\necho AFTER-MARK\n"},
 		{"readonly assignment continues in a file", "readonly r=1\nr=2\necho AFTER-MARK\n"},
+		// `${x:}` is a slice with neither half: bash reads it and
+		// reports "bad substitution" while expanding, so the command is
+		// lost and the file carries on (#277). koi refused it while
+		// parsing, which lost every line after it instead.
+		{"bad substitution continues in a file", "x=abc\necho \"[${x:}]\"\necho AFTER-MARK\n"},
 		{"nounset ends the file", "set -u\necho \"$nope\"\necho AFTER-MARK\n"},
 	}
 	for _, tc := range tests {
