@@ -79,7 +79,7 @@ type completionRegistry struct {
 }
 
 // The three catch-all specs have three spellings each, and keeping them
-// apart is what makes `compopt -D` answerable: the option letter that
+// apart is what makes them addressable at all: the option letter that
 // selects one, the key this registry files it under, and the name a
 // diagnostic calls it by.
 //
@@ -140,6 +140,29 @@ func (r *completionRegistry) catchAll(key string) **completionSpec {
 		return &r.initial
 	}
 	return nil
+}
+
+// catchAllPrintName is what the listing calls a spec: a command by its
+// name, a catch-all by the option that selects it.
+func catchAllPrintName(key string) string {
+	for _, c := range catchAllSpecs {
+		if c.key == key {
+			return "-" + string(c.opt)
+		}
+	}
+	return key
+}
+
+// catchAllErrName is what a diagnostic calls a spec, which for the three
+// catch-alls is bash's own placeholder command name rather than the
+// option.
+func catchAllErrName(key string) string {
+	for _, c := range catchAllSpecs {
+		if c.key == key {
+			return c.errName
+		}
+	}
+	return key
 }
 
 var completions = &completionRegistry{byCommand: map[string]completionSpec{}}
@@ -432,12 +455,12 @@ func compoptEdit(hc interp.HandlerContext, keys []string, edits []compFlag) []st
 	for _, key := range keys {
 		spec, ok := completions.lookup(key)
 		if !ok {
-			hc.Errf("compopt: %s: no completion specification\n", compoptErrName(key))
+			hc.Errf("compopt: %s: no completion specification\n", catchAllErrName(key))
 			failed = true
 			continue
 		}
 		if len(edits) == 0 {
-			fmt.Fprintln(hc.Stdout, compoptLine(spec, compoptPrintName(key)))
+			fmt.Fprintln(hc.Stdout, compoptLine(spec, catchAllPrintName(key)))
 			continue
 		}
 		completions.store(key, applyCompopt(spec, edits))
@@ -503,29 +526,6 @@ func compoptLine(spec completionSpec, name string) string {
 		b.WriteString(" " + name)
 	}
 	return b.String()
-}
-
-// compoptPrintName is what the listing calls a spec: a command by its
-// name, a catch-all by the option that selects it.
-func compoptPrintName(key string) string {
-	for _, c := range catchAllSpecs {
-		if c.key == key {
-			return "-" + string(c.opt)
-		}
-	}
-	return key
-}
-
-// compoptErrName is what a diagnostic calls a spec, which for the three
-// catch-alls is bash's own placeholder command name rather than the
-// option.
-func compoptErrName(key string) string {
-	for _, c := range catchAllSpecs {
-		if c.key == key {
-			return c.errName
-		}
-	}
-	return key
 }
 
 // runningCompletion is the spec the editor is executing right now, which
