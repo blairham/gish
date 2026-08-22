@@ -2011,15 +2011,10 @@ func (cfg *Config) glob(base, pat string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !dotGlob && !strings.HasPrefix(part, ".") && !strings.HasPrefix(part, `\.`) {
-			// A leading dot is only matched by a literal dot (#376): the
-			// pattern package suppresses dotfiles for a leading * or ?,
-			// but a bracket class like [^a-c] still matched them.
-			inner := matcher
-			matcher = func(name string) bool {
-				return !strings.HasPrefix(name, ".") && inner(name)
-			}
-		}
+		// A leading dot is only matched by a literal dot (#376, #674);
+		// [shinternal.ExtendedPatternMatcher] owns that rule, since
+		// deciding it for an extglob group needs the pattern's
+		// structure rather than its first byte.
 		var newMatches []string
 		for _, dir := range matches {
 			// A directory that cannot be read contributes no matches

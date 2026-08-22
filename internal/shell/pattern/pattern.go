@@ -162,6 +162,163 @@ func (sl *stringLexer) peekRest() string {
 	return sl.s[sl.i:]
 }
 
+// BracketEnd reports the index just past the ']' closing the bracket
+// expression at s[0], which must be '[', or -1 when the expression is
+// unterminated. The leading-']'-is-literal rule and the [:class:],
+// [.symbol.] and [=class=] forms are all scanned as units.
+func BracketEnd(s string) int {
+	if len(s) == 0 || s[0] != '[' {
+		return -1
+	}
+	i := 1
+	if i < len(s) && (s[i] == '!' || s[i] == '^') {
+		i++
+	}
+	if i < len(s) && s[i] == ']' {
+		i++ // a leading ] is literal
+	}
+	for i < len(s) {
+		switch {
+		case s[i] == '[' && i+1 < len(s) && (s[i+1] == ':' || s[i+1] == '.' || s[i+1] == '='):
+			delim := s[i+1]
+			end := strings.Index(s[i+2:], string(delim)+"]")
+			if end < 0 {
+				return -1
+			}
+			i += 2 + end + 2
+		case s[i] == ']':
+			return i + 1
+		default:
+			i++
+		}
+	}
+	return -1
+}
+
+// ExtGlobGroupEnd reports the index just past the ')' closing the
+// extended glob group whose operator byte is at pat[i] and whose '('
+// must follow it, or -1 when the group cannot be terminated. Bracket
+// expressions are scanned as units, which is what lets an unterminated
+// one swallow the ')' and make the group unreadable (#676), and nested
+// parentheses are counted by depth.
+func ExtGlobGroupEnd(pat string, i int) int {
+	if i >= len(pat) || !strings.ContainsRune("!?*+@", rune(pat[i])) {
+		return -1
+	}
+	if i+1 >= len(pat) || pat[i+1] != '(' {
+		return -1
+	}
+	depth := 1
+	for j := i + 2; j < len(pat); j++ {
+		switch pat[j] {
+		case '\\':
+			j++
+		case '[':
+			n := BracketEnd(pat[j:])
+			if n < 0 {
+				return -1
+			}
+			j += n - 1
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return j + 1
+			}
+		}
+	}
+	return -1
+}
+
+// ExtGlobLiteralTail returns the index of the first extended glob
+// operator in pat whose group bash cannot find the end of, or -1 when
+// every group is terminated. From that operator to the end of the
+// pattern, bash reads text rather than pattern (#676).
+func ExtGlobLiteralTail(pat string) int {
+	for i := 0; i < len(pat); i++ {
+		switch pat[i] {
+		case '\\':
+			i++
+		case '[':
+			if n := BracketEnd(pat[i:]); n > 0 {
+				i += n - 1
+			}
+		case '!', '?', '*', '+', '@':
+			if i+1 < len(pat) && pat[i+1] == '(' && ExtGlobGroupEnd(pat, i) < 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// extGlobAlts splits an extended glob group's body on its top-level
+// '|' separators, leaving nested groups and bracket expressions whole.
+func extGlobAlts(body string) []string {
+	var alts []string
+	start, depth := 0, 0
+	for i := 0; i < len(body); i++ {
+		switch body[i] {
+		case '\\':
+			i++
+		case '[':
+			if n := BracketEnd(body[i:]); n > 0 {
+				i += n - 1
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case '|':
+			if depth == 0 {
+				alts = append(alts, body[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(alts, body[start:])
+}
+
+// AllowsLeadingDot reports whether pat may match a filename which
+// begins with a dot while dotglob is off. This is bash's skipname rule,
+// measured against 5.3 rather than derived: a pattern names the dot
+// with a literal '.', and an extended glob group names it when any one
+// of its alternatives does — recursively, so @(x|@(.a)) counts. Two
+// asymmetries carry the rest. A negation never names it, whatever it
+// holds: !(.foo) answers bar alone. And only the two operators that can
+// match nothing, *( and ?(, hand the question on to the pattern after
+// the group — *(bar).foo and ?(bar).foo match .foo where @(bar).foo,
+// +(bar).foo and !(bar).foo match nothing at all.
+//
+// The rule is deliberately independent of the name: whether a *given*
+// dotfile matches is then decided per position by the matcher, since
+// each alternative of a group carries the rule on its own (#674).
+func AllowsLeadingDot(pat string, mode Mode) bool {
+	if strings.HasPrefix(pat, ".") || strings.HasPrefix(pat, `\.`) {
+		return true
+	}
+	if mode&ExtendedOperators == 0 {
+		return false
+	}
+	end := ExtGlobGroupEnd(pat, 0)
+	if end < 0 {
+		return false
+	}
+	if pat[0] == '!' {
+		return false
+	}
+	for _, alt := range extGlobAlts(pat[2 : end-1]) {
+		if AllowsLeadingDot(alt, mode) {
+			return true
+		}
+	}
+	if (pat[0] == '*' || pat[0] == '?') && end < len(pat) {
+		return AllowsLeadingDot(pat[end:], mode)
+	}
+	return false
+}
+
 func regexpNext(sb *strings.Builder, sl *stringLexer, mode Mode) error {
 	c := sl.next()
 	if mode&ExtendedOperators != 0 {
@@ -174,7 +331,20 @@ func regexpNext(sb *strings.Builder, sl *stringLexer, mode Mode) error {
 			if sl.peekNext() != '(' {
 				break
 			}
-			start := sl.i - 1       // position of the operator
+			start := sl.i - 1 // position of the operator
+			if ExtGlobGroupEnd(sl.s, start) < 0 {
+				// A group bash cannot find the end of is not a
+				// group, and the operator does not simply become a
+				// literal either: everything from it to the end of
+				// the pattern is text, metacharacters and
+				// backslashes included (#676). Measured against 5.3
+				// — +(a|b[)* matches only itself, so the trailing
+				// * is no longer a wildcard, while a wildcard
+				// *before* the operator still is.
+				sb.WriteString(regexp.QuoteMeta(sl.s[start:]))
+				sl.i = len(sl.s)
+				return nil
+			}
 			sb.WriteRune(sl.next()) // (
 		nestedLoop:
 			for {
@@ -214,7 +384,12 @@ func regexpNext(sb *strings.Builder, sl *stringLexer, mode Mode) error {
 		}
 		// "**" only acts as globstar if it is alone as a path element.
 		singleBefore := sl.i == 1 || sl.last() == '/'
-		if sl.peekNext() == '*' {
+		// A second "*" that opens an extended glob group is that
+		// group's operator, not the other half of a "**": bash reads
+		// ab**(e|f) as ab, then *, then *(e|f), and answers
+		// "abc abef" where koi answered the literal word (#677).
+		extGlobNext := mode&ExtendedOperators != 0 && ExtGlobGroupEnd(sl.s, sl.i) >= 0
+		if sl.peekNext() == '*' && !extGlobNext {
 			sl.i++
 			singleAfter := sl.i == len(sl.s) || sl.peekNext() == '/'
 			if mode&NoGlobStar == 0 && singleBefore && singleAfter {

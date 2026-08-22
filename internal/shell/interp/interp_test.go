@@ -7921,6 +7921,158 @@ done <<< 2`,
 		"touch az a1z a12z a123z; echo a?([0-9])z",
 		"extended globbing operator used without the \"extglob\" option set\n #JUSTERR",
 	},
+
+	// An extended glob group whose end bash cannot find is not a group,
+	// and the operator does not merely become a literal: everything from
+	// it to the end of the word is text (#676). The unterminated bracket
+	// expression is *why* the end cannot be found -- it swallows the
+	// closing paren -- while a terminated one inside the group is an
+	// ordinary bracket, and an unterminated one at the top level leaves
+	// the wildcards after it alone.
+	{
+		"shopt -s extglob\ntouch abc abcx bbc; echo !([*)*",
+		"!([*)*\n",
+	},
+	{
+		"shopt -s extglob\ntouch abc abcx bbc; echo +(a|b[)*",
+		"+(a|b[)*\n",
+	},
+	{
+		"shopt -s extglob\ntouch abc; echo +(a|b[c])",
+		"abc\n",
+	},
+	{
+		"shopt -s extglob\ntouch 'a[b' 'a[bz'; echo a[b*",
+		"a[b a[bz\n",
+	},
+	{
+		// The trailing `*` is text, so it matches only itself.
+		"shopt -s extglob\ncase '+(a|b[)x' in +(a|b[)*) echo m;; *) echo no;; esac",
+		"no\n",
+	},
+	{
+		"shopt -s extglob\ncase '+(a|b[)*' in +(a|b[)*) echo m;; *) echo no;; esac",
+		"m\n",
+	},
+	{
+		// A wildcard *before* the operator is still a wildcard.
+		"shopt -s extglob\ncase 'x+(a|b[)*' in ?+(a|b[)*) echo m;; *) echo no;; esac",
+		"m\n",
+	},
+
+	// A `*` immediately followed by an extended glob group is a plain
+	// star and the group's operator, never a globstar's second half
+	// (#677): ab**(e|f) is ab, then *, then *(e|f).
+	{
+		"shopt -s extglob\ntouch abc abef; echo ab**(e|f)",
+		"abc abef\n",
+	},
+	{
+		"shopt -s extglob\ntouch abc abef; echo ab*+(e|f)",
+		"abef\n",
+	},
+	{
+		"shopt -s extglob\ntouch abc abef; echo ab?*(e|f)",
+		"abc abef\n",
+	},
+	{
+		"shopt -s extglob\ntouch a ab bar; echo **(e|f)",
+		"a ab bar\n",
+	},
+	{
+		// dotglob takes the leading-dot rule out of the way, so this
+		// one is answered by the pattern package's own translation
+		// rather than by the extglob matcher.
+		"shopt -s extglob dotglob\ntouch abc abef; echo ab**(e|f)",
+		"abc abef\n",
+	},
+	{
+		"[[ abef == ab**(e|f) ]] && echo yes",
+		"yes\n",
+	},
+	{
+		"[[ abc == ab**(e|f) ]] && echo yes",
+		"yes\n",
+	},
+
+	// Whether a pattern may match a filename beginning with a dot is
+	// bash's skipname rule, and an extended glob group names the dot
+	// when any one of its alternatives does (#674). Which dotfile then
+	// matches is decided per position, because each alternative carries
+	// the rule on its own: @(.a|*) matches .a and not .ab.
+	{
+		"shopt -s extglob\ntouch .foo bar; echo @(.foo)",
+		".foo\n",
+	},
+	{
+		// A negation never names the dot, whatever it holds.
+		"shopt -s extglob\ntouch .foo bar; echo !(.foo)",
+		"bar\n",
+	},
+	{
+		"shopt -s extglob\ntouch .a .ab bar; echo @(.a|*)",
+		".a bar\n",
+	},
+	{
+		"shopt -s extglob\ntouch .a .ab bar; echo @(.a|!(x))",
+		".a bar\n",
+	},
+	{
+		"shopt -s extglob\ntouch .ab ab; echo @(a|.a)b",
+		".ab ab\n",
+	},
+	{
+		// dotglob retires the rule, so the second alternative matches
+		// every name.
+		"shopt -s extglob dotglob\ntouch .a .ab bar; echo @(.a|*)",
+		".a .ab bar\n",
+	},
+	{
+		// Only *( and ?( -- the operators that can match nothing --
+		// hand the question on to the pattern after the group.
+		"shopt -s extglob\ntouch .foo bar; echo *(bar).foo",
+		".foo\n",
+	},
+	{
+		"shopt -s extglob\ntouch .a bar; echo ?(x).a",
+		".a\n",
+	},
+	{
+		"shopt -s extglob\ntouch .foo bar; echo !(bar).foo",
+		"!(bar).foo\n",
+	},
+	{
+		"shopt -s extglob\ntouch .a bar; echo @(x|).a",
+		"@(x|).a\n",
+	},
+	{
+		// The pattern handed on has to name the dot literally; a
+		// bracket holding one does not.
+		"shopt -s extglob\ntouch .a bar; echo *(x)[.]a",
+		"*(x)[.]a\n",
+	},
+	{
+		// A plain star at the start of a name is not the same as a
+		// group that matched nothing: it refuses the dot outright.
+		"shopt -s extglob\ntouch .a bar; echo *.a",
+		"*.a\n",
+	},
+	{
+		// The position survives a group that matched nothing, so the
+		// star after it still cannot take the dot -- .b is absent.
+		"shopt -s extglob\ntouch .a .ab .b bar; echo @(|.a)*",
+		".a .ab bar\n",
+	},
+	{
+		"shopt -s extglob\ntouch .a bar; echo @(?|.?)",
+		".a\n",
+	},
+	{
+		// A dot that is not at the start of a name is an ordinary
+		// character.
+		"shopt -s extglob\ntouch x.a xy; echo x@(*)",
+		"x.a xy\n",
+	},
 	{
 		"shopt -s extglob\ntouch az a1z a12z a123z; echo a?([0-9])z",
 		"a1z az\n",
