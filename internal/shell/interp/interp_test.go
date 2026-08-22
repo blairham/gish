@@ -1993,6 +1993,69 @@ var runTests = []runTest{
 	{"[[ ! ( x || x ) ]]; echo $?", "1\n"},
 	{"[[ ! x = y ]]; echo $?", "0\n"},
 	{`[[ ! -z "" && x ]]; echo $?`, "1\n"},
+	// `[[ ]]` short-circuits, so the untaken side of && or || is never
+	// expanded and its side effects never happen (#652). The status
+	// cases below cannot tell on their own -- a shell that evaluates
+	// both sides still answers 0 and 1 here -- so each direction also
+	// carries a case whose right-hand side would be *visible* had it
+	// run: a command substitution writing to stderr, an arithmetic
+	// assignment to a variable the next command prints, and a
+	// redirection creating a file.
+	{"[[ -n x || -n $(echo SIDE >&2; echo y) ]]; echo r=$?", "r=0\n"},
+	{"[[ -z x && -n $(echo SIDE >&2; echo y) ]]; echo r=$?", "r=1\n"},
+	{`v=1; [[ -n x || -n $(( v=42 )) ]]; echo "r=$? v=$v"`, "r=0 v=1\n"},
+	{`v=1; [[ -z x && -n $(( v=42 )) ]]; echo "r=$? v=$v"`, "r=1 v=1\n"},
+	{
+		`[[ -n x || -n $(>side; echo y) ]]; s=$?; [[ -f side ]]; echo "r=$s made=$?"`,
+		"r=0 made=1\n",
+	},
+	{
+		`[[ -z x && -n $(>side; echo y) ]]; s=$?; [[ -f side ]]; echo "r=$s made=$?"`,
+		"r=1 made=1\n",
+	},
+	// An operand the skipped side could not even read is not read: a
+	// bad substitution, an unset with `:?`, and an unreadable numeric
+	// operand all cost nothing when the operator has already decided.
+	{"H=1; [[ -n x || $HOME -ef ${H*} ]]; echo $?", "0\n"},
+	{"H=1; [[ -z x && $HOME -ef ${H*} ]]; echo $?", "1\n"},
+	{"[[ -n x || -n ${nope:?boom} ]]; echo $?", "0\n"},
+	{"[[ 1 -eq 1 || x+ -eq 1 ]]; echo $?", "0\n"},
+	{"[[ 1 -eq 2 && x+ -eq 1 ]]; echo $?", "1\n"},
+	// A unary operand is a skipped side too.
+	{"[[ -z x && -f $(echo G >&2; echo /etc/hosts) ]]; echo $?", "1\n"},
+	// `=~` also writes BASH_REMATCH, so a skipped match must leave the
+	// previous one alone.
+	{
+		`[[ ab =~ (a)(b) ]]; [[ -z x && zz =~ (z)(z) ]]; echo "${BASH_REMATCH[@]}"`,
+		"ab a b\n",
+	},
+	// Grouping: the short circuit follows whichever operand the tree
+	// says is first, so parentheses and `!` compose with it. The
+	// unparenthesized `a && b || c` shape is deliberately absent --
+	// koi groups it to the right where bash groups it left, which is
+	// the separate parser bug filed as #669, and a case for it here
+	// would be asserting the wrong tree rather than the short circuit.
+	{"[[ ( -z x && -n $(echo A >&2; echo y) ) || -n z ]]; echo $?", "0\n"},
+	{"[[ -n a || -n b && -n $(echo B >&2; echo y) ]]; echo $?", "0\n"},
+	{"[[ ( -n x || -n $(echo C >&2; echo y) ) && -n q ]]; echo $?", "0\n"},
+	{"[[ ! -z x || -n $(echo D >&2; echo y) ]]; echo $?", "0\n"},
+	{"[[ ! ( -n x || -n $(echo E >&2; echo y) ) ]]; echo $?", "1\n"},
+	{"[[ -n x || ! -n $(echo F >&2; echo y) ]]; echo $?", "0\n"},
+	// `[` and `test` are not the same construct: they are builtins
+	// whose whole argv was expanded before they ran, so `-a` and `-o`
+	// have no side to skip and both diagnose. Recorded rather than
+	// "fixed" -- matching bash here means evaluating both.
+	{`[ -n x -o -n "$(echo SIDE >&2; echo y)" ]; echo r=$?`, "SIDE\nr=0\n"},
+	{`test -z x -a -n "$(echo SIDE >&2; echo y)"; echo r=$?`, "SIDE\nr=1\n"},
+	{`v=1; [ -n x -o -n "$(( v=42 ))" ]; echo "r=$? v=$v"`, "r=0 v=42\n"},
+	{"[ 1 -eq 1 -o x -eq 1 ]; echo $?", "[: x: integer expected\n2\n #JUSTERR"},
+	// Arithmetic already short-circuits, and agrees with bash in both
+	// directions and for `?:` (#597).
+	{`B=1; echo $(( 0 && (B=42) )); echo B=$B`, "0\nB=1\n"},
+	{`B=1; echo $(( 1 || (B=42) )); echo B=$B`, "1\nB=1\n"},
+	{`B=1; (( 0 && (B=42) )); echo "st=$? B=$B"`, "st=1 B=1\n"},
+	{`B=1; (( 1 || (B=42) )); echo "st=$? B=$B"`, "st=0 B=1\n"},
+	{`B=1; echo $(( 0 ? (B=42) : 7 )); echo B=$B`, "7\nB=1\n"},
 	// getopts: OPTERR=0 silences the diagnostic, and `--` is consumed
 	// so OPTIND points past it (#403).
 	{
@@ -5229,6 +5292,91 @@ q`,
 		"echo $((a = 3, ++a, a--))",
 		"4\n",
 	},
+	// Arithmetic bash cannot read is a runtime error there and only ever
+	// a runtime error, since bash parses an expression when it evaluates
+	// it, from a string (#600). The consequences are #597's: in a word
+	// it abandons the input unit, so the `echo post` after it never runs
+	// and the -c string answers 1. bash's wording quotes the expression
+	// and names the token it stopped at, which is #598.
+	{
+		"echo $(( 4 ? : 3 )); echo post",
+		"4 ? : 3: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $(( 1 ? 20 )); echo post",
+		"1 ? 20: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $(( 4 ? 20 : )); echo post",
+		"4 ? 20 :: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		// bash has no `**=`, so this is an operand it never reaches.
+		"echo $((n**=2)); echo post",
+		"n**=2: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		// Text left over where the expression should have ended is the
+		// same verdict, and only the construct's delimiter check sees it.
+		"echo $(( a b c )); echo post",
+		"a b c: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $(( a ; c )); echo post",
+		"a ; c: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		// A slice's halves are the one arithmetic inside an expansion,
+		// and they are judged the same way.
+		`set -- a b; echo "${#:%}"; echo post`,
+		"%: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		`v=abcdef; echo "${v:1:%}"; echo post`,
+		"%: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		`v=abcdef; echo "${v:%:3}"; echo post`,
+		"%:3: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	// In a command it is only that command failing: reported under the
+	// command's own name, status 1, and the line carries on.
+	{
+		"(( 4 + )); echo same=$?",
+		"((: 4 +: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		"(( -- )); echo same=$?",
+		"((: --: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		// A C-style loop's header is three expressions, so only the one
+		// that cannot be read is a marker: `i=1` and `i < 4` still run,
+		// which is why the body runs once before the post expression
+		// ends the loop. The count is read afterwards rather than
+		// echoed in the body, since the oracle looks for bash's own
+		// diagnostic at the *start* of the output.
+		`for (( i=1; i < 4; 7++ )); do n=$((n+1)); done; echo "same=$? n=$n"`,
+		"((: 7++: arithmetic syntax error\nsame=1 n=1\n #JUSTERR",
+	},
+	{
+		"for (( 4+; i < 4; i++ )); do echo body; done; echo same=$?",
+		"((: 4+: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		"for (( i=1; 7++; i++ )); do echo body; done; echo same=$?",
+		"((: 7++: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	// The expressions that read keep reading, which is the half a
+	// parse-time refusal was protecting.
+	{
+		"echo $(( (1 + 2) * 3 )) $(( 1 ? 2 : 3 ))",
+		"9 2\n",
+	},
+	{
+		"v=abcdef; echo ${v:1:2} ${v: -2} ${v::3}",
+		"bc ef abc\n",
+	},
 	{
 		"echo $((2 ** 3)) $((1234 ** 4567))",
 		"8 0\n",
@@ -7244,6 +7392,26 @@ done <<< 2`,
 	{
 		"shopt -s extglob\ntouch ea eb; echo @(ea|zz); echo +(e)b",
 		"ea\neb\n",
+	},
+
+	// `[[ ]]` matches extended patterns whatever `shopt extglob` says,
+	// because a conditional command's right-hand side is a pattern by
+	// grammar rather than by option (#619). Neither of these turns the
+	// option on, and bash answers both — which is why the parser's
+	// extglob rule has to make an exception for a test expression rather
+	// than gate every position on the option.
+	{
+		"[[ abc == +(a|b)c ]] && echo yes",
+		"yes\n",
+	},
+	{
+		"[[ abc == @(a)?(b)c ]] && echo yes",
+		"yes\n",
+	},
+	{
+		// An empty pattern list is a group here too, matching nothing.
+		`[[ "" == @() ]] && echo yes`,
+		"yes\n",
 	},
 
 	// Extended globbing via the extglob option.
