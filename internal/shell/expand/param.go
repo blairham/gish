@@ -142,9 +142,8 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 	// is restated as one on the target with that index and re-run,
 	// which is also how the indirection cases below reach an operator.
 	if vr.Kind == NameRef && pe.Index == nil {
-		if base, sub, ok := cutNameRefSubscript(vr.Str); ok {
-			idx, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
-			if err == nil && idx != nil {
+		if base, sub, ok := cfg.nameRefElem(vr); ok {
+			if idx := subscriptWord(sub); idx != nil {
 				pe2 := *pe
 				pe2.Param = &syntax.Lit{Value: base}
 				pe2.Index = idx
@@ -268,8 +267,11 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		case pe.Index != nil && vr.Kind == Associative:
 			strs = slices.Sorted(maps.Keys(vr.Map))
 		case !vr.IsSet():
-			return "", fmt.Errorf("invalid indirect expansion")
-		case str == "" || !syntax.ValidName(str):
+			// The message names the parameter that pointed nowhere
+			// (#610). A diagnostic that names no variable is a search,
+			// which is the same shape #584 fixed for the location.
+			return "", fmt.Errorf("%s: invalid indirect expansion", indirectName(pe))
+		case !syntax.ValidName(str):
 			if !syntax.ValidName(name) {
 				// ${!@}, ${!*} and ${!1} with nothing to point at: the
 				// special parameters expand to nothing rather than to an
@@ -277,11 +279,32 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 				// variable would error.
 				return "", nil
 			}
-			// bash calls both an empty and a malformed target "invalid
-			// variable name" and treats them the way it treats a missing
-			// one: an error, never a silent empty string — silence here
-			// made ${!x} with a garbage x read as an unset variable (#277).
-			return "", fmt.Errorf("invalid indirect expansion")
+			// A target naming an array *element* is valid indirection —
+			// `i='arr[1]'; echo ${!i}` reads that element — as is a
+			// positional or special parameter, since the target is a
+			// parameter name rather than a variable name (#610). Both
+			// are restated as an expansion of the target and re-run, the
+			// way an operator is below.
+			if base, sub, ok := cutNameRefSubscript(str); ok {
+				if idx := subscriptWord(sub); idx != nil {
+					pe2 := *pe
+					pe2.Excl = false
+					pe2.Param = &syntax.Lit{Value: base}
+					pe2.Index = idx
+					return cfg.paramExp(&pe2)
+				}
+			}
+			if specialParamName(str) {
+				pe2 := *pe
+				pe2.Excl = false
+				pe2.Param = &syntax.Lit{Value: str}
+				pe2.Index = nil
+				return cfg.paramExp(&pe2)
+			}
+			// An empty or malformed name is bash's other message here,
+			// and it names the *value* rather than the parameter:
+			// `x='a b'; echo ${!x}` is "a b: invalid variable name".
+			return "", fmt.Errorf("%s: invalid variable name", str)
 		default:
 			// An operator after the indirection applies to the *target*
 			// (#277): ${!x//c/X} substitutes in the target's value,
@@ -915,6 +938,73 @@ func (cfg *Config) namesByPrefix(prefix string) []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// indirectName renders the parameter an indirect expansion pointed
+// through, the way bash names it in `foo: invalid indirect expansion` and
+// `foo[2]: invalid indirect expansion` — the name as written, with its
+// subscript when it has one, rather than the whole `${!foo}` (#610).
+func indirectName(pe *syntax.ParamExp) string {
+	name := pe.Param.Value
+	if pe.Index != nil {
+		name += "[" + nodeText(pe.Index) + "]"
+	}
+	return name
+}
+
+// subscriptWord reads a nameref or indirection target's subscript text as
+// an arithmetic expression, or as the literal `@`/`*` that asks for every
+// element. Nil means the text is not a subscript at all, which is what
+// makes `x='a b'` a malformed name rather than an element reference.
+func subscriptWord(sub string) syntax.ArithmExpr {
+	switch sub {
+	case "@", "*":
+		return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: sub}}}
+	}
+	idx, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
+	if err != nil {
+		return nil
+	}
+	return idx
+}
+
+// specialParamName reports whether a name is a positional or special
+// parameter rather than a variable name — `1`, `@`, `*`, `#` and the
+// rest. An indirection may point at one (`a=1; echo ${!a}` is `$1`), so
+// these are not the malformed names they look like to [syntax.ValidName].
+func specialParamName(name string) bool {
+	if name == "" {
+		return false
+	}
+	switch name {
+	case "@", "*", "#", "?", "-", "$", "!", "_":
+		return true
+	}
+	for _, r := range name {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// nameRefElem walks a chain of references for a link that names an array
+// *element* rather than a variable, which is the one target
+// [Variable.Resolve] cannot express — it answers with a name, and
+// `a[1]` is not one. A reference to a reference to an element is
+// ordinary in bash's own suite, where a helper takes a variable's name
+// as an argument and points its own `typeset -n` at it (#610).
+func (cfg *Config) nameRefElem(vr Variable) (base, sub string, ok bool) {
+	for range maxNameRefDepth {
+		if vr.Kind != NameRef || vr.Str == "" {
+			return "", "", false
+		}
+		if base, sub, ok := cutNameRefSubscript(vr.Str); ok {
+			return base, sub, true
+		}
+		vr = cfg.Env.Get(vr.Str)
+	}
+	return "", "", false
 }
 
 // cutNameRefSubscript splits a nameref target that names an array
