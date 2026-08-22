@@ -49,7 +49,23 @@ type helpTopic struct {
 // person asks when they want to be explained to, and the one nothing
 // matches against.
 var helpNotes = map[string][]string{
-	"fc": fcNotes,
+	"fc":     fcNotes,
+	"enable": enableNotes,
+}
+
+// enableNotes explain the one pair of options koi can never implement,
+// which the usage line still lists because refusing them by name is the
+// honest answer and `invalid option` would read as koi not knowing the
+// flag (#603).
+var enableNotes = []string{
+	"-f and -d are dynamic loading, and koi has none: -f loads a builtin",
+	"from a shared object built against bash's own internals, so there is",
+	"nothing koi could open. Both refuse in bash's own words — -f with",
+	"\"dynamic loading not available\", -d with \"not dynamically loaded\" for",
+	"a real builtin and \"not a shell builtin\" for anything else.",
+	"",
+	"A disabled builtin bypasses koi's replacements too, not just the",
+	"interpreter's own: `enable -n printf` reaches the printf on PATH.",
 }
 
 // helpTopics covers every implemented shell builtin, every koi-native
@@ -111,7 +127,7 @@ var helpTopics = map[string]helpTopic{
 	"help":     {"help [name]", "explain a builtin; koi commands also answer `<name> help`"},
 	"jobs":     {"jobs", "list background and stopped jobs"},
 	"disown":   {"disown [-ar] [jobspec ...]", "forget a background job"},
-	"enable":   {"enable [-n] [-a] [name ...]", "enable or disable shell builtins"},
+	"enable":   {"enable [-a] [-dnps] [-f filename] [name ...]", "enable or disable shell builtins"},
 	"logout":   {"logout", "exit a login shell"},
 	"kill":     {"kill [-signal] pid|%job ...", "send a signal to processes or jobs"},
 	"newgrp":   {"newgrp", "not provided — it changes the real group id; use /usr/bin/newgrp"},
