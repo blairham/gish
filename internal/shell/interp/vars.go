@@ -387,6 +387,58 @@ var dynamicVars = map[string]bool{
 // line, where bash reports nothing. Listing it here would record the
 // unset and change nothing, which is worse than the gap.
 
+// dynamicListing are the computed variables bash's own variable table
+// holds an entry for, so `declare` lists them and `declare -p NAME`
+// prints them — where a listing built only from the variable table saw
+// none of the shell's own arrays (#616). The value is the shape the
+// variable takes when the shell has nothing to report for it.
+//
+// Membership is measured rather than derived from [dynamicVars], because
+// bash's table does not hold every computed variable: RANDOM, SRANDOM,
+// SECONDS, EPOCHSECONDS, EPOCHREALTIME, BASHPID and LINENO appear in no
+// listing there, so adding them here would be a divergence of its own.
+// BASH_ARGC and BASH_ARGV are absent for the opposite reason — koi does
+// not have them at all yet (#637).
+//
+// The two empty shapes differ, and that too is measured: FUNCNAME
+// outside a function prints with no value at all (`declare -a
+// FUNCNAME`), while BASH_SOURCE and BASH_LINENO in a `-c` string print
+// as an empty array (`declare -a BASH_SOURCE=()`).
+var dynamicListing = map[string]expand.Variable{
+	shellFuncNameVar: {Kind: expand.Indexed},
+	shellSourceVar:   {Kind: expand.Indexed, Set: true, List: []string{}},
+	shellLineNoVar:   {Kind: expand.Indexed, Set: true, List: []string{}},
+	"DIRSTACK":       {Kind: expand.Indexed, Set: true, List: []string{}},
+	"GROUPS":         {Kind: expand.Indexed, Set: true, List: []string{}},
+	"SHELLOPTS":      {Kind: expand.String, Set: true, ReadOnly: true},
+	"BASHOPTS":       {Kind: expand.String, Set: true, ReadOnly: true},
+}
+
+// dynamicListingVar answers a computed variable as a *listing* sees it,
+// or an undeclared variable for a name no listing shows.
+//
+// A listing asks a different question from an expansion, and FUNCNAME is
+// where the two answers part: bash's table holds it whether or not a
+// function is running, so `declare -p FUNCNAME` prints `declare -a
+// FUNCNAME` at a script's top level while `${FUNCNAME+set}` is empty and
+// `[[ -v FUNCNAME ]]` is false. That distinction is load-bearing — every
+// `${FUNCNAME[1]:-…}` helper depends on it — so it lives here rather
+// than in [Runner.lookupVar], which keeps answering "unset".
+func (r *Runner) dynamicListingVar(name string) expand.Variable {
+	empty, ok := dynamicListing[name]
+	if !ok || r.unsetDynamic[name] {
+		// A computed variable a script has unset is an ordinary name for
+		// the rest of the shell (#547), and bash stops listing it too —
+		// so whatever the variable table holds for it is the whole
+		// answer, and this reader has nothing to add.
+		return expand.Variable{}
+	}
+	if vr := r.lookupVar(name); vr.Declared() {
+		return vr
+	}
+	return empty
+}
+
 // unsetDynamicVar records that a computed variable has been unset. It is
 // one-way: bash does not restore the specialness when the name is
 // assigned again, so `unset RANDOM; RANDOM=5` answers 5 forever after.

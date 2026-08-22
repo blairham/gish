@@ -1128,6 +1128,145 @@ var runTests = []runTest{
 		"x-b\n",
 	},
 
+	// The shell's own arrays are listed, and a subscript declares one
+	// (#616). The computed variables (#547) are answered from the
+	// runner rather than stored, so a listing built from the variable
+	// table alone saw none of them — `declare -a` named not one of the
+	// arrays the shell itself maintains. That is #547's shape at a
+	// third reader, after lookupVar and after setVar/unset.
+	//
+	// Each listing case asserts *both* halves, because a containment
+	// check passes against a listing that contains everything: the
+	// computed array present and an ordinary variable absent.
+	{
+		`declare -p FUNCNAME`,
+		"declare -a FUNCNAME\n",
+	},
+	{
+		`f(){ declare -p FUNCNAME; }; f`,
+		`declare -a FUNCNAME=([0]="f")` + "\n",
+	},
+	{
+		`f(){ declare -p BASH_LINENO; }; f`,
+		`declare -a BASH_LINENO=([0]="1")` + "\n",
+	},
+	{
+		`declare -p BASH_SOURCE`,
+		`declare -a BASH_SOURCE=()` + "\n",
+	},
+	{
+		`s=plain; l=$(declare -a); case $l in *"declare -a FUNCNAME"*) echo has-funcname;; *) echo no-funcname;; esac; ` +
+			`case $l in *"s=plain"*) echo has-s;; *) echo no-s;; esac`,
+		"has-funcname\nno-s\n",
+	},
+	{
+		`l=$(declare -a); for n in BASH_LINENO BASH_SOURCE DIRSTACK GROUPS; do ` +
+			`case $l in *"declare -a $n="*) echo "$n yes";; *) echo "$n no";; esac; done`,
+		"BASH_LINENO yes\nBASH_SOURCE yes\nDIRSTACK yes\nGROUPS yes\n",
+	},
+	{
+		// An indexed array is not an associative one: the same names
+		// must stay out of `declare -A`.
+		`l=$(declare -A); case $l in *FUNCNAME*) echo bad;; *) echo good;; esac`,
+		"good\n",
+	},
+	{
+		// Unsetting a computed variable ends its specialness for the
+		// rest of the shell (#547), and the listing has to agree —
+		// FUNCNAME is listed while never being *set*, so the unset is
+		// recorded whether or not there was a value.
+		`unset FUNCNAME; declare -p FUNCNAME 2>/dev/null; echo rc=$?; ` +
+			`l=$(declare -a); case $l in *FUNCNAME*) echo bad;; *) echo good;; esac`,
+		"rc=1\ngood\n",
+	},
+
+	// The attribute filters compose, which is three commands
+	// array.tests runs in a row (#616): `readonly -a` and `declare -ar`
+	// are the arrays that are also readonly, and `export -a` lists
+	// nothing at all, where taking the first filter alone listed every
+	// array in the shell.
+	{
+		`a=(1 2); readonly a; b=(3); l=$(readonly -a); ` +
+			`case $l in *" a="*) echo has-a;; *) echo no-a;; esac; ` +
+			`case $l in *" b="*) echo has-b;; *) echo no-b;; esac`,
+		"has-a\nno-b\n",
+	},
+	{
+		`a=(1 2); readonly a; b=(3); l=$(declare -ar); ` +
+			`case $l in *" a="*) echo has-a;; *) echo no-a;; esac; ` +
+			`case $l in *" b="*) echo has-b;; *) echo no-b;; esac`,
+		"has-a\nno-b\n",
+	},
+	{
+		`a=(1 2); l=$(export -a); case $l in *" a="*) echo has-a;; *) echo no-a;; esac`,
+		"no-a\n",
+	},
+	{
+		// POSIX mode names the builtin instead of `declare`, and shows
+		// the array kind as the only attribute — both halves, since the
+		// ordinary form must not change.
+		`a=(1); readonly a; set -o posix; l=$(readonly -a); ` +
+			`case $l in *"readonly -a a=([0]=\"1\")"*) echo posix-form;; *) echo other;; esac; ` +
+			`set +o posix; l=$(readonly -a); ` +
+			`case $l in *"declare -ar a=([0]=\"1\")"*) echo declare-form;; *) echo other;; esac`,
+		"posix-form\ndeclare-form\n",
+	},
+
+	// A naked declaration whose name carries a subscript declares an
+	// *indexed array* (#616), which is what array.tests' `declare -r
+	// c[100]` needs: koi left the name a scalar, so the readonly
+	// declared-but-unset array was in no `declare -a` listing and a
+	// script could not tell it from a name never declared.
+	{
+		`declare -r c[100]; declare -p c`,
+		"declare -ar c\n",
+	},
+	{
+		`declare d[2]; declare -p d`,
+		"declare -a d\n",
+	},
+	{
+		`f(){ local h[1]; declare -p h; }; f`,
+		"declare -a h\n",
+	},
+	{
+		`x=scalar; declare x[3]; declare -p x`,
+		`declare -a x=([0]="scalar")` + "\n",
+	},
+	{
+		// An explicit -A still wins.
+		`declare -A m[k]; declare -p m`,
+		"declare -A m\n",
+	},
+	{
+		// Per name, not per command.
+		`declare d[2] e=1; declare -p d; declare -p e`,
+		"declare -a d\n" + `declare -- e="1"` + "\n",
+	},
+
+	// `readonly` and `export` take names, and a subscript is not one
+	// (#616): both refuse it, answer 1, and carry on to the next name.
+	// declare/typeset/local accept one and write the element.
+	{
+		`a=(1); readonly a[5] 2>/dev/null; echo rc=$?; declare -p a`,
+		"rc=1\n" + `declare -a a=([0]="1")` + "\n",
+	},
+	{
+		`readonly a[5] z=1 2>/dev/null; echo rc=$?; declare -p z`,
+		"rc=1\n" + `declare -r z="1"` + "\n",
+	},
+	{
+		`export q[1]=1 2>/dev/null; echo rc=$?; echo "q=${q-unset}"`,
+		"rc=1\nq=unset\n",
+	},
+	{
+		`readonly a[]=x 2>/dev/null; echo rc=$?`,
+		"rc=1\n",
+	},
+	{
+		`readonly "a[*]"=x 2>/dev/null; echo rc=$?`,
+		"rc=1\n",
+	},
 	// A temp-env assignment before a declaration utility (#380): the
 	// binding is what the utility sees, and when the utility declares
 	// the name — not merely queries it — the binding is promoted in

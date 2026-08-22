@@ -380,6 +380,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				r.unsetDynamicVar(arg)
 			} else if _, ok := r.Funcs[arg]; ok && funcs {
 				delete(r.Funcs, arg)
+			} else if vars && dynamicVars[arg] {
+				// A computed variable can be *listed* without being set —
+				// FUNCNAME outside a function is bash's `declare -a
+				// FUNCNAME` (#616) — so the unset is recorded whether or
+				// not there was a value to remove. Without this the name
+				// stayed in `declare -a` after a script had unset it,
+				// which is #547's one-way rule failing at the reader that
+				// enumerates rather than the one that expands.
+				r.unsetDynamicVar(arg)
 			}
 			if vars && arg == "GLOBIGNORE" {
 				// bash turns dotglob off on `unset GLOBIGNORE` even when
