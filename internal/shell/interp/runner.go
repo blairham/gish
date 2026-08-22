@@ -787,6 +787,21 @@ func (r *Runner) ReportRecovered(err error) {
 	r.lastExit = r.exit
 }
 
+// errFuncRedef reports an attempt to redefine a readonly function
+// (#615).
+//
+// The location is the line the definition *ends* on rather than the line
+// it starts on, which was measured rather than assumed: a four-line
+// `func()\n{\n echo bar\n}` beginning at line 7 is reported by bash at
+// line 10. Every other runtime diagnostic names the statement's first
+// line, so this is the one place the number is taken from a node's end.
+func (r *Runner) errFuncRedef(cm *syntax.FuncDecl) {
+	oldLine := r.traceLine
+	r.traceLine = cm.End().Line() + r.lineOffset
+	r.errf("%s: readonly function\n", cm.Name.Value)
+	r.traceLine = oldLine
+}
+
 // errLocation is bash's `source: line N: ` prefix on a runtime
 // diagnostic. bash builds it from BASH_SOURCE and LINENO, which is why a
 // command inside a function names the file the *function* lives in
@@ -1782,6 +1797,18 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			r.exit.code = 1
 			break
 		}
+		if r.readonlyFuncs[cm.Name.Value] {
+			// bash refuses the redefinition, answers 1, and carries on
+			// with the rest of the line — this is not the plain
+			// assignment's abandonment (#308), measured: `echo A;
+			// f(){ :; }; echo B` still prints B (#615). The line it
+			// names is where the definition *ends*, which is the
+			// closing brace rather than the name, so the location is
+			// moved for this one message.
+			r.errFuncRedef(cm)
+			r.exit.code = 1
+			break
+		}
 		r.setFunc(cm.Name.Value, cm.Body)
 	case *syntax.ArithmCmd:
 		if n, failed := r.arithmCmd(cm.X, "(("); !failed {
@@ -1903,6 +1930,7 @@ func (r *Runner) declClause(variant string, args []*syntax.Assign) {
 	var modes []string
 	valType := ""
 	declQuery := "" // "-f", "-F" or "-p" for query mode
+	sawP := false   // "-p" was given, whether or not it won declQuery
 	namedAny := false
 	unref := false   // "+n": detach a nameref
 	inherit := false // "-I": take the enclosing scope's value and attributes
@@ -1991,9 +2019,16 @@ assignLoop:
 				// -p alongside -f is a modifier, not a replacement:
 				// `declare -f -p name` prints the function, where
 				// letting -p win looked for a *variable* by that name
-				// and answered "not found" (#386).
-				if flag == "-p" && (declQuery == "-f" || declQuery == "-F") {
-					break
+				// and answered "not found" (#386). It has to be
+				// remembered rather than only ignored, because what it
+				// modifies is the *attribute* line: `declare -f name`
+				// prints the body alone while `declare -pf name` prints
+				// the body and then `declare -fr name` (#615).
+				if flag == "-p" {
+					sawP = true
+					if declQuery == "-f" || declQuery == "-F" {
+						break
+					}
 				}
 				declQuery = flag
 			default:
@@ -2058,6 +2093,23 @@ assignLoop:
 			return
 		}
 		if declQuery == "-f" || declQuery == "-F" {
+			// A value alongside -f is refused, and the two variants word
+			// it differently (#615): `declare -fr f=1` is bash's "cannot
+			// use `-f' to make functions" and abandons the command, while
+			// `readonly -f f=1` reads the whole word as the name it
+			// cannot find and carries on to the next one.
+			if as.Value != nil {
+				switch variant {
+				case "declare", "typeset":
+					r.errf("%s: cannot use `-f' to make functions\n", variant)
+					r.exit.code = 1
+					return
+				default:
+					r.errf("%s: %s=%s: not a function\n", variant, name, r.literal(as.Value))
+					r.exit.code = 1
+					continue
+				}
+			}
 			// `export -f name` and `declare -xf name` export the
 			// function rather than printing it (#387); koi printed the
 			// body and left the child with a 127.
@@ -2079,25 +2131,77 @@ assignLoop:
 				r.exportedFuncs[name] = true
 				continue
 			}
+			// `declare -f +r name` is the one attribute a readonly
+			// function refuses to lose — `+x` and `+t` are allowed on one,
+			// measured — and it is a refusal only when the function *is*
+			// readonly: `+r` on an ordinary one is a silent no-op at 0.
+			if slices.Contains(modes, "+r") {
+				if r.readonlyFuncs[name] {
+					r.errf("%s: %s: readonly function\n", variant, name)
+					r.exit.code = 1
+				}
+				continue
+			}
+			// `readonly -f name`, `declare -fr name` and `typeset -fr
+			// name` mark rather than list, which is why this runs ahead of
+			// the -f/-F printing below and why -p makes no difference to
+			// it: `readonly -pf f` on an already-readonly f prints
+			// nothing (#615).
+			if slices.Contains(modes, "-r") {
+				if r.Funcs[name] == nil {
+					// `readonly` names what it could not find while
+					// `declare -fr` is silently 1, which is declare's
+					// existing answer for an absent function rather than
+					// a second rule.
+					if variant == "readonly" {
+						r.errf("%s: %s: not a function\n", variant, name)
+					}
+					r.exit.code = 1
+					continue
+				}
+				if r.readonlyFuncs == nil {
+					r.readonlyFuncs = map[string]bool{}
+				}
+				r.readonlyFuncs[name] = true
+				continue
+			}
 		}
 		if declQuery == "-F" {
 			// declare -F name: print the name alone, which is how a
 			// harness enumerates functions without their bodies. Bash
 			// returns 1 for a missing function and carries on with the
 			// names which follow.
-			if r.Funcs[name] != nil {
-				r.outf("%s\n", name)
-			} else {
+			switch {
+			case r.Funcs[name] == nil:
+				// -p turns the silent 1 into a diagnostic, and it is the
+				// *variable* wording rather than "not a function" (#615).
+				if sawP {
+					r.errf("%s: %s: not found\n", variant, name)
+				}
 				r.exit.code = 1
+			case sawP:
+				r.outf("declare -f%s %s\n", r.funcAttrs(name), name)
+			default:
+				r.outf("%s\n", name)
 			}
 			continue
 		}
 		if declQuery == "-f" {
 			// declare -f name: print function definition.
-			// Bash silently returns exit 1 for missing functions.
+			// Bash silently returns exit 1 for missing functions, and -p
+			// turns that into a diagnostic.
 			if body := r.Funcs[name]; body != nil {
 				r.printFuncDef(name, body)
+				// Only -p asks for a *named* function's attributes; the
+				// no-names listing below prints them unasked, which is
+				// bash's own asymmetry rather than one of koi's (#615).
+				if attrs := r.funcAttrs(name); sawP && attrs != "" {
+					r.outf("declare -f%s %s\n", attrs, name)
+				}
 			} else {
+				if sawP {
+					r.errf("%s: %s: not found\n", variant, name)
+				}
 				r.exit.code = 1
 			}
 			continue
@@ -2474,10 +2578,19 @@ assignLoop:
 		// where koi listed every one (#388) — which is why its
 		// func.tests output carried two full dumps of every function
 		// defined in the file.
+		// With -r the listing is filtered to the readonly functions,
+		// where koi listed every one — so `readonly -f` and `declare
+		// -Fr` answered as if nothing were readonly at all (#615). Two
+		// filters are a *union* rather than an intersection, measured:
+		// `declare -Frx` over one exported and one readonly function
+		// lists both.
 		onlyExported := slices.Contains(modes, "-x")
+		onlyReadOnly := slices.Contains(modes, "-r")
 		names := make([]string, 0, len(r.Funcs))
 		for name := range r.Funcs {
-			if onlyExported && !r.exportedFuncs[name] {
+			if (onlyExported || onlyReadOnly) &&
+				!(onlyExported && r.exportedFuncs[name]) &&
+				!(onlyReadOnly && r.readonlyFuncs[name]) {
 				continue
 			}
 			names = append(names, name)
@@ -2487,16 +2600,38 @@ assignLoop:
 			if declQuery == "-f" {
 				r.printFuncDef(name, r.Funcs[name])
 			}
-			switch {
-			case onlyExported:
-				// bash reports an exported function as `declare -fx`,
-				// after the body when the body was asked for.
-				r.outf("declare -fx %s\n", name)
-			case declQuery == "-F":
-				r.outf("declare -f %s\n", name)
+			// -F always names the function; -f adds the line only when
+			// there is an attribute to report, which is why a plain
+			// `declare -f` dump carries `declare -fr f1` after one body
+			// and nothing after the next.
+			if attrs := r.funcAttrs(name); declQuery == "-F" || attrs != "" {
+				r.outf("declare -f%s %s\n", attrs, name)
 			}
 		}
 	}
+}
+
+// funcAttrs renders a function's attribute letters the way bash orders
+// them in a `declare -f…` line: readonly before exported, so a function
+// that is both reports `declare -frx` (#615). The empty string means the
+// function carries no attributes, which is what decides whether a
+// `declare -f` listing prints a line for it at all.
+//
+// bash has a third letter between these two — `t`, the trace attribute
+// `declare -ft` sets for the DEBUG and RETURN traps, so all three is
+// `declare -frtx`. koi does not track it, and `declare -ft f` prints the
+// function's body rather than setting anything (#697): that is a
+// trap-reachability flag rather than a refusal, so it belongs with
+// #614's work and not here.
+func (r *Runner) funcAttrs(name string) string {
+	attrs := ""
+	if r.readonlyFuncs[name] {
+		attrs += "r"
+	}
+	if r.exportedFuncs[name] {
+		attrs += "x"
+	}
+	return attrs
 }
 
 // printFuncDef prints a function's definition, as "declare -f" does. Note that

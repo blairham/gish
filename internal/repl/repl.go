@@ -200,7 +200,6 @@ func runEditor(ctx context.Context, login bool) error {
 	}
 	runnerRef = runner
 	setSessionRunner(runner)
-	registerSubstrateBuiltins()
 
 	// History failure degrades, never blocks the shell.
 	var hist editor.History
@@ -754,7 +753,6 @@ func acceptWhen(text string) bool {
 // doing rather than the shell's, and koi keeps its own diagnostic shapes
 // (#120).
 func runPlain(ctx context.Context, login, interactive bool) error {
-	registerSubstrateBuiltins()
 	runner, err := interp.New(append(jsonTraceOptions(),
 		interp.Env(sessionEnv(sessionFlags{invocation: invokedStdin})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
@@ -940,7 +938,6 @@ func RunFile(ctx context.Context, path string, login, interactive bool, params .
 // fixed: for a script it is the path, and for -c it is whatever operand
 // the caller supplied.
 func runScript(ctx context.Context, r io.Reader, name string, login, interactive bool, inv invocation, params ...string) error {
-	registerSubstrateBuiltins()
 	// A script file is a call frame; a command string is not. That is
 	// bash's own distinction and it decides whether FUNCNAME, BASH_SOURCE
 	// and BASH_LINENO have a bottom `main` entry (#266) — which is exactly
@@ -1038,9 +1035,6 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 // error messages. Later opts override the default stdio, which keeps the
 // core loop testable without touching the real terminal.
 func RunReader(ctx context.Context, r io.Reader, name string, opts ...interp.RunnerOption) error {
-	// The session-querying builtins (declare -F) need a runner on this
-	// path too: a script asks the same questions an interactive line does.
-	registerSubstrateBuiltins()
 	var runner *interp.Runner
 	// This session records ambiently, so it has a per-process list for
 	// the $HISTFILE forms to hold positions over (#432).

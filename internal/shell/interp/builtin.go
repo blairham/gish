@@ -379,6 +379,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				r.delVar(arg)
 				r.unsetDynamicVar(arg)
 			} else if _, ok := r.Funcs[arg]; ok && funcs {
+				if r.readonlyFuncs[arg] {
+					// The function half of #535's rule: report and
+					// answer 1 rather than reporting and answering 0,
+					// and carry on to the next name — `unset -f a b c`
+					// with a readonly `b` removes a and c (#615).
+					r.errf("unset: %s: cannot unset: readonly function\n", arg)
+					exit.code = 1
+					continue
+				}
 				delete(r.Funcs, arg)
 			} else if vars && dynamicVars[arg] {
 				// A computed variable can be *listed* without being set —

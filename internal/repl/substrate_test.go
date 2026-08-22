@@ -64,6 +64,13 @@ func TestClobberAppendKeepsAppending(t *testing.T) {
 // bash's two shapes, which callers depend on: bare -F prints the
 // restoring command per function, -F with a name prints just the name
 // and reports absence through the exit status.
+//
+// These still run through the session path they always did, and the
+// answer now comes from the interpreter rather than from the rewrite
+// this file used to carry (#615). The three tests below are what makes
+// that a deletion rather than a regression: an attribute the shim could
+// not know, a subshell whose functions it could not see, and a `source`
+// it could not reach at all.
 func TestDeclareFListsFunctions(t *testing.T) {
 	out := runSession(t, "beta() { :; }\nalpha() { :; }\ndeclare -F")
 	want := "declare -f alpha\ndeclare -f beta\n"
@@ -83,6 +90,43 @@ func TestDeclareFReportsMissingByStatus(t *testing.T) {
 	out := runSession(t, "f() { :; }\ndeclare -F nope || echo rc=$?")
 	if out != "rc=1\n" {
 		t.Errorf("declare -F nope = %q, want %q", out, "rc=1\n")
+	}
+}
+
+// A readonly function reports the `r` attribute, which the rewrite could
+// not: it read the function *table* and nothing else, so it answered
+// `declare -f f` for a function bash calls `declare -fr f` — and that is
+// the listing an agent harness carries a session across with (#615).
+func TestDeclareFReportsTheReadonlyAttribute(t *testing.T) {
+	out := runSession(t, "f() { :; }\nreadonly -f f\ndeclare -F")
+	if out != "declare -fr f\n" {
+		t.Errorf("declare -F = %q, want %q", out, "declare -fr f\n")
+	}
+}
+
+// The rewrite read the *session* runner, so a subshell's own functions
+// were invisible from inside it — stated as a limitation rather than a
+// bug, and simply gone now that the interpreter answers.
+func TestDeclareFSeesASubshellsOwnFunctions(t *testing.T) {
+	out := runSession(t, "outer() { :; }\n( inner() { :; }; declare -F )")
+	want := "declare -f inner\ndeclare -f outer\n"
+	if out != want {
+		t.Errorf("declare -F in a subshell = %q, want %q", out, want)
+	}
+}
+
+// And `source` re-parses inside the interpreter, so no rewrite of the
+// tree koi parses could ever reach a `declare -F` in a sourced file
+// (#242) — the scope note this file carries, arriving as a capability.
+func TestDeclareFWorksInsideASourcedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lib.sh")
+	if err := os.WriteFile(path, []byte("declare -F\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runSession(t, "f() { :; }\n. '"+path+"'")
+	if out != "declare -f f\n" {
+		t.Errorf("declare -F in a sourced file = %q, want %q", out, "declare -f f\n")
 	}
 }
 
