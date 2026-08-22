@@ -2513,6 +2513,13 @@ assignLoop:
 // that is both reports `declare -frx` (#615). The empty string means the
 // function carries no attributes, which is what decides whether a
 // `declare -f` listing prints a line for it at all.
+//
+// bash has a third letter between these two — `t`, the trace attribute
+// `declare -ft` sets for the DEBUG and RETURN traps, so all three is
+// `declare -frtx`. koi does not track it, and `declare -ft f` prints the
+// function's body rather than setting anything (#697): that is a
+// trap-reachability flag rather than a refusal, so it belongs with
+// #614's work and not here.
 func (r *Runner) funcAttrs(name string) string {
 	attrs := ""
 	if r.readonlyFuncs[name] {
