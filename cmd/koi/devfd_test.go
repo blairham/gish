@@ -306,6 +306,14 @@ func TestSourcingDevStdinDoesNotEatTheScript(t *testing.T) {
 // against bash; the wording is asserted, since bash prefixes its own
 // `$0: line N:` where koi prints neither for a command string (#120,
 // #571).
+//
+// What "open the other way" means is the platform's answer rather than
+// the shell's: a BSD `/dev/fd` entry dups the descriptor, so its mode is
+// binding, while Linux reopens the file it points at and bash allows the
+// other direction. So the oracle is asked *first* and the case is skipped
+// where bash itself accepts — koi's answer there is the recorded gap in
+// #667, and pinning it against a bash that disagrees would be encoding
+// the divergence rather than measuring one.
 func TestShellDescriptorPathsRefuseWhatBashRefuses(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipped in -short")
@@ -343,7 +351,7 @@ func TestShellDescriptorPathsRefuseWhatBashRefuses(t *testing.T) {
 			bashStatus := statusLine(bashOut)
 			koiStatus := statusLine(koiOut)
 			if bashStatus == "status=0" {
-				t.Fatalf("the oracle accepted this, so it is not a refusal: %q", bashOut)
+				t.Skipf("bash on this platform accepts it, so there is no refusal to match here (#667): %q", bashOut)
 			}
 			if bashStatus != koiStatus {
 				t.Errorf("status differs from bash: bash %q, koi %q\n  bash: %q\n  koi:  %q",
