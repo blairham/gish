@@ -1095,7 +1095,7 @@ var errorCases = []errorCase{
 	// but at evaluation time rather than while parsing.
 	errCase(
 		"echo $((()))",
-		langErr("1:9: `(` must be followed by an expression"),
+		langErr("1:9: `(` must be followed by an expression", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $(((3))",
@@ -1103,15 +1103,15 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo $((+))",
-		langErr("1:9: `+` must be followed by an expression"),
+		langErr("1:9: `+` must be followed by an expression", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a b c))",
-		langErr("1:11: not a valid arithmetic operator: `b`"),
+		langErr("1:11: not a valid arithmetic operator: `b`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a ; c))",
-		langErr("1:11: not a valid arithmetic operator: `;`"),
+		langErr("1:11: not a valid arithmetic operator: `;`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	// `echo $((foo) )` was an error case here, marked "note that we
 	// don't backtrack". bash runs it as a command substitution — the
@@ -1120,19 +1120,19 @@ var errorCases = []errorCase{
 	// (#424).
 	errCase(
 		"echo $((a *))",
-		langErr("1:11: `*` must be followed by an expression"),
+		langErr("1:11: `*` must be followed by an expression", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((++))",
-		langErr("1:9: `++` must be followed by a literal"),
+		langErr("1:9: `++` must be followed by a literal", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a ? b))",
-		langErr("1:11: ternary operator missing `:` after `?`"),
+		langErr("1:11: ternary operator missing `:` after `?`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a : b))",
-		langErr("1:11: ternary operator missing `?` before `:`"),
+		langErr("1:11: ternary operator missing `?` before `:`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((/",
@@ -1809,7 +1809,7 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo $((a[]))",
-		langErr("1:10: `[` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:10: `[` must be followed by an expression", LangMirBSDKorn|LangZsh),
 		flipConfirm(LangMirBSDKorn), // wrong?
 	),
 	errCase(

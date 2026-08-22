@@ -126,6 +126,7 @@ func Walk(node Node, f func(Node) bool) {
 		Walk(node.X, f)
 	case *UnaryTest:
 		Walk(node.X, f)
+	case *BadArithm:
 	case *ParenArithm:
 		Walk(node.X, f)
 	case *FlagsArithm:

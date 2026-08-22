@@ -5292,6 +5292,91 @@ q`,
 		"echo $((a = 3, ++a, a--))",
 		"4\n",
 	},
+	// Arithmetic bash cannot read is a runtime error there and only ever
+	// a runtime error, since bash parses an expression when it evaluates
+	// it, from a string (#600). The consequences are #597's: in a word
+	// it abandons the input unit, so the `echo post` after it never runs
+	// and the -c string answers 1. bash's wording quotes the expression
+	// and names the token it stopped at, which is #598.
+	{
+		"echo $(( 4 ? : 3 )); echo post",
+		"4 ? : 3: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $(( 1 ? 20 )); echo post",
+		"1 ? 20: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $(( 4 ? 20 : )); echo post",
+		"4 ? 20 :: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		// bash has no `**=`, so this is an operand it never reaches.
+		"echo $((n**=2)); echo post",
+		"n**=2: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		// Text left over where the expression should have ended is the
+		// same verdict, and only the construct's delimiter check sees it.
+		"echo $(( a b c )); echo post",
+		"a b c: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo $(( a ; c )); echo post",
+		"a ; c: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		// A slice's halves are the one arithmetic inside an expansion,
+		// and they are judged the same way.
+		`set -- a b; echo "${#:%}"; echo post`,
+		"%: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		`v=abcdef; echo "${v:1:%}"; echo post`,
+		"%: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	{
+		`v=abcdef; echo "${v:%:3}"; echo post`,
+		"%:3: arithmetic syntax error\nexit status 1 #JUSTERR",
+	},
+	// In a command it is only that command failing: reported under the
+	// command's own name, status 1, and the line carries on.
+	{
+		"(( 4 + )); echo same=$?",
+		"((: 4 +: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		"(( -- )); echo same=$?",
+		"((: --: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		// A C-style loop's header is three expressions, so only the one
+		// that cannot be read is a marker: `i=1` and `i < 4` still run,
+		// which is why the body runs once before the post expression
+		// ends the loop. The count is read afterwards rather than
+		// echoed in the body, since the oracle looks for bash's own
+		// diagnostic at the *start* of the output.
+		`for (( i=1; i < 4; 7++ )); do n=$((n+1)); done; echo "same=$? n=$n"`,
+		"((: 7++: arithmetic syntax error\nsame=1 n=1\n #JUSTERR",
+	},
+	{
+		"for (( 4+; i < 4; i++ )); do echo body; done; echo same=$?",
+		"((: 4+: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		"for (( i=1; 7++; i++ )); do echo body; done; echo same=$?",
+		"((: 7++: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	// The expressions that read keep reading, which is the half a
+	// parse-time refusal was protecting.
+	{
+		"echo $(( (1 + 2) * 3 )) $(( 1 ? 2 : 3 ))",
+		"9 2\n",
+	},
+	{
+		"v=abcdef; echo ${v:1:2} ${v: -2} ${v::3}",
+		"bc ef abc\n",
+	},
 	{
 		"echo $((2 ** 3)) $((1234 ** 4567))",
 		"8 0\n",

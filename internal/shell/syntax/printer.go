@@ -955,6 +955,11 @@ func (p *Printer) arithmExprRecurse(expr ArithmExpr, compact, spacePlusMinus boo
 			}
 			p.arithmExprRecurse(expr.X, compact, false)
 		}
+	case *BadArithm:
+		// The raw source of arithmetic this parser could not read, kept
+		// so that `$(( 4 ? : 3 ))` prints back as written and the
+		// evaluator's diagnostic can name it (#600).
+		p.w.WriteString(expr.Value)
 	case *ParenArithm:
 		p.w.WriteByte('(')
 		p.arithmExprRecurse(expr.X, false, false)

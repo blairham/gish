@@ -248,7 +248,25 @@ func TestShellDescriptorPathsMatchBash(t *testing.T) {
 	for _, tc := range devFDCases {
 		for _, shape := range tc.inShapes() {
 			t.Run(tc.name+" ("+string(shape)+")", func(t *testing.T) {
-				bashOut, bashCode := runShape(t, t.TempDir(), bash, shape, tc.body)
+				var bashOut string
+				var bashCode int
+				// The oracle is allowed to lose a race of its own, and
+				// on the fifo case it does: bash's blocking open of the
+				// fifo takes the SIGCHLD from the background writer and
+				// answers EINTR rather than retrying, which on a loaded
+				// macOS runner is most of the time (#685). That is bash
+				// failing to run the case, not koi disagreeing with it,
+				// so the case is re-run and then skipped rather than
+				// charged to koi.
+				for range 5 {
+					bashOut, bashCode = runShape(t, t.TempDir(), bash, shape, tc.body)
+					if !strings.Contains(bashOut, "Interrupted system call") {
+						break
+					}
+				}
+				if strings.Contains(bashOut, "Interrupted system call") {
+					t.Skipf("the oracle was interrupted rather than running the case: %q", bashOut)
+				}
 				koiOut, koiCode := runShape(t, t.TempDir(), koi, shape, tc.body)
 				if !strings.Contains(bashOut, tc.want) {
 					t.Fatalf("the oracle did not produce %q, so this case cannot detect its absence: %q",
