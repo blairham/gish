@@ -384,7 +384,9 @@ var compFamilyAccepted = []struct {
 
 	// Every -o name and every -A action bash knows, so the closed lists
 	// cannot go stale in the refusing direction.
-	{"every -o name", `for o in bashdefault default dirnames filenames noquote nosort nospace plusdirs; do complete -o "$o" x || echo "refused -o $o"; done`},
+	// fullquote is bash 5.3's ninth and koi refused it until #612, which
+	// is why this loop is the acceptance half rather than a formality.
+	{"every -o name", `for o in bashdefault default dirnames filenames fullquote noquote nosort nospace plusdirs; do complete -o "$o" x || echo "refused -o $o"; done`},
 	{"every -A action", `for a in alias arrayvar binding builtin command directory disabled enabled export file function group helptopic hostname job keyword running service setopt shopt signal stopped user variable; do compgen -A "$a" >/dev/null; [ $? = 2 ] && echo "refused -A $a"; done`},
 
 	// The three catch-alls, -I included: bash 5.1 added it, koi records
@@ -907,4 +909,124 @@ func TestCompgenKoiOwnActionsAreTrue(t *testing.T) {
 // tripped by bash keeping duplicates where koi does not (#613).
 func uniqueLines(lines []string) []string {
 	return slices.Compact(slices.Clone(lines))
+}
+
+// `compopt` adjusts a completion's options (#612).
+//
+// koi's compopt parsed its arguments and then answered 0 whatever it was
+// asked: it edited no spec, and outside a completion function it claimed
+// an adjustment that could not have happened. That is why every case here
+// reads back **what changed** rather than the exit status — a builtin
+// that already answers 0 by accident passes a status-only assertion, and
+// these all did.
+//
+// Differential on stdout, because the diagnostics differ by bash's
+// `file: line N:` prefix (#621) and its usage second line (#577); the
+// wording is pinned separately, in both shells, by compoptDiagnostics.
+var compoptCases = []struct{ name, script string }{
+	// The named form, read back through `complete -p`: the listing the
+	// adjustment used to never reach.
+	{"adding an option", `f(){ :; }; complete -F f foo; compopt -o nospace foo; echo "rc=$?"; complete -p foo`},
+	{"removing an option", `f(){ :; }; complete -o nospace -F f foo; compopt +o nospace foo; echo "rc=$?"; complete -p foo`},
+	{"adding one and removing another", `f(){ :; }; complete -o nospace -F f foo; compopt +o nospace -o filenames foo; echo "rc=$?"; complete -p foo`},
+	{"adding an option that is already set", `f(){ :; }; complete -o nospace -F f foo; compopt -o nospace foo; echo "rc=$?"; complete -p foo`},
+	{"removing an option that is not set", `f(){ :; }; complete -F f foo; compopt +o nospace foo; echo "rc=$?"; complete -p foo`},
+	{"a name after --", `f(){ :; }; complete -F f foo; compopt -o nospace -- foo; echo "rc=$?"; complete -p foo`},
+
+	// A name with no spec is reported and the *other* names are still
+	// edited: bash carries on rather than abandoning the call.
+	{"one name of two has no spec", `f(){ :; }; complete -F f foo; compopt -o nospace nope foo; echo "rc=$?"; complete -p foo`},
+
+	// With no -o at all it is a listing rather than a request, and it is
+	// the whole vocabulary with a sign per name — which is also what makes
+	// the -o name list itself part of the answer.
+	{"the listing form", `f(){ :; }; complete -o nospace -o filenames -F f foo; compopt foo; echo "rc=$?"`},
+	{"the listing form for two names", `f(){ :; }; complete -o nospace -F f foo; complete -F f baz; compopt foo baz; echo "rc=$?"`},
+	{"the listing form with no options set", `f(){ :; }; complete -F f foo; compopt foo; echo "rc=$?"`},
+
+	// The three catch-alls. They live outside byCommand, so `complete -p`
+	// cannot read them back yet (#609) and compopt's own listing is what
+	// asserts the edit landed.
+	{"the default spec", `f(){ :; }; complete -D -F f; compopt -o nospace -D; echo "rc=$?"; compopt -D`},
+	{"the empty-line spec", `f(){ :; }; complete -E -F f; compopt -o nospace -E; echo "rc=$?"; compopt -E`},
+	{"the initial-word spec", `f(){ :; }; complete -I -F f; compopt -o nospace -I; echo "rc=$?"; compopt -I`},
+
+	// They are mutually exclusive with a fixed priority — D over E over I
+	// — whatever order they were written in, which only measuring says.
+	{"-E before -D still edits -D", `f(){ :; }; complete -D -F f; complete -E -F f; compopt -o nospace -E -D; echo "rc=$?"; compopt -D; compopt -E`},
+	{"-D before -E still edits -D", `f(){ :; }; complete -D -F f; complete -E -F f; compopt -o nospace -D -E; echo "rc=$?"; compopt -D; compopt -E`},
+	{"-E before -I still edits -E", `f(){ :; }; complete -I -F f; complete -E -F f; compopt -o nospace -E -I; echo "rc=$?"; compopt -I; compopt -E`},
+
+	// And a catch-all overrides the names given beside it: the name is
+	// left exactly as it was.
+	{"a catch-all ignores the names", `f(){ :; }; complete -D -F f; complete -F f foo; compopt -o nospace -D foo; echo "rc=$?"; compopt -D; complete -p foo`},
+
+	// The two statuses koi answered 0 for. The message is compared
+	// separately; here it is the status a caller branches on.
+	{"a name with no spec at all", `compopt -o nospace bar; echo "rc=$?"`},
+	{"outside a completion function", `compopt -o nospace; echo "rc=$?"`},
+	{"no arguments at all", `compopt; echo "rc=$?"`},
+}
+
+func TestCompoptEditsSpecsLikeBash(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	for _, tc := range compoptCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			want, _ := shellRows(t, bash, dir, tc.script)
+			got, _ := shellRows(t, koi, dir, tc.script)
+			if !slices.Equal(got, want) {
+				t.Errorf("%s\n  koi:  %q\n  bash: %q", tc.script, got, want)
+			}
+		})
+	}
+}
+
+// compoptDiagnostics are the two answers compopt gave as a silent 0, and
+// the wording is asserted in *both* shells so it is bash's because bash
+// printed it here rather than because this file believes it does.
+var compoptDiagnostics = []struct{ name, script, message string }{
+	{"outside a completion function", `compopt -o nospace`, "compopt: not currently executing completion function"},
+	{"with no arguments at all", `compopt`, "compopt: not currently executing completion function"},
+	{"a name with no spec", `compopt -o nospace bar`, "compopt: bar: no completion specification"},
+
+	// The catch-alls are named in a diagnostic by bash's internal
+	// placeholder command name rather than by the option that selects
+	// them, which is copied rather than replaced: it is the observable
+	// answer, and a spelling of koi's own would be a divergence with
+	// nothing behind it.
+	{"the default spec when there is none", `compopt -o nospace -D`, "compopt: _DefaultCmD_: no completion specification"},
+	{"the empty-line spec when there is none", `compopt -o nospace -E`, "compopt: _EmptycmD_: no completion specification"},
+	{"the initial-word spec when there is none", `compopt -o nospace -I`, "compopt: _InitialWorD_: no completion specification"},
+}
+
+func TestCompoptDiagnosticsMatchBash(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+
+	for _, tc := range compoptDiagnostics {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			script := tc.script + `; echo "rc=$?"`
+			gotOut, _ := runShell(t, koi, script)
+			wantOut, _ := runShell(t, bash, script)
+			if wantRC := grepLine(wantOut, "rc="); wantRC != "rc=1" {
+				t.Skipf("bash here answers %q for %q (%s): %q",
+					wantRC, tc.script, bashVersion(t, bash), wantOut)
+			}
+			if got := grepLine(gotOut, "rc="); got != "rc=1" {
+				t.Errorf("%s: koi %s, bash rc=1\n  koi: %q", tc.script, got, gotOut)
+			}
+			if !strings.Contains(wantOut, tc.message) {
+				t.Errorf("%s: bash does not say %q — the expected message is invented: %q",
+					tc.script, tc.message, wantOut)
+			}
+			if !strings.Contains(gotOut, tc.message) {
+				t.Errorf("%s: koi does not say %q: %q", tc.script, tc.message, gotOut)
+			}
+		})
+	}
 }
