@@ -1338,7 +1338,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					return
 				}
 				name, vr := r.assignVal(name, prev, as, "")
-				r.setVarWithIndex(prev, name, as.Index, vr)
+				r.setVarWithIndex(prev, name, as.Index, vr, as.Append && as.Index != nil)
 
 				if !tracingEnabled {
 					continue
@@ -2482,7 +2482,7 @@ assignLoop:
 			// flattening the array to a scalar (#378) — and the
 			// implicit element 0 a scalar assignment to an array
 			// variable lands in.
-			r.setVarWithIndex(prev, name, as.Index, vr)
+			r.setVarWithIndex(prev, name, as.Index, vr, as.Append && as.Index != nil)
 		}
 		if r.declTempNames != nil {
 			// A temp-env prefix assignment is in flight (#380); tell

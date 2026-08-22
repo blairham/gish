@@ -1075,6 +1075,12 @@ type ArrayElem struct {
 	// assignment runs (`[]=value: bad array subscript`) rather than
 	// while parsing (#582). See [Assign.BadIndex].
 	BadIndex bool
+
+	// Append marks `[index]+=value`, which appends to whatever the
+	// element already holds rather than replacing it (#605). What
+	// "already holds" means depends on the enclosing assignment: see
+	// [Assign.Append].
+	Append bool
 }
 
 func (a *ArrayElem) Pos() Pos {
@@ -1087,6 +1093,9 @@ func (a *ArrayElem) Pos() Pos {
 func (a *ArrayElem) End() Pos {
 	if a.Value != nil {
 		return a.Value.End()
+	}
+	if a.Append {
+		return posAddCol(a.Index.End(), len("]+="))
 	}
 	return posAddCol(a.Index.End(), len("]="))
 }
