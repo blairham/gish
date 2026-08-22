@@ -49,6 +49,11 @@ const (
 	// was entered from.
 	shellSourceVar = "BASH_SOURCE"
 	shellLineNoVar = "BASH_LINENO"
+	// shellArgvVar and shellArgcVar are the arguments each frame was
+	// called with, and how many per frame — the stack's fourth and
+	// fifth views, maintained only under `extdebug`.
+	shellArgvVar = "BASH_ARGV"
+	shellArgcVar = "BASH_ARGC"
 	// shellCommandVar, or BASH_COMMAND, holds the command being run, as
 	// written rather than as expanded. Read by a DEBUG trap and, more
 	// often, by an ERR trap saying which command failed.
@@ -239,6 +244,12 @@ func (r *Runner) updateExpandOpts() {
 	r.ecfg.ExtGlob = r.opts[optExtGlob]
 	r.ecfg.FailGlob = r.opts[optFailGlob]
 	r.ecfg.NoPatSubReplacement = !r.opts[optPatSubReplacement]
+	if r.opts[optExtDebug] {
+		// Turning `extdebug` on is one of the two moments bash takes
+		// the bottom BASH_ARGV entry (#637); this runs at the end of
+		// every option change, which is the seam that sees it.
+		r.initArgBase()
+	}
 }
 
 func (r *Runner) expandErr(err error) {
@@ -777,6 +788,29 @@ func (r *Runner) shiftLines(base uint) func() {
 	}
 }
 
+// resetLines numbers what follows from its own line 1, which is what a
+// separately parsed body wants when it is reached from a shifted
+// context — a function called from an `eval`'d string or a trap action
+// runs code that was parsed where it was *written*. The returned
+// function puts the previous shift back.
+//
+// It is [Runner.shiftLines]' counterpart and moves the same two
+// readings together, for the same reason.
+func (r *Runner) resetLines() func() {
+	oldLine, oldExpand := r.lineOffset, uint64(0)
+	r.lineOffset = 0
+	if r.ecfg != nil {
+		oldExpand = r.ecfg.LineOffset
+		r.ecfg.LineOffset = 0
+	}
+	return func() {
+		r.lineOffset = oldLine
+		if r.ecfg != nil {
+			r.ecfg.LineOffset = oldExpand
+		}
+	}
+}
+
 // rawErrf writes to stderr with no location prefix.
 func (r *Runner) rawErrf(format string, a ...any) {
 	fmt.Fprintf(r.stderr, format, a...)
@@ -965,6 +999,17 @@ const (
 	mainFrameName   = "main"
 )
 
+// The names [Runner.runTrapCallback] knows a fake trap by. They double
+// as the parse name in a diagnostic and as the per-kind recursion key,
+// so they must not collide with a signal name — none of them do, since
+// a signal arrives upper case.
+const (
+	debugTrapName  = "debug"
+	returnTrapName = "return"
+	errTrapName    = "error"
+	exitTrapName   = "exit"
+)
+
 // enterFuncForTraps turns the DEBUG and RETURN traps off for a call to
 // the function named name, unless they are reachable from here, and
 // returns what to restore on the way out.
@@ -1016,7 +1061,14 @@ func (r *Runner) runReturnTrap(ctx context.Context, line uint) {
 	if r.callbackReturn == "" || r.returnTrapOff {
 		return
 	}
-	r.trapCallback(ctx, r.callbackReturn, "return", line)
+	// The DEBUG action's suppression covers RETURN as well: measured, a
+	// function called from the DEBUG trap traces nothing and its return
+	// fires no RETURN trap either (#630). Every *other* trap's action
+	// is ordinary code, so a function called from ERR does fire one.
+	if r.inDebugTrap {
+		return
+	}
+	r.trapCallback(ctx, r.callbackReturn, returnTrapName, line)
 }
 
 // pushFrame enters a context; the returned function leaves it.
@@ -1024,6 +1076,80 @@ func (r *Runner) pushFrame(f callFrame) func() {
 	old := r.frames
 	r.frames = append([]callFrame{f}, r.frames...)
 	return func() { r.frames = old }
+}
+
+// pushCallArgs records a call's arguments for BASH_ARGV and BASH_ARGC;
+// the returned function drops them again (#637).
+//
+// Gated on `extdebug` **at the moment of the call**, which is bash's
+// rule and is observable: turning the option off mid-run leaves the
+// entries already pushed in place and stops new calls from adding any,
+// so a function entered with it off contributes nothing even if it
+// turns the option back on inside its own body.
+func (r *Runner) pushCallArgs(args []string) func() {
+	if !r.opts[optExtDebug] {
+		return func() {}
+	}
+	r.argStack = append(r.argStack, args)
+	return func() { r.argStack = r.argStack[:len(r.argStack)-1] }
+}
+
+// initArgBase takes the bottom entry of the BASH_ARGV/BASH_ARGC stack
+// if it has not been taken yet.
+//
+// bash records it the first time the shell has any reason to — `shopt
+// -s extdebug`, or a read of either array — and never again, so a `set
+// --` before that point moves the entry and one after it does not.
+// Measured, including the odd half: a read from *inside a function*
+// takes nothing and answers with the empty array, because the
+// parameters visible there are the function's rather than the script's.
+func (r *Runner) initArgBase() {
+	if r.argBaseSet || r.inFunction() {
+		return
+	}
+	r.argBase = slices.Clone(r.Params)
+	r.argBaseSet = true
+}
+
+// argvVar answers BASH_ARGV: every active call's arguments, read back
+// as a stack.
+//
+// The order is reversed *within* a frame as well as across frames —
+// `f3 3 z` contributes `z` then `3` — because bash pushes each word in
+// turn onto one stack and this reads it from the top. It is not the
+// concatenation of the `$@`s, which is the shape a plausible
+// implementation produces and which silently mis-orders every frame.
+//
+// It is set even with nothing on the stack, as an empty array: bash's
+// variable table always holds it, and `${BASH_ARGV+set}` is empty there
+// only because *any* empty array answers that way.
+func (r *Runner) argvVar() expand.Variable {
+	r.initArgBase()
+	argv := []string{}
+	push := func(args []string) {
+		for _, arg := range slices.Backward(args) {
+			argv = append(argv, arg)
+		}
+	}
+	for _, args := range slices.Backward(r.argStack) {
+		push(args)
+	}
+	push(r.argBase)
+	return expand.Variable{Set: true, Kind: expand.Indexed, List: argv}
+}
+
+// argcVar answers BASH_ARGC: one count per frame, innermost first,
+// which is what lets a reader slice BASH_ARGV back into frames.
+func (r *Runner) argcVar() expand.Variable {
+	r.initArgBase()
+	counts := make([]string, 0, len(r.argStack)+1)
+	for _, args := range slices.Backward(r.argStack) {
+		counts = append(counts, strconv.Itoa(len(args)))
+	}
+	if r.argBaseSet {
+		counts = append(counts, strconv.Itoa(len(r.argBase)))
+	}
+	return expand.Variable{Set: true, Kind: expand.Indexed, List: counts}
 }
 
 // inFunction reports whether the innermost context is a function call,
@@ -1198,7 +1324,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 		// "errtrace" is set.
 		if !r.errTrapFired && (r.errTrapDepth == 0 || r.opts[optErrTrace]) {
 			r.errTrapFired = true
-			r.trapCallback(ctx, r.callbackErr, "error", st.Pos().Line())
+			r.trapCallback(ctx, r.callbackErr, errTrapName, st.Pos().Line())
 		}
 		// If the "errexit" option is set and a command failed, exit the shell. Exceptions:
 		//
@@ -1717,6 +1843,15 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 
 			if cm.Select {
+				// A `select` head traces exactly *once*, before the
+				// menu is first printed — unlike `for`, which traces
+				// per iteration. Measured; the two loops look alike
+				// enough that the difference has to be pinned (#629).
+				if r.traceSource(ctx, func() string {
+					return forHeadSource(cm, y, name)
+				}, cm.Pos().Line()) {
+					break
+				}
 				ps3 := cmp.Or(r.envGet(shellReplyPS3Var), shellDefaultPS3)
 
 				for menu := true; ; {
@@ -1760,6 +1895,20 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			}
 
 			for _, field := range items {
+				// The head is its own DEBUG event, once per iteration
+				// and *before* the loop variable is set — measured, so
+				// the action still sees the previous value (#629). A
+				// loop with no items traces nothing at all, which falls
+				// out of firing here rather than above.
+				//
+				// Declining it under extdebug skips that iteration's
+				// body and leaves the loop running, which is also
+				// measured: `break` here would end the loop instead.
+				if r.traceSource(ctx, func() string {
+					return forHeadSource(cm, y, name)
+				}, cm.Pos().Line()) {
+					continue
+				}
 				if !r.setLoopVar(name, field) {
 					break
 				}
@@ -1796,7 +1945,27 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				t.stringf("(( %s ))", printArithm(x))
 				t.newLineFlush()
 			}
-			if y.Init != nil {
+			// A C-style loop has no head of its own as far as DEBUG is
+			// concerned: bash fires for each of the three arithmetic
+			// *sections* as it evaluates them, so a two-iteration loop
+			// traces init, cond, body, post, cond, body, post, cond
+			// (#629). An omitted section still fires, reported as the
+			// `((1))` it means — the same rule [funcPrinter.loopPart]
+			// follows for `declare -f`.
+			//
+			// The rendering is printed back from the parse tree, so its
+			// spacing is normalized where bash echoes the arithmetic as
+			// written; that is the recorded #598 divergence, and it is
+			// only ever visible through BASH_COMMAND.
+			debugArithm := func(x syntax.ArithmExpr) bool {
+				return r.traceSource(ctx, func() string {
+					if x == nil {
+						return "((1))"
+					}
+					return "((" + printArithm(x) + "))"
+				}, cm.Pos().Line())
+			}
+			if !debugArithm(y.Init) && y.Init != nil {
 				traceArithm(y.Init)
 				if _, failed := r.arithmCmd(y.Init, "(("); failed {
 					return
@@ -1810,7 +1979,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 			// an arithmetic error in the update, which raises exactly
 			// that.
 			for {
-				if y.Cond != nil {
+				if skip := debugArithm(y.Cond); !skip && y.Cond != nil {
 					traceArithm(y.Cond)
 					n, failed := r.arithmCmd(y.Cond, "((")
 					if failed || n == 0 {
@@ -1820,7 +1989,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 				if r.loopStmtsBroken(ctx, cm.Do) {
 					break
 				}
-				if y.Post != nil {
+				if skip := debugArithm(y.Post); !skip && y.Post != nil {
 					traceArithm(y.Post)
 					if _, failed := r.arithmCmd(y.Post, "(("); failed {
 						break
@@ -1892,6 +2061,21 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 		trace.newLineFlush()
 		r.exit.oneIf(val == 0)
 	case *syntax.CaseClause:
+		// The head is its own DEBUG event, fired once whether or not
+		// any pattern matches, and BASH_COMMAND holds it unexpanded
+		// with a *trailing space* — bash renders the head with an
+		// empty pattern list after the `in`, and the space is what is
+		// left of it. Measured rather than tidied away, since a
+		// debugger matching on BASH_COMMAND acts on the text (#629).
+		if r.traceSource(ctx, func() string {
+			var sb strings.Builder
+			sb.WriteString("case ")
+			printNode(&sb, cm.Word)
+			sb.WriteString(" in ")
+			return sb.String()
+		}, cm.Pos().Line()) {
+			return
+		}
 		trace.string("case ")
 		trace.expr(cm.Word)
 		trace.string(" in")
@@ -2937,25 +3121,75 @@ func (r *Runner) printFuncDef(name string, body *syntax.Stmt) {
 // firing before each simple command including every stage of a pipeline
 // and a bare assignment, BASH_COMMAND as the *unexpanded* source, and a
 // function body or a sourced file left untraced unless "functrace" is
-// set. Two known divergences, stated so they are not surprises: bash
-// also fires for a `for` head once per iteration and for a `case` head
-// once, and koi does neither (#629); and koi's pipeline stages run
-// concurrently, so their traces can interleave where bash's are strictly
-// left to right.
+// set. A compound *head* traces too and is handled where the loop runs
+// rather than here — see [Runner.traceSource]'s callers (#629). One
+// known divergence, stated so it is not a surprise: koi's pipeline
+// stages run concurrently, so their traces can interleave where bash's
+// are strictly left to right.
 // traceCommand reports whether the statement should be skipped: under
 // extdebug, a DEBUG trap answering nonzero cancels the command (#355).
 func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) bool {
-	if r.handlingTrap {
+	if !tracedCommand(st.Cmd) {
+		return false
+	}
+	return r.traceSource(ctx, func() string { return stmtSource(st) }, st.Pos().Line())
+}
+
+// traceSource is the one firing point for DEBUG: it publishes
+// BASH_COMMAND and runs the trap for something happening at line,
+// reporting whether extdebug's cancel rule says to skip it.
+//
+// The source is a thunk because rendering a statement back to text is
+// the expensive half and almost never wanted — no trap is set in the
+// overwhelming majority of runs.
+//
+// **BASH_COMMAND is not maintained inside a trap's action**, measured:
+// bash freezes it at whatever the shell was running when the trap
+// fired, so a RETURN action's own statements — and the statements of a
+// function that action calls — all report the command that came before.
+// It is left alone rather than saved and restored, which is the same
+// answer with nothing to put back (#630).
+func (r *Runner) traceSource(ctx context.Context, source func() string, line uint) bool {
+	if r.inDebugTrap {
 		return false
 	}
 	if !r.anyTrapSet() {
 		return false
 	}
-	if !tracedCommand(st.Cmd) {
-		return false
+	if !r.handlingTrap {
+		r.setVarString(shellCommandVar, source())
 	}
-	r.setVarString(shellCommandVar, stmtSource(st))
-	return r.fireDebugTrap(ctx, st.Pos().Line())
+	// The line is the one `$LINENO` would report, so a separately
+	// parsed chunk — an eval'd string, a trap's action — is numbered
+	// where it was spliced in rather than from 1.
+	return r.fireDebugTrap(ctx, line+r.lineOffset)
+}
+
+// forHeadSource renders a `for` or `select` head the way bash publishes
+// it in BASH_COMMAND: the keyword, the name, and the word list, with no
+// `; do` after it (#629).
+//
+// `for i; do` is rendered as `for i in "$@"` — bash prints the list the
+// loop *means* rather than the absence, the same rule the C-style
+// header follows for an omitted section (see [loopPart]).
+func forHeadSource(cm *syntax.ForClause, y *syntax.WordIter, name string) string {
+	var sb strings.Builder
+	if cm.Select {
+		sb.WriteString("select ")
+	} else {
+		sb.WriteString("for ")
+	}
+	sb.WriteString(name)
+	sb.WriteString(" in")
+	if !y.InPos.IsValid() {
+		sb.WriteString(` "$@"`)
+		return sb.String()
+	}
+	for _, item := range y.Items {
+		sb.WriteString(" ")
+		printNode(&sb, item)
+	}
+	return sb.String()
 }
 
 // tracedCommand reports whether bash fires DEBUG for this kind of
@@ -2974,10 +3208,11 @@ func (r *Runner) traceCommand(ctx context.Context, st *syntax.Stmt) bool {
 // whose body declares its locals traced none of those lines, which for
 // a debugger stepping through is the body's whole preamble.
 //
-// A `for` head does trace in bash, once per iteration, and a `case`
-// head once; that is the recorded divergence (#629) rather than an
-// omission here, because those are compound — firing for them means
-// firing *beside* their bodies rather than instead of them.
+// A compound *head* traces too — a `for` head once per iteration, a
+// `select` head once, a `case` head once, and a C-style loop's three
+// arithmetic sections each time they are evaluated — but that firing
+// happens beside the body rather than instead of it, so it lives at the
+// loop rather than in this leaf test (#629).
 func tracedCommand(cmd syntax.Command) bool {
 	switch cmd.(type) {
 	case *syntax.CallExpr, *syntax.DeclClause, *syntax.TestClause,
@@ -3004,7 +3239,7 @@ func (r *Runner) anyTrapSet() bool {
 // built on (#355). The skipped command leaves $? as 0, measured against
 // 5.3.
 func (r *Runner) fireDebugTrap(ctx context.Context, line uint) bool {
-	if r.callbackDebug == "" {
+	if r.callbackDebug == "" || r.inDebugTrap {
 		return false
 	}
 	// A function body and a sourced file are both traced only under
@@ -3016,7 +3251,7 @@ func (r *Runner) fireDebugTrap(ctx context.Context, line uint) bool {
 	if r.debugTrapOff || (r.inSource && !r.opts[optFuncTrace]) {
 		return false
 	}
-	code := r.trapCallback(ctx, r.callbackDebug, "debug", line)
+	code := r.trapCallback(ctx, r.callbackDebug, debugTrapName, line)
 	return code != 0 && r.opts[optExtDebug]
 }
 
@@ -3313,7 +3548,7 @@ func (r *Runner) runSubshellExitTrap(ctx context.Context) {
 		return
 	}
 	r.exitTrapFired = true
-	r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
+	r.runTrapCallback(ctx, r.callbackExit, exitTrapName, r.callbackExitLine, true)
 }
 
 //nolint:unparam // the status feeds extdebug's skip rule via trapCallback
@@ -3321,11 +3556,31 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	if callback == "" {
 		return 0 // nothing to do
 	}
-	if r.handlingTrap {
-		return 0 // don't recurse, as that could lead to cycles
+	// The recursion guard is per kind, and only per kind (#630). A trap
+	// re-entering itself is the cycle worth refusing — a RETURN action
+	// that calls a function would otherwise fire RETURN forever — while
+	// a trap firing *inside another trap's action* is ordinary bash:
+	// measured, a function called from the ERR trap fires its own
+	// RETURN trap, and every statement of a non-DEBUG action is traced
+	// by DEBUG. One flag for all of them made a debugger blind to the
+	// handler it was stepping through.
+	if slices.Contains(r.runningTraps, name) {
+		return 0
 	}
+	oldHandling, oldDebug := r.handlingTrap, r.inDebugTrap
 	r.handlingTrap = true
-	defer func() { r.handlingTrap = false }()
+	if name == debugTrapName {
+		// DEBUG's action is the one that suppresses tracing, and the
+		// flag is saved and restored rather than cleared: a DEBUG trap
+		// firing from inside another trap's action must put back what
+		// it found, not assert that no trap is running.
+		r.inDebugTrap = true
+	}
+	r.runningTraps = append(r.runningTraps, name)
+	defer func() {
+		r.runningTraps = r.runningTraps[:len(r.runningTraps)-1]
+		r.handlingTrap, r.inDebugTrap = oldHandling, oldDebug
+	}()
 
 	p := syntax.NewParser()
 	// TODO: do this parsing when "trap" is called?
@@ -3356,15 +3611,25 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 	oldErrTrapFired := r.errTrapFired
 	oldPipeStatusSet, oldPipeStatus := r.pipeStatusSet, r.pipeStatus
 	oldPipeStatusVar := r.lookupVar(shellPipeStatusVar)
+	// The action's own lines are numbered from baseLine, absolutely
+	// rather than cumulatively: a RETURN action fired from inside an
+	// eval'd string still reports the returning frame's line, not that
+	// line plus the eval's shift. The runner's own offset moves with
+	// the expander's because they are two readings of one number — the
+	// DEBUG trace of a non-DEBUG action's statements reads it (#630),
+	// as does a diagnostic raised inside the action.
+	oldLine := r.lineOffset
+	r.lineOffset = 0
+	if baseLine > 0 {
+		r.lineOffset = baseLine - 1
+	}
 	var oldLineOffset uint64
 	if r.ecfg != nil {
 		oldLineOffset = r.ecfg.LineOffset
-		r.ecfg.LineOffset = 0
-		if baseLine > 0 {
-			r.ecfg.LineOffset = uint64(baseLine) - 1
-		}
+		r.ecfg.LineOffset = uint64(r.lineOffset)
 	}
 	r.stmts(ctx, file.Stmts)
+	r.lineOffset = oldLine
 	if r.ecfg != nil {
 		r.ecfg.LineOffset = oldLineOffset
 	}
@@ -4571,8 +4836,18 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			callLine: pos.Line(),
 			isFunc:   true,
 		})
+		popArgs := r.pushCallArgs(args[1:])
 
 		oldReturnTrapOff, oldDebugTrapOff := r.enterFuncForTraps(name)
+
+		// A function's body has line numbers of its own, so whatever
+		// shift the *caller* was under does not apply to it — the body
+		// was parsed where it was written. Without this a function
+		// called from a trap's action, or from an `eval`, reported its
+		// lines shifted by the caller's base: `$LINENO` inside it, the
+		// location on a diagnostic, and the line every DEBUG trace of
+		// its statements carries (#630).
+		restoreLines := r.resetLines()
 
 		// Functions run in a nested scope.
 		// Note that [Runner.exec] below does something similar.
@@ -4608,7 +4883,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 		// stack. Run's own firing point skips it once fired.
 		if r.exit.exiting && !r.exitTrapFired && !r.handlingTrap && r.callbackExit != "" {
 			r.exitTrapFired = true
-			r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
+			r.runTrapCallback(ctx, r.callbackExit, exitTrapName, r.callbackExitLine, true)
 		}
 
 		// Checked before the frame is popped, since that is when a
@@ -4619,6 +4894,8 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 
 		r.errTrapFired, r.errTrapDepth = oldErrTrapFired, oldErrTrapDepth
 		r.pipeStatusSet, r.pipeStatus = oldPipeStatusSet, oldPipeStatus
+		restoreLines()
+		popArgs()
 		popFrame()
 		r.Params = oldParams
 		r.inFunc = oldInFunc

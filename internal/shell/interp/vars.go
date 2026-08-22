@@ -286,6 +286,12 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 			return v
 		}
 		return expand.Variable{}
+	// The call *arguments*, which the same stack knows and which only
+	// `extdebug` maintains above the script's own parameters (#637).
+	case shellArgvVar:
+		return r.argvVar()
+	case shellArgcVar:
+		return r.argcVar()
 	case "$":
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(os.Getpid())
 	case "RANDOM": // not for cryptographic use
@@ -490,13 +496,14 @@ var dynamicVars = map[string]bool{
 // FUNCNAME, DIRSTACK and GROUPS are all unsettable in bash and keep
 // #547's one-way rule, so membership is measured per name (#691).
 //
-// BASH_ARGV and BASH_ARGC refuse in bash too and are absent here for the
-// reason [dynamicListing] gives: koi does not have them yet (#637), and
-// refusing to unset a name the shell never supplies would claim an
-// interface it does not back.
+// BASH_ARGV and BASH_ARGC join them now that the shell supplies them
+// (#637); until it did, refusing to unset a name it never provided
+// would have claimed an interface it did not back.
 var unsettableNever = map[string]bool{
 	shellSourceVar: true,
 	shellLineNoVar: true,
+	shellArgvVar:   true,
+	shellArgcVar:   true,
 }
 
 // LINENO is absent from that list on purpose: it is answered in
@@ -523,12 +530,14 @@ var unsettableNever = map[string]bool{
 //	declare -i RANDOM
 //	declare -- SECONDS
 //
-// so they are here now. BASH_ARGC and BASH_ARGV stay absent for the
-// reason #691 gave: koi does not have them at all yet (#637), and
-// listing a name the shell never supplies would claim an interface it
-// does not back. HISTCMD, BASH_SUBSHELL, COMP_WORDBREAKS and OPTERR are
-// absent on that same rule — bash lists all four and koi answers empty
-// for each, so they are recorded on #720 rather than faked here.
+// so they are here now. BASH_ARGC and BASH_ARGV joined them with #637;
+// their empty shapes are never actually used — both always answer, with
+// the empty array at worst — but a listing has to know the names to
+// print them at all. HISTCMD, BASH_SUBSHELL, COMP_WORDBREAKS and OPTERR
+// are absent on #691's rule — koi does not supply them, and listing a
+// name the shell never answers would claim an interface it does not
+// back: bash lists all four and koi answers empty for each, so they are
+// recorded on #720 rather than faked here.
 //
 // The empty shapes differ per name, and each one is measured: FUNCNAME
 // outside a function prints with no value at all (`declare -a
@@ -542,6 +551,8 @@ var dynamicListing = map[string]expand.Variable{
 	shellFuncNameVar: {Kind: expand.Indexed},
 	shellSourceVar:   {Kind: expand.Indexed, Set: true, List: []string{}},
 	shellLineNoVar:   {Kind: expand.Indexed, Set: true, List: []string{}},
+	shellArgvVar:     {Kind: expand.Indexed, Set: true, List: []string{}},
+	shellArgcVar:     {Kind: expand.Indexed, Set: true, List: []string{}},
 	"DIRSTACK":       {Kind: expand.Indexed, Set: true, List: []string{}},
 	"GROUPS":         {Kind: expand.Indexed, Set: true, List: []string{}},
 	"SHELLOPTS":      {Kind: expand.String, Set: true, ReadOnly: true},
