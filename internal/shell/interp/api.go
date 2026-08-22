@@ -997,6 +997,14 @@ func AccessHandler(f AccessHandlerFunc) RunnerOption {
 }
 
 func stdinFile(r io.Reader) (*os.File, error) {
+	if dup, ok := r.(shellFD); ok {
+		// `exec 0< /dev/stdin` and friends name a descriptor the shell
+		// already holds (#645), so the file behind it is the answer — a
+		// copying goroutine would consume input nothing asked it to read.
+		if f := dup.file(); f != nil {
+			return f, nil
+		}
+	}
 	switch r := r.(type) {
 	case *os.File:
 		return r, nil
