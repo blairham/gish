@@ -7295,7 +7295,7 @@ done <<< 2`,
 	{"declare -n r=a; a=(1 2 3); unset 'r[1]'; echo ${!a[@]}", "0 2\n"},
 
 	// declare
-	{"declare -B foo", "declare: invalid option \"-B\"\nexit status 2 #JUSTERR"},
+	{"declare -B foo", "declare: -B: invalid option\ndeclare: usage: declare [-aAfFgiIlnrtux] [name[=value] ...] or declare -p [-aAfFilnrtux] [name ...]\nexit status 2 #JUSTERR"},
 	{"a=b; declare a; echo $a; declare a=; echo $a", "b\n\n"},
 	{"a=b; declare a; echo $a", "b\n"},
 	{
@@ -7306,8 +7306,8 @@ done <<< 2`,
 	{"a=x=y; declare $a; echo $a $x", "x=y y\n"},
 	{"a='x=(y)'; declare $a; echo $a $x", "x=(y) (y)\n"},
 	{"a='x=b y=c'; declare $a; echo $x $y", "b c\n"},
-	{"declare =bar", "declare: invalid name \"\"\nexit status 1 #JUSTERR"},
-	{"declare $unset=$unset", "declare: invalid name \"\"\nexit status 1 #JUSTERR"},
+	{"declare =bar", "declare: `': not a valid identifier\nexit status 1 #JUSTERR"},
+	{"declare $unset=$unset", "declare: `': not a valid identifier\nexit status 1 #JUSTERR"},
 
 	// export
 	{"declare foo=bar; $ENV_PROG | grep '^foo='", "exit status 1"},
@@ -8118,7 +8118,7 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 	{"declare -x RUN_{VERY_,}EXPENSIVE_TESTS=yes; echo $RUN_EXPENSIVE_TESTS", "yes\n"},
 	{"declare {A,B}_VAR; A_VAR=1; B_VAR=2; echo $A_VAR $B_VAR", "1 2\n"},
 	{"declare {foo=x,bar=y}; echo $foo $bar", "x y\n"},
-	{`declare foo{bar=baz`, "declare: invalid name \"foo{bar\"\nexit status 1 #JUSTERR"},
+	{`declare foo{bar=baz`, "declare: `foo{bar': not a valid identifier\nexit status 1 #JUSTERR"},
 	{"{a,b}=value", "a=value: command not found\nexit status 127 #JUSTERR"},
 
 	// tilde expansion
@@ -8570,6 +8570,251 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 	{
 		"mapfile -t butter <<EOF\na\nb\nc\nEOF\n" + `for x in "${butter[@]}"; do echo "$x"; done`,
 		"a\nb\nc\n",
+	},
+
+	// The declare/readonly/nameref attribute cluster: #660, #661, #663,
+	// #690, #691. Where the subject is a *state* rather than a wording,
+	// the diagnostic goes to /dev/null and the case asserts the status
+	// and what `declare -p` shows afterwards -- which makes it a full
+	// differential case against bash, since TestRunnerRunConfirm feeds
+	// bash on standard input, where bash prefixes `bash: line N:` on a
+	// diagnostic and koi prefixes nothing (#120, #571). The wordings get
+	// their own #JUSTERR cases below.
+
+	// #660: an attribute that changes how the value is stored is refused
+	// on a readonly variable even with nothing to assign.
+	{
+		"readonly V=1; declare -i V 2>/dev/null; echo rc=$?; declare -p V",
+		"rc=1\ndeclare -r V=\"1\"\n",
+	},
+	{
+		// Both polarities, and a case modification as well as the
+		// integer bit.
+		"readonly V=1; declare -u V 2>/dev/null; echo rc=$?; declare +i V 2>/dev/null; echo rc=$?; declare -p V",
+		"rc=1\nrc=1\ndeclare -r V=\"1\"\n",
+	},
+	{
+		// The other half of the same rule: -x, -t and a bare declaration
+		// are accepted on the same readonly name, which is why the
+		// refusal is per attribute rather than per naked declaration.
+		"readonly V=1; declare -x V; echo rc=$?; declare -t V; echo rc=$?; declare V; echo rc=$?; declare -p V",
+		"rc=0\nrc=0\nrc=0\ndeclare -rtx V=\"1\"\n",
+	},
+	{
+		// It holds even when the attribute is already on.
+		"declare -ir W=1; declare -i W 2>/dev/null; echo rc=$?; declare -p W",
+		"rc=1\ndeclare -ir W=\"1\"\n",
+	},
+	{
+		"readonly V=1; declare -a V 2>/dev/null; echo rc=$?; declare -p V",
+		"rc=1\ndeclare -r V=\"1\"\n",
+	},
+	{
+		"readonly V=1; declare -i V",
+		"declare: V: readonly variable\nexit status 1 #JUSTERR",
+	},
+	{
+		// `+n` on a readonly variable that is not a reference has
+		// nothing to detach, and is a silent no-op rather than a
+		// readonly complaint.
+		"readonly W=1; declare +n W; echo rc=$?; declare -p W",
+		"rc=0\ndeclare -r W=\"1\"\n",
+	},
+	{
+		// A readonly reference *with* a target keeps the attribute that
+		// decides which variable a write reaches.
+		"f(){ typeset q=1; typeset -n -r fr=q; typeset +n fr 2>/dev/null; echo rc=$?; typeset -p fr; }; f",
+		"rc=1\ndeclare -nr fr=\"q\"\n",
+	},
+	{
+		// A *dangling* readonly reference does lose it.
+		"f(){ declare -r -n d; declare +n d; echo rc=$?; declare -p d; }; f",
+		"rc=0\ndeclare -r d\n",
+	},
+	{
+		// The write behind `+n` lands, where re-storing the old variable
+		// afterwards put the previous value back over it.
+		"p=1; declare +n p=2; declare -p p",
+		"declare -- p=\"2\"\n",
+	},
+
+	// #661: readonly's -n is export -n's spelling, not declare's nameref.
+	{
+		"b5=one; declare -n f5=b5; readonly -n f5; echo rc=$?; declare -p f5 b5",
+		"rc=0\ndeclare -n f5=\"b5\"\ndeclare -- b5=\"one\"\n",
+	},
+	{
+		"v=1; readonly -n v; echo rc=$?; declare -p v",
+		"rc=0\ndeclare -- v=\"1\"\n",
+	},
+	{
+		// The value is assigned and the attribute is not.
+		"readonly -n z=9; echo rc=$?; declare -p z",
+		"rc=0\ndeclare -- z=\"9\"\n",
+	},
+	{
+		// bash never takes readonly off a variable that has it, and says
+		// nothing about the request.
+		"readonly w=2; readonly -n w; echo rc=$?; declare -p w",
+		"rc=0\ndeclare -r w=\"2\"\n",
+	},
+	{
+		// A name it would only be taking an attribute off is not created.
+		"readonly -n nope; echo rc=$?; declare -p nope 2>/dev/null; echo rc2=$?",
+		"rc=0\nrc2=1\n",
+	},
+	{
+		"readonly -a -n ar1; echo rc=$?; declare -p ar1 2>/dev/null; echo rc2=$?",
+		"rc=0\nrc2=1\n",
+	},
+	{
+		// The attribute letters are not export's or readonly's options.
+		"export -i v",
+		"export: -i: invalid option\nexport: usage: export [-fn] [name[=value] ...] or export -p [-f]\nexit status 2 #JUSTERR",
+	},
+	{
+		"readonly -i v",
+		"readonly: -i: invalid option\nreadonly: usage: readonly [-aAf] [name[=value] ...] or readonly -p\nexit status 2 #JUSTERR",
+	},
+	{
+		// A `+` word is a name for export and readonly, not an option --
+		// which is what kept the command's only operand.
+		"export +i v 2>/dev/null; echo rc=$?; declare -p v",
+		"rc=1\ndeclare -x v\n",
+	},
+	{
+		"readonly +i k=3 2>/dev/null; echo rc=$?; declare -p k",
+		"rc=1\ndeclare -r k=\"3\"\n",
+	},
+	{
+		"readonly +i k",
+		"readonly: `+i': not a valid identifier\nexit status 1 #JUSTERR",
+	},
+	{
+		// A lone `-` is an option only for `local`.
+		"declare - 2>/dev/null; echo rc=$?",
+		"rc=1\n",
+	},
+	{
+		// An invalid name is reported and the next name still declared.
+		"declare 1x z=1 2>/dev/null; echo rc=$?; declare -p z",
+		"rc=1\ndeclare -- z=\"1\"\n",
+	},
+
+	// #663: a reference that names itself is a warning inside a function
+	// and a refusal at the top level, and the warning is followed by the
+	// declaration going through.
+	{
+		"v=global; f(){ typeset -n v=v; v=inside; }; f 2>/dev/null; echo \"[$v]\"; declare -p v",
+		"[inside]\ndeclare -- v=\"inside\"\n",
+	},
+	{
+		// The reference survives the write, and what it stands for is
+		// the variable in the enclosing scope.
+		"xxx=7; f(){ typeset -n xxx=xxx; xxx=foo; declare -p xxx; }; f 2>/dev/null; echo \"[$xxx]\"",
+		"declare -n xxx=\"xxx\"\n[foo]\n",
+	},
+	{
+		// Reading *through* the reference, inside the scope that holds
+		// it, answers the enclosing scope's variable rather than
+		// looping: the read half of the same rule, which the write
+		// cases cannot see because they read at the top level where the
+		// reference is out of scope.
+		"v=outer; f(){ typeset -n v=v; echo \"read=[$v]\"; }; f 2>/dev/null",
+		"read=[outer]\n",
+	},
+	{
+		// Every reader goes through the same resolution: a length, a
+		// slice, a default and arithmetic.
+		"v=one; f(){ typeset -n v=v; echo \"len=${#v} slice=${v:0:2} def=${v-none} sum=$((v))\"; }; f 2>/dev/null",
+		"len=3 slice=on def=one sum=0\n",
+	},
+	{
+		"f(){ typeset -n v=v; }; f",
+		"typeset: warning: v: circular name reference\nwarning: v: circular name reference\n #JUSTERR",
+	},
+	{
+		// The top level still refuses, and declares nothing.
+		"declare -n v=v 2>/dev/null; echo rc=$?; declare -p v 2>/dev/null; echo rc2=$?",
+		"rc=1\nrc2=1\n",
+	},
+	{
+		// The target's base name is what is compared, and a fresh local
+		// does not consult the outer variable's kind.
+		"a=(0); f(){ local -n a=$1; }; f 'a[0]' 2>/dev/null; echo rc=$?",
+		"rc=0\n",
+	},
+	{
+		// The self-reference rule is checked before the already-an-array
+		// one, which is bash's order.
+		"y=(1); declare -n y='y[0]' 2>/dev/null; echo rc=$?; declare -p y",
+		"rc=1\ndeclare -a y=([0]=\"1\")\n",
+	},
+	{
+		// The attribute is refused and the array is still written.
+		"declare -n array=(one two three) 2>/dev/null; echo rc=$?; declare -p array",
+		"rc=1\ndeclare -a array=([0]=\"one\" [1]=\"two\" [2]=\"three\")\n",
+	},
+
+	// #690: a naked declaration records the name, and -p with names is a
+	// request rather than a query for export and readonly.
+	{
+		"declare e; declare -p e; echo rc=$?",
+		"declare -- e\nrc=0\n",
+	},
+	{
+		// Declared is not set.
+		`declare e; echo "${e-unset}"; echo "${e+set}"`,
+		"unset\n\n",
+	},
+	{
+		// A declared-but-unset scalar has no element 0 to carry.
+		"declare a; a+=(b); declare -p a",
+		"declare -a a=([0]=\"b\")\n",
+	},
+	{
+		"a=(1); readonly a; readonly -p a; echo rc=$?",
+		"rc=0\n",
+	},
+	{
+		// It is a request: the attribute is applied, only the printing
+		// is suppressed.
+		"b=2; readonly -p b; echo rc=$?; declare -p b",
+		"rc=0\ndeclare -r b=\"2\"\n",
+	},
+	{
+		"c=3; export -p c; echo rc=$?; declare -p c",
+		"rc=0\ndeclare -x c=\"3\"\n",
+	},
+	{
+		// A name neither can find is not an error either.
+		"readonly -p zzz; echo rc=$?; export -p yyy; echo rc2=$?",
+		"rc=0\nrc2=0\n",
+	},
+
+	// #691: two attribute gaps on the shell's own variables.
+	// BASH_VERSINFO's own readonly bit is not testable here: the array is
+	// declared by the shell around the interpreter (internal/repl), not by
+	// a runner, so its case lives in cmd/koi/shellvarattrs_test.go.
+	{
+		"unset BASH_SOURCE 2>/dev/null; echo rc=$?",
+		"rc=1\n",
+	},
+	{
+		// Not "the computed variables refuse unset": FUNCNAME and
+		// GROUPS are unsettable, which is what makes the refusal a
+		// per-name fact rather than a class.
+		"unset BASH_LINENO 2>/dev/null; echo rc=$?; unset FUNCNAME; echo rc2=$?; unset GROUPS; echo rc3=$?",
+		"rc=1\nrc2=0\nrc3=0\n",
+	},
+	{
+		// -n refuses too, and the function namespace is untouched.
+		"unset -n BASH_SOURCE 2>/dev/null; echo rc=$?; unset -f BASH_SOURCE; echo rc2=$?",
+		"rc=1\nrc2=0\n",
+	},
+	{
+		"unset BASH_SOURCE",
+		"unset: BASH_SOURCE: cannot unset\nexit status 1 #JUSTERR",
 	},
 }
 

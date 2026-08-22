@@ -153,7 +153,13 @@ func shellIdentitySource(version string) string {
 	}
 	return strings.Join([]string{
 		"BASH_VERSION=" + singleQuote(claimedBashVersion),
-		"BASH_VERSINFO=(" + strings.Join([]string{
+		// `readonly -a`, because bash's BASH_VERSINFO is `declare -ar`
+		// and refuses a write. It matters because the array is a
+		// *feature probe* — fzf picks its Ctrl-T implementation on
+		// `BASH_VERSINFO[0] < 4` — and a probe a script can silently
+		// overwrite is one whose answer nothing can rely on (#691).
+		// The values themselves stay #120's decided divergence.
+		"readonly -a BASH_VERSINFO=(" + strings.Join([]string{
 			claimedBashMajor, claimedBashMinor, claimedBashPatch,
 			claimedBashBuild, claimedBashRelease, singleQuote(claimedBashMachType),
 		}, " ") + ")",

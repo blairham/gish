@@ -392,6 +392,16 @@ func (e expandEnv) Get(name string) expand.Variable {
 	return e.r.lookupVar(name)
 }
 
+// OuterGet forwards [expand.OuterEnviron] to the scope chain, so a
+// self-referencing nameref resolves the same way inside an expansion as
+// it does in an assignment (#663).
+func (e expandEnv) OuterGet(name string) expand.Variable {
+	if outer, ok := e.r.writeEnv.(expand.OuterEnviron); ok {
+		return outer.OuterGet(name)
+	}
+	return expand.Variable{}
+}
+
 func (e expandEnv) Set(name string, vr expand.Variable) error {
 	// A readonly write from inside an expansion — $((xx++)), ${x:=v} —
 	// is fatal to the input unit in bash (#370): the command aborts with
@@ -1303,8 +1313,13 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 						prev = r.lookupVar(base)
 					}
 				}
+				selfRef := false
 				if n, v := prev.Resolve(r.writeEnv); n != "" {
 					name, prev = n, v
+					// A reference to its own name stands for the variable
+					// in the scope outside the one holding it, so the
+					// write descends and the reference survives (#663).
+					selfRef = r.selfRefOuter(n)
 				}
 				// Here we have a naked "foo=bar", so if we inherited a local var from a parent
 				// function we want to signal that we are modifying the parent var rather than
@@ -1338,6 +1353,7 @@ func (r *Runner) cmd(ctx context.Context, cm syntax.Command) {
 					return
 				}
 				name, vr := r.assignVal(name, prev, as, "")
+				vr.Global = vr.Global || selfRef
 				r.setVarWithIndex(prev, name, as.Index, vr, as.Append && as.Index != nil)
 
 				if !tracingEnabled {
@@ -1936,8 +1952,9 @@ func (r *Runner) declClause(variant string, args []*syntax.Assign) {
 	declQuery := "" // "-f", "-F" or "-p" for query mode
 	sawP := false   // "-p" was given, whether or not it won declQuery
 	namedAny := false
-	unref := false   // "+n": detach a nameref
-	inherit := false // "-I": take the enclosing scope's value and attributes
+	unref := false    // "+n": detach a nameref
+	inherit := false  // "-I": take the enclosing scope's value and attributes
+	dropAttr := false // "readonly -n": take the attribute *off* rather than on
 	switch variant {
 	case "declare", "typeset":
 		// When used in a function, "declare" acts as "local"
@@ -1973,8 +1990,33 @@ assignLoop:
 		// argument before moving on; "declare -ri" is -r and -i, and
 		// stopping after the first silently dropped the rest.
 		sawFlag := fp.more()
+		if sawFlag && declWordIsName(variant, as.Name.Value) {
+			// Two words are options for some of these builtins and plain
+			// names for the others, and reading one as an option when
+			// bash reads it as a name loses the command's only operand.
+			// `export +i` dumped the whole environment at 0 where bash
+			// answers `` export: `+i': not a valid identifier `` at 1
+			// (#661), and `declare -` is bash's `` `-': not a valid
+			// identifier `` where only `local -` saves the shell options.
+			sawFlag = false
+			fp = flagParser{}
+		}
 		for fp.more() {
-			switch flag := fp.flag(); flag {
+			flag := fp.flag()
+			if !declOptionValid(variant, flag) {
+				// Each of these builtins has its own option set, and only
+				// declare/typeset/local take the attribute letters:
+				// `export -i v` and `readonly -i v` are bash's invalid
+				// option at 2, where koi shared one table across all five
+				// and quietly applied the integer attribute (#661). The
+				// usage line that follows is not a diagnostic, so it goes
+				// out unlocated.
+				r.errf("%s: %s: invalid option\n", variant, flag)
+				r.rawErrf("%s: usage: %s\n", variant, declUsage(variant))
+				r.exit.code = 2
+				return
+			}
+			switch flag {
 			case "-x", "-r", "-i", "+i", "-t", "+t", "+x":
 				modes = append(modes, flag)
 			case "+r":
@@ -1996,23 +2038,33 @@ assignLoop:
 				inherit = true
 			case "-":
 				// `local -` saves the shell options and restores them
-				// when the function returns.
-				if variant != "local" && !r.inFunc {
-					r.errf("%s: invalid option %q\n", variant, flag)
-					r.exit.code = 2
-					return
-				}
+				// when the function returns. Every other variant reads a
+				// lone `-` as a name, which declWordIsName above has
+				// already routed away from here.
 				r.saveLocalOpts()
 				continue assignLoop
 			case "-n":
-				// -n means two different things: a nameref for
-				// declare/local/typeset, and "remove the export
-				// attribute" for export, which is bash's (#387).
-				if variant == "export" {
+				// -n means three different things. It is a nameref for
+				// declare/local/typeset; for export it removes the export
+				// attribute, which is bash's (#387); and for readonly it
+				// is that *same* spelling rather than declare's, so it
+				// asks for the readonly attribute to come off — which
+				// bash never does to a variable that has it, leaving the
+				// command a no-op. koi read it as the nameref flag and
+				// marked the reference readonly, so `readonly -n ref`
+				// answered `declare -nr ref` where bash reports nothing
+				// and changes nothing (#661).
+				switch variant {
+				case "export":
 					modes = append(modes, "+x")
-					break
+				case "readonly":
+					if i := slices.Index(modes, "-r"); i >= 0 {
+						modes = slices.Delete(modes, i, i+1)
+					}
+					dropAttr = true
+				default:
+					valType = flag
 				}
-				valType = flag
 			case "-a", "-A":
 				valType = flag
 			case "+n":
@@ -2036,7 +2088,11 @@ assignLoop:
 				}
 				declQuery = flag
 			default:
-				r.errf("%s: invalid option %q\n", variant, flag)
+				// declOptionValid above rejects any option none of these
+				// builtins takes; reaching here means that table and this
+				// switch have drifted apart.
+				r.errf("%s: %s: invalid option\n", variant, flag)
+				r.rawErrf("%s: usage: %s\n", variant, declUsage(variant))
 				r.exit.code = 2
 				return
 			}
@@ -2092,9 +2148,14 @@ assignLoop:
 		// defines and runs, so `export -f foo-bar` must not refuse it
 		// (#387). Only the variable paths validate.
 		if declQuery != "-f" && declQuery != "-F" && !syntax.ValidName(name) {
-			r.errf("%s: invalid name %q\n", variant, name)
+			// bash's wording quotes the name the way every other
+			// identifier refusal in these builtins does, and it carries
+			// on to the next name rather than abandoning the command:
+			// `declare 1x z=1` reports 1x at 1 and still declares z
+			// (#661, measured for all five variants).
+			r.errf("%s: `%s': not a valid identifier\n", variant, name)
 			r.exit.code = 1
-			return
+			continue assignLoop
 		}
 		if declQuery == "-f" || declQuery == "-F" {
 			// A value alongside -f is refused, and the two variants word
@@ -2210,6 +2271,17 @@ assignLoop:
 			}
 			continue
 		}
+		if declQuery == "-p" && (variant == "export" || variant == "readonly") {
+			// With names, `readonly -p a` and `export -p ev` are
+			// *requests* rather than queries: bash prints nothing at all
+			// — in POSIX mode or out of it — and still applies the
+			// attribute, so `readonly -p b` makes b readonly silently.
+			// The three builtins share one implementation and only
+			// declare's answer was right, so koi printed a `declare`
+			// line for a name nobody asked to see, at 0 either way
+			// (#690). A missing name is not an error here either.
+			declQuery = ""
+		}
 		if declQuery == "-p" {
 			// declare -p name: print variable with attributes.
 			vr := r.lookupVar(name)
@@ -2230,34 +2302,48 @@ assignLoop:
 			continue
 		}
 		if unref {
-			r.unsetNameRef(name, as)
+			r.unsetNameRef(variant, name, as)
 			continue
 		}
-		if valType == "-n" {
-			// A reference cannot be an array or an array element (#610).
-			// bash names the element as written for a subscript and the
-			// variable for a name that already holds an array, answers 1,
-			// and leaves what it refused exactly as it was — so `typeset
-			// -n x=y` over `x=(the browns suck)` keeps the array rather
-			// than replacing it with a reference to y.
+		// freshLocal is settled here rather than below because the
+		// nameref rules need it: a declaration that creates a *new*
+		// local has no outer variable to consult, so `local -n c=c` over
+		// a global array c is neither an array nor a resolvable
+		// reference — see the two uses below and the long comment at the
+		// resolution itself.
+		freshLocal := local && !global && !r.localInScope(name) &&
+			!r.declTempBound[name] && !inherit
+		// refType is valType for this one name: a `-n` that turns out
+		// not to be applicable is dropped per name rather than for the
+		// command, since `declare -n a=(1) b=c` still makes b a
+		// reference.
+		refType := valType
+		if refType == "-n" && as.Index != nil {
+			// A reference cannot be an array element (#610). bash names
+			// the element as written, answers 1, and leaves what it
+			// refused exactly as it was.
 			//
 			// Checked *before* the target validation below, because
 			// `typeset -n x[3]=x` is the array error in bash rather than
 			// the self-reference one — the order is measured, not derived.
-			if as.Index != nil {
-				r.errf("%s: %s[%s]: reference variable cannot be an array\n",
-					variant, name, subscriptText(as.Index))
-				r.exit.code = 1
-				continue assignLoop
-			}
-			switch r.lookupVar(name).Kind {
-			case expand.Indexed, expand.Associative:
-				r.errf("%s: %s: reference variable cannot be an array\n", variant, name)
-				r.exit.code = 1
-				continue assignLoop
-			}
+			r.errf("%s: %s[%s]: reference variable cannot be an array\n",
+				variant, name, subscriptText(as.Index))
+			r.exit.code = 1
+			continue assignLoop
 		}
-		if valType == "-n" && as.Value != nil {
+		if refType == "-n" && as.Array != nil {
+			// A compound value is refused under the array wording rather
+			// than the identifier one, and the refusal is the
+			// *attribute's* rather than the assignment's: bash reports
+			// `declare -n array=(one two three)` at 1 and still writes
+			// the array, leaving `declare -a array=([0]="one" ...)`,
+			// where koi read the literal through assignVal and made a
+			// reference to it.
+			r.errf("%s: %s: reference variable cannot be an array\n", variant, name)
+			r.exit.code = 1
+			refType = ""
+		}
+		if refType == "-n" && as.Value != nil {
 			// A nameref's target must be a name, optionally with a
 			// subscript, and may not be the reference itself (#389).
 			// Both were accepted silently, so `declare -n foo=12345`
@@ -2273,10 +2359,48 @@ assignLoop:
 				r.exit.code = 1
 				continue
 			}
-			if target == name {
-				r.errf("%s: %s: nameref variable self references not allowed\n", variant, name)
+			// A reference that names itself is two different things
+			// depending on where it is declared, and only the top-level
+			// one is refused (#663). Inside a function bash *warns* and
+			// declares it anyway — twice, once under the builtin's name
+			// and once from the assignment underneath it — so the
+			// variable left behind is a self-referencing nameref rather
+			// than nothing, and every later line that reads it agrees
+			// with bash instead of diverging from the refusal onwards.
+			// The comparison is on the target's base name, so
+			// `local -n a='a[0]'` is circular too, and `declare -g -n s=s`
+			// inside a function warns even though the name it makes is
+			// global: what bash keys on is being in a function at all.
+			if base, _, ok := cutElemSubscript(target); (ok && base == name) || target == name {
+				if !r.inFunc {
+					r.errf("%s: %s: nameref variable self references not allowed\n", variant, name)
+					r.exit.code = 1
+					continue
+				}
+				r.errf("%s: warning: %s: circular name reference\n", variant, name)
+				r.errf("warning: %s: circular name reference\n", name)
+			}
+		}
+		if refType == "-n" && !freshLocal {
+			// A name that already holds an array cannot become a
+			// reference: bash answers 1 and keeps the array, so
+			// `typeset -n x=y` over `x=(the browns suck)` leaves the
+			// array alone. Checked *after* the target validation and the
+			// self-reference rule above, which is bash's order —
+			// `declare -n array='(one two three)'` over an array names
+			// the bad target, and `declare -n y='y[0]'` over one is the
+			// self-reference refusal.
+			//
+			// A fresh local is exempt because the array it would find is
+			// the *outer* variable, which the declaration is about to
+			// shadow rather than convert: `f(){ local -n c=$1; }` called
+			// as `f c` with a global array c is bash's circular warning,
+			// not an array refusal.
+			switch r.lookupVar(name).Kind {
+			case expand.Indexed, expand.Associative:
+				r.errf("%s: %s: reference variable cannot be an array\n", variant, name)
 				r.exit.code = 1
-				continue
+				continue assignLoop
 			}
 		}
 		// A declaration follows a reference before it declares anything
@@ -2300,10 +2424,8 @@ assignLoop:
 		// variable rather than reaching through it — measured, and
 		// following it would refuse the declaration whenever the outer
 		// reference's target happened to be readonly.
-		freshLocal := local && !global && !r.localInScope(name) &&
-			!r.declTempBound[name] && !inherit
 		written := name // the name as the caller spelled it, for diagnostics
-		if valType != "-n" && !freshLocal {
+		if refType != "-n" && !freshLocal {
 			if n, _ := r.lookupVar(name).Resolve(r.writeEnv); n != "" {
 				name = n
 			}
@@ -2352,6 +2474,32 @@ assignLoop:
 				continue assignLoop
 			}
 		}
+		// A *naked* declaration is refused too, when the attribute it
+		// turns on is one that changes how the value is stored (#660).
+		// The refusal is per attribute rather than per declaration, which
+		// is why it is measured per flag: `declare -i V`, `declare +i V`
+		// and `declare -u V` on a readonly V are all `declare: V:
+		// readonly variable` at 1, while bare `declare V`, `declare -x V`
+		// and `declare -t V` on the same name are 0 and silent. koi
+		// accepted the whole set, so a script that turned the integer
+		// attribute on a variable it cannot write was told it worked.
+		if as.Naked && vr.ReadOnly &&
+			(slices.ContainsFunc(modes, valueShapingMode) ||
+				refType == "-a" || refType == "-A") {
+			switch variant {
+			case "declare", "typeset", "local":
+				r.errf("%s: %s: readonly variable\n", variant, written)
+				r.exit.code = 1
+				continue assignLoop
+			}
+		}
+		if dropAttr && as.Naked && !vr.Declared() {
+			// `readonly -n new` declines to create the variable it would
+			// only be taking an attribute off of, so `declare -p` cannot
+			// find it afterwards — even with -a, where the array kind
+			// would otherwise be enough to declare it (#661).
+			continue assignLoop
+		}
 		// A naked declaration whose name carries a subscript declares an
 		// *indexed array*, with no value: `declare d[2]` answers
 		// `declare -a d` and array.tests' `declare -r c[100]` answers
@@ -2363,7 +2511,7 @@ assignLoop:
 		// Per name rather than for the command — `declare d[2] e` leaves
 		// e a scalar — and an explicit -a/-A/-n still wins, since
 		// `declare -A m[k]` is bash's `declare -A m`.
-		nameType := valType
+		nameType := refType
 		if nameType == "" && as.Naked && as.Index != nil {
 			nameType = "-a"
 		}
@@ -2417,6 +2565,23 @@ assignLoop:
 					// declared-but-unset, so KeepValue below — which
 					// asks the store to keep the outer variable's
 					// value — is exactly what must not happen (#381).
+					break
+				}
+				if vr.Kind == expand.Unknown && !dropAttr &&
+					(variant == "declare" || variant == "typeset" || variant == "local") {
+					// A naked `declare NAME` with no attribute to carry
+					// still records the name as declared-but-unset, so a
+					// script can tell it from one that was never
+					// mentioned: bash's `declare e; declare -p e` answers
+					// `declare -- e` at 0 and lists e in `declare -p`,
+					// where koi answered "not found" at 1 (#690). A
+					// scalar kind with Set false is exactly that state,
+					// so `${e+x}` stays empty.
+					//
+					// Only these three variants, since `export -n e` and
+					// `readonly -n e` ask for an attribute to come *off*
+					// and bash declines to create a variable for one.
+					vr.Kind = expand.String
 					break
 				}
 				vr.Kind = expand.KeepValue
@@ -3132,6 +3297,84 @@ func validNameRefTarget(target string) bool {
 	}
 	base, _, ok := cutElemSubscript(target)
 	return ok && syntax.ValidName(base)
+}
+
+// declOptionValid reports whether one of the declare-family builtins
+// takes a flag. The five do not share one option set, which is what
+// #661 was: `export -i v` and `readonly -i v` are bash's "invalid
+// option" at 2, and koi applied the integer attribute instead. The sets
+// are bash 5.3's own usage lines, verified by running every letter
+// through each builtin — `-F`, `-i`, `-r`, `-x`, `-t`, `-u`, `-l`, `-c`,
+// `-g` and `-I` are all invalid for export and readonly, and neither
+// reads a `+` word as an option at all.
+//
+// `-c` is accepted for declare though bash's usage line omits it, since
+// bash's declare does act on it.
+func declOptionValid(variant, flag string) bool {
+	if len(flag) != 2 {
+		// A lone `-` is `local`'s save-the-shell-options request; every
+		// other variant reads it as a name.
+		return flag == "-" && variant == "local"
+	}
+	letters := "aAcfFgiIlnprtux"
+	switch variant {
+	case "export", "readonly":
+		letters = "aAfnp"
+		if flag[0] != '-' {
+			return false
+		}
+	case "":
+		return false
+	default:
+		if flag[0] == '+' {
+			// The polarity flags this switch acts on. `+a`, `+f`, `+g`
+			// and friends are accepted by bash and do nothing there;
+			// koi has never read them and they stay invalid options.
+			letters = "cilnrtux"
+		}
+	}
+	return strings.IndexByte(letters, flag[1]) >= 0
+}
+
+// declWordIsName reports whether a word that looks like a flag is
+// really an operand for this builtin, which is the half of #661 that
+// cost a command its only operand rather than its exit status.
+func declWordIsName(variant, word string) bool {
+	switch variant {
+	case "export", "readonly":
+		return strings.HasPrefix(word, "+")
+	case "local":
+		return false
+	}
+	return word == "-"
+}
+
+// declUsage is the usage line bash prints after an invalid option,
+// copied per builtin because bash's five differ from each other.
+func declUsage(variant string) string {
+	switch variant {
+	case "typeset":
+		return "typeset [-aAfFgiIlnrtux] name[=value] ... or typeset -p [-aAfFilnrtux] [name ...]"
+	case "local":
+		return "local [option] name[=value] ..."
+	case "export":
+		return "export [-fn] [name[=value] ...] or export -p [-f]"
+	case "readonly":
+		return "readonly [-aAf] [name[=value] ...] or readonly -p"
+	}
+	return "declare [-aAfFgiIlnrtux] [name[=value] ...] or declare -p [-aAfFilnrtux] [name ...]"
+}
+
+// valueShapingMode reports whether a declare attribute is one bash
+// refuses to put on a readonly variable even when nothing is being
+// assigned. The integer bit and the case modifications change how the
+// *value* is stored, so turning one on counts as a write: `declare -i V`
+// on a readonly V is `declare: V: readonly variable` at 1 while
+// `declare -x V`, `declare -t V` and bare `declare V` on the same name
+// are silently accepted at 0 (#660). Measured per flag in both
+// polarities, and it holds even when the bit is already set.
+func valueShapingMode(mode string) bool {
+	return len(mode) == 2 && strings.IndexByte("iulc", mode[1]) >= 0
 }
 
 // isCaseMode reports whether a declare mode is one of the -u/-l/-c

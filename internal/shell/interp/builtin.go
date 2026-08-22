@@ -351,6 +351,27 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			// nameref and kept the variable it pointed at — after which
 			// every later use of the name was an ordinary variable and
 			// the rest of a script drifted (#277).
+			if base := arg; vars {
+				if name, _, ok := cutElemSubscript(base); ok {
+					base = name
+				}
+				if unsettableNever[base] {
+					// Four of the shell's own arrays refuse `unset`
+					// outright, with no "readonly variable" behind it:
+					// bash answers `unset: BASH_SOURCE: cannot unset` at
+					// 1 for BASH_SOURCE, BASH_LINENO, BASH_ARGV and
+					// BASH_ARGC, for -v and -n alike and for an element
+					// as well as the whole array, while FUNCNAME,
+					// DIRSTACK and GROUPS *are* unsettable and keep
+					// #547's one-way rule (#691). koi accepted all of
+					// them, so a library's `${BASH_SOURCE[0]}` location
+					// helper could be silently disarmed by an unrelated
+					// unset earlier in the same shell.
+					r.errf("unset: %s: cannot unset\n", base)
+					exit.code = 1
+					continue
+				}
+			}
 			viaRef := false
 			if _, _, isElem := cutElemSubscript(arg); vars && !byRef && !isElem {
 				if vr := r.lookupVar(arg); vr.Kind == expand.NameRef && vr.Str != "" {
