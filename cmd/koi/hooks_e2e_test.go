@@ -273,3 +273,132 @@ complete -F _line_complete probe
 	s.send("probe arg ")
 	s.sendUntil("\t", "point-10-cword-2")
 }
+
+// `complete -I` is the initial-word completion bash 5.1 added, and koi
+// accepted it, stored it, and never asked it anything (#609): the command
+// position was answered by internal/complete's PATH/builtin/function
+// providers, which never consult the spec registry. A "complete anything
+// in command position" registration was a line bash takes and koi
+// silently dropped.
+//
+// It is a property of a live completion, so this drives a real pty, and
+// every case runs the completed line and reads what it *printed* — the
+// buffer redraws on every keystroke, so an assertion about the screen is
+// a redraw detector (#240).
+const initialWordRC = `
+initcand() { printf 'res[%s]\n' "$*"; }
+zzzunique() { printf 'res[Z]\n'; }
+argprobe() { printf 'res[%s]\n' "$*"; }
+_ini() { COMPREPLY=( initcand ); }
+_ini_none() { COMPREPLY=(); INI_RAN=yes; }
+`
+
+func TestCompleteIAnswersTheCommandPosition(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	s := hookSession(t, initialWordRC+"complete -I -F _ini\n")
+	s.waitForPrompt()
+
+	// A word in command position: the spec answers, and its candidate
+	// replaces what was typed — bash does not prefix-filter COMPREPLY,
+	// so `xyz` becomes `initcand`.
+	s.buf.Reset()
+	s.send("xyz")
+	s.sendUntil("\t", "initcand")
+	s.send("\r")
+	s.waitFor("res[]")
+
+	// Still the initial word after a `;`, which is command position and
+	// not the start of the line. Measured: bash answers there too.
+	s.buf.Reset()
+	s.send("printf 'resA\\n'; xyz")
+	s.sendUntil("\t", "initcand")
+	s.send("\r")
+	s.waitFor("resA")
+	s.waitFor("res[]")
+
+	// And not an argument. `argprobe zz<TAB>` completes nothing in either
+	// shell, so the word must survive — and the assertion is what the
+	// command *printed* rather than the absence of a candidate, since
+	// argprobe echoes its arguments: a spec that answered here would make
+	// this `res[initcand]`.
+	s.buf.Reset()
+	s.send("argprobe zz")
+	s.waitFor("argprobe zz")
+	s.send("\t\r")
+	s.waitFor("res[zz]")
+}
+
+// What a `-I` spec that generates nothing means was the question the
+// issue said to measure rather than assume, and the guess in it was
+// wrong: bash does **not** fall back to its own command completion. The
+// spec replaces it, and only `-o bashdefault` — the option that exists to
+// ask for the fallback — brings it back.
+//
+// Both halves are asserted, because either alone passes vacuously: a
+// shell that completed nothing ever would pass the no-fallback case, and
+// one that ignored `-I` entirely would pass the bashdefault case.
+func TestCompleteIReplacesCommandCompletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+
+	// The control: with no spec at all, the command position completes.
+	s := hookSession(t, initialWordRC)
+	s.waitForPrompt()
+	s.buf.Reset()
+	s.send("zzzuniq")
+	s.sendUntil("\t", "zzzunique")
+	s.send("\r")
+	s.waitFor("res[Z]")
+
+	// A spec that generates nothing takes the position with it — and the
+	// absence has to be paid for with evidence that Tab arrived, or a
+	// dropped keystroke passes this case for the wrong reason (#240).
+	// The spec records that it ran, and the probe after it is the proof.
+	s = hookSession(t, initialWordRC+"complete -I -F _ini_none\n")
+	s.waitForPrompt()
+	s.send("zzzuniq")
+	s.waitFor("zzzuniq")
+	s.buf.Reset()
+	s.send("\t\t; printf 'tail\\n'\r")
+	s.waitFor(commandDone)
+	if out := s.plain(); strings.Contains(out, "res[Z]") {
+		t.Errorf("the command position completed under an -I spec that generated nothing:\n%s", out)
+	}
+	// The marker cannot appear in the echoed source, which is what makes
+	// this a reading of the answer rather than of the keystrokes.
+	s.runLine(`printf '%s\n' "SPEC${INI_RAN:-MISSED}"`)
+	if out := s.plain(); !strings.Contains(out, "SPECyes") {
+		t.Errorf("the -I spec never ran, so the missing completion proves nothing:\n%s", out)
+	}
+
+	// And `-o bashdefault` asks for it back.
+	s = hookSession(t, initialWordRC+"complete -I -o bashdefault -F _ini_none\n")
+	s.waitForPrompt()
+	s.buf.Reset()
+	s.send("zzzuniq")
+	s.sendUntil("\t", "zzzunique")
+	s.send("\r")
+	s.waitFor("res[Z]")
+}
+
+// `-E` is the empty-line spec and `-I` the initial-word one, and an empty
+// line is both. bash consults `-E` there, measured with both registered.
+func TestCompleteEBeatsIOnAnEmptyLine(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	rc := initialWordRC + `
+_empty() { COMPREPLY=( "printf 'resE\n'" ); }
+complete -E -F _empty
+complete -I -F _ini
+`
+	s := hookSession(t, rc)
+	s.waitForPrompt()
+	s.buf.Reset()
+	s.sendUntil("\t", "resE")
+	s.send("\r")
+	s.waitFor("resE")
+}

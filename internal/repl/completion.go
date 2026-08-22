@@ -63,7 +63,7 @@ func completionFn(runner *interp.Runner, host *pluginhost.Host) func(string, int
 				loadCompletionFor(runner, fields[0])
 			}
 		}
-		if cands, nospace, ok := bashCompletions(runner, text, cursor); ok {
+		if cands, nospace, ok := bashCompletions(runner, text, cursor, isCmd); ok {
 			return editor.CompleteResult{WordStart: start, Candidates: cands, NoSpace: nospace}
 		}
 
