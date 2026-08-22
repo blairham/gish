@@ -2016,6 +2016,25 @@ assignLoop:
 				as.Index = &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: sub}}}
 			}
 		}
+		// A subscript is not a name, and two of these builtins take only
+		// names: `readonly a[5]` and `export a[1]=1` are bash's "not a
+		// valid identifier" refusals where declare/typeset/local accept a
+		// subscript and write the element (#616, the neighbour #582
+		// measured). It answers 1 and carries on to the next name, so
+		// `readonly a[5] z=1` still makes z readonly.
+		//
+		// Checked *before* subscriptError, because that order is what bash
+		// answers: `readonly a[]` is the identifier complaint rather than
+		// the bad-subscript one.
+		if as.Index != nil || as.BadIndex {
+			switch variant {
+			case "export", "readonly":
+				r.errf("%s: `%s[%s]': not a valid identifier\n",
+					variant, name, subscriptText(as.Index))
+				r.exit.code = 1
+				continue assignLoop
+			}
+		}
 		// The same runtime subscript verdicts a plain assignment gets
 		// (#582): `declare a[]=x` and `declare d[7]=(a b)` are bash's
 		// errors when the declaration runs. Unlike a plain assignment
@@ -2086,6 +2105,14 @@ assignLoop:
 		if declQuery == "-p" {
 			// declare -p name: print variable with attributes.
 			vr := r.lookupVar(name)
+			if !vr.Declared() {
+				// A computed variable is answered from the runner rather
+				// than stored, and the listing view is not the expansion's
+				// (#616): `declare -p FUNCNAME` prints `declare -a
+				// FUNCNAME` at a script's top level where `${FUNCNAME+set}`
+				// is still empty.
+				vr = r.dynamicListingVar(name)
+			}
 			if !vr.Declared() {
 				r.errf("%s: %s: not found\n", variant, name)
 				r.exit.code = 1
@@ -2217,6 +2244,21 @@ assignLoop:
 				continue assignLoop
 			}
 		}
+		// A naked declaration whose name carries a subscript declares an
+		// *indexed array*, with no value: `declare d[2]` answers
+		// `declare -a d` and array.tests' `declare -r c[100]` answers
+		// `declare -ar c`, so the subscript is what asks for the array
+		// when there is no -a and nothing to assign (#616). koi left the
+		// name a scalar, which is why the readonly declared-but-unset
+		// array was missing from every `declare -a` listing.
+		//
+		// Per name rather than for the command — `declare d[2] e` leaves
+		// e a scalar — and an explicit -a/-A/-n still wins, since
+		// `declare -A m[k]` is bash's `declare -A m`.
+		nameType := valType
+		if nameType == "" && as.Naked && as.Index != nil {
+			nameType = "-a"
+		}
 		// The string form of a compound assignment (#379): a value that
 		// arrived through expansion as "( ... )" is parsed as an array
 		// literal whose elements are then expanded — but only when an
@@ -2225,7 +2267,7 @@ assignLoop:
 		// an unbalanced "(" stays literal too. The expansion is reused
 		// either way so a command substitution in the value runs once.
 		if as.Value != nil && as.Index == nil &&
-			(valType == "-a" || valType == "-A" ||
+			(nameType == "-a" || nameType == "-A" ||
 				vr.Kind == expand.Indexed || vr.Kind == expand.Associative) {
 			val := r.literalAssign(as.Value)
 			lit := &syntax.Assign{Name: as.Name, Append: as.Append}
@@ -2241,8 +2283,8 @@ assignLoop:
 		// declares an unset array that a later c=4 fills at element 0,
 		// a scalar's value carries to element 0, and converting one
 		// array kind to the other is bash's error with the data kept.
-		if valType == "-a" || valType == "-A" {
-			if !r.applyArrayKind(&vr, valType, variant, name) {
+		if nameType == "-a" || nameType == "-A" {
+			if !r.applyArrayKind(&vr, nameType, variant, name) {
 				continue
 			}
 		}
@@ -2258,7 +2300,7 @@ assignLoop:
 			vr.Integer = false
 		}
 		if as.Naked {
-			switch valType {
+			switch nameType {
 			case "-a", "-A":
 				// The kind is already applied; the value stands.
 			case "":
@@ -2287,7 +2329,7 @@ assignLoop:
 				vr.Kind = expand.KeepValue
 			}
 		} else {
-			name, vr = r.assignVal(name, vr, as, valType)
+			name, vr = r.assignVal(name, vr, as, nameType)
 		}
 		if global {
 			vr.Local = false
@@ -2350,36 +2392,75 @@ assignLoop:
 		// `declare -A` after `declare -A f` prints f. Bare `declare`
 		// and `declare --` instead print POSIX name=value pairs, which
 		// is bash's other listing shape.
-		match := func(vr expand.Variable) bool { return true }
-		switch {
-		case valType == "-n":
-			match = func(vr expand.Variable) bool { return vr.Kind == expand.NameRef }
-		case valType == "-a":
-			match = func(vr expand.Variable) bool { return vr.Kind == expand.Indexed }
-		case valType == "-A":
-			match = func(vr expand.Variable) bool { return vr.Kind == expand.Associative }
-		case slices.Contains(modes, "-x"):
-			match = func(vr expand.Variable) bool { return vr.Exported }
-		case slices.Contains(modes, "-r"):
-			match = func(vr expand.Variable) bool { return vr.ReadOnly }
-		case slices.Contains(modes, "-i"):
-			match = func(vr expand.Variable) bool { return vr.Integer }
-		case declQuery != "-p":
+		//
+		// The attributes *compose*, which taking the first match alone
+		// got wrong in three commands array.tests runs in a row (#616):
+		// `readonly -a` and `declare -ar` are the arrays that are also
+		// readonly, and `export -a` lists nothing at all in bash, where
+		// koi listed every array in the shell.
+		var filters []func(expand.Variable) bool
+		switch valType {
+		case "-n":
+			filters = append(filters, func(vr expand.Variable) bool { return vr.Kind == expand.NameRef })
+		case "-a":
+			filters = append(filters, func(vr expand.Variable) bool { return vr.Kind == expand.Indexed })
+		case "-A":
+			filters = append(filters, func(vr expand.Variable) bool { return vr.Kind == expand.Associative })
+		}
+		if slices.Contains(modes, "-x") {
+			filters = append(filters, func(vr expand.Variable) bool { return vr.Exported })
+		}
+		if slices.Contains(modes, "-r") {
+			filters = append(filters, func(vr expand.Variable) bool { return vr.ReadOnly })
+		}
+		if slices.Contains(modes, "-i") {
+			filters = append(filters, func(vr expand.Variable) bool { return vr.Integer })
+		}
+		match := func(vr expand.Variable) bool {
+			for _, f := range filters {
+				if !f(vr) {
+					return false
+				}
+			}
+			return true
+		}
+		if len(filters) == 0 && declQuery != "-p" {
 			// Bare `declare`, with no attribute to filter on.
 			match = nil
 		}
 		var names []string
 		r.writeEnv.Each(func(name string, vr expand.Variable) bool {
-			if vr.Declared() && (match == nil || match(vr)) {
+			if vr.Declared() {
 				names = append(names, name)
 			}
 			return true
 		})
-		slices.Sort(names)
+		listed := make(map[string]expand.Variable, len(names))
 		for _, name := range names {
-			vr := r.lookupVar(name)
+			listed[name] = r.lookupVar(name)
+		}
+		// The computed variables (#547) live in the runner rather than in
+		// the variable table, so the enumeration above cannot see them —
+		// which is why `declare -a` listed none of the shell's own arrays
+		// (#616). That is #547's shape arriving at a third reader, so the
+		// listing asks the same accessor `declare -p NAME` does rather
+		// than growing a second idea of which names exist.
+		for name := range dynamicListing {
+			if vr := r.dynamicListingVar(name); vr.Declared() {
+				listed[name] = vr
+			}
+		}
+		for _, name := range slices.Sorted(maps.Keys(listed)) {
+			vr := listed[name]
+			if !vr.Declared() || (match != nil && !match(vr)) {
+				continue
+			}
 			if match == nil {
 				r.outf("%s=%s\n", name, vr.String())
+				continue
+			}
+			if r.opts[optPosix] && (variant == "export" || variant == "readonly") {
+				r.printDeclaredAs(posixDeclHead(variant, vr), name, vr)
 				continue
 			}
 			r.printDeclared(name, vr)
@@ -2935,17 +3016,43 @@ func (r *Runner) printDeclared(name string, vr expand.Variable) {
 	if flags == "" {
 		flags = "-"
 	}
+	r.printDeclaredAs("declare -"+flags, name, vr)
+}
+
+// posixDeclHead is the head [Runner.printDeclaredAs] takes for a listing
+// printed by `readonly` or `export` in POSIX mode, where bash names the
+// builtin instead of `declare` and shows the array kind as the *only*
+// attribute: `readonly -a a=([0]="x")`, `readonly -A m=([k]="v" )`, and
+// a plain `readonly s="1"` even for the integer readonly EUID. array.tests
+// runs the readonly form under `set -o posix` immediately after the two
+// ordinary ones, which is what makes the difference visible (#616).
+//
+// Only the *listing* takes it: `readonly -p a` and `export -p ev` name a
+// variable and print nothing at all there, in POSIX mode or out of it.
+func posixDeclHead(variant string, vr expand.Variable) string {
+	switch vr.Kind {
+	case expand.Indexed:
+		return variant + " -a"
+	case expand.Associative:
+		return variant + " -A"
+	}
+	return variant
+}
+
+// printDeclaredAs prints one listing row under a caller-chosen head —
+// `declare -ar` for the ordinary form, `readonly -a` for POSIX mode's.
+func (r *Runner) printDeclaredAs(head, name string, vr expand.Variable) {
 	// Declared but never set prints bare — `declare -a c` answers
 	// `declare -a c`, not `=()`, and the same for a scalar or a
 	// nameref (#378). The rule turns on Set rather than on the value
 	// being empty: `foo=` *is* set, and prints `declare -- foo=""`.
 	if !vr.Set {
-		r.outf("declare -%s %s\n", flags, name)
+		r.outf("%s %s\n", head, name)
 		return
 	}
 	switch vr.Kind {
 	case expand.Indexed:
-		r.outf("declare -%s %s=(", flags, name)
+		r.outf("%s %s=(", head, name)
 		for i, v := range vr.List {
 			if i > 0 {
 				r.out(" ")
@@ -2961,13 +3068,13 @@ func (r *Runner) printDeclared(name string, vr expand.Variable) {
 		// Keys are sorted for determinism where bash prints its hash
 		// order, and each element carries bash's trailing space:
 		// ([one]="1" [two]="2" ).
-		r.outf("declare -%s %s=(", flags, name)
+		r.outf("%s %s=(", head, name)
 		for _, k := range slices.Sorted(maps.Keys(vr.Map)) {
 			r.outf("[%s]=%s ", declQuoteKey(k), declQuote(vr.Map[k]))
 		}
 		r.out(")\n")
 	default:
-		r.outf("declare -%s %s=%s\n", flags, name, declQuote(vr.Str))
+		r.outf("%s %s=%s\n", head, name, declQuote(vr.Str))
 	}
 }
 
