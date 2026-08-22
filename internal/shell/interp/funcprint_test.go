@@ -31,6 +31,23 @@ func TestPrintedFunctionReparses(t *testing.T) {
 		`! false`,
 		`echo x >&2 2>&1 < /dev/null`,
 		`if a; then b; elif c; then d; else e; fi`,
+		// The C-style loop parts an omitted header prints as 1 (#671):
+		// the substitution has to re-parse as a loop, not merely look
+		// like one.
+		`for ((;;)); do break; done`,
+		`for ((i=0; i<2;)); do break; done`,
+		`for ((; i<2; i++)); do break; done`,
+		// `time` now carries the canonical layout rather than the
+		// delegate printer's one-liner, so its shapes need the property
+		// too — bare `time` included, since the printer emits `time `
+		// with bash's trailing space and then a terminator.
+		`time :`,
+		`time -p :`,
+		`time { echo a; echo b; }`,
+		`time while false; do :; done`,
+		`time for ((;;)); do break; done`,
+		`time (echo a)`,
+		`time; echo after`,
 	}
 	for _, body := range bodies {
 		t.Run(body, func(t *testing.T) {

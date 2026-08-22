@@ -354,11 +354,11 @@ func (p *funcPrinter) cmd(cmd syntax.Command) {
 		case *syntax.CStyleLoop:
 			// The C-style header carries no terminator before `do`.
 			p.sb.WriteString("((")
-			p.arithm(loop.Init)
+			p.loopPart(loop.Init)
 			p.sb.WriteString("; ")
-			p.arithm(loop.Cond)
+			p.loopPart(loop.Cond)
 			p.sb.WriteString("; ")
-			p.arithm(loop.Post)
+			p.loopPart(loop.Post)
 			p.sb.WriteString("))")
 		}
 		p.sb.WriteString("\n")
@@ -393,6 +393,30 @@ func (p *funcPrinter) cmd(cmd syntax.Command) {
 		p.stmt(c.X)
 		p.sb.WriteString(" " + c.Op.String() + " ")
 		p.stmt(c.Y)
+	case *syntax.TimeClause:
+		// `time` prefixes a command and that command still gets the
+		// canonical layout: bash prints `time while false; do` and then
+		// an indented body, where falling through to the delegate
+		// printer flattened the whole thing onto one line with the
+		// source's own spacing — `time { echo a; echo b; }` against
+		// bash's three lines (#671). It is #631's shape again: a
+		// construct this printer had no case for was rendered by a
+		// printer whose job is source rather than bash's shape.
+		//
+		// Bare `time` keeps the trailing space bash prints after it,
+		// measured rather than tidied away. A *negated* `time` is left
+		// alone deliberately: bash renders `! time ls` as `time ! ls`,
+		// which koi's own parser refuses, so printing it would break the
+		// one property printFuncCanonicalRoundTrips exists to hold
+		// (#631 skipped a here-document for the same reason). Filed as
+		// its own residue.
+		p.sb.WriteString("time ")
+		if c.PosixFormat {
+			p.sb.WriteString("-p ")
+		}
+		if c.Stmt != nil {
+			p.stmt(c.Stmt)
+		}
 	case *syntax.FuncDecl:
 		// A nested declaration gains bash's `function` keyword.
 		s := printFuncCanonical(c.Name.Value, c.Body, true)
@@ -466,6 +490,28 @@ func printArithm(x syntax.ArithmExpr) string {
 	p := &funcPrinter{wp: syntax.NewPrinter()}
 	p.arithm(x)
 	return p.sb.String()
+}
+
+// loopPart renders one part of a C-style loop header, printing the
+// expression an omitted part *means* rather than the omission.
+//
+// bash does not print the absence back: `for ((;;))` answers
+// `for ((1; 1; 1))` and `for ((; i<3; i++))` answers
+// `for ((1; i<3; i++))` — 1 is the value that makes a missing
+// condition true and a missing init or post a harmless no-op, so the
+// listing runs as the loop it came from. koi printed nothing at all,
+// and `for ((;;))` came back as `for ((; ; ))`, which is not even the
+// text that went in (#671).
+//
+// The rule belongs to the loop header alone, which was measured rather
+// than generalized: `(( ))` at command position prints as `(( ))` in
+// bash, never as `((1))`.
+func (p *funcPrinter) loopPart(x syntax.ArithmExpr) {
+	if x == nil {
+		p.sb.WriteString("1")
+		return
+	}
+	p.arithm(x)
 }
 
 func (p *funcPrinter) arithm(x syntax.ArithmExpr) {

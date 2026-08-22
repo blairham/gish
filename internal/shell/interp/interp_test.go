@@ -1650,6 +1650,62 @@ var runTests = []runTest{
 		"f () \n{ \n    a=(1 2);\n    x=$((1+2));\n    echo \"${a[@]}$x\"\n}\n",
 	},
 
+	// An omitted C-style loop part prints as the expression it means
+	// (#671). bash does not print the absence back: 1 makes a missing
+	// condition true and a missing init or post a harmless no-op, so the
+	// listing runs as the loop it came from. koi printed nothing, and
+	// `for ((;;))` came back as `for ((; ; ))` — not even the text that
+	// went in.
+	{
+		`f(){ for ((;;)); do break; done; }; declare -f f`,
+		"f () \n{ \n    for ((1; 1; 1))\n    do\n        break;\n    done\n}\n",
+	},
+	{
+		`f(){ for ((i=0; i<3;)); do break; done; }; declare -f f`,
+		"f () \n{ \n    for ((i=0; i<3; 1))\n    do\n        break;\n    done\n}\n",
+	},
+	{
+		// The rule is the loop header's alone, measured rather than
+		// generalized: an empty `(( ))` at command position stays empty.
+		`f(){ (()); }; declare -f f`,
+		"f () \n{ \n    (())\n}\n",
+	},
+	{
+		// And the round trip, which is why this is worse than cosmetic:
+		// the listing has to run as the loop it was printed from.
+		`f(){ i=0; for ((;;)); do echo $i; ((i++)); ((i>1)) && break; done; }; eval "$(declare -f f)"; f`,
+		"0\n1\n",
+	},
+
+	// `time` prefixes a command and that command still gets the
+	// canonical layout (#671, #631's shape again): a construct this
+	// printer had no case for fell through to the delegate printer,
+	// which flattened the whole thing onto one line with the source's
+	// own spacing.
+	{
+		`f(){ time { echo a; echo b; }; }; declare -f f`,
+		"f () \n{ \n    time { \n        echo a;\n        echo b\n    }\n}\n",
+	},
+	{
+		`f(){ time while false; do :; done; }; declare -f f`,
+		"f () \n{ \n    time while false; do\n        :;\n    done\n}\n",
+	},
+	{
+		`f(){ time for ((;;)); do break; done; }; declare -f f`,
+		"f () \n{ \n    time for ((1; 1; 1))\n    do\n        break;\n    done\n}\n",
+	},
+	{
+		// A subshell under `time` gains the padding a bare subshell
+		// already had (#631), because it now goes through the same case.
+		`f(){ time (echo a); }; declare -f f`,
+		"f () \n{ \n    time ( echo a )\n}\n",
+	},
+	{
+		// -p is kept, and bare `time` keeps bash's trailing space.
+		`f(){ time -p :; }; g(){ time; }; declare -f f; declare -f g`,
+		"f () \n{ \n    time -p :\n}\ng () \n{ \n    time \n}\n",
+	},
+
 	// A definition's own redirections are part of the function (#631).
 	// They hang off the statement wrapping the body, one level up from
 	// where the body is rendered, and were dropped — so the printed
