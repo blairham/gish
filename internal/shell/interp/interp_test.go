@@ -2154,6 +2154,65 @@ var runTests = []runTest{
 	{"enable -n test; type -t test", "file\n"},
 	{"enable -n test; enable test; type -t test", "builtin\n"},
 	{"enable nosuchxyz; echo rc=$?", "enable: nosuchxyz: not a shell builtin\nrc=1\n #JUSTERR"},
+	// -s lists the sixteen POSIX special builtins and nothing else, in
+	// the same `enable NAME` shape as the plain listing. The pair below
+	// asserts both states of one name: `exit` appears as enabled here
+	// and as disabled in the next case, because a listing checked only
+	// for what it lacks passes vacuously against an empty listing.
+	{
+		"enable -ps",
+		"enable .\nenable :\nenable break\nenable continue\nenable eval\n" +
+			"enable exec\nenable exit\nenable export\nenable readonly\nenable return\n" +
+			"enable set\nenable shift\nenable source\nenable times\nenable trap\nenable unset\n",
+	},
+	{
+		"enable -n exit; enable -as",
+		"enable .\nenable :\nenable break\nenable continue\nenable eval\n" +
+			"enable exec\nenable -n exit\nenable export\nenable readonly\nenable return\n" +
+			"enable set\nenable shift\nenable source\nenable times\nenable trap\nenable unset\n",
+	},
+	// -n alone lists what is off rather than turning anything off, and
+	// -p forces that listing even when names follow it -- bash's own
+	// branch order, which no reading of the manual would predict.
+	{"enable -nps", ""},
+	{"enable -n test; enable -pn test", "enable -n test\n"},
+	// `builtin` asks for the shell's version of a name, and for a
+	// disabled builtin there no longer is one. This is the one place it
+	// parts company with `command`, which runs the program instead.
+	{
+		"enable -n printf; builtin printf x",
+		"builtin: printf: not a shell builtin\nexit status 1 #JUSTERR",
+	},
+	// -d removes a builtin that -f loaded, so here it can only refuse --
+	// with bash's two answers rather than with "invalid option", which
+	// would read as koi not knowing the flag (#603).
+	{"enable -d test", "enable: test: not dynamically loaded\nexit status 1 #JUSTERR"},
+	{"enable -d nosuchxyz", "enable: nosuchxyz: not a shell builtin\nexit status 1 #JUSTERR"},
+	// A lone dash is a name in bash, not an option, and so is a `+`
+	// word -- which also ends the options, so the builtin after it is
+	// left alone rather than switched off.
+	{"enable -", "enable: -: not a shell builtin\nexit status 1 #JUSTERR"},
+	{"enable +n test", "enable: +n: not a shell builtin\nexit status 1 #JUSTERR"},
+	{
+		"enable -x",
+		"enable: -x: invalid option\n" +
+			"enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\nexit status 2 #JUSTERR",
+	},
+	{
+		"enable -f",
+		"enable: -f: option requires an argument\n" +
+			"enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\nexit status 2 #JUSTERR",
+	},
+	{
+		// The one deliberate divergence: bash reaches dlopen here and
+		// reports a platform-specific loader error, while koi cannot
+		// load a builtin object at all. The message is bash's own for
+		// exactly this case -- what a bash compiled without dlopen
+		// prints, EX_USAGE included. #JUSTERR asserts only that bash
+		// also refuses, which is the honest comparison to make.
+		"enable -f /nosuch.so printf",
+		"enable: dynamic loading not available\nexit status 2 #JUSTERR",
+	},
 	// `hash -p` pins a name to a path, and the pin is consulted before
 	// PATH — koi accepted the line and did nothing with it.
 	{"hash -p /bin/ls myls; type myls", "myls is hashed (/bin/ls)\n"},

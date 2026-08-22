@@ -144,6 +144,36 @@ func ImplementedBuiltins() []string { return builtinsWhere(true) }
 // UnimplementedBuiltins returns the recognized-but-refused builtins.
 func UnimplementedBuiltins() []string { return builtinsWhere(false) }
 
+// RecognizedBuiltins is every name [IsBuiltin] answers true for, sorted:
+// what this shell *calls* a builtin, which is the question `type` answers
+// and the set `enable -n` accepts.
+//
+// It is deliberately wider than [ImplementedBuiltins], which answers "what
+// can I call" for `compgen -b` (#302). bash makes the same split -- its
+// `enable` lists `suspend` in a non-interactive shell where running it
+// fails -- and koi needs it because the layer above replaces builtins the
+// interpreter recognizes but does not implement (#565): listing only the
+// interpreter's own would drop `times`, `kill` and `umask` from `enable`
+// while `enable -n times` still worked, so the listing and the acceptance
+// disagreed about what exists (#603).
+func RecognizedBuiltins() []string {
+	names := make([]string, 0, len(builtinNames))
+	for name := range builtinNames {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// enableUsage reports an `enable` option error the way bash does: the
+// diagnostic carries a location and the usage line following it does not
+// (#611), and the status is bash's EX_USAGE.
+func (r *Runner) enableUsage(format string, a ...any) exitStatus {
+	r.errf(format, a...)
+	r.rawErrf("enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\n")
+	return exitStatus{code: 2}
+}
+
 func builtinsWhere(implemented bool) []string {
 	names := make([]string, 0, len(builtinNames))
 	for name, impl := range builtinNames {
@@ -185,6 +215,24 @@ func (hc HandlerContext) Builtin(ctx context.Context, args []string) error {
 		return errBuiltinExitStatus(exit)
 	}
 	return nil
+}
+
+// DisabledBuiltins returns the names `enable -n` has switched off in this
+// session, sorted.
+//
+// The shell around the interpreter needs the same answer: `compgen -A
+// disabled` lists exactly this set and `compgen -A enabled` is its
+// complement, and both are answered by koi's own compgen rather than by
+// this package's (#603).
+func (hc HandlerContext) DisabledBuiltins() []string {
+	names := make([]string, 0, len(hc.runner.disabledBuiltins))
+	for name, off := range hc.runner.disabledBuiltins {
+		if off {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args []string) (exit exitStatus) {
@@ -575,9 +623,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		if len(args) < 1 {
 			break
 		}
-		if !IsBuiltin(args[0]) {
+		if !IsBuiltin(args[0]) || r.disabledBuiltins[args[0]] {
 			// bash says which name it refused; koi failed silently, so
 			// `builtin ls` looked like a builtin that produced nothing.
+			//
+			// A name `enable -n` switched off gets the same answer, which
+			// is the one place `builtin` and `command` part company for a
+			// disabled name: `command printf` runs /usr/bin/printf while
+			// `builtin printf` refuses, because `builtin` asks for the
+			// shell's version and there no longer is one (#603).
 			return failf(1, "builtin: %s: not a shell builtin\n", args[0])
 		}
 		// The name is checked before the call seam and dispatched after
@@ -792,52 +846,127 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 	case "enable":
 		// `enable -n name` turns a builtin off, so the name resolves on
 		// PATH like any other command. koi refused the whole builtin,
-		// which made an ordinary line in a test script fatal (#411).
-		disable, listAll := false, false
+		// which made an ordinary line in a test script fatal (#411) --
+		// and then took none of the other options while accepting `-n`
+		// and *ignoring* it, so a script that disabled a builtin to
+		// reach the program behind it got the builtin anyway, with
+		// nothing printed (#603).
+		//
+		// The branch order below is bash's own (builtins/enable.def) and
+		// is not the order the options are documented in: a listing wins
+		// over -f and -d, `-f` wins over `-d`, and only names with none
+		// of the three switch a builtin on or off. So `enable -dp test`
+		// lists where `enable -d test` refuses, which no reading of the
+		// manual would predict.
+		disable, listAll, listSpecial := false, false, false
+		print, dynamic, haveFilename := false, false, false
+		var names []string
 		fp := flagParser{remaining: args}
 		for fp.more() {
+			if fp.current == "" && strings.HasPrefix(fp.remaining[0], "+") {
+				// bash's getopt takes no `+` word here, so one is an
+				// operand and ends the options: `enable +x` answers
+				// `+x: not a shell builtin`. #556 measured the same rule
+				// for the completion builtins, where `+o` belongs to
+				// compopt alone.
+				break
+			}
 			switch flag := fp.flag(); flag {
 			case "-n":
 				disable = true
 			case "-a":
 				listAll = true
 			case "-p":
-				// The default listing shape.
+				print = true
+			case "-s":
+				listSpecial = true
+			case "-d":
+				dynamic = true
+			case "-f":
+				if fp.current == "" && len(fp.remaining) == 0 {
+					return r.enableUsage("enable: -f: option requires an argument\n")
+				}
+				// The object is read only to be refused below, so its
+				// name is consumed and dropped.
+				fp.value()
+				haveFilename = true
+			case "-":
+				// A lone dash is a name in bash rather than an option,
+				// and gets the ordinary "not a shell builtin".
+				names = append(names, flag)
 			default:
-				return failf(2, "enable: invalid option %q\n", flag)
+				return r.enableUsage("enable: %s: invalid option\n", flag)
 			}
 		}
-		args := fp.args()
-		if len(args) == 0 {
-			for _, name := range ImplementedBuiltins() {
+		names = append(names, fp.args()...)
+		if r.opts[optRestricted] && (haveFilename || dynamic) {
+			// A restricted shell cannot load or unload a builtin at all,
+			// checked before anything else -- so even the listing forms
+			// of -d and -f are refused (#398).
+			return failf(1, "enable: restricted\n")
+		}
+		switch {
+		case len(names) == 0 || print:
+			for _, name := range RecognizedBuiltins() {
+				if listSpecial && !isSpecialBuiltin(name) {
+					continue
+				}
 				off := r.disabledBuiltins[name]
 				switch {
-				case listAll && off:
+				case off && (listAll || disable):
 					r.outf("enable -n %s\n", name)
-				case off:
-					// A plain listing shows what is enabled.
-				case disable:
-					// `enable -n` with no names lists the disabled set.
+				case off || disable:
+					// A plain listing shows what is enabled; `-n` alone
+					// shows only what is off.
 				default:
 					r.outf("enable %s\n", name)
 				}
 			}
-			break
-		}
-		for _, name := range args {
-			if !IsBuiltin(name) {
-				r.errf("enable: %s: not a shell builtin\n", name)
-				exit.code = 1
-				continue
-			}
-			if disable {
-				if r.disabledBuiltins == nil {
-					r.disabledBuiltins = map[string]bool{}
+		case haveFilename:
+			// `-f` loads a builtin from a shared object built against
+			// bash's own internals, so there is nothing koi could open
+			// even if Go could dlopen it. This is bash's *own* wording
+			// for the case, printed by a bash compiled without dlopen
+			// support, down to the EX_USAGE status -- which is the
+			// honest refusal, where "invalid option" would read as koi
+			// not knowing the flag (#603).
+			return failf(2, "enable: dynamic loading not available\n")
+		case dynamic:
+			// `-d` removes a builtin that `-f` loaded, so in koi it can
+			// only ever refuse -- and bash refuses a statically built
+			// builtin with the same two answers, so these match rather
+			// than approximate.
+			for _, name := range names {
+				if !IsBuiltin(name) {
+					r.errf("enable: %s: not a shell builtin\n", name)
+				} else {
+					r.errf("enable: %s: not dynamically loaded\n", name)
 				}
-				r.disabledBuiltins[name] = true
-				continue
+				exit.code = 1
 			}
-			delete(r.disabledBuiltins, name)
+		default:
+			for _, name := range names {
+				if !IsBuiltin(name) {
+					r.errf("enable: %s: not a shell builtin\n", name)
+					exit.code = 1
+					continue
+				}
+				if disable {
+					if r.disabledBuiltins == nil {
+						r.disabledBuiltins = map[string]bool{}
+					}
+					r.disabledBuiltins[name] = true
+					continue
+				}
+				if r.opts[optRestricted] && r.disabledBuiltins[name] {
+					// Turning a builtin back on is unrestricted; putting
+					// one back that was switched off is not, because a
+					// restricted shell's rule is about what it can reach
+					// and `enable -n` is how a name reaches PATH.
+					return failf(1, "enable: restricted\n")
+				}
+				delete(r.disabledBuiltins, name)
+			}
 		}
 	case "eval":
 		src := strings.Join(args, " ")
@@ -1115,7 +1244,11 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				} else {
 					r.outf("%s\n", arg)
 				}
-			case IsBuiltin(arg):
+			case IsBuiltin(arg) && !r.disabledBuiltins[arg]:
+				// A disabled builtin falls through to the PATH search,
+				// which is the whole point of disabling it: `command -v
+				// printf` answers /usr/bin/printf, exactly as `type`
+				// already did (#603).
 				if verbose {
 					r.outf("%s is a shell builtin\n", arg)
 				} else {
@@ -1922,6 +2055,23 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			// same answer for a builtin whose whole job is the first
 			// question.
 			names = append(names, ImplementedBuiltins()...)
+		case "enabled":
+			// The same list minus what `enable -n` turned off, with
+			// `disabled` its complement (#603). `builtin` above stays
+			// the whole list, which is bash's answer too: a disabled
+			// builtin is still a builtin *name*.
+			for _, name := range ImplementedBuiltins() {
+				if !r.disabledBuiltins[name] {
+					names = append(names, name)
+				}
+			}
+		case "disabled":
+			for name, off := range r.disabledBuiltins {
+				if off {
+					names = append(names, name)
+				}
+			}
+			slices.Sort(names)
 		case "variable":
 			r.writeEnv.Each(func(name string, vr expand.Variable) bool {
 				if vr.IsSet() {
