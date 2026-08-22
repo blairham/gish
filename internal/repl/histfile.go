@@ -100,6 +100,12 @@ func historyTruncateFile(assigned string) {
 		// file alone rather than emptying it.
 		return
 	}
+	// Against the *shell's* directory, not the Go process's: they differ
+	// after a `cd`, and a relative HISTFILE truncated against the wrong
+	// one would shorten whatever file happened to share the name there.
+	// bash resolves it at the moment it writes (measured: `HISTFILE=./h;
+	// set -o history; cd sub` writes sub/h).
+	path = historyFilePathIn(runnerDir(runner), path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return
@@ -205,10 +211,26 @@ func historyFileLines(hc interp.HandlerContext, path string) ([]string, error) {
 // historyFilePath resolves against the shell's directory, not the Go
 // process's. They differ after a `cd`, which is most scripts.
 func historyFilePath(hc interp.HandlerContext, path string) string {
-	if filepath.IsAbs(path) {
+	return historyFilePathIn(hc.Dir, path)
+}
+
+// historyFilePathIn is historyFilePath for a caller that has the
+// runner rather than a handler context — the exit write (#737) happens
+// after the last statement, where there is no statement to have one.
+func historyFilePathIn(dir, path string) string {
+	if filepath.IsAbs(path) || dir == "" {
 		return path
 	}
-	return filepath.Join(hc.Dir, path)
+	return filepath.Join(dir, path)
+}
+
+// runnerDir is the shell's current directory. It is a live field: `cd`
+// assigns it as it runs, so it is current at exit as well as mid-script.
+func runnerDir(runner *interp.Runner) string {
+	if runner == nil {
+		return ""
+	}
+	return runner.Dir
 }
 
 // historyAppendNew is `history -a`: write the entries recorded since the
@@ -289,6 +311,123 @@ func historyReadAll(lines []string, runner *interp.Runner) {
 	histList = append(histList, lines...)
 	histTrimLocked(sessionVarOf(runner, "HISTSIZE"))
 	histAmbientLast = false
+}
+
+// historySaveAtExit writes $HISTFILE when the session ends (#737).
+//
+// It is bash's maybe_save_shell_history, and bash does it for a
+// **non-interactive** shell too — its own history5.sub ends `unset
+// HISTFILE  # suppress writing history file`, which is only meaningful
+// if the write happens. koi never wrote the file on any path, so the
+// round trip #432 opened was one-way.
+//
+// The gates, all measured against bash 5.3.15 rather than assumed:
+//
+//   - `set -o history` must be on **at exit** — `set +o history` before
+//     the end suppresses the write entirely, and a shell that never
+//     turned it on writes nothing;
+//   - $HISTFILE must be set at exit, read then rather than earlier, so
+//     `unset HISTFILE` suppresses it and reassigning it writes to the
+//     new file. koi has no default here: bash's ~/.bash_history fallback
+//     is installed for *interactive* shells only, so a non-interactive
+//     bash with HISTFILE unset writes nothing either (measured with a
+//     seeded ~/.bash_history, which came back untouched);
+//   - it happens **after** the EXIT trap, so `trap 'rm -f $HISTFILE' 0`
+//     does not stop it — the file is recreated;
+//   - and it is then truncated to $HISTFILESIZE (or HISTSIZE), which is
+//     what historyTruncateFile already does for #491.
+//
+// # Why this cannot overwrite someone's history file
+//
+// bash writes the whole list only when the entries recorded this session
+// outnumber the entries still in it — which needs a HISTSIZE trim to
+// have dropped entries that were never written — and `shopt -s
+// histappend` turns even that into an append. Everywhere else it
+// *appends* the entries recorded since the last write, which is the same
+// accounting `history -a` already has here.
+//
+// So the branch is pending > len(list), and it is exactly the case
+// historyAppendNew already clamps to zero: the append position is behind
+// the list start. `histappend` is `optStateOnly` in the interpreter's
+// table (#575), which means "the bit is tracked and answered; the
+// behavior it names belongs to the shell around the interpreter" — and
+// this is that shell, so the bit is read here through
+// [interp.Runner.OptionSet] and the table is left alone.
+//
+// The list is never seeded from the store on this path: an ambient
+// session has no store (historyStore is opened by the interactive loop
+// alone), and if that ever changed, writing the cross-session store
+// (#40) into someone's $HISTFILE would be the worst available answer. An
+// unmutated list therefore means nothing was recorded, which is also
+// when bash writes nothing.
+func historySaveAtExit(runner *interp.Runner) {
+	if runner == nil || !runner.OptionSet("history") {
+		return
+	}
+	histMu.Lock()
+	// Only a session with a per-process list (#277) has anything to
+	// write; an interactive session's history is the shared store, and
+	// its own `set -o history` posture is untouched by this.
+	if !histAmbientSession || !histMutated {
+		histMu.Unlock()
+		return
+	}
+	pending := histBase + len(histList) - histAppendPos
+	list := append([]string(nil), histList...)
+	histMu.Unlock()
+
+	if pending <= 0 {
+		// Nothing recorded since the last `history -a` or `-c`, which is
+		// bash's `history_lines_this_session > 0` gate.
+		return
+	}
+	path := sessionVarOf(runner, "HISTFILE")
+	if path == "" {
+		return
+	}
+	path = historyFilePathIn(runnerDir(runner), path)
+
+	if pending > len(list) && !runner.OptionSet("histappend") {
+		historyWriteWhole(path, list)
+	} else {
+		historyAppendTail(path, list, min(pending, len(list)))
+	}
+	// bash truncates after the write, to HISTFILESIZE or, unset, to
+	// HISTSIZE — which is why `HISTSIZE=1` leaves a one-line file even
+	// under histappend.
+	historyTruncateFile("")
+}
+
+// historyWriteWhole replaces the file with the list, one command per
+// line. Failures are silent, as bash's are: an unwritable $HISTFILE at
+// exit prints nothing and does not change the status (measured).
+func historyWriteWhole(path string, list []string) {
+	var b strings.Builder
+	for _, cmd := range list {
+		b.WriteString(cmd)
+		b.WriteByte('\n')
+	}
+	_ = os.WriteFile(path, []byte(b.String()), 0o600)
+}
+
+// historyAppendTail appends the newest n entries to the file, creating
+// it when it is not there — which is what makes `trap 'rm -f $HISTFILE'
+// 0` recreate the file with only this session's lines in it.
+func historyAppendTail(path string, list []string, n int) {
+	if n <= 0 {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close() //nolint:errcheck // exit path; a failed write is silent in bash too
+	var b strings.Builder
+	for _, cmd := range list[len(list)-n:] {
+		b.WriteString(cmd)
+		b.WriteByte('\n')
+	}
+	_, _ = f.WriteString(b.String())
 }
 
 // historyNoFile reports the missing-HISTFILE case the way bash does,

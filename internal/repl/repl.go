@@ -54,6 +54,13 @@ func CaptureIgnoredSignals() {
 	ignoredSignals = scanIgnoredSignals()
 }
 
+// shellName is the parse name the two shapes with no file to name take —
+// `koi -c` and a shell reading standard input — and so what `$0` and
+// `$BASH_ARGV0` answer for both (#120, #744). bash reports its own
+// binary path there; koi reports its own name, since koi claims bash's
+// interface and not bash's identity.
+const shellName = "koi"
+
 // ignoredSignalOptions passes the captured set to a runner.
 // historyVarOptions installs the assignment hooks the history layer
 // needs, which today is HISTFILESIZE's truncation (#491).
@@ -752,6 +759,17 @@ func acceptWhen(text string) bool {
 // line back, and printing `exit` at EOF — because both are readline's
 // doing rather than the shell's, and koi keeps its own diagnostic shapes
 // (#120).
+//
+// The parse name is `koi` here, which is what `$0` and `$BASH_ARGV0`
+// answer for a shell reading its commands from standard input (#744).
+// It was empty, so both fell through to the interpreter's own default
+// and reported the literal `gosh` — the substrate's upstream binary name
+// (internal/shell/interp's `Runner.lookupVar`), a shell that does not
+// exist, in the `usage: $0 …` line of every script fed to koi by a pipe.
+// bash answers its own path there; koi answers `koi`, matching what `-c`
+// already answers, because #120's rule is that koi claims bash's
+// interface and not bash's identity. The substrate's default is right
+// for its own consumers and is left alone.
 func runPlain(ctx context.Context, login, interactive bool) error {
 	// This session records ambiently, as bash's does when it reads its
 	// commands from standard input: `bash < s.sh` fills the history list
@@ -779,6 +797,10 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 		return err
 	}
 	setSessionRunner(runner)
+	// $HISTFILE is written when the session ends, after the EXIT trap
+	// (#737). Deferred so every way out of this loop reaches it — EOF,
+	// `exit`, or the parse error that returns early.
+	defer func() { historySaveAtExit(runner) }()
 	declareShellIdentity(ctx, runner)
 	// argv's `set` options are in force before the profile and rc run,
 	// which is bash's order (#426).
@@ -853,7 +875,7 @@ loop:
 			// the statements one at a time reached neither, because both
 			// live in the interpreter's own top-level loop.
 			if err := safely("running the command", func() error {
-				return runner.RunStmts(ctx, "", stmts)
+				return runner.RunStmts(ctx, shellName, stmts)
 			}); err != nil {
 				if runner.Exited() {
 					exitErr = err
@@ -912,7 +934,7 @@ func RunCommand(ctx context.Context, src string, login, interactive bool, operan
 	// "koi" rather than "koi -c" because $0 is a shell-identity surface
 	// (#120) that harnesses read: bash -c answers "bash", and answering
 	// "koi -c" made koi the only shell whose $0 carries a flag.
-	name := "koi"
+	name := shellName
 	var params []string
 	if len(operands) > 0 {
 		name, params = operands[0], operands[1:]

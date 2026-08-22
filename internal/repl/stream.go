@@ -72,6 +72,11 @@ func (s *scriptStream) run(ctx context.Context) (err error, perr error) {
 	// when the script ends. Reading line by line means a later line can
 	// return a status of its own, and a koi bug that scrolled past would
 	// be exactly the silent failure the guard exists to prevent.
+	// $HISTFILE is written when the session ends, after the EXIT trap has
+	// run — which a deferred call is, on every way out of this loop:
+	// input exhausted, `exit`, or a parse error (#737). bash writes on
+	// all three, the syntax error included.
+	defer func() { historySaveAtExit(s.runner) }()
 	var fatal error
 	defer func() {
 		if fatal != nil {
