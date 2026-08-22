@@ -2370,9 +2370,14 @@ var fileTests = []fileTestCase{
 		langFile(&ParamExp{Param: lit("foo")}),
 	),
 	fileTest(
+		// A name bash cannot read is read anyway and refused when the
+		// expansion runs (#602), so bash-like keeps the shape and marks
+		// it; only zsh has a meaning for it.
 		[]string{`${}`},
 		langErr2("1:3: invalid parameter name"),
+		langFile(&ParamExp{Bad: true}, langBashLike),
 		langFile(&ParamExp{}, LangZsh),
+		flipConfirm2(LangBash),
 	),
 	fileTest(
 		[]string{`${foo}"bar"`},
@@ -3157,6 +3162,65 @@ var fileTests = []fileTestCase{
 				},
 			}),
 		), LangBash),
+	),
+	fileTest(
+		// The `@` transform's text is not judged while parsing: bash
+		// reads it and decides when it expands, and on a parameter with
+		// no value it never decides at all (#602).
+		[]string{`${a@} ${b@nope}`},
+		langFile(call(
+			word(&ParamExp{
+				Param: lit("a"),
+				Exp:   &Expansion{Op: OtherParamOps},
+			}),
+			word(&ParamExp{
+				Param: lit("b"),
+				Exp: &Expansion{
+					Op:   OtherParamOps,
+					Word: litWord("nope"),
+				},
+			}),
+		), LangBash),
+	),
+	fileTest(
+		// A suffix no operator spells is kept as written and refused when
+		// the expansion runs, which is what stops a whole file from being
+		// lost to one line of it (#602).
+		[]string{`${H*}`},
+		langFile(&ParamExp{
+			Param:     lit("H"),
+			Bad:       true,
+			BadSuffix: lit("*"),
+		}, langBashLike),
+		flipConfirm2(LangBash),
+	),
+	fileTest(
+		[]string{`${#1xyz}`},
+		langFile(&ParamExp{
+			Length: true,
+			Param:  lit("1xyz"),
+			Bad:    true,
+		}, langBashLike),
+		flipConfirm2(LangBash),
+	),
+	fileTest(
+		[]string{`${@[@]}`},
+		langFile(&ParamExp{
+			Param:     lit("@"),
+			Bad:       true,
+			BadSuffix: lit("[@]"),
+		}, langBashLike),
+		flipConfirm2(LangBash),
+	),
+	fileTest(
+		[]string{`${#foo:-bar}`},
+		langFile(&ParamExp{
+			Length:    true,
+			Param:     lit("foo"),
+			Bad:       true,
+			BadSuffix: lit(":-bar"),
+		}, langBashLike),
+		flipConfirm2(LangBash),
 	),
 	fileTest(
 		[]string{`${a@Q} ${b@#}`},
@@ -5439,21 +5503,37 @@ var fileTests = []fileTestCase{
 		[]string{`${:-word}`},
 		langErr2("1:3: invalid parameter name"),
 		langFile(&ParamExp{
+			Bad: true,
+			Exp: &Expansion{
+				Op:   DefaultUnsetOrNull,
+				Word: litWord("word"),
+			},
+		}, langBashLike),
+		langFile(&ParamExp{
 			Exp: &Expansion{
 				Op:   DefaultUnsetOrNull,
 				Word: litWord("word"),
 			},
 		}, LangZsh),
+		flipConfirm2(LangBash),
 	),
 	fileTest(
 		[]string{`${:+word}`},
 		langErr2("1:3: invalid parameter name"),
+		langFile(&ParamExp{
+			Bad: true,
+			Exp: &Expansion{
+				Op:   AlternateUnsetOrNull,
+				Word: litWord("word"),
+			},
+		}, langBashLike),
 		langFile(&ParamExp{
 			Exp: &Expansion{
 				Op:   AlternateUnsetOrNull,
 				Word: litWord("word"),
 			},
 		}, LangZsh),
+		flipConfirm2(LangBash),
 	),
 	fileTest(
 		[]string{`${(%):-%N}`},

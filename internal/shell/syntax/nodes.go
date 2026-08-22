@@ -694,12 +694,23 @@ type ParamExp struct {
 	Exp       *Expansion       // ${a:-b}, ${a#b}, etc
 
 	// Bad marks an expansion this parser could read but the chosen
-	// language does not have — a nested `${${a}}` outside zsh — which
-	// bash reports as "bad substitution" while *expanding* rather than
-	// while parsing (#277). Keeping the shape and marking it is what
+	// language does not have — a nested `${${a}}` outside zsh, or a
+	// suffix no operator spells like the `*` of `${H*}` — which bash
+	// reports as "bad substitution" while *expanding* rather than while
+	// parsing (#277, #602). Keeping the shape and marking it is what
 	// lets a script lose the command instead of the file, since koi
 	// parses ahead of what it runs.
 	Bad bool
+
+	// BadSuffix is the raw source that follows the parameter in a Bad
+	// expansion whose shape has no field to hold it: the `*` of `${H*}`,
+	// the `[@]` of `${@[@]}`, the `:-x` of `${#a:-x}`. bash reads a
+	// `${…}` to its matching brace before deciding what the text means,
+	// so text it is going to refuse is still read — and the diagnostic
+	// names the whole expansion as written, so it has to be printed back
+	// (#602). Nil when the parameter itself was the unreadable part, as
+	// in `${1xyz}`.
+	BadSuffix *Lit
 }
 
 // simple returns true if the parameter expansion is of the form $name or ${name},
