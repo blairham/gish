@@ -2953,6 +2953,55 @@ func TestPOSIXModeQuoteRule(t *testing.T) {
 	}
 }
 
+// bash's extglob option decides whether `+(`, `@(`, `!(`, `?(` and `*(`
+// open a group, which is a *parsing* question and not a matching one
+// (#619): with the option off bash does not read `echo +(a|b)c` as a
+// pattern and decline to expand it, it fails to read the line at all.
+// Every expectation below was measured against bash 5.3, with the option
+// set on a line of its own so that bash's own line-by-line reading has
+// applied it.
+func TestExtendedGlobsOption(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		// Whether bash reports a syntax error with extglob off and on.
+		offErrs, onErrs bool
+	}{
+		// The group in an ordinary word: syntax with the option, a
+		// syntax error without it.
+		{"word", `echo +(a|b)c`, true, false},
+		{"every operator", `echo @(a) !(a) ?(a) *(a) +(a)`, true, false},
+		// An empty pattern list is a group when the option is on —
+		// `echo +()c` prints `+()c` — and with it off the same text is
+		// how a function named `+` is defined.
+		{"empty group", `echo +()c`, true, false},
+		{"function named @", "@() { echo hi; }", false, true},
+		// A case pattern is the same question: bash rejects the whole
+		// `case` without the option.
+		{"case pattern", `case abc in +(a|b)c) echo yes;; esac`, true, false},
+		// A conditional command's right-hand side is a pattern by
+		// grammar, so the option does not reach it either way.
+		{"test expression", `[[ abc == +(a|b)c ]]`, false, false},
+		{"empty group in test", `[[ "" == @() ]]`, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, on := range []bool{false, true} {
+				_, err := NewParser(ExtendedGlobs(on)).Parse(strings.NewReader(tc.in), "")
+				want := tc.offErrs
+				if on {
+					want = tc.onErrs
+				}
+				if gotErr := err != nil; gotErr != want {
+					t.Fatalf("ExtendedGlobs(%t) on %q: err = %v, want an error: %t",
+						on, tc.in, err, want)
+				}
+			}
+		})
+	}
+}
+
 // The case-toggle operators are koi's own addition to this parser
 // (#277): bash's `${x~}` and `${x~~}`, which the corpus above has no
 // entry for. What matters beyond parsing is that they *print* back as

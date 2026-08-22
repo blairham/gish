@@ -7246,6 +7246,26 @@ done <<< 2`,
 		"ea\neb\n",
 	},
 
+	// `[[ ]]` matches extended patterns whatever `shopt extglob` says,
+	// because a conditional command's right-hand side is a pattern by
+	// grammar rather than by option (#619). Neither of these turns the
+	// option on, and bash answers both — which is why the parser's
+	// extglob rule has to make an exception for a test expression rather
+	// than gate every position on the option.
+	{
+		"[[ abc == +(a|b)c ]] && echo yes",
+		"yes\n",
+	},
+	{
+		"[[ abc == @(a)?(b)c ]] && echo yes",
+		"yes\n",
+	},
+	{
+		// An empty pattern list is a group here too, matching nothing.
+		`[[ "" == @() ]] && echo yes`,
+		"yes\n",
+	},
+
 	// Extended globbing via the extglob option.
 	// Note how extglob affects Bash's own line-by-line parsing, so we set the option before a newline.
 	{

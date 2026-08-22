@@ -694,7 +694,14 @@ func (r *Runner) DirStack() []string {
 // to its parser between lines, so an option a script sets reaches the
 // rest of the script (#450).
 func (r *Runner) ParserOptions() []syntax.ParserOption {
-	return []syntax.ParserOption{syntax.POSIXMode(r.opts[optPosix])}
+	return []syntax.ParserOption{
+		syntax.POSIXMode(r.opts[optPosix]),
+		// `shopt -s extglob` changes how the rest of the script is
+		// *parsed*, not how it globs: with it off, `echo +(a|b)c` is a
+		// syntax error at the `(` rather than a pattern that declines to
+		// match (#619).
+		syntax.ExtendedGlobs(r.opts[optExtGlob]),
+	}
 }
 
 // Stdin is the file the runner's descriptor 0 currently refers to.
