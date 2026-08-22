@@ -3826,11 +3826,31 @@ func splitKeywordAssigns(args []*syntax.Word) ([]*syntax.Word, []*syntax.Assign)
 	return rest, kw
 }
 
+// disabledCall reports whether the call seam must be skipped for this
+// name because `enable -n` switched the builtin off.
+//
+// This is what makes "disabled" mean what a script asks for. A name
+// [IsBuiltin] recognizes never reaches the ExecHandler, so an embedder
+// that *replaces* one of these builtins puts its version at the
+// CallHandler and renames the call (#565) -- which means skipping only
+// [Runner.builtin] would leave `enable -n printf` running koi's printf
+// instead of the program on the machine, silently, since the name never
+// gets as far as the check. The decision therefore belongs one layer
+// earlier than the dispatch: a disabled builtin is not offered to the
+// seam at all, and falls straight through to exec.
+//
+// The cost is that a handler which merely *observes* every call does not
+// see one to a disabled builtin. That is accepted rather than worked
+// around: the alternative is a per-chain guard the embedder has to
+// remember at every wiring site, and forgetting one reproduces exactly
+// the bug this closes (#603).
+func (r *Runner) disabledCall(name string) bool { return r.disabledBuiltins[name] }
+
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	if r.stop(ctx) {
 		return
 	}
-	if r.callHandler != nil {
+	if r.callHandler != nil && !r.disabledCall(args[0]) {
 		var err error
 		args, err = r.callHandler(r.handlerCtx(ctx, handlerKindCall, pos), args)
 		if err != nil {
@@ -4000,7 +4020,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 // `true`/`false`, or rename it to something that belongs to the exec
 // seam; both land below.
 func (r *Runner) callSkippingFuncs(ctx context.Context, pos syntax.Pos, args []string) exitStatus {
-	if r.callHandler != nil {
+	if r.callHandler != nil && !r.disabledCall(args[0]) {
 		var err error
 		args, err = r.callHandler(r.handlerCtx(ctx, handlerKindCall, pos), args)
 		if err != nil {
