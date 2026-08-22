@@ -390,6 +390,12 @@ type expandEnv struct {
 var _ expand.WriteEnviron = expandEnv{}
 
 func (e expandEnv) Get(name string) expand.Variable {
+	// This is the seam every expansion and every arithmetic reading of a
+	// variable comes through, which makes it where "something has read
+	// this computed variable" is decided (#689). `${SECONDS+set}` counts
+	// as a read in bash and reaches here; an assignment consulting the
+	// previous variable does not, and does not.
+	e.r.markDynamicRead(name)
 	return e.r.lookupVar(name)
 }
 
@@ -959,19 +965,32 @@ const (
 	mainFrameName   = "main"
 )
 
-// enterFuncForReturnTrap turns the RETURN trap off for a function call
-// unless "functrace" is set, and returns what to restore on the way out.
+// enterFuncForTraps turns the DEBUG and RETURN traps off for a call to
+// the function named name, unless they are reachable from here, and
+// returns what to restore on the way out.
 //
-// bash inherits RETURN into a function only under `set -T`, which is the
-// same switch that governs DEBUG. `source` is deliberately not routed
-// through here: a sourced file inherits the trap unconditionally, so its
-// return fires whatever the caller had set.
-func (r *Runner) enterFuncForReturnTrap() bool {
-	old := r.returnTrapOff
-	if !r.opts[optFuncTrace] {
-		r.returnTrapOff = true
+// bash inherits both into a function only under `set -T` — or when *that
+// function* carries the trace attribute `declare -ft` sets (#697), which
+// is the whole point of the attribute: it lets a debugger step into one
+// function without tracing every function in the shell.
+//
+// **Inheritance is sticky, and that is measured rather than derived.**
+// Once the traps are off, they stay off for everything nested inside,
+// including a traced function: `f` traced and called from an untraced
+// `g` gets no DEBUG and no RETURN, while the same `f` called from the
+// top level gets both. So this only ever turns them *off* — a traced
+// callee cannot switch them back on — which is why the flag is carried
+// on the runner rather than recomputed from the innermost frame.
+//
+// `source` is deliberately not routed through here: a sourced file
+// inherits the traps unconditionally, so its return fires whatever the
+// caller had set.
+func (r *Runner) enterFuncForTraps(name string) (bool, bool) {
+	oldReturn, oldDebug := r.returnTrapOff, r.debugTrapOff
+	if !r.opts[optFuncTrace] && !r.tracedFuncs[name] {
+		r.returnTrapOff, r.debugTrapOff = true, true
 	}
-	return old
+	return oldReturn, oldDebug
 }
 
 // runReturnTrap fires the RETURN trap for a frame that is about to be
@@ -2154,7 +2173,15 @@ assignLoop:
 			// on to the next name rather than abandoning the command:
 			// `declare 1x z=1` reports 1x at 1 and still declares z
 			// (#661, measured for all five variants).
-			r.errf("%s: `%s': not a valid identifier\n", variant, name)
+			//
+			// What is quoted is the whole *operand* rather than the base
+			// name: bash reports `` `=bar' `` for `declare =bar` and
+			// `` `=' `` for `declare $x=$x` with x unset, where koi had
+			// already split the assignment and quoted the part before
+			// the `=` — which for those two leaves it quoting nothing at
+			// all, so the diagnostic names no operand a reader could
+			// find on the line (#724).
+			r.errf("%s: `%s': not a valid identifier\n", variant, r.declOperand(name, as))
 			r.exit.code = 1
 			continue assignLoop
 		}
@@ -2176,59 +2203,12 @@ assignLoop:
 					continue
 				}
 			}
-			// `export -f name` and `declare -xf name` export the
-			// function rather than printing it (#387); koi printed the
-			// body and left the child with a 127.
-			// +x is tested first: `export -nf f` carries both, since
-			// the export variant contributes -x of its own.
-			if slices.Contains(modes, "+x") {
-				delete(r.exportedFuncs, name)
-				continue
-			}
-			if slices.Contains(modes, "-x") {
-				if r.Funcs[name] == nil {
-					r.errf("%s: %s: not a function\n", variant, name)
-					r.exit.code = 1
-					continue
-				}
-				if r.exportedFuncs == nil {
-					r.exportedFuncs = map[string]bool{}
-				}
-				r.exportedFuncs[name] = true
-				continue
-			}
-			// `declare -f +r name` is the one attribute a readonly
-			// function refuses to lose — `+x` and `+t` are allowed on one,
-			// measured — and it is a refusal only when the function *is*
-			// readonly: `+r` on an ordinary one is a silent no-op at 0.
-			if slices.Contains(modes, "+r") {
-				if r.readonlyFuncs[name] {
-					r.errf("%s: %s: readonly function\n", variant, name)
-					r.exit.code = 1
-				}
-				continue
-			}
-			// `readonly -f name`, `declare -fr name` and `typeset -fr
-			// name` mark rather than list, which is why this runs ahead of
-			// the -f/-F printing below and why -p makes no difference to
-			// it: `readonly -pf f` on an already-readonly f prints
-			// nothing (#615).
-			if slices.Contains(modes, "-r") {
-				if r.Funcs[name] == nil {
-					// `readonly` names what it could not find while
-					// `declare -fr` is silently 1, which is declare's
-					// existing answer for an absent function rather than
-					// a second rule.
-					if variant == "readonly" {
-						r.errf("%s: %s: not a function\n", variant, name)
-					}
-					r.exit.code = 1
-					continue
-				}
-				if r.readonlyFuncs == nil {
-					r.readonlyFuncs = map[string]bool{}
-				}
-				r.readonlyFuncs[name] = true
+			// An attribute letter alongside -f marks the function
+			// rather than printing it (#387, #615), which is why this
+			// runs ahead of the -f/-F printing below and why -p makes no
+			// difference to it: `readonly -pf f` on an already-readonly
+			// f prints nothing.
+			if r.applyFuncModes(variant, name, modes) {
 				continue
 			}
 		}
@@ -2285,6 +2265,13 @@ assignLoop:
 		}
 		if declQuery == "-p" {
 			// declare -p name: print variable with attributes.
+			//
+			// A named query is a *read*: `declare -p DIRSTACK` prints
+			// the entries and makes every later listing print them too,
+			// where the no-operands listing prints neither and marks
+			// nothing (#689). Measured, and it is why the marking is not
+			// simply "an expansion happened".
+			r.markDynamicRead(name)
 			vr := r.lookupVar(name)
 			if !vr.Declared() {
 				// A computed variable is answered from the runner rather
@@ -2512,9 +2499,31 @@ assignLoop:
 		// Per name rather than for the command — `declare d[2] e` leaves
 		// e a scalar — and an explicit -a/-A/-n still wins, since
 		// `declare -A m[k]` is bash's `declare -A m`.
+		//
+		// A name that is *already* an array is left alone, of either
+		// kind: `declare -A m=([k]=v); declare m[z]` is bash's silent 0
+		// with `m` still associative, where koi read the subscript as a
+		// request for an indexed array and answered `cannot convert
+		// associative to indexed array` at 1. So the subscript asks for
+		// an array rather than for an *indexed* one, and on a readonly
+		// array that is also what makes the declaration a no-op instead
+		// of a write the store refuses (#723).
 		nameType := refType
-		if nameType == "" && as.Naked && as.Index != nil {
+		if nameType == "" && as.Naked && as.Index != nil &&
+			vr.Kind != expand.Indexed && vr.Kind != expand.Associative {
 			nameType = "-a"
+		}
+		// `readonly -a NAME` and `export -a NAME` with nothing to assign
+		// do not apply the array kind at all: bash answers `declare -r
+		// arr` and `declare -x earr` where koi answered `declare -ar`
+		// and `declare -ax`. With a value it *is* an array in both, so
+		// the kind comes from the compound assignment rather than from
+		// the flag — for these two builtins only, since `declare -a c`
+		// really does declare an unset array (#378's sticky attribute).
+		// Measured per builtin, because the rule is per builtin (#722).
+		if as.Naked && (variant == "export" || variant == "readonly") &&
+			(nameType == "-a" || nameType == "-A") {
+			nameType = ""
 		}
 		// The string form of a compound assignment (#379): a value that
 		// arrived through expansion as "( ... )" is parsed as an array
@@ -2753,14 +2762,17 @@ assignLoop:
 		// -Fr` answered as if nothing were readonly at all (#615). Two
 		// filters are a *union* rather than an intersection, measured:
 		// `declare -Frx` over one exported and one readonly function
-		// lists both.
+		// lists both, and so does `declare -Frt` over one readonly and
+		// one traced (#697).
 		onlyExported := slices.Contains(modes, "-x")
 		onlyReadOnly := slices.Contains(modes, "-r")
+		onlyTraced := slices.Contains(modes, "-t")
 		names := make([]string, 0, len(r.Funcs))
 		for name := range r.Funcs {
-			if (onlyExported || onlyReadOnly) &&
+			if (onlyExported || onlyReadOnly || onlyTraced) &&
 				!(onlyExported && r.exportedFuncs[name]) &&
-				!(onlyReadOnly && r.readonlyFuncs[name]) {
+				!(onlyReadOnly && r.readonlyFuncs[name]) &&
+				!(onlyTraced && r.tracedFuncs[name]) {
 				continue
 			}
 			names = append(names, name)
@@ -2781,22 +2793,114 @@ assignLoop:
 	}
 }
 
-// funcAttrs renders a function's attribute letters the way bash orders
-// them in a `declare -f…` line: readonly before exported, so a function
-// that is both reports `declare -frx` (#615). The empty string means the
-// function carries no attributes, which is what decides whether a
-// `declare -f` listing prints a line for it at all.
+// declOperand renders the operand a declaration was given, for the
+// identifier refusal to quote (#724). The parser and [flattenAssigns]
+// have both already split the word at its first `=`, so putting it back
+// together is the only way to name what the caller typed — and it is the
+// *expanded* text bash quotes, measured: `declare "$x"=v` with x unset is
+// “ `=v' “.
 //
-// bash has a third letter between these two — `t`, the trace attribute
-// `declare -ft` sets for the DEBUG and RETURN traps, so all three is
-// `declare -frtx`. koi does not track it, and `declare -ft f` prints the
-// function's body rather than setting anything (#697): that is a
-// trap-reachability flag rather than a refusal, so it belongs with
-// #614's work and not here.
+// A naked word is its own operand; anything else carries the `=` back,
+// including `declare =` where there is nothing after it to render.
+func (r *Runner) declOperand(name string, as *syntax.Assign) string {
+	if as.Naked {
+		return name
+	}
+	if as.Value == nil {
+		return name + "="
+	}
+	return name + "=" + r.literal(as.Value)
+}
+
+// funcModes are the attribute letters that mean "mark this function"
+// rather than "print it" when they arrive alongside -f or -F. A word
+// carrying any of them is a *request*, so the printing below is skipped
+// even when the request fails.
+var funcModes = []string{"-r", "+r", "-x", "+x", "-t", "+t"}
+
+// applyFuncModes applies the function attributes in modes to name, and
+// reports whether any were asked for — which is what tells declClause to
+// mark rather than print.
+//
+// The letters *compose*, which taking the first and stopping got wrong:
+// `declare -frx f` marks the function readonly **and** exported in bash,
+// where koi applied only -x and answered `declare -fx f` (#697, found
+// while adding -t). So this applies every letter given rather than
+// returning at the first one.
+//
+// Two rules are measured and hold for every letter. A function that does
+// not exist is status 1 whatever was asked — `declare -f +x nofunc` and
+// `declare -ft nofunc` alike — and only `export` and `readonly` name it,
+// where `declare`/`typeset` are silently 1; koi named it for -x and was
+// silently *0* for +x and +r. And dropping readonly from a readonly
+// function is refused before anything else is applied: `declare -f +r +x
+// f` on a readonly f reports the refusal and leaves the export attribute
+// exactly as it was.
+func (r *Runner) applyFuncModes(variant, name string, modes []string) bool {
+	asked := false
+	for _, mode := range modes {
+		if slices.Contains(funcModes, mode) {
+			asked = true
+			break
+		}
+	}
+	if !asked {
+		return false
+	}
+	if r.Funcs[name] == nil {
+		if variant == "export" || variant == "readonly" {
+			r.errf("%s: %s: not a function\n", variant, name)
+		}
+		r.exit.code = 1
+		return true
+	}
+	// A readonly function is the one attribute that refuses to come off,
+	// and the refusal aborts the whole word rather than letting the other
+	// letters through (#615). `+r` on an ordinary function is a silent 0.
+	if slices.Contains(modes, "+r") && r.readonlyFuncs[name] {
+		r.errf("%s: %s: readonly function\n", variant, name)
+		r.exit.code = 1
+		return true
+	}
+	for _, mode := range modes {
+		switch mode {
+		case "-r":
+			if r.readonlyFuncs == nil {
+				r.readonlyFuncs = map[string]bool{}
+			}
+			r.readonlyFuncs[name] = true
+		case "-x":
+			if r.exportedFuncs == nil {
+				r.exportedFuncs = map[string]bool{}
+			}
+			r.exportedFuncs[name] = true
+		case "+x":
+			delete(r.exportedFuncs, name)
+		case "-t":
+			if r.tracedFuncs == nil {
+				r.tracedFuncs = map[string]bool{}
+			}
+			r.tracedFuncs[name] = true
+		case "+t":
+			delete(r.tracedFuncs, name)
+		}
+	}
+	return true
+}
+
+// funcAttrs renders a function's attribute letters the way bash orders
+// them in a `declare -f…` line: readonly, then traced, then exported, so
+// a function carrying all three reports `declare -frtx` (#615, #697).
+// The empty string means the function carries no attributes, which is
+// what decides whether a `declare -f` listing prints a line for it at
+// all.
 func (r *Runner) funcAttrs(name string) string {
 	attrs := ""
 	if r.readonlyFuncs[name] {
 		attrs += "r"
+	}
+	if r.tracedFuncs[name] {
+		attrs += "t"
 	}
 	if r.exportedFuncs[name] {
 		attrs += "x"
@@ -2905,8 +3009,11 @@ func (r *Runner) fireDebugTrap(ctx context.Context, line uint) bool {
 	}
 	// A function body and a sourced file are both traced only under
 	// "functrace" — the same rule, and both measured: bash prints nothing
-	// for the commands inside `. file` until `set -T`.
-	if (r.inFunction() || r.inSource) && !r.opts[optFuncTrace] {
+	// for the commands inside `. file` until `set -T`. A function's own
+	// trace attribute is the third way in, and it is decided on entry
+	// rather than here, because inheritance is sticky — see
+	// [Runner.enterFuncForTraps] (#697).
+	if r.debugTrapOff || (r.inSource && !r.opts[optFuncTrace]) {
 		return false
 	}
 	code := r.trapCallback(ctx, r.callbackDebug, "debug", line)
@@ -4453,7 +4560,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			isFunc:   true,
 		})
 
-		oldReturnTrapOff := r.enterFuncForReturnTrap()
+		oldReturnTrapOff, oldDebugTrapOff := r.enterFuncForTraps(name)
 
 		// Functions run in a nested scope.
 		// Note that [Runner.exec] below does something similar.
@@ -4481,7 +4588,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 			// function's locals and its FUNCNAME, as bash's does.
 			r.runReturnTrap(ctx, body.Pos().Line())
 		}
-		r.returnTrapOff = oldReturnTrapOff
+		r.returnTrapOff, r.debugTrapOff = oldReturnTrapOff, oldDebugTrapOff
 
 		// The same rule for EXIT when `exit` was called in here (#352):
 		// bash fires the EXIT trap where the exit happened, so the

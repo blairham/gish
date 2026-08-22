@@ -1575,7 +1575,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}
 		}
 		if optind-1 != r.optState.argidx {
-			r.setVarString("OPTIND", strconv.FormatInt(int64(r.optState.argidx+1), 10))
+			r.setVarInt("OPTIND", strconv.FormatInt(int64(r.optState.argidx+1), 10))
 		}
 
 		exit.oneIf(done)
@@ -1898,7 +1898,18 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 				r.callbackExit, r.listed.exit = callback, callback
 				r.callbackExitLine = pos.Line()
 			case "DEBUG":
+				// Reachable here for the same reason RETURN is, below:
+				// `trap` installs the handler for the context it is run
+				// in, so a function that sets its own DEBUG trap traces
+				// its own remaining commands even though entering the
+				// function turned inheritance off. Measured — koi ran
+				// the function's body untraced and only started tracing
+				// after it returned, which is the shape a `set -x`
+				// replacement written in a function reads as dead
+				// (#697, found while giving the trace attribute its
+				// entry point).
 				r.callbackDebug, r.listed.debug = callback, callback
+				r.debugTrapOff = false
 			case "RETURN":
 				// Setting it here also makes it reachable here: `trap`
 				// installs the handler for the context it is run in, so a

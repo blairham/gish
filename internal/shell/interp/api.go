@@ -152,6 +152,14 @@ type Runner struct {
 	// function's environment representation.
 	readonlyFuncs map[string]bool
 
+	// tracedFuncs holds the names `declare -ft` marked. The trace
+	// attribute is what lets the DEBUG and RETURN traps reach *into* one
+	// function without `set -T` turning them on for every function
+	// (#697), so it is read on entry as well as printed in a listing —
+	// an attribute that only showed up in `declare -pF` would be a flag
+	// a debugger sets and nothing acts on.
+	tracedFuncs map[string]bool
+
 	// localOpts holds the shell options `local -` saved in the running
 	// function, to be put back when it returns (#385).
 	localOpts *runnerOpts
@@ -217,6 +225,22 @@ type Runner struct {
 	// advance this one's, and replaced outright when a script assigns
 	// RANDOM to seed it (#547).
 	random *mathrand.Rand
+	// readDynamic records the computed variables something has asked for
+	// a value from, which is what decides whether a *listing* shows one
+	// with its value or with none (#689). bash caches a dynamic
+	// variable's value on first use and its listings print the cache, so
+	// `declare -a` before anything reads DIRSTACK is `declare -a
+	// DIRSTACK=()` and the same command afterwards carries the entries.
+	// See [lazyListing] for which names, and why it is per name.
+	readDynamic map[string]bool
+
+	// wroteDynamic is readDynamic's other half: a write fills the same
+	// cache a read does, so a listing after `SECONDS=10` carries a value.
+	// They are two records rather than one because they answer the same
+	// question about the *value* and different questions about the
+	// integer attribute — see [Runner.dynamicListingAttrs].
+	wroteDynamic map[string]bool
+
 	// unsetDynamic records the computed variables a script has unset,
 	// which ends their specialness for the rest of the shell.
 	unsetDynamic map[string]bool
@@ -309,6 +333,16 @@ type Runner struct {
 	// silence the caller's own return. Both were measured against bash
 	// before being written down.
 	returnTrapOff bool
+
+	// debugTrapOff is returnTrapOff's twin for DEBUG, which bash governs
+	// with the same switch. It became a flag rather than a question asked
+	// at the firing point when the trace attribute arrived (#697): with
+	// only `set -T` to consult, "am I in a function?" and "were the traps
+	// off when I entered one?" are the same answer, and with a per
+	// function attribute they are not — a traced function called from an
+	// untraced one inherits nothing, so the state has to be remembered
+	// from the entry that decided it.
+	debugTrapOff bool
 
 	// listed mirrors the callbacks above for `trap -p`'s benefit, and is
 	// inherited by a subshell unconditionally where they are not.
@@ -1861,11 +1895,18 @@ func (r *Runner) Reset() {
 		home, _ := os.UserHomeDir()
 		r.setVarString("HOME", home)
 	}
+	// bash marks its own numeric variables `-i`, so `declare -i` with no
+	// operands lists eight of them where koi listed none, and every full
+	// listing carried `declare -r EUID` against bash's `declare -ir
+	// EUID`. The attribute is not only cosmetic: `declare -p` output is
+	// meant to be re-evaluable, and a variable listed without `-i`
+	// re-reads as one whose later assignments are not arithmetic (#720).
 	if !r.writeEnv.Get("UID").IsSet() {
 		r.setVar("UID", expand.Variable{
 			Set:      true,
 			Kind:     expand.String,
 			ReadOnly: true,
+			Integer:  true,
 			Str:      strconv.Itoa(os.Getuid()),
 		})
 	}
@@ -1874,7 +1915,23 @@ func (r *Runner) Reset() {
 			Set:      true,
 			Kind:     expand.String,
 			ReadOnly: true,
+			Integer:  true,
 			Str:      strconv.Itoa(os.Geteuid()),
+		})
+	}
+	if !r.writeEnv.Get("PPID").IsSet() {
+		// PPID is stored rather than computed on read, which is what
+		// gives it the `-ir` bash reports *and* the refusal underneath
+		// it: `PPID=1` is bash's "readonly variable" and was accepted
+		// silently here, so a script clobbering the name it uses to find
+		// its parent was told it worked (#720). The value cannot change
+		// during a shell's life, so nothing is lost by recording it.
+		r.setVar("PPID", expand.Variable{
+			Set:      true,
+			Kind:     expand.String,
+			ReadOnly: true,
+			Integer:  true,
+			Str:      strconv.Itoa(os.Getppid()),
 		})
 	}
 	if !r.writeEnv.Get("GID").IsSet() {
@@ -1887,7 +1944,7 @@ func (r *Runner) Reset() {
 	}
 	r.setVarString("PWD", r.Dir)
 	r.setVarString("IFS", " \t\n")
-	r.setVarString("OPTIND", "1")
+	r.setVarInt("OPTIND", "1")
 
 	r.dirStack = append(r.dirStack, r.Dir)
 
@@ -2164,6 +2221,8 @@ func (r *Runner) subshell(background bool) *Runner {
 		// numbers, so `$(echo $RANDOM)` does not move the parent's
 		// sequence (#547). What a script unset stays unset, though.
 		unsetDynamic:     maps.Clone(r.unsetDynamic),
+		readDynamic:      maps.Clone(r.readDynamic),
+		wroteDynamic:     maps.Clone(r.wroteDynamic),
 		bashPIDValue:     nextBashPID(),
 		argv0:            r.argv0,
 		disabledBuiltins: maps.Clone(r.disabledBuiltins),
@@ -2224,6 +2283,7 @@ func (r *Runner) subshell(background bool) *Runner {
 	// not a function call, so nothing about it changes reachability.
 	r2.callbackReturn = r.callbackReturn
 	r2.returnTrapOff = r.returnTrapOff
+	r2.debugTrapOff = r.debugTrapOff
 	r2.listed = r.listed
 	r2.sigListed = maps.Clone(r.sigListed)
 	r2.sigIgnoredAtEntry = r.sigIgnoredAtEntry
@@ -2244,6 +2304,10 @@ func (r *Runner) subshell(background bool) *Runner {
 	// marking one must not mark it in the parent, so the set is cloned
 	// alongside the functions it describes (#615).
 	r2.readonlyFuncs = maps.Clone(r.readonlyFuncs)
+	// The trace attribute follows the same rule, and for the same reason:
+	// a subshell's `declare -ft` must not make the parent's function
+	// traced (#697).
+	r2.tracedFuncs = maps.Clone(r.tracedFuncs)
 	r2.Vars = make(map[string]expand.Variable)
 	r2.alias = maps.Clone(r.alias)
 
