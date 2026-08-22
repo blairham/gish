@@ -50,6 +50,22 @@ func TestHelpCoversEveryBuiltin(t *testing.T) {
 			t.Errorf("koi command %q has neither a help topic nor a rewrite", name)
 		}
 	}
+	// The gap the other two guards leave (#618): a bash builtin this
+	// package answers is in neither `builtins.ShellBuiltins()` nor
+	// `callHandlerCommands`, so `bind`, `complete`, `compopt` and
+	// `history` were undocumented while `type -t` called every one of
+	// them a builtin.
+	for _, name := range sessionBuiltins {
+		if _, ok := helpTopics[name]; !ok {
+			t.Errorf("session-scoped builtin %q has no help topic", name)
+		}
+		if len(sessionBuiltinNotes[name]) == 0 {
+			// These are the #159 inheritance builtins, and what koi's
+			// version does is not what bash's does — the topic that only
+			// repeats bash's one-liner is the one that misleads.
+			t.Errorf("session-scoped builtin %q has no note saying what koi's version does", name)
+		}
+	}
 }
 
 // TestHelpTopicsNameRealCommands is the reverse check: a topic or rewrite
@@ -61,6 +77,7 @@ func TestHelpTopicsNameRealCommands(t *testing.T) {
 		"bg", "builtins", "fc", "fg", "help", "jobs", "kill", "newgrp",
 		"parallel", "plugins", "times", "umask")
 	known = append(known, callHandlerCommands...)
+	known = append(known, sessionBuiltins...)
 	for name := range helpTopics {
 		if !slices.Contains(known, name) {
 			t.Errorf("help topic %q names nothing the session answers", name)

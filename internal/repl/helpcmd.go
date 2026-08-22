@@ -52,6 +52,13 @@ var helpNotes = map[string][]string{
 	"fc": fcNotes,
 }
 
+func init() {
+	// The session-scoped builtins' notes live beside their topics rather
+	// than in one literal, since they are one group with one reason for
+	// existing (#618).
+	maps.Copy(helpNotes, sessionBuiltinNotes)
+}
+
 // helpTopics covers every implemented shell builtin, every koi-native
 // builtin, and the koi commands with no help subcommand of their own.
 // helpcmd_test.go fails when a builtin ships without an entry here.
@@ -120,9 +127,105 @@ var helpTopics = map[string]helpTopic{
 	"times":    {"times", "print user and system times for the shell and its children"},
 	"umask":    {"umask [mode]", "set or print the file-creation mask"},
 
+	// The session-scoped builtins (#618). See sessionBuiltins.
+	"bind": {
+		"bind [-X] [-m keymap] [-x keyseq:command] [-r keyseq] [keyseq:function]",
+		"bind a key to a shell command or to a line-editor function",
+	},
+	"complete": {
+		"complete [-abcdefgjkprsuv] [-DEI] [-o option] [-A action] [-G globpat] " +
+			"[-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [name ...]",
+		"register how a command's arguments are completed",
+	},
+	"compopt": {
+		"compopt [-o|+o option] [-DEI] [name ...]",
+		"set or clear a completion's options — a registered one, or the one now running",
+	},
+	"history": {
+		"history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg ...]",
+		"list the command history, or edit this session's copy of it",
+	},
+
 	// koi commands with no help subcommand of their own.
 	"doctor":  {"doctor", "check the shell's moving parts and print the exact fix for each finding"},
 	"explain": {"explain", "ask the configured AI provider why the last command failed"},
+}
+
+// sessionBuiltins are the bash builtins koi answers from *this package*
+// rather than from the interpreter or the native registry (#618).
+//
+// They fell through both of `help`'s drift guards, which is why `type -t
+// history` said `builtin` while `help history` denied there was such a
+// thing. One guard walks `builtins.ShellBuiltins()` — the interpreter's
+// table, which does not have them — and the other walks
+// `callHandlerCommands`, which is koi's *own* commands and must not have
+// them either, since these four are bash names and the `help` overview
+// prints that list under "koi commands".
+//
+// So the list is declared here, beside the topics, and read from both
+// directions by helpcmd_test.go. The half that cannot go stale is in
+// `cmd/koi`: a name koi calls a builtin and does not refuse must have a
+// topic, asked of a real shell, so the next one of these lands with a
+// failing test rather than an undocumented builtin.
+//
+// What they still do *not* appear in is every other listing of builtins —
+// `compgen -b`, `compgen -A enabled`, and the `help` overview's shell
+// builtins line all read `builtins.ShellBuiltins()`. That is the same
+// shape one layer along and is filed as #679 rather than absorbed here,
+// because moving it means moving command-name completion with it.
+var sessionBuiltins = []string{"bind", "complete", "compopt", "history"}
+
+// sessionBuiltinNotes explain what koi's versions do, which is not what
+// bash's do: they are the #159 ecosystem-inheritance builtins, so what a
+// topic has to say is where the line editor and the shared history store
+// put them. Printed under the one-liner by `help <name>`.
+var sessionBuiltinNotes = map[string][]string{
+	"bind": {
+		"Only an interactive session has a line editor, so in a script",
+		"`bind` accepts what it is given and does nothing.",
+		"",
+		"`-x` runs a shell command on a key, with READLINE_LINE and",
+		"READLINE_POINT around it; `-r` and `-u` remove a binding; `-X`",
+		"lists the `-x` ones; and a bare `keyseq:function` binds a",
+		"readline function name koi's editor has an operation for.",
+		"",
+		"The listing forms, keymap selection and readline macros are",
+		"accepted and ignored rather than refused: a tool's init script",
+		"sets a dozen bindings and checks none of them, so failing on one",
+		"would cost the eleven that work.",
+	},
+	"complete": {
+		"Registrations are session-wide and are never written anywhere:",
+		"they last as long as the shell. Outside an interactive session",
+		"they are still recorded, so `complete -p` in a script reports",
+		"what that script registered.",
+		"",
+		"`-F`, `-C`, `-W` and the `-A` actions generate; `-P`, `-S`, `-X`",
+		"and `-G` are kept so that `eval \"$(complete -p cmd)\"` restores a",
+		"spec whole, and are not applied yet.",
+	},
+	"compopt": {
+		"The option names are `complete`'s own `-o` vocabulary, and the",
+		"list is closed: one that is not in it is refused rather than",
+		"accepted and dropped.",
+		"",
+		"With no names, the form means the completion that is *running*",
+		"rather than a registered one, so it is only meaningful inside a",
+		"completion function.",
+	},
+	"history": {
+		"koi's history is a store shared live across sessions, not one",
+		"list per shell, so the two halves of this builtin answer",
+		"different things. Reading reports the store — the same entries",
+		"the up-arrow and `fc -l` show. The first change (`-c`, `-d`,",
+		"`-s`) takes a snapshot and everything after that works on the",
+		"snapshot, so a script's edits are session-local and never touch",
+		"what other shells can see.",
+		"",
+		"The file forms need $HISTFILE when no filename is given; koi has",
+		"no default for it and says so rather than writing a file it will",
+		"never read.",
+	},
 }
 
 // helpSyntaxTopics are the shell *constructs* help answers for (#557):
