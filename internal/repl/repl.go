@@ -163,7 +163,6 @@ func runEditor(ctx context.Context, login bool) error {
 		interp.Env(sessionEnv(sessionFlags{
 			interactive: true,
 			jobControl:  true,
-			histExpand:  true,
 			invocation:  invokedStdin,
 		})),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
@@ -272,7 +271,7 @@ func runEditor(ctx context.Context, login bool) error {
 	declareShellIdentity(ctx, runner)
 	// argv's `set` options are in force before the profile and rc run,
 	// which is bash's order (#426).
-	applySessionOptions(ctx, runner, true)
+	applySessionOptions(ctx, runner, true, true)
 	// Color-friendly defaults before anything is sourced, so an rc that
 	// disagrees simply arrives later and wins (#54).
 	applyColorDefaults(ctx, runner)
@@ -412,7 +411,20 @@ func runEditor(ctx context.Context, login bool) error {
 		}
 		// History expansion (#96): !!, !$, !^, !:N, !prefix, ^old^new.
 		// bash echoes the expansion so the user sees what runs.
-		if store != nil {
+		//
+		// It is asked for rather than assumed (#559): `set +H` is a line
+		// a user types and koi accepted it without acting on it, which
+		// is the silent-acceptance shape. The bit is the interpreter's,
+		// so `set -o` and `$-` answer from the same place the behavior
+		// comes from — an interactive session turns it on at startup the
+		// way it turns emacs mode on (#576).
+		//
+		// bash's second gate, `set -o history`, deliberately is not one
+		// here: it governs the interpreter's ambient recording (#277),
+		// and an interactive session's history is the editor's store
+		// rather than that list, so reading it would turn `!!` off in
+		// the shell whose history is unquestionably there.
+		if store != nil && runner.OptionSet("histexpand") {
 			expanded, changed, printOnly, herr := expandHistoryLine(line, store.Match)
 			switch {
 			case herr != nil:
@@ -759,7 +771,7 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 	declareShellIdentity(ctx, runner)
 	// argv's `set` options are in force before the profile and rc run,
 	// which is bash's order (#426).
-	applySessionOptions(ctx, runner, interactive)
+	applySessionOptions(ctx, runner, interactive, false)
 	if login {
 		loadProfile(ctx, runner)
 	}
@@ -973,7 +985,7 @@ func runScript(ctx context.Context, r io.Reader, name string, login, interactive
 	declareShellIdentity(ctx, runner)
 	// argv's `set` options are in force before the profile and rc run,
 	// which is bash's order (#426).
-	applySessionOptions(ctx, runner, interactive)
+	applySessionOptions(ctx, runner, interactive, false)
 	// The names must resolve here too, so an unavailable builtin reports
 	// itself rather than looking like a missing program.
 	builtins.Register("plugins", pluginsBuiltin(nil, nil, ""))

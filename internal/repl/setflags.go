@@ -83,7 +83,12 @@ func importedOptionFlags() (setNames, shoptNames []string) {
 	return setNames, shoptNames
 }
 
-func applySessionOptions(ctx context.Context, runner *interp.Runner, interactive bool) {
+// lineEditor says whether this session runs koi's line editor, which is
+// narrower than interactive: `koi -ic` is an interactive shell with no
+// editor. The two options that are *the editor's* behavior — the editing
+// mode and history expansion — are claimed only when it is there, since
+// koi reports what it honors rather than what bash would report (#559).
+func applySessionOptions(ctx context.Context, runner *interp.Runner, interactive, lineEditor bool) {
 	// An interactive shell starts in emacs editing mode, which is a state
 	// koi was in and did not say it was in (#576): bash answers `emacs on`
 	// for `bash -i` and `emacs off` for a script, and koi answered off for
@@ -92,6 +97,16 @@ func applySessionOptions(ctx context.Context, runner *interp.Runner, interactive
 	// each of those turns emacs off on its way past.
 	if interactive {
 		_ = runHookSource(ctx, runner, "set -o emacs")
+	}
+	// History expansion is the same shape and goes in the same place
+	// (#559): bash answers `histexpand on` for an interactive shell and
+	// off for a script, and it is the option koi's line editor has been
+	// acting on all along without recording. Before argv for the same
+	// reason as emacs — a `+H` on the command line has to win — and it is
+	// what makes `set +H` mean something interactively, since the loop
+	// now asks.
+	if lineEditor {
+		_ = runHookSource(ctx, runner, "set -o histexpand")
 	}
 	// The environment's options come first: argv is the more specific
 	// instruction and must be able to override them.

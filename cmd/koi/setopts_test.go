@@ -68,10 +68,11 @@ func TestSetRefusesWhatItCannotDo(t *testing.T) {
 	dir := t.TempDir()
 
 	// `set -m` used to be the first row here and is implemented now
-	// (#397), which is the outcome the rule is aimed at, twice over.
+	// (#397), and `set -H` was the second until #559 gave a script the
+	// history expansion its line editor already did — which is the
+	// outcome the rule is aimed at, three times over.
 	for _, tc := range []struct{ script, want string }{
 		{"set -v", "verbose"},
-		{"set -H", "histexpand"},
 		{"set +h", "hashall"},
 	} {
 		t.Run(tc.script, func(t *testing.T) {

@@ -797,11 +797,33 @@ func (r *Runner) ReportRecovered(err error) {
 // koi's is the name `koi` (#120), so the prefix would carry a line
 // number without anything a reader could open it in.
 func (r *Runner) errLocation() string {
+	return r.locationAt(r.traceLine)
+}
+
+// InputLocation is [Runner.errLocation] for a diagnostic about the input
+// line num rather than about the statement being run.
+//
+// A shell which transforms a line before parsing it — history expansion
+// (#559) — can fail on a line no statement has been made from yet, so the
+// number is the reader's rather than the runner's. The rule for whether
+// there is a location at all is the same one, and deliberately shared:
+// three families of diagnostic disagreeing about it is what #569, #584
+// and #611 were each one third of.
+func (r *Runner) InputLocation(num int) string {
+	return r.locationAt(uint(num) + r.lineOffset)
+}
+
+// Stderr is the shell's standard error as it stands now, for a caller
+// outside a statement — the reader, which is between statements by
+// definition and so has no [HandlerContext] to write through.
+func (r *Runner) Stderr() io.Writer { return r.stderr }
+
+func (r *Runner) locationAt(line uint) string {
 	frames := r.baseFrames()
 	if len(frames) == 0 || frames[0].source == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s: line %d: ", frames[0].source, r.traceLine)
+	return fmt.Sprintf("%s: line %d: ", frames[0].source, line)
 }
 
 // preRedirErrf writes to the stderr that was in force before the

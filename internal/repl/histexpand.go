@@ -2,6 +2,7 @@ package repl
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -14,6 +15,25 @@ import (
 // is conservative: it never fires inside single quotes, and a `!`
 // followed by space, =, or ( is left alone — the same lexical outs
 // bash gives scripts that use ! for negation.
+//
+// Three more outs matter once this runs over a *script* (#559), where
+// the shapes they protect are ordinary shell rather than typing
+// mistakes, and each is measured against bash rather than reasoned
+// about:
+//
+//   - `[!A-Z])` is a negated bracket expression, not the event `!A-Z`,
+//     so a `!` right after a `[` with a `]` still to come is left alone;
+//   - `${!name}` is indirect expansion, so a `!` right after a `${`
+//     with a `}` still to come is left alone;
+//   - the history comment character — `#`, the third of histchars —
+//     ends expansion for the rest of the line when it stands at the
+//     start or after a word delimiter, which is what makes
+//     `echo ok # !1200` an ordinary comment. It is positional and not a
+//     quoting question: `echo x#y !!` and `echo "#" !!` both still
+//     expand, while `true;# !!` does not.
+//
+// All three are bash's own, and the last two are `#SHELL` cases in
+// readline's history library for exactly this reason.
 
 // expandHistory rewrites the line against the last matching history
 // entries. changed=false means the line passes through untouched; a
@@ -40,6 +60,7 @@ func expandHistoryLine(line string, last func(prefix string, n int) (string, boo
 	changed, printOnly := false, false
 	inSingle, inDouble := false, false
 	runes := []rune(line)
+scan:
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
 		switch {
@@ -52,6 +73,12 @@ func expandHistoryLine(line string, last func(prefix string, n int) (string, boo
 			i++
 			b.WriteRune(runes[i])
 			continue
+		case r == histCommentChar && !inSingle && !inDouble && atWordStart(runes, i):
+			// The rest of the line is a comment as far as expansion is
+			// concerned: bash copies it over and stops looking.
+			b.WriteString(string(runes[i:]))
+			break scan
+		case r == '!' && !inSingle && notAnEvent(runes, i):
 		case r == '!' && !inSingle:
 			sel, consumed, err := expandEvent(runes[i:], last)
 			if err != nil {
@@ -166,6 +193,37 @@ func lastArgOf(line string) string {
 		return ""
 	}
 	return fields[len(fields)-1]
+}
+
+// histCommentChar is the third character of histchars: the one that ends
+// history expansion for the rest of the line. koi does not read
+// $histchars at all (#695), so it is bash's default rather than a
+// variable — which is also why the other two characters are literals.
+const histCommentChar = '#'
+
+// histWordDelimiters is readline's history_word_delimiters, the set a
+// comment character must stand at the start of or follow.
+const histWordDelimiters = " \t\n;&()|<>"
+
+func atWordStart(runes []rune, i int) bool {
+	return i == 0 || strings.ContainsRune(histWordDelimiters, runes[i-1])
+}
+
+// notAnEvent reports whether the `!` at runes[i] is one of the two shell
+// shapes bash refuses to read as an event: a negated bracket expression
+// and an indirect expansion. Both are decided by what stands *before*
+// the `!` plus the closer being somewhere after it, which is readline's
+// own test — `[!]` is not an expansion while `[!` at the end of a line
+// is one.
+func notAnEvent(runes []rune, i int) bool {
+	rest := runes[i+1:]
+	switch {
+	case i >= 1 && runes[i-1] == '[':
+		return slices.Contains(rest, ']')
+	case i >= 2 && runes[i-1] == '{' && runes[i-2] == '$':
+		return slices.Contains(rest, '}')
+	}
+	return false
 }
 
 func isEventWordRune(r rune) bool {
