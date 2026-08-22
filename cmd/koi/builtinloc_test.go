@@ -309,7 +309,7 @@ func TestFCUsageIsBashsLineAndTheProseIsInHelp(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("help fc exited %d: %s", code, help)
 	}
-	for _, want := range []string{"shared across sessions", "editing forms", "listing half"} {
+	for _, want := range []string{"shared across sessions", "editor form", "re-execute form"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help fc does not mention %q — the prose was deleted rather than moved:\n%s", want, help)
 		}

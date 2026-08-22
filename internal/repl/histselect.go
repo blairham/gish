@@ -56,7 +56,7 @@ type selection struct {
 // A zero consumed count means there was nothing to read, which leaves
 // the text to the caller; an error means there *was* something and it
 // could not be read, which aborts the line the way bash does.
-func applySelectors(command string, runes []rune) (selection, int, error) {
+func applySelectors(command string, runes []rune, chars histChars) (selection, int, error) {
 	sel := selection{text: command}
 	consumed := 0
 	wordsTaken := false
@@ -65,7 +65,7 @@ func applySelectors(command string, runes []rune) (selection, int, error) {
 	// characters that end an event's own text, which is why they need no
 	// separator (measured: `!shopt-1` is the `shopt` line's words 0-1).
 	if len(runes) > 0 && strings.ContainsRune("^$*%-", runes[0]) {
-		text, n, found, err := wordDesignator(sel.text, runes)
+		text, n, found, err := wordDesignator(sel.text, runes, chars)
 		switch {
 		case err != nil:
 			return selection{}, 0, errBadWord(string(runes[:n]))
@@ -82,7 +82,7 @@ func applySelectors(command string, runes []rune) (selection, int, error) {
 			return selection{}, 0, errBadModifier("")
 		}
 		if !wordsTaken {
-			text, n, ok, err := wordDesignator(sel.text, runes[i:])
+			text, n, ok, err := wordDesignator(sel.text, runes[i:], chars)
 			if err != nil {
 				return selection{}, 0, errBadWord(string(runes[consumed : consumed+1+n]))
 			}
@@ -114,8 +114,8 @@ func applySelectors(command string, runes []rune) (selection, int, error) {
 // be a different command. The two exceptions are measured, not guessed:
 // `:*` on a command with no arguments is empty, and `:$` on a one-word
 // command is that word.
-func wordDesignator(command string, runes []rune) (string, int, bool, error) {
-	fields := strings.Fields(command)
+func wordDesignator(command string, runes []rune, chars histChars) (string, int, bool, error) {
+	fields := historyTokenize(command, chars.comment)
 	word := func(n int) (string, error) {
 		if n < 0 || n >= len(fields) {
 			return "", errRange
@@ -369,9 +369,9 @@ var lastHistSearch struct{ word string }
 // a later `%`. bash keeps the *word*, not the query, and it keeps the
 // *last* word that contains it rather than the first — measured on
 // `echo aXb cXd`, where `!?X?:%` is `cXd`.
-func rememberSearchWord(entry, query string) {
+func rememberSearchWord(entry, query string, chars histChars) {
 	lastHistSearch.word = ""
-	for _, f := range strings.Fields(entry) {
+	for _, f := range historyTokenize(entry, chars.comment) {
 		if strings.Contains(f, query) {
 			lastHistSearch.word = f
 		}
@@ -400,3 +400,200 @@ func lastComponent(s string) string {
 }
 
 func isDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// historyTokenize splits a history entry into the words a designator
+// selects from, the way readline's `history_tokenize` does (#709).
+//
+// This used to be `strings.Fields`, which is the shell's word splitting
+// and not history's: readline breaks a shell metacharacter off into a
+// word of its own, so `shopt a b c d 2>/dev/null` is seven words there
+// and five here. The visible difference is a space — `!-2*` expands to
+// `a b c d 2> /dev/null`, since the words rejoin with one — and the
+// invisible one is worse, because the word *count* moves with it: `!!:$`
+// on that entry is `/dev/null` in bash and `2>/dev/null` under the old
+// rule, and every numbered designator after the operator was off by one.
+// histexp.tests carries the case deliberately, with a comment saying that
+// bash through 4.3 got it wrong.
+//
+// The rules are read off bash 5.3's lib/readline/histexpand.c rather than
+// recalled, because none of them is guessable: a file descriptor sticks to
+// the operator it precedes (`2>` is one word), a duplicating form takes its
+// digits with it (`>&2`, `<&3-`), a process substitution is one word
+// however deep it nests (`<(echo tmp)` — and so is `$(…)` and an extglob
+// `+(…)`, which `strings.Fields` already got right by accident), and a
+// bare `(` or `)` is a word on its own.
+//
+// comment is the history comment character — `#` unless $histchars moved
+// it (#695) — at which the entry stops being tokenized at all.
+func historyTokenize(s string, comment rune) []string {
+	var words []string
+	for i := 0; i < len(s); {
+		for i < len(s) && isHistFieldDelim(s[i]) {
+			i++
+		}
+		if i >= len(s) || rune(s[i]) == comment {
+			return words
+		}
+		start := i
+		i = historyTokenizeWord(s, start)
+		// A delimiter the whitespace skip above did not eat becomes a
+		// field of its own, with any adjacent delimiters. Unreachable with
+		// readline's own delimiter set, since every member of it is
+		// handled below; kept because the set is a variable there.
+		if i == start {
+			i++
+			for i < len(s) && isHistWordDelim(s[i]) {
+				i++
+			}
+		}
+		words = append(words, s[start:i])
+	}
+	return words
+}
+
+// historyTokenizeWord returns the index one past the word beginning at
+// ind. It works on bytes because readline does and because every
+// character it is looking for is ASCII, so no slice it takes can land
+// inside a rune.
+func historyTokenizeWord(s string, ind int) int {
+	// at is readline reading a NUL-terminated string: one past the end is
+	// a byte that matches nothing, which several of the lookaheads below
+	// rely on rather than bounds-checking.
+	at := func(k int) byte {
+		if k < 0 || k >= len(s) {
+			return 0
+		}
+		return s[k]
+	}
+	i := ind
+	var delimiter, delimopen byte
+	nestdelim := 0
+
+	if histMember(at(i), "()\n") {
+		return i + 1
+	}
+
+	// A digit run is a file descriptor when a redirection operator follows
+	// it and part of an ordinary word otherwise, which is what keeps `2>`
+	// together and leaves `2fast` alone.
+	digitsAreWord := false
+	if isDigitByte(at(i)) {
+		j := i
+		for j < len(s) && isDigitByte(s[j]) {
+			j++
+		}
+		if j >= len(s) {
+			return j
+		}
+		i = j
+		digitsAreWord = at(j) != '<' && at(j) != '>'
+	}
+
+	if !digitsAreWord && histMember(at(i), "<>;&|") {
+		peek := at(i + 1)
+		switch {
+		case peek == at(i):
+			// `<<-` and `<<<` take the third character; `<<`, `>>`, `;;`,
+			// `&&` and `||` take two.
+			if peek == '<' && (at(i+2) == '-' || at(i+2) == '<') {
+				i++
+			}
+			return i + 2
+		case peek == '&' && (at(i) == '>' || at(i) == '<'):
+			// `>&2`, `<&3-`: the descriptor and a closing `-` belong to the
+			// operator.
+			j := i + 2
+			for j < len(s) && isDigitByte(s[j]) {
+				j++
+			}
+			if at(j) == '-' {
+				j++
+			}
+			return j
+		case (peek == '>' && at(i) == '&') || (peek == '|' && at(i) == '>'):
+			return i + 2
+		case peek == '(' && (at(i) == '>' || at(i) == '<'):
+			// A process substitution opening the word: read on to its
+			// matching paren rather than stopping at the operator.
+			i += 2
+			delimopen, delimiter, nestdelim = '(', ')', 1
+		default:
+			return i + 1
+		}
+	}
+
+	if delimiter == 0 && histMember(at(i), histQuoteChars) {
+		delimiter = at(i)
+		i++
+	}
+	for ; i < len(s); i++ {
+		c := s[i]
+		if c == '\\' && at(i+1) == '\n' {
+			i++
+			continue
+		}
+		// readline asks whether the *backslash* is one of the characters a
+		// double quote protects, which it always is, so the only quote that
+		// stops an escape here is a single one. Copied rather than
+		// corrected: it is what decides where a word ends in bash.
+		if c == '\\' && delimiter != '\'' {
+			i++
+			if i >= len(s) {
+				break
+			}
+			continue
+		}
+		if nestdelim > 0 && c == delimopen {
+			nestdelim++
+			continue
+		}
+		if nestdelim > 0 && c == delimiter {
+			nestdelim--
+			if nestdelim == 0 {
+				delimiter = 0
+			}
+			continue
+		}
+		if delimiter != 0 && c == delimiter {
+			delimiter = 0
+			continue
+		}
+		// Command and process substitutions and extended globs: everything
+		// to the matching paren is one word.
+		if nestdelim == 0 && delimiter == 0 && histMember(c, "<>$!@?+*") && at(i+1) == '(' {
+			i++
+			if at(i+1) == 0 {
+				break
+			}
+			delimopen, delimiter, nestdelim = '(', ')', 1
+			continue
+		}
+		if delimiter == 0 && isHistWordDelim(c) {
+			break
+		}
+		if delimiter == 0 && histMember(c, histQuoteChars) {
+			delimiter = c
+		}
+	}
+	return i
+}
+
+// histQuoteChars is readline's HISTORY_QUOTE_CHARACTERS: the three that
+// open a span the word delimiters do not end.
+const histQuoteChars = "\"'`"
+
+// isHistFieldDelim is readline's fielddelim: what separates one word from
+// the next and is thrown away rather than kept.
+func isHistFieldDelim(c byte) bool { return c == ' ' || c == '\t' || c == '\n' }
+
+// isHistWordDelim reports membership of history_word_delimiters, which
+// ends a word without necessarily being thrown away.
+func isHistWordDelim(c byte) bool { return histMember(c, histWordDelimiters) }
+
+// histMember is readline's member(), which answers false for the NUL that
+// stands for the end of the string.
+func histMember(c byte, set string) bool {
+	return c != 0 && strings.IndexByte(set, c) >= 0
+}
+
+func isDigitByte(c byte) bool { return c >= '0' && c <= '9' }

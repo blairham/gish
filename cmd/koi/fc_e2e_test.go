@@ -37,10 +37,24 @@ func TestFCListsHistory(t *testing.T) {
 	// -n drops the numbers; the commands stay.
 	s.runProbe(`fc -l -n 1; printf "res%s\n" NONUM`, "resNONUM")
 
-	// The editing forms say what they do not do, rather than answering
-	// "unsupported builtin" like a name nobody implemented.
-	edit := s.runProbe(`fc -s; printf "res%s\n" EDIT`, "resEDIT")
-	if !strings.Contains(edit, "only the listing form") {
-		t.Errorf("fc -s did not explain itself:\n%s", edit)
+	// The re-execute form runs a command again (#711). The entry is named
+	// by *prefix* rather than left to a bare `fc -s`, because an
+	// interactive session's history is the shared store (#40) and which
+	// entry is newest there is a property of the store rather than of this
+	// session — a prefix names the same line either way. The arithmetic
+	// itself is covered differentially over a real file in
+	// histresidue_test.go; what this asserts is that the form is reachable
+	// from a terminal at all.
+	s.runProbe(`: ALPHA; printf "res%s\n" ALPHA`, "resALPHA")
+	rerun := s.runProbe(`fc -s ALPHA=BETA :; printf "res%s\n" RERUN`, "resRERUN")
+	if !strings.Contains(rerun, "resBETA") {
+		t.Errorf("fc -s did not re-run the command with its substitution applied:\n%s", rerun)
+	}
+
+	// The editor form still says what it does not do, rather than
+	// answering "unsupported builtin" like a name nobody implemented.
+	edit := s.runProbe(`fc -e nosucheditor; printf "res%s\n" EDIT`, "resEDIT")
+	if !strings.Contains(edit, "editor form is not implemented") {
+		t.Errorf("fc -e did not explain itself:\n%s", edit)
 	}
 }

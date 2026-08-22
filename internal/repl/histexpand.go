@@ -204,7 +204,7 @@ func expandEvent(runes []rune, src histSource, chars histChars, quote rune) (sel
 	// `!!:$:h`, `!vi:p` — which apply to every event form and not only
 	// to `!!` (#277).
 	withSelectors := func(text string, consumed int) (selection, int, error) {
-		sel, n, err := applySelectors(text, runes[consumed:])
+		sel, n, err := applySelectors(text, runes[consumed:], chars)
 		if err != nil {
 			return none, 0, err
 		}
@@ -219,7 +219,7 @@ func expandEvent(runes []rune, src histSource, chars histChars, quote rune) (sel
 		if !ok {
 			return none, 0, errNoEvent(string(chars.expand) + string(next))
 		}
-		text, n, found, err := wordDesignator(prev, runes[1:])
+		text, n, found, err := wordDesignator(prev, runes[1:], chars)
 		switch {
 		case err != nil:
 			return none, 0, errBadWord(string(runes[1 : 1+n]))
@@ -259,7 +259,7 @@ func expandEvent(runes []rune, src histSource, chars histChars, quote rune) (sel
 		if !found {
 			return none, 0, errNoEvent(ev)
 		}
-		rememberSearchWord(match, query)
+		rememberSearchWord(match, query, chars)
 		return withSelectors(match, j)
 	case next == ':':
 		if !ok {
