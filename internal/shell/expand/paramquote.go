@@ -261,20 +261,31 @@ func (cfg *Config) scalarAssignment(name string, vr Variable, str string, set bo
 // the whole-variable form, `declare -a a=([0]="x" [1]="y")`, rather than
 // the scalar `name=value` a per-element answer would build (#647).
 func (cfg *Config) arrayAssignment(name string, vr Variable) string {
+	prefix, val := cfg.arrayAssignmentParts(name, vr)
+	return prefix + val
+}
+
+// arrayAssignmentParts is [Config.arrayAssignment] split where bash's own
+// protection ends: the prefix is the text bash sprintf'd, which is
+// ordinary text a `[@]` answer gets field-split at, and val is the part
+// that came from the variable's value, which is protected (#716). The
+// name is in the prefix, measured: with `IFS=z` a `zz` array's answer
+// splits inside its own name.
+func (cfg *Config) arrayAssignmentParts(name string, vr Variable) (prefix, val string) {
 	flags := vr.Flags()
-	val := cfg.arrayValue(vr)
+	val = cfg.arrayValue(vr)
 	if val == "" {
 		if !vr.IsSet() {
 			// Declared but never assigned: attributes only.
 			if flags == "" {
-				return ""
+				return "", ""
 			}
-			return "declare -" + flags + " " + name
+			return "declare -" + flags + " " + name, ""
 		}
 		// Set and empty is `()`, which re-reads as an empty array.
 		val = "()"
 	}
-	return "declare -" + flags + " " + name + "=" + val
+	return "declare -" + flags + " " + name + "=", val
 }
 
 // arrayValue renders the parenthesised half of an `${a[@]@A}`. An

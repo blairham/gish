@@ -4,6 +4,7 @@
 package expand
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -417,7 +418,7 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		}
 		oldCtx, oldExp := cfg.paramQuoteCtx, cfg.expWord
 		cfg.paramQuoteCtx, cfg.expWord = literalCtx, literalCtx != quoteNone
-		arg, err := Literal(cfg, pe.Exp.Word)
+		arg, err := cfg.operatorWord(pe.Exp)
 		cfg.paramQuoteCtx, cfg.expWord = oldCtx, oldExp
 		if err != nil {
 			return "", err
@@ -495,7 +496,7 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			syntax.ToggleFirst, syntax.ToggleAll:
 			str = join(cfg.caseConvElems(op, arg, elems))
 		case syntax.OtherParamOps:
-			fields, terr := cfg.transformFields(pe, name, vr, elems, set)
+			fields, terr := cfg.transformFields(pe, name, vr, elems, set, false)
 			if terr != nil {
 				return "", terr
 			}
@@ -514,7 +515,11 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 // vr is the variable after nameref resolution and name is its name, which
 // is what bash reports: `declare -ri x=5; declare -n r=x; ${r@A}` names x
 // and answers with x's attributes rather than the reference's (measured).
-func (cfg *Config) transformFields(pe *syntax.ParamExp, name string, vr Variable, elems []string, set bool) ([]string, error) {
+//
+// splitDescribed asks for the `@A` answer as the several fields bash
+// answers a `[@]` list with, rather than as one string; see
+// [Config.describedFields].
+func (cfg *Config) transformFields(pe *syntax.ParamExp, name string, vr Variable, elems []string, set bool, splitDescribed bool) ([]string, error) {
 	// The transform is the source between the `@` and the brace, not what
 	// that source expands to.
 	xform := ""
@@ -527,13 +532,13 @@ func (cfg *Config) transformFields(pe *syntax.ParamExp, name string, vr Variable
 		// does not have. `${x@Q}` on an unset x is empty rather than the
 		// two quotes it would answer for an empty value, for the same
 		// reason.
-		return nil, nil
+		return noFields(), nil
 	}
 	if len(elems) == 0 && paramTransformNeedsValue(xform) {
 		// A list with no elements has no value for bash to read either,
 		// so it never gets as far as the letter: `a=(); ${a[@]@nope}` is
 		// the empty string where `a=(1 2); ${a[@]@nope}` is fatal.
-		return nil, nil
+		return noFields(), nil
 	}
 	if !paramTransformValid(xform) {
 		return nil, BadOperatorError{Node: pe}
@@ -549,19 +554,37 @@ func (cfg *Config) transformFields(pe *syntax.ParamExp, name string, vr Variable
 			// bash's pos_params_assignment: the `set --` that would
 			// restate the parameters, with each one quoted reusably.
 			if len(elems) == 0 {
-				return nil, nil
+				return noFields(), nil
 			}
 			quoted := make([]string, len(elems))
 			for i, elem := range elems {
 				quoted[i] = cfg.quoteReusable(elem)
 			}
-			return oneField("set -- " + strings.Join(quoted, " ")), nil
+			if splitDescribed {
+				// Each parameter is its own field, with the `set -- `
+				// bash wrote itself glued to the first and split at IFS
+				// like the ordinary text it is (#716).
+				return append(cfg.describedFields("set -- ", quoted[0]), quoted[1:]...), nil
+			}
+			// Still one field per parameter, so the caller decides: the
+			// flat path joins with a space and `"${*@A}"` joins with IFS,
+			// which is measurable — under `IFS=+` it answers
+			// `set -- 'p'+'q r'`.
+			fields := append([]string{"set -- " + quoted[0]}, quoted[1:]...)
+			return fields, nil
 		case list:
-			return oneField(cfg.arrayAssignment(name, vr)), nil
+			if !splitDescribed {
+				return oneField(cfg.arrayAssignment(name, vr)), nil
+			}
+			prefix, val := cfg.arrayAssignmentParts(name, vr)
+			if prefix == "" {
+				return noFields(), nil
+			}
+			return cfg.describedFields(prefix, val), nil
 		case !vr.Declared():
 			// bash answers nothing at all for a name it cannot find,
 			// where quoting the empty string would answer `x=''`.
-			return nil, nil
+			return noFields(), nil
 		}
 		return oneField(cfg.scalarAssignment(name, vr, firstElem(elems), set)), nil
 	case "a":
@@ -590,7 +613,9 @@ func (cfg *Config) transformFields(pe *syntax.ParamExp, name string, vr Variable
 		}
 	case "k":
 		if list && !positional {
-			return kvPairList(vr), nil
+			// noFields rather than nil for an array with no entries; see
+			// [noFields].
+			return append(noFields(), kvPairList(vr)...), nil
 		}
 	}
 	out := make([]string, len(elems))
@@ -635,9 +660,81 @@ func describesVariable(pe *syntax.ParamExp) bool {
 // difference shows in `printf "<%s>"`, not in `echo`.
 func oneField(s string) []string {
 	if s == "" {
-		return nil
+		return noFields()
 	}
 	return []string{s}
+}
+
+// noFields is an answer with no fields in it, which has to be an empty
+// slice rather than nil: on the quoted list path nil means "this is not a
+// list expansion, use the flat answer instead", so returning it handed
+// `"${undeclared[@]@A}"` one empty field where bash has none (#716).
+func noFields() []string { return []string{} }
+
+// describedFields splits an `@A` answer into the fields bash answers a
+// `[@]` list with. bash protects only the part that came from the
+// variable's value, so the `declare -a name=` or `set -- ` it sprintf'd
+// around it is ordinary text and gets field-split — even inside double
+// quotes, because a `[@]` expansion is what is being split (#716).
+//
+// The split is ordinary IFS field splitting over the prefix, measured per
+// spelling: `IFS=+` leaves the answer as one field, `IFS=ea` cuts
+// `declare -a ` into four, and a tab inside the value survives `IFS=$' \t'`
+// because the value is the protected half. One bash quirk had to be
+// measured rather than assumed: a *null* IFS splits here — three fields
+// where ordinary splitting of `$v` produces one — so an empty IFS falls
+// back to the default separators.
+func (cfg *Config) describedFields(prefix, protected string) []string {
+	seps := cfg.ifs
+	if seps == "" {
+		seps = " \t\n"
+	}
+	fields, tail := splitOnSeps(prefix, seps)
+	fields = append(fields, tail+protected)
+	// A trailing separator does not leave a trailing empty field, which
+	// is bash's rule for `IFS=:` over `a:b:` too.
+	if n := len(fields); n > 1 && fields[n-1] == "" {
+		fields = fields[:n-1]
+	}
+	return fields
+}
+
+// splitOnSeps splits s the way the shell splits a field, returning the
+// complete fields and the text after the last separator. A run of IFS
+// whitespace is one separator and is also absorbed around a non-whitespace
+// one, while a non-whitespace separator always delimits.
+func splitOnSeps(s, seps string) (fields []string, tail string) {
+	isSep := func(r rune) bool { return strings.ContainsRune(seps, r) }
+	isSpace := func(r rune) bool {
+		return (r == ' ' || r == '\t' || r == '\n') && isSep(r)
+	}
+	rs := []rune(s)
+	i := 0
+	for i < len(rs) && isSpace(rs[i]) { // leading IFS whitespace
+		i++
+	}
+	var cur []rune
+	for i < len(rs) {
+		r := rs[i]
+		if !isSep(r) {
+			cur = append(cur, r)
+			i++
+			continue
+		}
+		fields = append(fields, string(cur))
+		cur = nil
+		if isSpace(r) {
+			for i < len(rs) && isSpace(rs[i]) {
+				i++
+			}
+			continue
+		}
+		i++
+		for i < len(rs) && isSpace(rs[i]) {
+			i++
+		}
+	}
+	return fields, string(cur)
 }
 
 func firstElem(elems []string) string {
@@ -699,16 +796,87 @@ func (cfg *Config) transformElems(pe *syntax.ParamExp, elems []string) ([]string
 		// $@ and $* count as unset with no positional parameters.
 		set = len(elems) > 0
 	}
-	return cfg.transformFields(pe, name, vr, elems, set)
+	// Only the `@` spelling of a list is what bash splits an `@A` answer
+	// at: `"${a[*]@A}"` and `"${*@A}"` stay one field with their own
+	// spaces in them, and so does the scalar path (#716).
+	split := pe.Param.Value == "@" || nodeLit(pe.Index) == "@"
+	return cfg.transformFields(pe, name, vr, elems, set, split)
 }
 
-func removePattern(str, pat string, fromEnd, shortest bool) string {
-	var mode pattern.Mode
+// operatorWord expands a parameter expansion operator's word the way the
+// operator reads it. The pattern operators read a *pattern*, where a
+// quoted meta character is the character itself — `${x%"*"}` removes a
+// literal star — while the default/alternate/assign/error family reads a
+// literal, where quote removal has already happened (#712).
+//
+// Sharing one [Literal] between the two families is what made a quoted
+// meta still a glob, which matched nothing and answered with the input.
+func (cfg *Config) operatorWord(exp *syntax.Expansion) (string, error) {
+	switch exp.Op {
+	case syntax.RemSmallPrefix, syntax.RemLargePrefix,
+		syntax.RemSmallSuffix, syntax.RemLargeSuffix,
+		syntax.UpperFirst, syntax.UpperAll,
+		syntax.LowerFirst, syntax.LowerAll,
+		syntax.ToggleFirst, syntax.ToggleAll:
+		return Pattern(cfg, exp.Word)
+	}
+	return Literal(cfg, exp.Word)
+}
+
+// patternMode is the [pattern.Mode] a parameter expansion's pattern
+// operators compile with. `case`, `[[ ]]` and pathname expansion all pass
+// [pattern.ExtendedOperators] when extglob is on and the pattern
+// operators did not, so `${x##+(a|b)}` handed back its input (#675).
+func (cfg *Config) patternMode() pattern.Mode {
+	if cfg.ExtGlob {
+		return pattern.ExtendedOperators
+	}
+	return 0
+}
+
+// wholeMatcher answers whether the whole of a string matches pat, for the
+// patterns [pattern.Regexp] cannot express: an extglob negation has no
+// RE2 form, so it runs the backtracking matcher (#675). ok is false when
+// pat is not a pattern at all, where a caller leaves its value alone.
+func (cfg *Config) wholeMatcher(pat string) (match func(string) bool, ok bool) {
+	m, err := shinternal.ExtendedPatternMatcher(pat,
+		pattern.EntireString|pattern.ExtendedOperators)
+	if err != nil {
+		return nil, false
+	}
+	return m, true
+}
+
+// isNegExtGlob reports whether err is [pattern.Regexp] refusing an
+// extglob negation, as opposed to a pattern it could not read at all.
+func isNegExtGlob(err error) bool {
+	var negErr *pattern.NegExtGlobError
+	return errors.As(err, &negErr)
+}
+
+// runeBounds lists every byte offset a pattern may be split at, ends
+// included. bash matches one character at a time, so a removal never
+// cuts a multi-byte character in half — and in the C locale a character
+// is a byte (#470), which the caller has already arranged by reading the
+// string one rune per byte.
+func runeBounds(s string) []int {
+	bounds := make([]int, 0, len(s)+1)
+	for i := range s {
+		bounds = append(bounds, i)
+	}
+	return append(bounds, len(s))
+}
+
+func (cfg *Config) removePattern(str, pat string, fromEnd, shortest bool) string {
+	mode := cfg.patternMode()
 	if shortest {
 		mode |= pattern.Shortest
 	}
 	expr, err := pattern.Regexp(pat, mode)
 	if err != nil {
+		if isNegExtGlob(err) {
+			return cfg.removeByScan(str, pat, fromEnd, shortest)
+		}
 		return str
 	}
 	switch {
@@ -731,6 +899,36 @@ func removePattern(str, pat string, fromEnd, shortest bool) string {
 	return str
 }
 
+// removeByScan is [Config.removePattern] for a pattern with no RE2 form,
+// done the way bash's own loop does it: try each place the value can be
+// cut and ask whether the whole of that half matches. Longest or shortest
+// is which end the scan starts from, so `${x#!(z)}` finds the empty match
+// bash finds and leaves the value alone.
+func (cfg *Config) removeByScan(str, pat string, fromEnd, shortest bool) string {
+	match, ok := cfg.wholeMatcher(pat)
+	if !ok {
+		return str
+	}
+	bounds := runeBounds(str)
+	if fromEnd == shortest {
+		// A shortest prefix and a longest suffix both start at the near
+		// end of the value; the other two start at the far end.
+		slices.Reverse(bounds)
+	}
+	for _, i := range bounds {
+		if fromEnd {
+			if match(str[i:]) {
+				return str[:i]
+			}
+			continue
+		}
+		if match(str[:i]) {
+			return str[i:]
+		}
+	}
+	return str
+}
+
 // The helpers below never modify elems in place, as it may alias a
 // variable's list of elements.
 
@@ -741,7 +939,7 @@ func (cfg *Config) perElemOps(pe *syntax.ParamExp, elems []string) ([]string, er
 	case pe.Repl != nil:
 		return cfg.replaceElems(pe.Repl, elems)
 	case pe.Exp != nil:
-		arg, err := Literal(cfg, pe.Exp.Word)
+		arg, err := cfg.operatorWord(pe.Exp)
 		if err != nil {
 			return nil, err
 		}
@@ -814,9 +1012,9 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 			elem = LatinBytes(elem)
 		}
 		if anchor != 0 {
-			out[i] = replaceAnchored(orig, elem, replacement, anchor == '%')
+			out[i] = cfg.replaceAnchored(orig, elem, replacement, anchor == '%')
 		} else {
-			locs := findAllIndex(orig, elem, n)
+			locs := cfg.findAllIndex(orig, elem, n)
 			sb := cfg.strBuilder()
 			last := 0
 			for _, loc := range locs {
@@ -970,9 +1168,12 @@ func expandReplacement(rep, matched string) string {
 // because an unquoted `&` in it is that text (#643) — and the anchored
 // forms are exactly where bash's own comment says the rule matters, since
 // an empty pattern makes them sed's `^` and `$`.
-func replaceAnchored(pat, str string, replacement func(string) string, atEnd bool) string {
-	expr, err := pattern.Regexp(pat, 0)
+func (cfg *Config) replaceAnchored(pat, str string, replacement func(string) string, atEnd bool) string {
+	expr, err := pattern.Regexp(pat, cfg.patternMode())
 	if err != nil {
+		if isNegExtGlob(err) {
+			return cfg.replaceAnchoredByScan(pat, str, replacement, atEnd)
+		}
 		return str
 	}
 	if atEnd {
@@ -990,6 +1191,88 @@ func replaceAnchored(pat, str string, replacement func(string) string, atEnd boo
 	return str[:loc[0]] + replacement(str[loc[0]:loc[1]]) + str[loc[1]:]
 }
 
+// replaceAnchoredByScan is [Config.replaceAnchored] for a pattern with no
+// RE2 form, matching the longest span at the anchored edge one cut at a
+// time the way [Config.removeByScan] does (#675).
+func (cfg *Config) replaceAnchoredByScan(pat, str string, replacement func(string) string, atEnd bool) string {
+	match, ok := cfg.wholeMatcher(pat)
+	if !ok {
+		return str
+	}
+	bounds := runeBounds(str)
+	if !atEnd {
+		// The longest prefix is the last cut; the longest suffix is the
+		// first.
+		slices.Reverse(bounds)
+	}
+	for _, i := range bounds {
+		if atEnd {
+			if match(str[i:]) {
+				return str[:i] + replacement(str[i:])
+			}
+			continue
+		}
+		if match(str[:i]) {
+			return replacement(str[:i]) + str[i:]
+		}
+	}
+	return str
+}
+
+// findAllIndex locates the spans a `${v/pat/rep}` replaces: leftmost
+// first, longest at each position, and at most n of them (all for -1).
+func (cfg *Config) findAllIndex(pat, name string, n int) [][]int {
+	expr, err := pattern.Regexp(pat, cfg.patternMode())
+	if err != nil {
+		if isNegExtGlob(err) {
+			return cfg.findAllIndexByScan(pat, name, n)
+		}
+		return nil
+	}
+	rx := regexp.MustCompile(expr)
+	return rx.FindAllStringIndex(name, n)
+}
+
+// findAllIndexByScan is [Config.findAllIndex] for a pattern with no RE2
+// form. Go's own FindAllStringIndex is leftmost-first and returns the
+// leftmost-*longest* span only with Longest set, which the scan does by
+// construction; an empty match advances one character rather than
+// looping, which is Go's rule too.
+func (cfg *Config) findAllIndexByScan(pat, name string, n int) [][]int {
+	match, ok := cfg.wholeMatcher(pat)
+	if !ok {
+		return nil
+	}
+	bounds := runeBounds(name)
+	var locs [][]int
+	prevEnd := -1
+	for bi := 0; bi < len(bounds) && (n < 0 || len(locs) < n); {
+		start, end := bounds[bi], -1
+		for ei := len(bounds) - 1; ei >= bi; ei-- {
+			if match(name[start:bounds[ei]]) {
+				end = bounds[ei]
+				break
+			}
+		}
+		if end < 0 {
+			bi++ // no match here; the leftmost one starts further along
+			continue
+		}
+		if end != start || start != prevEnd {
+			locs = append(locs, []int{start, end})
+		}
+		prevEnd = end
+		if end == start {
+			bi++
+			continue
+		}
+		for bi < len(bounds) && bounds[bi] < end {
+			bi++
+		}
+	}
+	return locs
+}
+
 // removePatternElems applies a pattern removal operator to each element.
 func (cfg *Config) removePatternElems(op syntax.ParExpOperator, arg string, elems []string) []string {
 	suffix := op == syntax.RemSmallSuffix || op == syntax.RemLargeSuffix
@@ -1001,10 +1284,10 @@ func (cfg *Config) removePatternElems(op syntax.ParExpOperator, arg string, elem
 	out := make([]string, len(elems))
 	for i, elem := range elems {
 		if !cfg.CLocale() {
-			out[i] = removePattern(elem, arg, suffix, small)
+			out[i] = cfg.removePattern(elem, arg, suffix, small)
 			continue
 		}
-		out[i] = BytesOfLatin(removePattern(LatinBytes(elem), arg, suffix, small))
+		out[i] = BytesOfLatin(cfg.removePattern(LatinBytes(elem), arg, suffix, small))
 	}
 	return out
 }
@@ -1023,11 +1306,21 @@ func (cfg *Config) caseConvElems(op syntax.ParExpOperator, arg string, elems []s
 	all := op == syntax.UpperAll || op == syntax.LowerAll || op == syntax.ToggleAll
 
 	// empty string means '?'; nothing to do there
-	expr, err := pattern.Regexp(arg, 0)
-	if err != nil {
+	var matches func(string) bool
+	expr, err := pattern.Regexp(arg, cfg.patternMode())
+	switch {
+	case err == nil:
+		matches = regexp.MustCompile(expr).MatchString
+	case isNegExtGlob(err):
+		// An extglob negation has no RE2 form, so `${x^^!(a)}` runs the
+		// backtracking matcher over each character (#675).
+		var ok bool
+		if matches, ok = cfg.wholeMatcher(arg); !ok {
+			return elems
+		}
+	default:
 		return elems
 	}
-	rx := regexp.MustCompile(expr)
 
 	// The C locale has no case beyond ASCII — bash leaves every other
 	// byte alone — and its characters are bytes, so both the matching
@@ -1043,7 +1336,7 @@ func (cfg *Config) caseConvElems(op syntax.ParExpOperator, arg string, elems []s
 			rs = []rune(LatinBytes(elem))
 		}
 		for ri, r := range rs {
-			if rx.MatchString(string(r)) {
+			if matches(string(r)) {
 				rs[ri] = caseFunc(r)
 			}
 			if !all {

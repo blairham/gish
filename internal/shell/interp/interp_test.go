@@ -9133,6 +9133,151 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 		"unset BASH_SOURCE",
 		"unset: BASH_SOURCE: cannot unset\nexit status 1 #JUSTERR",
 	},
+
+	// #675: extglob operators reach every parameter-expansion pattern
+	// operator, where the mode flag was missing so the group was ordinary
+	// text and the value came back unchanged.
+	{
+		"shopt -s extglob; x=abcdef; echo \"${x##+(a|b|c)} ${x#+(a|b)} ${x%%+(e|f)} ${x%+(f)}\"",
+		"def bcdef abcd abcde\n",
+	},
+	{
+		"shopt -s extglob; x=abcdef; echo \"${x//+(c|d)/-} ${x/+(a|b)/-} ${x/#+(a|b)/-} ${x/%+(e|f)/-}\"",
+		"ab-ef -cdef -cdef abcd-\n",
+	},
+	{
+		// Case conversion matches one character at a time, so a group
+		// that cannot match one changes nothing -- which is why `@(abc)`
+		// is unchanged where `+(a|b)` reaches two characters.
+		"shopt -s extglob; x=abcdef; echo \"${x^^+(a|b)} ${x^^@(abc)} ${x^^@(b|c)} ${x,,+(A|B)}\"",
+		"ABcdef abcdef aBCdef abcdef\n",
+	},
+	{
+		// Per element of a list, and the two idioms the issue named.
+		"shopt -s extglob; a=(abc abd); f=a/b/c/d; n=abc123; echo \"${a[@]##+(a|b)} ${f##+(*/)} ${n%%+([0-9])}\"",
+		"c d d abc\n",
+	},
+	{
+		// Nested and repeated groups, and the operators whose group may
+		// match nothing.
+		"shopt -s extglob; x=abcdef; echo \"[${x##+(a|@(b|c))}] [${x##*(a|b|c)}] [${x##?(a)}] [${x%%*(e|f)}]\"",
+		"[def] [def] [bcdef] [abcd]\n",
+	},
+	{
+		// A negation has no RE2 form, so these run the backtracking
+		// matcher; `#` and `%` find the empty match bash finds, which is
+		// why half of them are unchanged.
+		"shopt -s extglob; x=abcdef; echo \"[${x##!(z)}] [${x#!(z)}] [${x%%!(z)}] [${x%!(z)}] [${x##!(a*)}]\"",
+		"[] [abcdef] [] [abcdef] [abcdef]\n",
+	},
+	{
+		"shopt -s extglob; x=abcdef; y=aXbXc; echo \"[${x/!(z)/-}] [${y//!(X)/-}] [${x^^!(a)}] [${x/#!(z)/-}]\"",
+		"[-] [-] [aBCDEF] [-]\n",
+	},
+	{
+		// With extglob off the group is ordinary text and matches
+		// nothing, which is what makes the mode flag the fix rather than
+		// always compiling with it.
+		"x='+(a|b)cd'; echo \"[${x##+(a|b)}] [${x%%cd}]\"",
+		"[cd] [+(a|b)]\n",
+	},
+
+	// #712: a pattern operator reads its word as a pattern, so a quoted
+	// meta is the character itself; sharing one literal expansion with
+	// the default/alternate family made it a glob that matched nothing.
+	{
+		"P='*@*'; echo \"[${P%\"*\"}] [${P%'*'}] [${P#\"*\"}] [${P##\"*\"}] [${P%%\"*\"}]\"",
+		"[*@] [*@] [@*] [@*] [*@]\n",
+	},
+	{
+		"P='*@*'; echo \"[${P%\\*}] [${P#\\*}]\"",
+		"[*@] [@*]\n",
+	},
+	{
+		// A bracket expression and a question mark, quoted.
+		"R='x[y]z'; Q='a?b'; echo \"[${R%\"[y]z\"}] [${Q%\"?b\"}]\"",
+		"[x] [a]\n",
+	},
+	{
+		// Case conversion takes its word as a pattern too: a quoted star
+		// only matches the star.
+		"V='*abc'; echo \"[${V^^\"*\"}] [${V^^\\*}] [${V^^*}]\"",
+		"[*abc] [*abc] [*ABC]\n",
+	},
+	{
+		// The cases with nothing to quote still agree, which is what
+		// makes the quoted meta the discriminator.
+		"P='*@*'; echo \"[${P%\"\"}] [${P#\"$nosuch\"}] [${P%\\*\\*}]\"",
+		"[*@*] [*@*] [*@*]\n",
+	},
+
+	// #716: bash protects only the part of an `@A` answer that came from
+	// the variable's value, so the prefix it wrote itself is field-split
+	// -- which `echo` cannot see, hence the field counts.
+	{
+		"A=(ab 'cd ef'); set -- \"${A[@]@A}\"; echo \"$#\"; printf '<%s>' \"$@\"; echo",
+		"3\n<declare><-a><A=([0]=\"ab\" [1]=\"cd ef\")>\n",
+	},
+	{
+		"set -- 'a b' c; set -- \"${@@A}\"; echo \"$#\"; printf '<%s>' \"$@\"; echo",
+		"4\n<set><--><'a b'><'c'>\n",
+	},
+	{
+		"declare -A m=([k]='v w'); set -- \"${m[@]@A}\"; echo \"$#\"; printf '<%s>' \"$@\"; echo",
+		"3\n<declare><-A><m=([k]=\"v w\" )>\n",
+	},
+	{
+		// The `*` forms are not split at all: an array's answer keeps its
+		// own spaces, and the positional one joins with IFS.
+		"A=(ab 'cd ef'); IFS=+; set -- \"${A[*]@A}\"; echo \"$#[$1]\"; set -- p 'q r'; set -- \"${*@A}\"; echo \"$#[$1]\"",
+		"1[declare -a A=([0]=\"ab\" [1]=\"cd ef\")]\n1[set -- 'p'+'q r']\n",
+	},
+	{
+		// The split is ordinary IFS field splitting over the prefix: no
+		// space in IFS is one field, and a separator inside the prefix
+		// cuts it there -- including inside the array's own name.
+		"A=(ab cd); IFS=+; set -- \"${A[@]@A}\"; echo \"a=$#\"; IFS='ea'; set -- \"${A[@]@A}\"; echo \"b=$#\"; zz=(1); IFS=z; set -- \"${zz[@]@A}\"; echo \"c=$#\"",
+		"a=1\nb=5\nc=3\n",
+	},
+	{
+		// One bash quirk, measured rather than derived: a *null* IFS
+		// splits here where ordinary splitting of `$v` does not, so the
+		// separators fall back to the default when IFS is empty.
+		"A=(ab cd); v='x y'; IFS=; set -- $v; echo \"a=$#\"; set -- \"${A[@]@A}\"; echo \"b=$#\"; IFS=$'\\t'; set -- \"${A[@]@A}\"; echo \"c=$#\"",
+		"a=1\nb=3\nc=1\n",
+	},
+	{
+		// A tab inside the value survives, because the value is the
+		// protected half.
+		"C=(x $'p\\tq'); IFS=$' \\t'; set -- \"${C[@]@A}\"; echo \"$#\"; printf '<%s>' \"$3\"; echo",
+		"3\n<C=([0]=\"x\" [1]=$'p\\tq')>\n",
+	},
+	{
+		// The scalar answer is one field even with a `declare -i ` prefix
+		// in it, which is what makes the split a property of the list.
+		"declare -i iv=5; set -- \"${iv@A}\"; echo \"a=$#[$1]\"; set -- \"${iv[@]@A}\"; echo \"b=$#[$1]\"",
+		"a=1[declare -i iv='5']\nb=1[declare -i iv='5']\n",
+	},
+	{
+		// An answer bash has none of is zero fields, not one empty one.
+		"unset zzz; set -- \"${zzz[@]@A}\"; echo \"a=$#\"; set --; set -- \"${@@A}\"; echo \"b=$#\"; set --; set -- \"${@@Q}\"; echo \"c=$#\"",
+		"a=0\nb=0\nc=0\n",
+	},
+	{
+		// A declared-but-unset array still has an attributes-only answer,
+		// and it splits like any other.
+		"declare -a dd; set -- \"${dd[@]@A}\"; echo \"a=$#\"; printf '<%s>' \"$@\"; echo; set -- \"${dd[@]@K}\"; echo \"b=$#\"; set -- \"${dd[@]@k}\"; echo \"c=$#\"",
+		"a=3\n<declare><-a><dd>\n" + "b=0\nc=0\n",
+	},
+	{
+		// The other transforms are untouched, and `@A` still round-trips.
+		"A=(ab 'cd ef'); set -- \"${A[@]@a}\"; echo \"a=$#\"; set -- \"${A[@]@K}\"; echo \"b=$#\"; set -- \"${A[@]@k}\"; echo \"c=$#\"; set -- \"${A[@]@Q}\"; echo \"d=$#\"",
+		"a=2\nb=1\nc=4\nd=2\n",
+	},
+	{
+		"A=(ab 'cd ef'); unset A[0]; eval \"${A[@]@A}\"; echo \"[${A[1]}]\"",
+		"[cd ef]\n",
+	},
 }
 
 var runTestsUnix = []runTest{
