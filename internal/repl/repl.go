@@ -424,7 +424,7 @@ func runEditor(ctx context.Context, login bool) error {
 		// rather than that list, so reading it would turn `!!` off in
 		// the shell whose history is unquestionably there.
 		if store != nil && runner.OptionSet("histexpand") {
-			expanded, changed, printOnly, herr := expandHistoryLine(line, store.Match)
+			expanded, changed, printOnly, herr := expandHistoryLine(line, storeHistorySource(store), sessionHistChars(runner))
 			switch {
 			case herr != nil:
 				fmt.Fprintln(os.Stderr, "koi:", herr)
@@ -753,8 +753,21 @@ func acceptWhen(text string) bool {
 // doing rather than the shell's, and koi keeps its own diagnostic shapes
 // (#120).
 func runPlain(ctx context.Context, login, interactive bool) error {
-	runner, err := interp.New(append(jsonTraceOptions(),
+	// This session records ambiently, as bash's does when it reads its
+	// commands from standard input: `bash < s.sh` fills the history list
+	// and `history` prints it, measured both ways round (#694). The
+	// recorder closes over the runner assigned below, and reads its source
+	// from the tee this loop installs under the parser.
+	var runner *interp.Runner
+	historyAmbientSession()
+	var cmdText bytes.Buffer
+	rec := newHistoryRecorder(cmdText.String, func(name string) string {
+		return sessionVarOf(runner, name)
+	})
+	var err error
+	runner, err = interp.New(append(jsonTraceOptions(),
 		interp.Env(sessionEnv(sessionFlags{invocation: invokedStdin})),
+		interp.HistoryHook(rec.record),
 		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
 		// The descriptors koi was started with, so a caller's `3<&0`
 		// is visible to the script it started (#419).
@@ -798,8 +811,19 @@ func runPlain(ctx context.Context, login, interactive bool) error {
 loop:
 	for {
 		parser := syntax.NewParser(runner.ParserOptions()...)
+		// History expansion and ambient recording both hang off the
+		// physical line, which this loop had no boundary for (#694): the
+		// filter is the same seam interp.ScriptReader installs, exported
+		// so the one reading path that is not a ScriptReader can have it,
+		// and the tee gives the recorder the source text to slice.
+		cmdText.Reset()
+		rec.restart(cmdText.String)
+		src := io.TeeReader(
+			interp.FilterLines(cmdSrc, historyExpandFilter(runner, rec), parser.InHereDoc),
+			&cmdText,
+		)
 		switched := false
-		for stmts, err := range parser.InteractiveSeq(cmdSrc) {
+		for stmts, err := range parser.InteractiveSeq(src) {
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					break loop
@@ -821,6 +845,7 @@ loop:
 			for _, stmt := range stmts {
 				rewriteSubstrateGaps(stmt)
 			}
+			rec.addLine(stmts)
 			// The line runs as one unit, which is what gives this loop
 			// the rules that belong to a reading unit rather than to a
 			// statement (#599): an aborting error abandons the rest of
@@ -855,6 +880,9 @@ loop:
 			break
 		}
 	}
+	// A trailing comment is an entry bash would have recorded, with
+	// nothing behind it to run (#693).
+	rec.finish()
 	// The input ran out, which is the moment the EXIT trap fires and the
 	// session's status settles — the other half of RunStmts' contract,
 	// and the half this loop never had. An `exit` has already fired the

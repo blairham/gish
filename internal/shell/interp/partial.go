@@ -146,6 +146,21 @@ func (sr *ScriptReader) Lines() iter.Seq2[[]*syntax.Stmt, error] {
 	}
 }
 
+// FilterLines wraps r so that each physical line passes through f on its
+// way to whatever reads it, which is the same seam [ScriptReader.Filter]
+// installs — exported because one reading path is not a ScriptReader.
+//
+// The shell reads its commands from standard input through
+// [syntax.Parser.InteractiveSeq], whose Incomplete callback is the only
+// thing that can print a continuation prompt under `-i`, so that loop
+// drives the parser directly and had no line boundary to hang history
+// expansion on (#694). inHdoc is the parser's own InHereDoc: a
+// here-document's body is the document's text rather than the shell's
+// input, and bash hands it over untouched.
+func FilterLines(r io.Reader, f LineFilter, inHdoc func() bool) io.Reader {
+	return &filteredLines{rd: r, filter: f, inHdoc: inHdoc}
+}
+
 // filteredLines hands the parser one physical line at a time, each one
 // through a [LineFilter] first.
 //

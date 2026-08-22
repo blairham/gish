@@ -24,15 +24,23 @@ import (
 //	:^        the first argument        :r  root, drop the .suffix
 //	:$        the last word             :e  extension, keep it
 //	:*        every argument            :p  print rather than run
-//	:n-m      a range                   :q  quote the whole result
-//	:n*       n through the last        :x  quote, word by word
-//	:n-       n through the second last  :s/old/new/  substitute
-//	                                    :gs/old/new/ substitute everywhere
-//	                                    :&  repeat the last substitution
+//	:%        the last ?search? word     :q  quote the whole result
+//	:n-m      a range                   :x  quote, word by word
+//	:n*       n through the last        :s/old/new/  substitute
+//	:n-       n through the second last  :gs/old/new/ substitute everywhere
+//	:-m       0 through m                :&  repeat the last substitution
+//	:n-$      n through the last
 //
 // A word designator may only come first; everything after it is a
 // modifier, and modifiers chain left to right — `!!:1:h:t` is word one,
 // then its directory, then that directory's own last component.
+//
+// Three of those came with #692, because the event designators it added
+// are what made them reachable, and each is measured: a range may leave
+// its *start* out (`!!:-$` is the whole command) or end at `$`; `%` is
+// the word a `!?string?` search matched, and the empty string when there
+// has not been one; and the five characters `^$*%-` may stand with no `:`
+// in front of them at all, which is what `!shopt-1` and `!!*` are.
 
 // selection is what a designator produced: the text, and whether the
 // line is to be printed rather than run (`:p`).
@@ -41,27 +49,42 @@ type selection struct {
 	printOnly bool
 }
 
-// applySelectors reads the `:`-introduced designators following an
-// event and applies them to command. runes starts at the first ':'.
+// applySelectors reads the designators following an event and applies
+// them to command. runes starts at the first one — a ':', or one of the
+// word designators bash lets stand with no ':' in front of it.
 //
 // A zero consumed count means there was nothing to read, which leaves
 // the text to the caller; an error means there *was* something and it
 // could not be read, which aborts the line the way bash does.
-func applySelectors(command string, runes []rune, ev string) (selection, int, error) {
+func applySelectors(command string, runes []rune) (selection, int, error) {
 	sel := selection{text: command}
 	consumed := 0
 	wordsTaken := false
+	// A word designator may follow the event with no `:` in front of it —
+	// `!shopt-1`, `!!*`, `!-1$` — and bash's set for that is exactly the
+	// characters that end an event's own text, which is why they need no
+	// separator (measured: `!shopt-1` is the `shopt` line's words 0-1).
+	if len(runes) > 0 && strings.ContainsRune("^$*%-", runes[0]) {
+		text, n, found, err := wordDesignator(sel.text, runes)
+		switch {
+		case err != nil:
+			return selection{}, 0, errBadWord(string(runes[:n]))
+		case found:
+			sel.text, consumed, wordsTaken = text, n, true
+		}
+	}
 	for consumed < len(runes) && runes[consumed] == ':' {
 		i := consumed + 1
 		if i >= len(runes) {
 			// A trailing `:` is bash's error too: `!!:` fails rather
-			// than expanding to the event and leaving the colon.
-			return selection{}, 0, errExpansionFailed(ev + string(runes[consumed:]))
+			// than expanding to the event and leaving the colon — and it
+			// reports the modifier it did not find, which is nothing.
+			return selection{}, 0, errBadModifier("")
 		}
 		if !wordsTaken {
 			text, n, ok, err := wordDesignator(sel.text, runes[i:])
 			if err != nil {
-				return selection{}, 0, errExpansionFailed(ev + string(runes[consumed:consumed+1+n]))
+				return selection{}, 0, errBadWord(string(runes[consumed : consumed+1+n]))
 			}
 			if ok {
 				sel.text, consumed, wordsTaken = text, i+n, true
@@ -72,7 +95,7 @@ func applySelectors(command string, runes []rune, ev string) (selection, int, er
 		next, n, err := applyModifier(sel, runes[i:])
 		if err != nil || n == 0 {
 			if err == nil {
-				err = errExpansionFailed(ev + string(runes[consumed:]))
+				err = errBadModifier(string(runes[i]))
 			}
 			return selection{}, 0, err
 		}
@@ -106,6 +129,11 @@ func wordDesignator(command string, runes []rune) (string, int, bool, error) {
 		return strings.Join(fields[from:to+1], " "), nil
 	}
 	switch runes[0] {
+	case '%':
+		// The word matched by the most recent `?string?` search, and the
+		// empty string when there has not been one — measured: `!%` with
+		// no search behind it expands to nothing rather than failing.
+		return lastHistSearch.word, 1, true, nil
 	case '^':
 		text, err := word(1)
 		return text, 1, true, err
@@ -122,14 +150,19 @@ func wordDesignator(command string, runes []rune) (string, int, bool, error) {
 		text, err := join(1, len(fields)-1)
 		return text, 1, true, err
 	}
-	if !isDigit(runes[0]) {
+	// A range or a single word. The start may be left out — `-$` is
+	// `0-$`, which is what makes `!!:-$` the whole command (measured) —
+	// and the end may be a number, `$` for the last word, or left out.
+	from, j := 0, 0
+	switch {
+	case isDigit(runes[0]):
+		for j < len(runes) && isDigit(runes[j]) {
+			j++
+		}
+		from = atoiRunes(runes[:j])
+	case runes[0] != '-':
 		return "", 0, false, nil
 	}
-	j := 0
-	for j < len(runes) && isDigit(runes[j]) {
-		j++
-	}
-	from := atoiRunes(runes[:j])
 	switch {
 	case j < len(runes) && runes[j] == '*':
 		text, err := join(from, len(fields)-1)
@@ -141,6 +174,9 @@ func wordDesignator(command string, runes []rune) (string, int, bool, error) {
 		}
 		text, err := join(from, atoiRunes(runes[j+1:k]))
 		return text, k, true, err
+	case j+1 < len(runes) && runes[j] == '-' && runes[j+1] == '$':
+		text, err := join(from, len(fields)-1)
+		return text, j + 2, true, err
 	case j < len(runes) && runes[j] == '-':
 		// `n-` stops one short of the last word, which is the whole
 		// difference between it and `n*` — and it still requires word n
@@ -162,6 +198,19 @@ func wordDesignator(command string, runes []rune) (string, int, bool, error) {
 // have; the caller turns it into bash's message with the designator in
 // it, which is the part a reader needs.
 var errRange = fmt.Errorf("out of range")
+
+// errBadWord is bash's answer to a word designator it cannot satisfy —
+// `:9: bad word specifier` — with the designator spelled as it was
+// written, leading `:` included when there was one.
+func errBadWord(designator string) error {
+	return fmt.Errorf("%s: bad word specifier", designator)
+}
+
+// errBadModifier is bash's answer to a `:` followed by something that is
+// not a modifier at all, which names the character and not the event.
+func errBadModifier(modifier string) error {
+	return fmt.Errorf("%s: unrecognized history modifier", modifier)
+}
 
 // applyModifier applies one modifier. A zero count means the rune is
 // not a modifier at all, which the caller turns into a failed
@@ -280,10 +329,53 @@ func replace(s, old, new string, global bool) string {
 	if old == "" {
 		return s
 	}
+	new = substReplacement(new, old)
 	if global {
 		return strings.ReplaceAll(s, old, new)
 	}
 	return strings.Replace(s, old, new, 1)
+}
+
+// substReplacement reads the replacement half of `:s/old/new/`, where an
+// unquoted `&` stands for the text that matched — `!!:gs/foo/bar&/` turns
+// `foo.c` into `barfoo.c` — and `\&` is a literal ampersand with the
+// backslash dropped. Measured; the anchor for the parameter-expansion
+// spelling of the same rule is #643.
+func substReplacement(new, old string) string {
+	if !strings.ContainsAny(new, "&\\") {
+		return new
+	}
+	var b strings.Builder
+	runes := []rune(new)
+	for i := 0; i < len(runes); i++ {
+		switch {
+		case runes[i] == '\\' && i+1 < len(runes) && runes[i+1] == '&':
+			b.WriteRune('&')
+			i++
+		case runes[i] == '&':
+			b.WriteString(old)
+		default:
+			b.WriteRune(runes[i])
+		}
+	}
+	return b.String()
+}
+
+// lastHistSearch remembers what the most recent `?string?` event matched,
+// which is the only thing that can answer the `%` word designator.
+var lastHistSearch struct{ word string }
+
+// rememberSearchWord records the word of entry that contained query, for
+// a later `%`. bash keeps the *word*, not the query, and it keeps the
+// *last* word that contains it rather than the first — measured on
+// `echo aXb cXd`, where `!?X?:%` is `cXd`.
+func rememberSearchWord(entry, query string) {
+	lastHistSearch.word = ""
+	for _, f := range strings.Fields(entry) {
+		if strings.Contains(f, query) {
+			lastHistSearch.word = f
+		}
+	}
 }
 
 // pathHead drops the last /component, and answers the string itself
@@ -308,7 +400,3 @@ func lastComponent(s string) string {
 }
 
 func isDigit(r rune) bool { return r >= '0' && r <= '9' }
-
-func errExpansionFailed(designator string) error {
-	return fmt.Errorf("%s: history expansion failed", designator)
-}

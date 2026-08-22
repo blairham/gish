@@ -61,6 +61,21 @@ type historyRecorder struct {
 	// (interp.LookupVar), because HISTCONTROL, HISTIGNORE and HISTSIZE
 	// are read at record time and a script sets them as it goes.
 	env func(string) string
+	// eligible is the lines that were *read* while `set -o history` was
+	// on, which is the only thing that can say whether a line producing
+	// no statement is an entry (#693). bash records in its reader, so a
+	// script's license header above `set -o history` is not an entry
+	// while a comment below it is — and `set +o history` stops the very
+	// next line being one. Nothing but a read-time note can tell those
+	// apart, because a statement hook never fires for either.
+	eligible map[uint]bool
+	// covered is the lines some statement group spans, so a line inside
+	// a compound command is never also recorded on its own — which
+	// matters when a group is read with history on and then never runs.
+	covered map[uint]bool
+	// flushed is the highest line already accounted for, either as part
+	// of an entry or as one of its own.
+	flushed uint
 }
 
 // sessionVarOf reads name from the runner the way the running script
@@ -79,10 +94,12 @@ func sessionVarOf(runner *interp.Runner, name string) string {
 
 func newHistoryRecorder(src func() string, env func(string) string) *historyRecorder {
 	return &historyRecorder{
-		src:    src,
-		byStmt: make(map[*syntax.Stmt]int),
-		sep:    make(map[uint]string),
-		env:    env,
+		src:      src,
+		byStmt:   make(map[*syntax.Stmt]int),
+		sep:      make(map[uint]string),
+		env:      env,
+		eligible: make(map[uint]bool),
+		covered:  make(map[uint]bool),
 	}
 }
 
@@ -93,8 +110,52 @@ func newHistoryRecorder(src func() string, env func(string) string) *historyReco
 func (rec *historyRecorder) restart(src func() string) {
 	rec.src, rec.srcLen, rec.lines = src, 0, nil
 	rec.groups, rec.done = nil, nil
+	rec.flushed = 0
 	clear(rec.byStmt)
 	clear(rec.sep)
+	clear(rec.eligible)
+	clear(rec.covered)
+}
+
+// readLine notes that line num has been read, and whether recording was
+// on at the time. It is the reader's half of the recorder (#693): bash
+// adds a line to history as it reads it, so a comment line — which
+// yields no statement for the hook to fire on — is an entry there and was
+// nothing here, and every later listing number was short by one.
+func (rec *historyRecorder) readLine(num uint, on bool) {
+	if on {
+		rec.eligible[num] = true
+	}
+}
+
+// flushBefore records the eligible lines below limit that no statement
+// group spans — the comment lines, and the whitespace-only ones bash also
+// records. A wholly empty line is *not* one: bash records nothing for it,
+// measured, so this is a real distinction rather than "record every
+// line".
+//
+// ambient is false for these: the entry is not the record of the line
+// currently executing, so `history -s` has nothing of theirs to replace.
+func (rec *historyRecorder) flushBefore(limit uint) {
+	if limit <= rec.flushed+1 {
+		return
+	}
+	lines := rec.sourceLines()
+	for l := rec.flushed + 1; l < limit; l++ {
+		switch {
+		case rec.covered[l], !rec.eligible[l], int(l) > len(lines):
+		case lines[l-1] == "":
+		default:
+			historyAppendFiltered(lines[l-1], false, rec.env)
+		}
+	}
+	rec.flushed = limit - 1
+}
+
+// finish records what is left after the last statement ran. A trailing
+// comment is an entry in bash too, with nothing behind it to run.
+func (rec *historyRecorder) finish() {
+	rec.flushBefore(uint(len(rec.sourceLines())) + 1)
 }
 
 // sourceLines is the source split into lines, resplit only when the
@@ -124,6 +185,9 @@ func (rec *historyRecorder) addLine(stmts []*syntax.Stmt) {
 	}
 	rec.groups = append(rec.groups, g)
 	rec.done = append(rec.done, false)
+	for l := g.start; l <= g.end; l++ {
+		rec.covered[l] = true
+	}
 	for _, st := range stmts {
 		rec.byStmt[st] = len(rec.groups) - 1
 	}
@@ -203,29 +267,74 @@ func (rec *historyRecorder) record(st *syntax.Stmt) {
 		return
 	}
 	rec.done[gi] = true
-	historyAppendFiltered(rec.render(rec.groups[gi]), true, rec.env)
+	g := rec.groups[gi]
+	// Whatever stood between the last entry and this line is an entry of
+	// its own, and it comes first — bash reads and records in line order.
+	rec.flushBefore(g.start)
+	if g.end > rec.flushed {
+		rec.flushed = g.end
+	}
+	historyAppendFiltered(rec.render(g), true, rec.env)
 }
 
 // render joins the group's source lines into the entry text bash would
 // record.
+//
+// Two of the rules are about lines bash does *not* write into the entry,
+// and both were measured with `history -w` rather than reasoned about
+// (#693):
+//
+//   - a continuation line that is only a comment is dropped, and the
+//     boundary it stood at joins with a newline instead of whatever the
+//     ordinary rule said, so `for i in 1 2; do` + `# c` + a tabbed
+//     `echo $i` records with neither the comment nor a `; ` in it;
+//   - a continuation line that is *blank* is dropped with the separator
+//     left alone, so the same loop with an empty line in it keeps the
+//     space the `do` earned.
+//
+// And a line that has code *and* a trailing comment is kept, with a
+// newline after it, for the reason the first rule exists: a `; ` written
+// after a comment would be inside it.
 func (rec *historyRecorder) render(g histGroup) string {
 	var b strings.Builder
 	lines := rec.sourceLines()
+	// held is the kept line waiting to be written: its separator is not
+	// known until the next kept line arrives, and the last one takes none
+	// at all.
+	held, heldLine, holding := "", uint(0), false
+	forced := ""
 	for l := g.start; l <= g.end; l++ {
 		if int(l) > len(lines) {
 			break // a truncated read; record what there is
 		}
 		line := lines[l-1]
-		if l == g.end {
-			b.WriteString(line)
-			break
-		}
-		if sep, ok := rec.sep[l]; ok {
-			b.WriteString(line)
+		if holding {
+			switch {
+			case commentOnlyLine(line):
+				forced = "\n"
+				continue
+			case strings.TrimSpace(line) == "":
+				continue
+			}
+			text, sep := joinLine(held)
+			switch {
+			case forced != "":
+				sep = forced
+			case hasUnquotedComment(held):
+				sep = "\n"
+			default:
+				if s, ok := rec.sep[heldLine]; ok {
+					sep = s
+				}
+			}
+			b.WriteString(text)
 			b.WriteString(sep)
-			continue
+			forced = ""
 		}
-		b.WriteString(joinLine(line))
+		held, heldLine, holding = line, l, true
+	}
+	if holding {
+		b.WriteString(held)
 	}
 	if g.hdocTail {
 		// bash keeps the newline after the closing delimiter.
@@ -234,8 +343,39 @@ func (rec *historyRecorder) render(g histGroup) string {
 	return b.String()
 }
 
-// joinLine returns line plus the separator bash puts between it and the
-// next line of the same entry, all measured against bash 5.3:
+// commentOnlyLine reports whether a line runs nothing because all it has
+// is a comment.
+func commentOnlyLine(line string) bool {
+	return strings.HasPrefix(strings.TrimLeft(line, " \t"), "#")
+}
+
+// hasUnquotedComment reports whether a comment starts somewhere in line,
+// which decides whether a `; ` may follow it. The position test is bash's
+// own — a `#` at the start of the line or after whitespace — and the
+// quotes matter, so a `#` inside single quotes joins normally.
+func hasUnquotedComment(line string) bool {
+	inSingle, inDouble := false, false
+	runes := []rune(line)
+	for i := 0; i < len(runes); i++ {
+		switch r := runes[i]; {
+		case r == '\\' && !inSingle && i+1 < len(runes):
+			i++
+		case r == '\'' && !inDouble:
+			inSingle = !inSingle
+		case r == '"' && !inSingle:
+			inDouble = !inDouble
+		case r == '#' && !inSingle && !inDouble:
+			if i == 0 || runes[i-1] == ' ' || runes[i-1] == '\t' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// joinLine returns line as it goes into the entry, plus the separator
+// bash puts between it and the next line of the same entry — all measured
+// against bash 5.3:
 //
 //   - a trailing backslash is a continuation: the backslash is dropped
 //     and nothing is inserted (`echo one \` + `two` → `echo one two`);
@@ -244,24 +384,24 @@ func (rec *historyRecorder) render(g histGroup) string {
 //     and likewise after do, else, `&&`, `|`, `{`, `;;`, `in`, …);
 //   - everything else joins with "; " (`for x in one two three` + `do`
 //     → `three; do`).
-func joinLine(line string) string {
+func joinLine(line string) (text, sep string) {
 	if strings.HasSuffix(line, "\\") {
 		// Only a backslash immediately before the newline continues the
 		// line; the parser guaranteed that by putting both lines in one
 		// statement with no construct spanning the boundary.
-		return line[:len(line)-1]
+		return line[:len(line)-1], ""
 	}
 	t := strings.TrimRight(line, " \t")
 	for _, s := range []string{"&&", "||", "|", "&", ";", "{", "("} {
 		if strings.HasSuffix(t, s) {
-			return line + " "
+			return line, " "
 		}
 	}
 	switch lastWord(t) {
 	case "then", "do", "else", "elif", "in", "time", "!":
-		return line + " "
+		return line, " "
 	}
-	return line + "; "
+	return line, "; "
 }
 
 func lastWord(s string) string {

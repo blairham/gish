@@ -25,14 +25,19 @@ func FuzzExpandHistory(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, line string, found bool) {
-		last := func(prefix string, _ int) (string, bool) {
+		one := func(prefix string, _ int) (string, bool) {
 			if !found {
 				return "", false
 			}
 			return "prev-cmd --flag arg1 arg2 " + prefix, true
 		}
+		src := histSource{
+			prefix:   one,
+			search:   func(q string) (string, bool) { return one(q, 0) },
+			numbered: func(int) (string, bool) { return one("", 0) },
+		}
 
-		out, changed, err := expandHistory(line, last)
+		out, changed, err := expandHistory(line, src, defaultHistChars)
 
 		switch {
 		case err != nil:

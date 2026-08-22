@@ -6,18 +6,36 @@ import (
 )
 
 // fakeHistory serves canned entries: index 0 is the most recent, and
-// a prefix filters like the real store's Match.
-func fakeHistory(entries ...string) func(string, int) (string, bool) {
-	return func(prefix string, n int) (string, bool) {
-		for _, e := range entries {
-			if strings.HasPrefix(e, prefix) {
-				if n == 0 {
+// a prefix filters like the real store's Match. The listing numbers run
+// the other way, oldest first, as the `history` builtin prints them.
+func fakeHistory(entries ...string) histSource {
+	return histSource{
+		prefix: func(prefix string, n int) (string, bool) {
+			for _, e := range entries {
+				if strings.HasPrefix(e, prefix) {
+					if n == 0 {
+						return e, true
+					}
+					n--
+				}
+			}
+			return "", false
+		},
+		search: func(q string) (string, bool) {
+			for _, e := range entries {
+				if strings.Contains(e, q) {
 					return e, true
 				}
-				n--
 			}
-		}
-		return "", false
+			return "", false
+		},
+		numbered: func(n int) (string, bool) {
+			i := len(entries) - n
+			if i < 0 || i >= len(entries) {
+				return "", false
+			}
+			return entries[i], true
+		},
 	}
 }
 
@@ -37,7 +55,7 @@ func TestExpandHistoryDesignators(t *testing.T) {
 		{"bang-bang word designator", "echo !!:0", "echo git"},
 	}
 	for _, tt := range tests {
-		got, changed, err := expandHistory(tt.in, hist)
+		got, changed, err := expandHistory(tt.in, hist, defaultHistChars)
 		if err != nil || !changed || got != tt.want {
 			t.Errorf("%s: expandHistory(%q) = %q, %v, %v — want %q", tt.name, tt.in, got, changed, err, tt.want)
 		}
@@ -56,7 +74,7 @@ func TestExpandHistoryLeavesNonEventsAlone(t *testing.T) {
 		`echo "hi\!"`,
 		"echo no bangs at all",
 	} {
-		got, changed, err := expandHistory(in, hist)
+		got, changed, err := expandHistory(in, hist, defaultHistChars)
 		if err != nil || changed || got != in {
 			t.Errorf("expandHistory(%q) = %q, %v, %v — want untouched", in, got, changed, err)
 		}
@@ -67,12 +85,12 @@ func TestExpandHistoryCaretSubstitution(t *testing.T) {
 	t.Parallel()
 
 	hist := fakeHistory("make tset")
-	got, changed, err := expandHistory("^tset^test", hist)
+	got, changed, err := expandHistory("^tset^test", hist, defaultHistChars)
 	if err != nil || !changed || got != "make test" {
 		t.Errorf("caret = %q, %v, %v", got, changed, err)
 	}
 	// A miss is an error, not a silent pass-through.
-	if _, _, err = expandHistory("^nope^x", hist); err == nil {
+	if _, _, err = expandHistory("^nope^x", hist, defaultHistChars); err == nil {
 		t.Error("failed substitution should error")
 	}
 }
@@ -81,14 +99,14 @@ func TestExpandHistoryEventNotFound(t *testing.T) {
 	t.Parallel()
 
 	empty := fakeHistory()
-	if _, _, err := expandHistory("!!", empty); err == nil {
+	if _, _, err := expandHistory("!!", empty, defaultHistChars); err == nil {
 		t.Error("!! with empty history should error")
 	}
 	hist := fakeHistory("make test")
-	if _, _, err := expandHistory("!nosuchprefix", hist); err == nil {
+	if _, _, err := expandHistory("!nosuchprefix", hist, defaultHistChars); err == nil {
 		t.Error("unmatched prefix should error")
 	}
-	if _, _, err := expandHistory("echo !:9", hist); err == nil {
+	if _, _, err := expandHistory("echo !:9", hist, defaultHistChars); err == nil {
 		t.Error("out-of-range word designator should error")
 	}
 }
@@ -125,7 +143,7 @@ func TestExpandHistorySelectors(t *testing.T) {
 		{"after a prefix match", "!echo:$", "two"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, changed, err := expandHistory(tt.in, hist)
+			got, changed, err := expandHistory(tt.in, hist, defaultHistChars)
 			switch {
 			case err != nil:
 				t.Fatalf("%q: %v", tt.in, err)
@@ -154,7 +172,7 @@ func TestExpandHistoryRefusesWhatItCannotRead(t *testing.T) {
 		"!!:3*",    // same, in the other spelling
 		"!!:1:zzz", // a bad modifier after a good designator
 	} {
-		if got, _, err := expandHistory(in, hist); err == nil {
+		if got, _, err := expandHistory(in, hist, defaultHistChars); err == nil {
 			t.Errorf("%q expanded to %q, want a failed expansion", in, got)
 		}
 	}
@@ -162,17 +180,17 @@ func TestExpandHistoryRefusesWhatItCannotRead(t *testing.T) {
 	// `:n-` stops one short of the last word, so naming the last word
 	// is empty rather than an error — measured, and the boundary the
 	// error cases above sit either side of.
-	if got, _, err := expandHistory("x !!:2-", hist); err != nil || got != "x " {
+	if got, _, err := expandHistory("x !!:2-", hist, defaultHistChars); err != nil || got != "x " {
 		t.Errorf(`"x !!:2-" gave %q, %v; want "x ", nil`, got, err)
 	}
 
 	// `:*` on a command with no arguments is the one empty answer that
 	// is not an error, and `:$` on the same command is its only word.
 	single := fakeHistory("echo")
-	if got, _, err := expandHistory("x !!:*", single); err != nil || got != "x " {
+	if got, _, err := expandHistory("x !!:*", single, defaultHistChars); err != nil || got != "x " {
 		t.Errorf(`"x !!:*" gave %q, %v; want "x ", nil`, got, err)
 	}
-	if got, _, err := expandHistory("!!:$", single); err != nil || got != "echo" {
+	if got, _, err := expandHistory("!!:$", single, defaultHistChars); err != nil || got != "echo" {
 		t.Errorf(`"!!:$" gave %q, %v; want "echo", nil`, got, err)
 	}
 }
@@ -183,7 +201,7 @@ func TestExpandHistoryPrintOnly(t *testing.T) {
 	t.Parallel()
 
 	hist := fakeHistory("rm -rf ./build")
-	got, changed, printOnly, err := expandHistoryLine("!!:p", hist)
+	got, changed, printOnly, err := expandHistoryLine("!!:p", hist, defaultHistChars)
 	switch {
 	case err != nil:
 		t.Fatal(err)
@@ -192,7 +210,41 @@ func TestExpandHistoryPrintOnly(t *testing.T) {
 	case !printOnly:
 		t.Error("`:p` did not ask for the line to be printed rather than run")
 	}
-	if _, _, printOnly, _ := expandHistoryLine("!!", hist); printOnly {
+	if _, _, printOnly, _ := expandHistoryLine("!!", hist, defaultHistChars); printOnly {
 		t.Error("a plain !! asked for print-only")
+	}
+}
+
+// $histchars is read at expansion time and it is *sticky*: assigning a
+// value shorter than three characters moves only the characters it names
+// and leaves the rest at whatever the last longer value made them, which
+// is measured (#695) and is not what the issue predicted — it guessed a
+// reset to the defaults. Only unsetting the variable restores them.
+//
+// Not parallel, and it resets the state afterwards, because the
+// stickiness is a package-level fact by construction: bash carries the
+// three characters in three globals its assignment hook only writes over.
+func TestHistCharsIsSticky(t *testing.T) {
+	defer resetHistChars()
+	resetHistChars()
+
+	if got := histCharsOf("", false); got != defaultHistChars {
+		t.Errorf("unset = %+v, want the defaults %+v", got, defaultHistChars)
+	}
+	if got := histCharsOf(",;%", true); got != (histChars{expand: ',', subst: ';', comment: '%'}) {
+		t.Errorf("three characters = %+v", got)
+	}
+	// The shorter value keeps `;` and `%`, which is the sticky half.
+	if got := histCharsOf(".", true); got != (histChars{expand: '.', subst: ';', comment: '%'}) {
+		t.Errorf("one character = %+v, want the later two carried over", got)
+	}
+	// An empty value takes the expansion character away, which is how
+	// bash turns expansion off — the assignment happens unconditionally
+	// and there is nothing to assign.
+	if got := histCharsOf("", true); !got.off() {
+		t.Errorf("an empty value = %+v, want expansion off", got)
+	}
+	if got := histCharsOf("", false); got != defaultHistChars {
+		t.Errorf("unset after a value = %+v, want the defaults restored", got)
 	}
 }

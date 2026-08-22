@@ -342,18 +342,22 @@ func historyExpand(hc interp.HandlerContext, args []string) []string {
 	// `history -p` removes its own line first (measured), which is also
 	// what makes its `!!` mean the previous command rather than itself.
 	historyPopSelf()
-	// Newest first, skipping n matches, which is the contract
-	// history.Store.Match has and expandHistory expects — and the same
-	// lookup a script's own lines are expanded against (#559), so
-	// `history -p '!!'` and a bare `!!` cannot disagree.
-	match := sessionHistoryMatch()
+	// The same lookup a script's own lines are expanded against (#559),
+	// so `history -p '!!'` and a bare `!!` cannot disagree — and the same
+	// $histchars, since a script that moved the expansion character moved
+	// it for `history -p` too (#695).
+	src := sessionHistorySource()
+	chars := sessionHistChars(sessionRunner())
 	status := 0
 	for _, arg := range args {
-		expanded, _, err := expandHistory(arg, match)
+		expanded, _, err := expandHistory(arg, src, chars)
 		if err != nil {
-			// bash's wording is "history expansion failed"; the event it
-			// could not find is the useful half and it keeps that.
-			hc.Errf("history: %v\n", err)
+			// `history -p` has one wording for every failure and names
+			// the *argument* rather than the designator inside it —
+			// measured, and different from what the same failure prints
+			// when the shell's own reader hits it, which is why this is
+			// not the expander's message.
+			hc.Errf("history: %s: history expansion failed\n", arg)
 			status = 1
 			continue
 		}
