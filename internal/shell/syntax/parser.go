@@ -618,6 +618,23 @@ type Parser struct {
 	litBatch  []Lit
 	wordBatch []wordAlloc
 
+	// arithmRaw is the source read since the outermost arithmetic
+	// construct still being parsed began — byte for byte, so that an
+	// expression the parser cannot read can be named as it was written
+	// (#600). arithmRawOff is the input offset of its first byte, which
+	// is what lets a position inside it index straight into the slice;
+	// nested constructs share the one recording for the same reason.
+	arithmRaw    []byte
+	arithmRawOff int64
+	// arithmRawDepth counts the arithmetic constructs currently
+	// accumulating, and arithmBails the ones with a handler installed —
+	// only the latter may turn a parse error into a marker node.
+	arithmRawDepth int
+	arithmBails    int
+	// bailErr is the error a bailed-out parse would have reported, kept
+	// in case the raw scan cannot find where the construct ends.
+	bailErr error
+
 	readBuf [bufSize]byte
 	litBuf  [bufSize]byte
 	litBs   []byte
@@ -650,6 +667,8 @@ func (p *Parser) reset() {
 	p.err, p.readErr, p.readEOF = nil, nil, false
 	p.quote, p.forbidNested = noState, false
 	p.openNodes = 0
+	p.arithmRaw, p.arithmRawOff = p.arithmRaw[:0], 0
+	p.arithmRawDepth, p.arithmBails, p.bailErr = 0, 0, nil
 	p.recoveredErrors = 0
 	p.recoverable = nil
 	p.heredocs, p.buriedHdocs = p.heredocs[:0], 0
@@ -885,11 +904,17 @@ func (p *Parser) gotRsrv(val string) (Pos, bool) {
 }
 
 func (p *Parser) recoverError() bool {
-	if p.recoveredErrors < p.recoverErrorsMax {
+	if p.canRecoverError() {
 		p.recoveredErrors++
 		return true
 	}
 	return false
+}
+
+// canRecoverError is [Parser.recoverError] asked rather than taken, for
+// a check that runs ahead of the one which would take it.
+func (p *Parser) canRecoverError() bool {
+	return p.recoveredErrors < p.recoverErrorsMax
 }
 
 type noQuote string
@@ -1005,12 +1030,25 @@ func (p *Parser) matched(lpos Pos, left, right token) Pos {
 
 func (p *Parser) errPass(err error) {
 	if p.err == nil {
-		p.err = err
-		p.bsp = uint(len(p.bs)) + 1
-		p.r = runeEOF
-		p.w = 1
-		p.tok = _EOF
+		if p.arithmBails > 0 && p.quote&allArithmExpr != 0 {
+			// Inside an arithmetic expression bash reads as text and
+			// judges when it runs, so the error is the evaluator's
+			// rather than the parser's (#600). Unwind to the construct,
+			// which keeps the lexer alive to scan out the rest of it.
+			p.bailErr = err
+			panic(arithmBailout{})
+		}
+		p.stopErr(err)
 	}
+}
+
+// stopErr records the error and stops the lexer where it stands.
+func (p *Parser) stopErr(err error) {
+	p.err = err
+	p.bsp = uint(len(p.bs)) + 1
+	p.r = runeEOF
+	p.w = 1
+	p.tok = _EOF
 }
 
 // IsIncomplete reports whether a Parser error could have been avoided with
@@ -1365,19 +1403,30 @@ func (p *Parser) wordPart() WordPart {
 		left := p.tok
 		ar := &ArithmExp{Left: p.pos, Bracket: left == dollBrack}
 		old := p.preNested(arithmExpr)
-		p.next()
-		if p.got(hash) {
-			p.checkLang(ar.Pos(), LangMirBSDKorn, "unsigned expressions")
-			ar.Unsigned = true
+		end := arithmEndDblParen
+		if left == dollBrack {
+			end = arithmEndBrack
 		}
-		// An empty arithmetic expansion is valid and answers zero:
-		// `$(())`, `$(( ))` and `$[]` are all 0 in bash, where koi
-		// refused them as "must be followed by an expression".
-		if p.peekArithmEnd() || (left == dollBrack && p.tok == rightBrack) {
-			ar.X = nil
-		} else {
-			ar.X = p.followArithm(left, ar.Left)
-		}
+		ar.X = p.arithmRead(Pos{}, end, func() ArithmExpr {
+			p.next()
+			if p.got(hash) {
+				p.checkLang(ar.Pos(), LangMirBSDKorn, "unsigned expressions")
+				ar.Unsigned = true
+			}
+			// An empty arithmetic expansion is valid and answers zero:
+			// `$(())`, `$(( ))` and `$[]` are all 0 in bash, where koi
+			// refused them as "must be followed by an expression".
+			if p.peekArithmEnd() || (left == dollBrack && p.tok == rightBrack) {
+				return nil
+			}
+			x := p.followArithm(left, ar.Left)
+			// Text left over where the construct should have ended is
+			// bash's runtime complaint too — `$(( a b c ))` — so it is
+			// raised here, inside the marker's reach, rather than by
+			// the delimiter check below (#600).
+			p.arithmTail(end, ar.Left, left)
+			return x
+		})
 		if ar.Bracket {
 			if p.tok != rightBrack {
 				if p.recoverError() {
@@ -1779,6 +1828,11 @@ zshPrefixLoop:
 		pe.Slice = &Slice{}
 		colonPos := p.pos
 		p.quote = paramExpArithm
+		// A slice's halves are the one arithmetic inside an expansion,
+		// and bash judges them when it expands it like any other
+		// (#600): `${#:%}` is an arithmetic error at runtime, which
+		// costs the input unit rather than the file.
+		p.beginRaw()
 		if p.next(); p.tok != colon {
 			// `${x:}` is not a parse error in bash: it reads it and
 			// reports "bad substitution" while expanding, which ends
@@ -1786,7 +1840,9 @@ zshPrefixLoop:
 			// neither half is that shape, and the interpreter answers
 			// for it.
 			if p.tok != rightBrace {
-				pe.Slice.Offset = p.followArithm(colon, colonPos)
+				pe.Slice.Offset = p.arithmRead(p.pos, arithmEndBrace, func() ArithmExpr {
+					return p.followArithm(colon, colonPos)
+				})
 			}
 		}
 		colonPos = p.pos
@@ -1802,9 +1858,12 @@ zshPrefixLoop:
 					Value:    "0",
 				}}}
 			} else {
-				pe.Slice.Length = p.followArithm(colon, colonPos)
+				pe.Slice.Length = p.arithmRead(p.pos, arithmEndBrace, func() ArithmExpr {
+					return p.followArithm(colon, colonPos)
+				})
 			}
 		}
+		p.endRaw()
 		// Need to use a different matched style so arithm errors
 		// get reported correctly
 		p.quote = old
@@ -2954,16 +3013,21 @@ func (p *Parser) subshell(s *Stmt) {
 func (p *Parser) arithmExpCmd(s *Stmt) {
 	ar := &ArithmCmd{Left: p.pos}
 	old := p.preNested(arithmExprCmd)
-	p.next()
-	if p.got(hash) {
-		p.checkLang(ar.Pos(), LangMirBSDKorn, "unsigned expressions")
-		ar.Unsigned = true
-	}
-	// `(( ))` is empty and valid, like `$(())` above; it evaluates
-	// as zero, so the command's status is 1.
-	if !p.peekArithmEnd() {
-		ar.X = p.followArithm(dblLeftParen, ar.Left)
-	}
+	ar.X = p.arithmRead(Pos{}, arithmEndDblParen, func() ArithmExpr {
+		p.next()
+		if p.got(hash) {
+			p.checkLang(ar.Pos(), LangMirBSDKorn, "unsigned expressions")
+			ar.Unsigned = true
+		}
+		// `(( ))` is empty and valid, like `$(())` above; it evaluates
+		// as zero, so the command's status is 1.
+		if p.peekArithmEnd() {
+			return nil
+		}
+		x := p.followArithm(dblLeftParen, ar.Left)
+		p.arithmTail(arithmEndDblParen, ar.Left, dblLeftParen)
+		return x
+	})
 	ar.Right = p.arithmEnd(dblLeftParen, ar.Left, old)
 	s.Cmd = ar
 }
@@ -3064,14 +3128,31 @@ func (p *Parser) loop(fpos Pos) Loop {
 	if p.tok == dblLeftParen {
 		cl := &CStyleLoop{Lparen: p.pos}
 		old := p.preNested(arithmExprCmd)
-		p.next()
-		cl.Init = p.arithmExpr(false)
+		// One recording spans the whole header so that each part can be
+		// named from where it starts, even though the `;` before it has
+		// already lexed the part's first token (#600).
+		p.beginRaw()
+		cl.Init = p.arithmRead(Pos{}, arithmEndSemi, func() ArithmExpr {
+			p.next()
+			x := p.arithmExpr(false)
+			p.arithmTail(arithmEndSemi, cl.Lparen, dblLeftParen)
+			return x
+		})
 		if !p.got(dblSemicolon) {
 			p.follow(p.pos, "expr", semicolon)
-			cl.Cond = p.arithmExpr(false)
+			cl.Cond = p.arithmRead(p.pos, arithmEndSemi, func() ArithmExpr {
+				x := p.arithmExpr(false)
+				p.arithmTail(arithmEndSemi, cl.Lparen, dblLeftParen)
+				return x
+			})
 			p.follow(p.pos, "expr", semicolon)
 		}
-		cl.Post = p.arithmExpr(false)
+		cl.Post = p.arithmRead(p.pos, arithmEndDblParen, func() ArithmExpr {
+			x := p.arithmExpr(false)
+			p.arithmTail(arithmEndDblParen, cl.Lparen, dblLeftParen)
+			return x
+		})
+		p.endRaw()
 		cl.Rparen = p.arithmEnd(dblLeftParen, cl.Lparen, old)
 		p.got(semicolon)
 		p.got(_Newl)

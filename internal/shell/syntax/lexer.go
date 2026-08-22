@@ -178,6 +178,17 @@ retry:
 	}
 	if b := p.bs[p.bsp]; b < utf8.RuneSelf {
 		p.bsp++
+		// Record the source of the arithmetic construct being read, if
+		// any, so an expression the parser cannot read can be named as
+		// it was written (#600). This is every byte consumed rather
+		// than every rune returned — a `\r\n` and an escaped newline
+		// have to land in it too, or an offset stops indexing it — and
+		// it is written out at each site rather than through a helper,
+		// because a variadic call here costs the parser a quarter of
+		// its throughput.
+		if p.arithmRawDepth > 0 {
+			p.arithmRaw = append(p.arithmRaw, b)
+		}
 		switch b {
 		case '\x00':
 			// Ignore null bytes while parsing, like bash.
@@ -191,10 +202,16 @@ retry:
 		case '\\':
 			if p.r == '\\' {
 			} else if p.peek() == '\n' {
+				if p.arithmRawDepth > 0 {
+					p.arithmRaw = append(p.arithmRaw, '\n')
+				}
 				p.bsp++
 				p.w, p.r = 1, escNewl
 				return escNewl
 			} else if p1, p2 := p.peekTwo(); p1 == '\r' && p2 == '\n' { // \\\r\n turns into \\\n
+				if p.arithmRawDepth > 0 {
+					p.arithmRaw = append(p.arithmRaw, '\r', '\n')
+				}
 				p.col++
 				p.bsp += 2
 				p.w, p.r = 2, escNewl
@@ -233,6 +250,9 @@ decodeRune:
 	}
 	if p.litBs != nil {
 		p.litBs = append(p.litBs, p.bs[p.bsp:p.bsp+uint(w)]...)
+	}
+	if p.arithmRawDepth > 0 {
+		p.arithmRaw = append(p.arithmRaw, p.bs[p.bsp:p.bsp+uint(w)]...)
 	}
 	p.bsp += uint(w)
 	if p.r == utf8.RuneError && w == 1 {

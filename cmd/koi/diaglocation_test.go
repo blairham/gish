@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -167,6 +168,94 @@ func TestExpansionDiagnosticsSayWhereTheyCameFrom(t *testing.T) {
 			t.Errorf("the oracle's output lacks %q, so this case cannot detect a regression: %q",
 				want, bashOut)
 		}
+	}
+}
+
+// Malformed arithmetic, which bash refuses while *evaluating* because
+// it parses an expression from a string when it runs one (#600). koi
+// parses ahead, so a script is the only shape that can show the whole
+// answer: which commands ran, what they answered, and which lines the
+// diagnostics named.
+//
+// The prose is deliberately not compared — bash quotes the expression as
+// written and names the token it stopped at, which is #598 — so the
+// script sends its diagnostics to a file and the test compares the
+// *line numbers* out of it. That is the behavioral claim: the same
+// lines failed, in the same order, and everything between them ran.
+//
+// Both halves of #597's split are here. A word abandons its input unit,
+// so `lost1` never prints while the next line does; `(( ))` and a
+// C-style loop's header are commands whose evaluation failed, so they
+// answer 1 and the rest of the line runs.
+const diagBadArithmScript = `exec 2>errs.txt
+echo start
+echo $(( 4 ? : 3 )); echo lost1
+echo after1
+echo $(( 1 ? 20 )); echo lost2
+(( 4 + )); echo same1=$?
+(( -- )); echo same2=$?
+for (( i=1; i < 4; 7++ )); do n=$((n+1)); done; echo "same3=$? n=$n"
+set -- a b
+echo "${#:%}"; echo lost3
+v=abcdef
+echo "${v:1:%}"; echo lost4
+echo end
+`
+
+func TestBadArithmeticIsARuntimeError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("differential arithmetic behavior skipped in -short")
+	}
+	koi := buildKoi(t)
+	bash := requireBash(t)
+
+	// A directory per shell, since both write their diagnostics to the
+	// same file name beside the script.
+	dirs := make(map[string]string, 2)
+	for _, shell := range []string{bash, koi} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "badarith.sh"), []byte(diagBadArithmScript), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		dirs[shell] = dir
+	}
+	bashOut, bashCode := runInDir(t, dirs[bash], bash, "./badarith.sh")
+	koiOut, koiCode := runInDir(t, dirs[koi], koi, "./badarith.sh")
+	if bashOut != koiOut || bashCode != koiCode {
+		t.Errorf("what ran differs from bash\n  bash: %q (exit %d)\n  koi: %q (exit %d)",
+			bashOut, bashCode, koiOut, koiCode)
+	}
+	// A shell that ran nothing at all would agree on an empty answer.
+	if !strings.Contains(bashOut, "end\n") || strings.Contains(bashOut, "lost1") {
+		t.Fatalf("the oracle did not behave as this case assumes: %q", bashOut)
+	}
+
+	diagLines := func(shell string) []string {
+		t.Helper()
+		body, err := os.ReadFile(filepath.Join(dirs[shell], "errs.txt"))
+		if err != nil {
+			t.Fatalf("reading %s's diagnostics: %v", shell, err)
+		}
+		var lines []string
+		for line := range strings.SplitSeq(strings.TrimSuffix(string(body), "\n"), "\n") {
+			prefix, _, ok := strings.Cut(line, ": ")
+			if !ok {
+				t.Fatalf("%s printed an unlocated diagnostic: %q", shell, line)
+			}
+			num, _, ok := strings.Cut(line[len(prefix)+2:], ": ")
+			if !ok {
+				t.Fatalf("%s printed an unlocated diagnostic: %q", shell, line)
+			}
+			lines = append(lines, prefix+" "+num)
+		}
+		return lines
+	}
+	bashAt, koiAt := diagLines(bash), diagLines(koi)
+	if !slices.Equal(bashAt, koiAt) {
+		t.Errorf("the lines reported differ from bash\n  bash: %q\n  koi: %q", bashAt, koiAt)
+	}
+	if len(bashAt) != 7 {
+		t.Errorf("the oracle reported %d diagnostics, want 7: %q", len(bashAt), bashAt)
 	}
 }
 
