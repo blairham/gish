@@ -789,6 +789,39 @@ func (cfg *Config) caseConvElems(op syntax.ParExpOperator, arg string, elems []s
 	return out
 }
 
+// SubscriptKey is a subscript as an associative array's key: the text
+// between the brackets, expanded as one word, with the quotes removed.
+// That is the whole of bash's rule and none of it is arithmetic — `m[a-b]`
+// keys on `a-b`, `m[-1]` on `-1`, `m[x[1]]` on `x[1]`, and `m[ a - b ]` on
+// ` a - b ` with the spaces kept, where the same text in an indexed array's
+// subscript is a subtraction, a count from the end, and a reference to
+// another array's element (#626).
+//
+// One word, so no field splitting and no globbing: `sp='a b'; m[$sp]=1`
+// keys on `a b` and `m[zq*]=1` on `zq*` even where `zq1` exists. The
+// expansion still happens, which is why this cannot be the raw source —
+// `m[$a-$b]` keys on what the two expand to.
+//
+// A subscript that is not a word reaches this only from a tree built by
+// hand — the parser keeps every subscript as one (#626) — and it is still
+// text, so it is rendered rather than crashed on: this used to be
+// `idx.(*syntax.Word)`, and the interface conversion it panicked with was
+// the loudest failure koi had.
+func SubscriptKey(cfg *Config, idx syntax.ArithmExpr) (string, error) {
+	switch idx := idx.(type) {
+	case nil:
+		// `m[  ]=v`: brackets holding nothing but whitespace, which is
+		// zero to an arithmetic reader and the empty key here.
+		return "", nil
+	case *syntax.Word:
+		if idx == nil {
+			return "", nil
+		}
+		return Literal(cfg, idx)
+	}
+	return nodeText(idx), nil
+}
+
 // varInd expands an indexed variable expansion like ${a[i]}, also reporting
 // whether the resulting element is set, which may be false for missing array
 // elements such as the holes in a sparse array.
@@ -861,11 +894,11 @@ func (cfg *Config) varInd(vr Variable, idx syntax.ArithmExpr) (string, bool, err
 			}
 			return strings.Join(strs, " "), vr.IsSet(), nil
 		}
-		val, err := Literal(cfg, idx.(*syntax.Word))
+		key, err := SubscriptKey(cfg, idx)
 		if err != nil {
 			return "", false, err
 		}
-		str, ok := vr.Map[val]
+		str, ok := vr.Map[key]
 		return str, ok, nil
 	}
 	return "", false, nil
@@ -895,7 +928,7 @@ func (cfg *Config) assignElem(name string, vr Variable, idx syntax.ArithmExpr, v
 		key := "0"
 		if idx != nil {
 			var err error
-			if key, err = Literal(cfg, idx.(*syntax.Word)); err != nil {
+			if key, err = SubscriptKey(cfg, idx); err != nil {
 				return err
 			}
 		}
@@ -952,16 +985,15 @@ func indirectName(pe *syntax.ParamExp) string {
 	return name
 }
 
-// subscriptWord reads a nameref or indirection target's subscript text as
-// an arithmetic expression, or as the literal `@`/`*` that asks for every
-// element. Nil means the text is not a subscript at all, which is what
-// makes `x='a b'` a malformed name rather than an element reference.
+// subscriptWord reads a nameref or indirection target's subscript text the
+// way the parser reads one in place: as a whole word, whose meaning the
+// array decides when the reference is used (#626). Reading it as arithmetic
+// instead resolved `declare -n r=m[a-b]` to a subtraction, so a reference to
+// an associative element wrote and read the wrong key. Nil means the text is
+// not a subscript at all, which is what makes `x='a b'` a malformed name
+// rather than an element reference.
 func subscriptWord(sub string) syntax.ArithmExpr {
-	switch sub {
-	case "@", "*":
-		return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: sub}}}
-	}
-	idx, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
+	idx, err := syntax.NewParser().Subscript(strings.NewReader(sub))
 	if err != nil {
 		return nil
 	}

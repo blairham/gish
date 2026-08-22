@@ -107,8 +107,14 @@ func (p *Parser) dollarParenIsSubshell() bool {
 // the same bounded forward scan `$((` needs (#424) — and it is bounded
 // the same way: what is already buffered, with "ran out" answering the
 // way the parser behaved before the scan existed.
+//
+// Nested brackets are counted, because a subscript's text may hold them:
+// `m=([x[1]]=3)` names the key `x[1]`, so the `]` that completes the shape
+// is the second one (#626). Stopping at the first would read the element as
+// an ordinary word and drop the assignment.
 func (p *Parser) bracketIsSubscript() bool {
 	p.fill() // as much of the line as the reader will give
+	depth := 0
 	for i := p.bsp; i < uint(len(p.bs)); i++ {
 		switch p.bs[i] {
 		case '\\':
@@ -126,7 +132,13 @@ func (p *Parser) bracketIsSubscript() bool {
 			// A subscript and its `=` are on one line; an element list
 			// spanning lines is still one element per line.
 			return false
+		case '[':
+			depth++
 		case ']':
+			if depth > 0 {
+				depth--
+				continue
+			}
 			// The bracket closed, so this is a subscript only if the
 			// assignment follows it immediately: `]=` or `]+=`.
 			if i+1 >= uint(len(p.bs)) {

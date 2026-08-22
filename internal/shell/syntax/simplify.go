@@ -31,14 +31,15 @@ type simplifier struct {
 func (s *simplifier) visit(node Node) {
 	switch node := node.(type) {
 	case *Assign:
-		node.Index = s.removeParensArithm(node.Index)
-		// Don't inline params, as x[i] and x[$i] mean
-		// different things when x is an associative
-		// array; the first means "i", the second "$i".
+		// A subscript is left exactly as written, for the reason the
+		// parser no longer reads one as arithmetic (#626): whether its
+		// text is an expression or an associative key depends on the
+		// array, so `m[(1)]=2` may be keyed on `(1)` and dropping the
+		// parens would rewrite the key. Params are not inlined either,
+		// since x[i] and x[$i] are different keys — the first means "i",
+		// the second whatever $i holds.
 	case *ParamExp:
-		node.Index = s.removeParensArithm(node.Index)
-		// don't inline params - same as above.
-
+		// The subscript is left alone here for the same reason.
 		if node.Slice == nil {
 			break
 		}

@@ -159,6 +159,93 @@ var subscriptCases = []struct {
 			"echo \"meta=[${m[a;b]}${m[a{b]}${m[a}b]}${m[a(b]}${m[a)b]}]\"\n",
 		needs: "read=[flip]",
 	},
+	{
+		// A key whose text *also* reads as arithmetic (#626). Both
+		// directions are asserted, because the write and the read were
+		// wrong in the same direction: `m[x[1]]=q` stored under the
+		// empty key and reading it back agreed, so a test of the value
+		// alone passed while the array held the wrong thing. One key per
+		// array, since `declare -p` lists an associative array in bash's
+		// hash order and only a single-key listing is comparable.
+		name: "an arithmetic-shaped key is stored under its text",
+		body: "declare -A a; a[a-b]=1; declare -p a\n" +
+			"declare -A b; b[-1]=2; declare -p b\n" +
+			"declare -A c; c[1+2]=3; declare -p c\n" +
+			"declare -A d; d[(1)]=4; declare -p d\n" +
+			"declare -A e; e[x[1]]=5; declare -p e; echo \"keys=[${!e[@]}]\"\n" +
+			"echo \"read=[${a[a-b]}][${b[-1]}][${c[1+2]}][${d[(1)]}][${e[x[1]]}]\"\n" +
+			"echo \"tail=$?\"\n",
+		needs: `declare -A e=(["x[1]"]="5" )`,
+	},
+	{
+		// The read crashed on an interface conversion, which the panic
+		// guard turns into an ordinary diagnostic — so surviving proves
+		// nothing and the output is what is asserted. The statements
+		// after each read are there to catch a line or a file that was
+		// lost instead.
+		name: "reading an arithmetic-shaped key answers empty",
+		body: "declare -A m\n" +
+			"echo \"binary=[${m[a-b]}]\"\n" +
+			"echo \"unary=[${m[-1]}]\"\n" +
+			"echo \"paren=[${m[(1)]}]\"\n" +
+			"echo \"len=${#m[a-b]}\"\n" +
+			"echo \"default=[${m[a-b]:-fallback}]\"\n" +
+			"echo \"assign=[${m[a-b]=set}]\"\n" +
+			"declare -p m\n" +
+			"echo \"tail=$?\"\n",
+		needs: "default=[fallback]",
+	},
+	{
+		// The same characters in an indexed array are the arithmetic
+		// they look like: a subtraction, a count from the end, and a
+		// reference to another array's element.
+		name: "an indexed subscript reads the same text arithmetically",
+		body: "declare -a q=(z0 z1 z2 z3)\n" +
+			"q[-1]=last; declare -p q\n" +
+			"q[a-b]=zero; declare -p q\n" +
+			"q[x[1]]=alsozero; declare -p q\n" +
+			"echo \"read=[${q[-1]}][${q[1+2]}]\"\n",
+		needs: `[3]="last"`,
+	},
+	{
+		// A nameref and an indirection reach a subscript from a
+		// *string*, so each one re-reads it — as a word, not as
+		// arithmetic, or the reference names a different key than the
+		// one written.
+		name: "a reference to an arithmetic-shaped element",
+		body: "declare -A m\n" +
+			"declare -n ref=m[a-b]\n" +
+			"ref=viaref\n" +
+			"declare -p m\n" +
+			"n=m[a-b]\n" +
+			"echo \"indirect=[${!n}]\"\n" +
+			"unset \"m[a-b]\"; declare -p m\n",
+		needs: `declare -A m=([a-b]="viaref" )`,
+	},
+	{
+		// Spacing is part of a key and is trimmed by the arithmetic
+		// reader, so ` a - b ` and `a-b` are two keys while ` 1 ` and
+		// `1` are one index.
+		name: "a key keeps its spacing",
+		body: "declare -A m\n" +
+			"m[ a - b ]=spaced\n" +
+			"m[a-b]=tight\n" +
+			"echo \"spaced=[${m[ a - b ]}] tight=[${m[a-b]}]\"\n" +
+			"declare -A s; s[ k ]=v; declare -p s\n" +
+			"a=(x y z); echo \"index=[${a[ 1 ]}]\"\n",
+		needs: `declare -A s=([" k "]="v" )`,
+	},
+	{
+		// The bracket that completes a compound element's `]=` is the
+		// matching one, so the nested pair inside the key is counted
+		// rather than stopping the scan.
+		name: "a compound element's subscript may hold brackets",
+		body: "declare -A m=([x[1]]=three)\n" +
+			"declare -p m\n" +
+			"echo \"read=[${m[x[1]]}]\"\n" +
+			"declare -A n=([a-b]=one); declare -p n\n",
+		needs: `declare -A m=(["x[1]"]="three" )`,
+	},
 }
 
 func TestSubscriptVerdictsMatchBash(t *testing.T) {
