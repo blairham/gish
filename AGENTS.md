@@ -337,9 +337,19 @@ option: the interpreter treats a CallHandler error as *fatal*, so
 Two names are deliberately partial, and say so rather than failing
 blankly:
 
-- **`fc`** implements the listing half (`fc -l`). The editing forms
-  re-execute a command, which belongs to the REPL's run loop rather than
-  to a builtin.
+- **`fc`** implements the listing form (`fc -l`) and the re-execute form
+  (`fc -s`, `fc -e -`), and not the **editor** form (bare `fc`, and
+  `fc -e ename`). The original reason recorded here — that re-executing a
+  command belongs to the run loop rather than to a builtin — still holds
+  and is *why* `fc -s` works the way it does (#711): the builtin resolves
+  the command text and hands it back as an `eval` through the CallHandler
+  rewrite `config` and `zi` already use, so the interpreter runs it and
+  the status, traps and redirections are an ordinary command's. What
+  stops the editor form is narrower and is stated so it is not
+  re-litigated: bash echoes the edited file back as it reads it, which is
+  `set -v`, and koi's answer to that option is "cannot turn verbose on:
+  not implemented" (#734) — so the form could not be matched even with
+  the editor running.
 - **`newgrp`** is not provided. It changes the real group id and re-execs
   the shell — closer to `su` than to a builtin, and the one name here
   where a half-implementation would be a security problem rather than an

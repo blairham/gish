@@ -198,7 +198,11 @@ func runHistory(hc interp.HandlerContext, args []string) []string {
 	// bash parses these as a set rather than in order, and rejects more
 	// than one of -anrw before doing anything.
 	var fileFlags []string
-	clear, del, appendArg, expand := false, "", false, false
+	clear, appendArg, expand := false, false, false
+	// del is a pointer rather than a string because `history -d ''` is a
+	// real request — bash answers it `: invalid number` — and an empty
+	// string is indistinguishable from the option not being given.
+	var del *string
 
 	for len(args) > 0 && strings.HasPrefix(args[0], "-") && args[0] != "-" {
 		flag := args[0]
@@ -214,7 +218,7 @@ func runHistory(hc interp.HandlerContext, args []string) []string {
 				hc.RawErrf("%s\n", historyUsage)
 				return historyStatus(2)
 			}
-			del, args = args[0], args[1:]
+			del, args = &args[0], args[1:]
 		case "-s":
 			appendArg = true
 		case "-p":
@@ -255,8 +259,8 @@ operands:
 			return sessionVarOf(sessionRunner(), name)
 		})
 		return historyStatus(0)
-	case del != "":
-		return historyDelete(hc, del)
+	case del != nil:
+		return historyDelete(hc, *del)
 	case clear:
 		historyMutate(func([]string) []string { return nil })
 		// Clearing restarts the numbering at 1, unlike a HISTSIZE trim
@@ -298,11 +302,34 @@ func historyList(hc interp.HandlerContext, args []string) []string {
 	return historyStatus(0)
 }
 
-// historyDelete removes one entry by position. The list is renumbered
+// historyDelete removes entries by position. The list is renumbered
 // afterwards, which is what bash reports too.
+//
+// bash takes three shapes here and koi took one (#710): a single offset,
+// a `first-last` range, and either end of either counting back from the
+// newest — so `history -d 2-4`, `history -d -1` and `history -d 6--1` are
+// all ordinary, and reading the whole operand as one number made every
+// one of them `invalid number`. history3.sub is these end to end.
+//
+// The two diagnostics are not interchangeable, which is the half a caller
+// can act on: `invalid number` means the operand is not a number at all,
+// and `history position out of range` means it is one the list does not
+// have — so `history -d 5-0xaf` is the *second* of those, because bash
+// reads numbers in base ten and `0xaf` stops at the `x` rather than
+// failing to be a number (measured; the issue predicted the other way).
 func historyDelete(hc interp.HandlerContext, spec string) []string {
-	n, err := strconv.Atoi(spec)
-	if err != nil {
+	// A range is a `-` after any leading sign, which is how `-2--1` splits
+	// into `-2` and `-1` rather than at its first character.
+	skip := 0
+	if strings.HasPrefix(spec, "-") {
+		skip = 1
+	}
+	if at := strings.IndexByte(spec[skip:], '-'); at >= 0 {
+		return historyDeleteRange(hc, spec[:skip+at], spec[skip+at+1:], spec)
+	}
+
+	n, ok := histNumber(spec)
+	if !ok {
 		// bash's wording for -d differs from the one above: "invalid
 		// number", not "numeric argument required", and again no usage.
 		hc.Errf("history: %s: invalid number\n", spec)
@@ -330,6 +357,112 @@ func historyDelete(hc interp.HandlerContext, spec string) []string {
 		return historyStatus(1)
 	}
 	return historyStatus(0)
+}
+
+// historyDeleteRange is `history -d first-last`. whole is the operand as
+// written, which is what bash names when either half is not a number at
+// all — it puts the `-` back before complaining, so the diagnostic is
+// about the range rather than about the piece that failed.
+func historyDeleteRange(hc interp.HandlerContext, firstArg, lastArg, whole string) []string {
+	first, firstOK := histNumber(firstArg)
+	last, lastOK := histNumber(lastArg)
+	if !firstOK || !lastOK {
+		hc.Errf("history: %s: history position out of range\n", whole)
+		return historyStatus(1)
+	}
+	// Which half was out of range decides which half is named, so the two
+	// are reported separately rather than after both are resolved.
+	badArg := ""
+	// end < start deletes nothing and answers 1 with **no message at all**
+	// — readline's remove_history_range refuses the pair and the builtin
+	// only passes its result on (measured: `history -d 3-1` is a silent
+	// failure).
+	empty := false
+	base := historyBase()
+	historyMutate(func(list []string) []string {
+		// Both halves are 0-based positions here. A leading `-` on the half
+		// itself is what makes it count back, so a negative reached any
+		// other way — leading whitespace, say — is simply out of range.
+		lo := histRangeEnd(first, firstArg, len(list), base)
+		if lo < 0 || lo >= len(list) {
+			badArg = firstArg
+			return list
+		}
+		hi := histRangeEnd(last, lastArg, len(list), base)
+		if hi < 0 || hi >= len(list) {
+			badArg = lastArg
+			return list
+		}
+		if hi < lo {
+			empty = true
+			return list
+		}
+		return append(list[:lo:lo], list[hi+1:]...)
+	})
+	switch {
+	case badArg != "":
+		hc.Errf("history: %s: history position out of range\n", badArg)
+		return historyStatus(1)
+	case empty:
+		return historyStatus(1)
+	}
+	return historyStatus(0)
+}
+
+// histRangeEnd resolves one half of a range to a 0-based position. Zero
+// is deliberately left alone rather than offset by the base, which is
+// bash's own asymmetry: `history -d 0` is out of range while
+// `history -d 0-1` starts at the oldest entry.
+func histRangeEnd(n int, arg string, length, base int) int {
+	switch {
+	case strings.HasPrefix(arg, "-") && n < 0:
+		return length + n
+	case n > 0:
+		return n - base - 1
+	}
+	return n
+}
+
+// histNumber is bash's valid_number: base ten, an optional sign,
+// surrounding whitespace allowed, and the whole string consumed. It is
+// not `strconv.Atoi` because the differences are both load-bearing —
+// `history -d ' 2 '` deletes entry 2 and `history -d 5-0xaf` is an
+// out-of-range range rather than a bad number, since `0xaf` reads as far
+// as `0` and then fails on the `x`.
+func histNumber(s string) (int, bool) {
+	s = strings.Trim(s, " \t")
+	if s == "" {
+		return 0, false
+	}
+	digits := s
+	neg := false
+	switch digits[0] {
+	case '-':
+		neg = true
+		digits = digits[1:]
+	case '+':
+		digits = digits[1:]
+	}
+	if digits == "" {
+		return 0, false
+	}
+	n := 0
+	for i := 0; i < len(digits); i++ {
+		if digits[i] < '0' || digits[i] > '9' {
+			return 0, false
+		}
+		n = n*10 + int(digits[i]-'0')
+		if n > 1<<40 {
+			// Far past any history a shell holds; kept from overflowing
+			// rather than reported, since bash reads the whole number and
+			// then finds it out of range.
+			n = 1 << 40
+		}
+	}
+	if neg {
+		n = -n
+	}
+	return n, true
 }
 
 // historyExpand is `history -p`: expand the arguments and print the

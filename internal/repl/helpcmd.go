@@ -129,7 +129,7 @@ var helpTopics = map[string]helpTopic{
 	// koi-native builtins.
 	"bg":       {"bg [%job]", "resume a stopped job in the background"},
 	"builtins": {"builtins", "list every builtin this session answers, grouped by origin"},
-	"fc":       {"fc [-e ename] [-lnr] [first] [last] or fc -s [pat=rep] [command]", "list command history; only the listing half (-l) is implemented"},
+	"fc":       {"fc [-e ename] [-lnr] [first] [last] or fc -s [pat=rep] [command]", "list command history; the listing (-l) and re-execute (-s) forms"},
 	"fg":       {"fg [%job]", "resume a job in the foreground"},
 	"help":     {"help [name]", "explain a builtin; koi commands also answer `<name> help`"},
 	"jobs":     {"jobs", "list background and stopped jobs"},
