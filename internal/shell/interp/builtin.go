@@ -252,11 +252,14 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		case 1:
 			n, err := strconv.Atoi(args[0])
 			if err != nil {
-				return failf(2, "invalid exit status code: %q\n", args[0])
+				// bash's wording, which names the argument: koi's
+				// "invalid exit status code" is the same fact said a
+				// way nothing greps for.
+				return failf(2, "exit: %s: numeric argument required\n", args[0])
 			}
 			exit.code = uint8(n)
 		default:
-			return failf(1, "exit cannot take multiple arguments\n")
+			return failf(1, "exit: too many arguments\n")
 		}
 		exit.exiting = true
 	case "set":
@@ -282,7 +285,15 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			break
 		}
 		if err := Params(args...)(r); err != nil {
-			return failf(2, "set: %v\n", err)
+			r.errf("set: %v\n", err)
+			var ue setUsageError
+			if errors.As(err, &ue) {
+				// The usage line follows an invalid option letter and
+				// not an invalid `-o` name, and it is not a diagnostic,
+				// so it carries no location (#611).
+				r.rawErrf("set: usage: set [-abefhkmnptuvxBCEHPT] [-o option-name] [--] [-] [arg ...]\n")
+			}
+			return exitStatus{code: 2}
 		}
 		r.updateExpandOpts()
 	case "shift":
@@ -429,9 +440,16 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			}
 		}
 	case "echo":
-		newline, doExpand := true, false
+		// xpg_echo makes escape interpretation echo's default, which is
+		// the mode bash's own tests put it in (#604). `-e` and `-E` still
+		// override it — except with posix mode on as well, where bash's
+		// echo recognizes no options at all and `echo -n x` prints the
+		// flag as an operand. Measured against bash 5.3, both ways.
+		xpgEcho := r.opts[optXpgEcho]
+		newline, doExpand := true, xpgEcho
+		readOpts := !(xpgEcho && r.opts[optPosix])
 	echoOpts:
-		for len(args) > 0 {
+		for readOpts && len(args) > 0 {
 			// The letters cluster: `echo -ne` is -n and -e, and koi
 			// read only the exact spellings, so it printed "-ne" as an
 			// operand (#399) — which is the whole of strip.tests.
@@ -802,35 +820,61 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		// which is how a script points a name at a specific program
 		// (#411). koi accepted the line and did nothing with it, so the
 		// name still resolved by PATH — or not at all.
-		reset, remember := false, ""
+		//
+		// -l, -t and -d were accepted and ignored on top of that, so
+		// `hash -t cmd` — the way a script asks where a name resolved —
+		// printed the whole table and answered 0 for a name that was
+		// not in it.
+		hashUsage := func(format string, a ...any) exitStatus {
+			if format != "" {
+				r.errf(format, a...)
+			}
+			// The usage line stands on its own and is not a diagnostic,
+			// so it carries no location (#611).
+			r.rawErrf("hash: usage: hash [-lr] [-p pathname] [-dt] [name ...]\n")
+			return exitStatus{code: 2}
+		}
+		reset, remember, pinned := false, "", false
+		del, terse, listing := false, false, false
 		fp := flagParser{remaining: args}
 		for fp.more() {
 			switch flag := fp.flag(); flag {
 			case "-r":
 				reset = true
 			case "-p":
-				if len(fp.remaining) == 0 {
-					return failf(2, "hash: -p: option requires an argument\n")
+				if !fp.hasValue() {
+					return hashUsage("hash: -p: option requires an argument\n")
 				}
-				remember = fp.value()
-			case "-l", "-t", "-d":
-				// Listing forms; the table koi keeps is only what -p
-				// put in it, so they answer from the same map.
+				remember, pinned = fp.value(), true
+			case "-l":
+				listing = true
+			case "-t":
+				terse = true
+			case "-d":
+				del = true
 			default:
-				return failf(2, "hash: invalid option %q\n", flag)
+				return hashUsage("hash: %s: invalid option\n", flag)
 			}
 		}
 		args := fp.args()
 		if reset {
+			// -r wins wherever it appears: `hash -l -r` clears and
+			// prints nothing, measured.
 			r.hashTable = nil
 			break
 		}
-		if remember != "" && r.opts[optRestricted] {
+		if pinned && r.opts[optRestricted] {
 			return failf(1, "hash: %s: restricted\n", remember)
 		}
-		if remember != "" {
+		if pinned {
 			if len(args) == 0 {
-				return failf(2, "hash: usage: hash [-lr] [-p pathname] [-dt] [name ...]\n")
+				return hashUsage("")
+			}
+			// A path that does not exist is fine — that is how a script
+			// pins a name ahead of building the program — but a
+			// directory is refused, measured.
+			if info, err := r.stat(ctx, remember); err == nil && info.IsDir() {
+				return failf(1, "hash: %s: %s\n", remember, reasonIsDir)
 			}
 			if r.hashTable == nil {
 				r.hashTable = map[string]string{}
@@ -842,32 +886,75 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		if len(args) == 0 {
 			if len(r.hashTable) == 0 {
+				if listing {
+					// `hash -l` on an empty table prints nothing at all,
+					// since its output is meant to be replayed.
+					break
+				}
+				// On stdout, not stderr: measured.
 				r.outf("hash: hash table empty\n")
 				break
 			}
-			r.outf("hits\tcommand\n")
+			if !listing {
+				r.outf("hits\tcommand\n")
+			}
 			for _, name := range slices.Sorted(maps.Keys(r.hashTable)) {
+				if listing {
+					r.outf("builtin hash -p %s %s\n", r.hashTable[name], name)
+					continue
+				}
 				r.outf("   0\t%s\n", r.hashTable[name])
 			}
 			break
 		}
 		for _, name := range args {
-			// A bare `hash name` *records* the lookup rather than
-			// querying it, which is what makes `hash cmd` at the top of
-			// a script a cheap existence check.
-			if _, ok := r.hashTable[name]; ok {
-				continue
+			switch {
+			case terse:
+				// -t queries the table and never searches PATH; -l
+				// changes what it prints into the re-runnable form.
+				// With more than one name each answer is labelled, so a
+				// caller can tell them apart. `-dt` prints rather than
+				// deletes, measured.
+				path, ok := r.hashTable[name]
+				if !ok {
+					r.errf("hash: %s: not found\n", name)
+					exit.code = 1
+					continue
+				}
+				switch {
+				case listing:
+					r.outf("builtin hash -p %s %s\n", path, name)
+				case len(args) > 1:
+					r.outf("%s\t%s\n", name, path)
+				default:
+					r.outf("%s\n", path)
+				}
+			case del:
+				if _, ok := r.hashTable[name]; !ok {
+					r.errf("hash: %s: not found\n", name)
+					exit.code = 1
+					continue
+				}
+				delete(r.hashTable, name)
+			default:
+				// A bare `hash name` *records* the lookup rather than
+				// querying it, which is what makes `hash cmd` at the top
+				// of a script a cheap existence check. It searches PATH
+				// whatever the table already says, and a search that
+				// fails leaves the name unhashed — so `hash e1` on a
+				// pinned `e1` that PATH does not have drops the pin.
+				delete(r.hashTable, name)
+				path, err := LookPathDir(r.Dir, r.writeEnv, name)
+				if err != nil {
+					r.errf("hash: %s: not found\n", name)
+					exit.code = 1
+					continue
+				}
+				if r.hashTable == nil {
+					r.hashTable = map[string]string{}
+				}
+				r.hashTable[name] = path
 			}
-			path, err := LookPathDir(r.Dir, r.writeEnv, name)
-			if err != nil {
-				r.errf("hash: %s: not found\n", name)
-				exit.code = 1
-				continue
-			}
-			if r.hashTable == nil {
-				r.hashTable = map[string]string{}
-			}
-			r.hashTable[name] = path
 		}
 
 	case "logout":
@@ -1026,21 +1113,99 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		}
 		exit = r.exit
 	case "source", ".":
-		if len(args) < 1 {
-			return failf(2, "%v: source: need filename\n", pos)
+		// `-p path` searches an explicit colon-separated list instead of
+		// $PATH, and searches it whether or not `sourcepath` is on — the
+		// spelling `. [-p path] filename` in bash's own usage line, and a
+		// whole section of its source8.sub. koi read the `-p` as the
+		// filename, so every one of those lines answered `-p: No such
+		// file or directory`.
+		usage := func(format string, a ...any) exitStatus {
+			r.errf(format, a...)
+			// The usage line is not a diagnostic and carries no location,
+			// which is the split #611 drew for every other builtin.
+			r.rawErrf("%s: usage: %s [-p path] filename [arguments]\n", name, name)
+			return exitStatus{code: 2}
+		}
+		srcPath, havePath := "", false
+		fp := flagParser{remaining: args}
+		for fp.more() {
+			switch flag := fp.flag(); flag {
+			case "-p":
+				if !fp.hasValue() {
+					return usage("%s: -p: option requires an argument\n", name)
+				}
+				// Last one wins: `. -p a -p b f` searches b, measured.
+				srcPath, havePath = fp.value(), true
+			default:
+				return usage("%s: %s: invalid option\n", name, flag)
+			}
+		}
+		args := fp.args()
+		if len(args) == 0 {
+			// bash's wording, in place of koi's `source: need filename`.
+			return usage("%s: filename argument required\n", name)
 		}
 		if r.opts[optRestricted] && strings.ContainsRune(args[0], '/') {
 			// A restricted shell may source by name but not by path,
 			// which is what keeps the search inside PATH (#398).
 			return failf(1, "%s: %s: restricted\n", name, args[0])
 		}
-		path, err := scriptFromPathDir(r.Dir, r.writeEnv, args[0])
-		if err != nil {
-			// If the script was not found in PATH or there was any error, pass
-			// the source path to the open handler so it has a chance to look
-			// at files it manages (eg: virtual filesystem), and also allow
-			// it to look for the sourced script in the current directory.
-			path = args[0]
+		path := args[0]
+		// A name with a slash in it is used as given rather than
+		// searched for, in every one of the three forms below.
+		if !strings.ContainsRune(args[0], '/') {
+			// Which list is searched and whether the current directory is
+			// a fallback when it runs out are two independent answers,
+			// which is why they are two variables. Measured against bash
+			// 5.3 in all four combinations:
+			//
+			//   -p path      that list, and no fallback
+			//   sourcepath   decides whether $PATH is searched at all
+			//   posix        removes the fallback
+			//
+			// So posix mode with sourcepath off finds a bare name
+			// *nowhere*. `shopt -u sourcepath` is the half koi accepted
+			// and ignored: a script that turned the search off still got
+			// a file out of $PATH, silently.
+			searchPath, search, fallBackToCwd := srcPath, havePath, false
+			if !havePath {
+				searchPath, search = r.envGet("PATH"), r.opts[optSourcePath]
+				fallBackToCwd = !r.opts[optPosix]
+			}
+			if !search && !fallBackToCwd {
+				return failf(1, "%s: %s: file not found\n", name, args[0])
+			}
+			if search {
+				// A candidate that is missing, unreadable or a directory
+				// is *skipped* rather than reported, so the whole list
+				// running out is one error — and when there is no
+				// fallback it is worded differently from the plain
+				// form's strerror message, which is how bash says "I
+				// searched and did not find it".
+				found := false
+				for elem := range strings.SplitSeq(searchPath, ":") {
+					if elem == "" {
+						// An empty element means the current directory,
+						// so `. -p '' f` is `. ./f`.
+						elem = "."
+					}
+					cand := filepath.Join(elem, args[0])
+					if info, err := r.stat(ctx, cand); err != nil || info.IsDir() {
+						continue
+					}
+					if r.access(ctx, cand, AccessRead) != nil {
+						continue
+					}
+					path, found = cand, true
+					break
+				}
+				if !found && !fallBackToCwd {
+					return failf(1, "%s: %s: file not found\n", name, args[0])
+				}
+			}
+			// Falling back leaves the name as given, so the open handler
+			// still gets a chance at files it manages (eg: a virtual
+			// filesystem) and the error names the file as it was written.
 		}
 		f, err := r.open(ctx, path, os.O_RDONLY, 0, false)
 		if err != nil {
@@ -1294,11 +1459,20 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 					r.outf("%s\n", arg)
 				}
 			default:
-				if path, err := LookPathDir(r.Dir, r.writeEnv, arg); err == nil {
-					if verbose {
-						r.outf("%s is %s\n", arg, path)
-					} else {
+				// Through lookPathAll rather than a bare PATH search, so
+				// a `hash -p` pin is what `command -v` reports — as
+				// `type` already did. koi answered with whatever PATH
+				// held, which is the one answer the pin exists to
+				// override.
+				if paths := r.lookPathAll(arg, false); len(paths) > 0 {
+					path := paths[0]
+					switch {
+					case !verbose:
 						r.outf("%s\n", path)
+					case r.hashTable[arg] == path:
+						r.outf("%s is hashed (%s)\n", arg, path)
+					default:
+						r.outf("%s is %s\n", arg, path)
 					}
 				} else {
 					if verbose {
@@ -1324,7 +1498,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 		case 1:
 			n, err := strconv.Atoi(args[0])
 			if err != nil {
-				return failf(2, "invalid return status code: %q\n", args[0])
+				return failf(2, "return: %s: numeric argument required\n", args[0])
 			}
 			exit.code = uint8(n)
 		default:
@@ -2822,6 +2996,14 @@ func (p *flagParser) flag() string {
 		arg = arg[:2]
 	}
 	return arg
+}
+
+// hasValue reports whether [flagParser.value] has anything to return,
+// which is not the same question as whether it returns a non-empty
+// string: `. -p ”` is a legal empty search path and `. -p` is bash's
+// "option requires an argument".
+func (p *flagParser) hasValue() bool {
+	return p.current != "" || len(p.remaining) > 0
 }
 
 func (p *flagParser) value() string {

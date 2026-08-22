@@ -293,8 +293,12 @@ func doubleQuoteLiteral(s string) string {
 // is only what the interpreter still refuses: an option koi keeps at a
 // default it cannot leave, where an init script's request is silent
 // rather than an error in the middle of somebody's tool setup.
+// `sourcepath` left the list in #604 for exactly that reason one layer
+// further on: the interpreter honors it now, so stripping the request
+// here would keep `.` searching $PATH in a shell that had just been told
+// to stop.
 var ignorableShopts = map[string]bool{
-	"checkhash": true, "globasciiranges": true, "sourcepath": true,
+	"globasciiranges":      true,
 	"interactive_comments": true, "login_shell": true, "shift_verbose": true,
 }
 

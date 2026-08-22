@@ -3116,14 +3116,26 @@ func singleQuote(s string) string {
 // rule internal/jobs states for `kill -l`: a name that means different
 // things on different unixes is worse than one that is simply absent.
 //
-// One line per signal, which is koi's `kill -l` rather than bash's five
-// columns. In bash the two listings are the same output, and they are
-// here too; matching bash's column layout in one of them and not the
-// other would make koi disagree with itself, which is the worse of the
-// two divergences. TestTrapListMatchesKillList holds them together.
+// Five to a row, tab-separated, which is bash's layout for both `trap
+// -l` and `kill -l`. It used to be one per line — koi agreeing with
+// itself and with neither bash listing — and the column layout turns out
+// to be load-bearing rather than cosmetic: bash's own builtins.tests
+// pulls the first entry out with a sed whose pattern requires a space or
+// a tab *after* the name. TestTrapListMatchesKillList still holds the
+// two koi listings together, since they are built from separate tables.
 func (r *Runner) printSignalNames() {
-	for _, s := range signalList() {
-		r.outf("%2d) SIG%s\n", s.num, s.name)
+	const perRow = 5
+	list := signalList()
+	for i, s := range list {
+		r.outf("%2d) SIG%s", s.num, s.name)
+		if (i+1)%perRow == 0 {
+			r.out("\n")
+			continue
+		}
+		r.out("\t")
+	}
+	if len(list)%perRow != 0 {
+		r.out("\n")
 	}
 }
 
@@ -4635,6 +4647,22 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	if path, ok := r.hashTable[name]; ok {
 		// A hashed name runs the pinned program rather than whatever a
 		// PATH search would find (#411).
+		//
+		// `checkhash` asks for the pin to be verified first: an entry
+		// whose program has moved or been deleted is dropped and the
+		// name searched again, which is the whole reason a long-lived
+		// shell wants the option. It governs *running* only — `type`
+		// and `command -v` still answer with the pin, measured — so it
+		// lives here rather than in the lookup helpers.
+		if r.opts[optCheckHash] && r.access(ctx, path, AccessExec) != nil {
+			delete(r.hashTable, name)
+			if found, err := LookPathDir(r.Dir, r.writeEnv, name); err == nil {
+				r.hashTable[name] = found
+				path = found
+			} else {
+				path = name
+			}
+		}
 		args = append([]string{path}, args[1:]...)
 	}
 	r.exec(ctx, pos, args)

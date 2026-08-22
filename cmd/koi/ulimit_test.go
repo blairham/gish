@@ -179,6 +179,27 @@ func TestUlimitSetMatchesBash(t *testing.T) {
 		"ulimit -n 512; ulimit -n",
 		"ulimit -S -n 400; ulimit -Sn; ulimit -Hn",
 		"ulimit -n 512; ulimit -n 256; ulimit -n",
+		// `--` ends the options and the word after it is the limit,
+		// applied to the resource named last. koi read the `--` as a
+		// resource letter and refused it, so bash's own builtins11.sub
+		// set nothing on the two lines that use this spelling.
+		"ulimit -c -- 1999; ulimit -c",
+		"ulimit -c -S -- +1999",
+		"ulimit -c -- unlimited; ulimit -c",
+		"ulimit -- 1999; ulimit -f",
+		"ulimit -- -c 1999; ulimit -c",
+		"ulimit --",
+		// A word no resource letter claimed is the limit itself and it
+		// ends the option scanning, so `ulimit unlimited` sets -f while
+		// `ulimit 1999 -c` leaves -c alone. koi ignored the word and
+		// answered with a *read* of -f, which looked like it had worked.
+		"ulimit unlimited; ulimit -f",
+		"ulimit 1999 -c; ulimit -f; ulimit -c",
+		"ulimit -c 100 200; ulimit -c",
+		// The refusal's wording and its usage line, which koi rendered
+		// from its own eleven letters where bash prints a fixed string.
+		"ulimit -g",
+		"ulimit -b",
 	} {
 		t.Run(script, func(t *testing.T) {
 			t.Parallel()

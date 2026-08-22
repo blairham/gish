@@ -229,13 +229,19 @@ shopt -p cdspell; shopt -p histverify; shopt -p checkwinsize; shopt -p progcomp
 shopt -q cdspell; echo "q=$?"; shopt -q progcomp; echo "qoff=$?"`,
 	},
 	{
-		// The other half of the same rule, and the reason it is not
-		// "accept everything": an option that would change what a
-		// *script* observes is refused rather than tracked. bash accepts
-		// this one, so bash cannot be the oracle for it.
-		name: "shopt", script: `shopt -s xpg_echo; echo "st=$?"`,
-		koiOnly: true, want: "shopt: unsupported option \"xpg_echo\"\nst=1\n",
-		why: "xpg_echo changes what echo does, so tracking the bit would claim a mode koi is not in (#575)",
+		// The other half of the same rule used to be a refusal here:
+		// xpg_echo changes what a script observes, so tracking the bit
+		// alone would have claimed a mode koi was not in (#575). It is
+		// implemented now, so bash is the oracle again — and it has to
+		// be checked through *this* matrix, because the option is what
+		// internal/repl's accept-and-ignore list would drop (#566).
+		name: "shopt", script: `shopt -s xpg_echo; echo "st=$?"; echo 'a\tb'; shopt -p xpg_echo`,
+	},
+	{
+		// sourcepath moved out of that same list, so `.` stops searching
+		// $PATH when a script says to stop.
+		name: "shopt", script: `mkdir -p "$TMPD/d"; echo 'echo SRC' > "$TMPD/d/f"
+PATH="$TMPD/d:$PATH"; . f; shopt -u sourcepath; . f 2>/dev/null; echo "off=$?"`,
 	},
 	{name: "source", script: `echo 'echo sourced' > "$TMPD/s.sh"; . "$TMPD/s.sh"`},
 	{name: "test", script: `test -d /tmp && echo isdir; test -z "" && echo empty`},
@@ -266,12 +272,48 @@ umask 022; umask -S a=rwx; umask
 umask 022; umask g-rwx; umask`,
 	},
 	{
+		// A clause may carry more than one action and a permission may
+		// be a who letter — the two halves of POSIX's symbolic grammar
+		// koi's parser was missing, and between them seven of the
+		// eighteen cases in bash's own builtins8.sub (#604).
+		name: "umask", script: `umask 022; umask u=r+w; umask -S
+umask 022; umask u=r-w; umask -S
+umask 022; umask g+u,o+rwx-u; umask -S
+umask 022; umask u=r+w,g=wx,o+xr; umask -S
+umask 022; umask u+w=r+x; umask -S
+umask 022; umask o=u; umask -S
+umask 022; umask g=u; umask -S
+umask 022; umask u+g,g+o,o-rw; umask -S
+umask 077; umask o+ru; umask -S
+umask 022; umask u+s; umask u+t; umask -S
+umask 777; umask a+X; umask -S
+umask 1000; umask
+umask 022; umask 999 2>/dev/null; echo "st=$?"
+umask 022; umask u=q 2>/dev/null; echo "st=$?"
+umask 022; umask q=r 2>/dev/null; echo "st=$?"
+umask 022; umask -x 2>/dev/null; echo "st=$?"`,
+	},
+	{
 		// -l with operands *translates* rather than listing, which is
 		// how a script turns an exit status above 128 into the signal
 		// that caused it (#411).
 		name: "kill", script: `kill -l >/dev/null; echo "list=$?"; kill 999999 2>/dev/null; echo "badpid=$?"; kill -BOGUS 1 2>/dev/null; echo "badsig=$?"
 kill -l 1; kill -l HUP; kill -l 9 15; kill -l 0
 kill -l 99 2>/dev/null; echo "badnum=$?"`,
+	},
+	{
+		// The bare listing is five to a row, tab separated. koi printed
+		// one per line, which is not cosmetic: bash's own builtins.tests
+		// pulls the first entry out with a sed whose pattern needs a
+		// space or a tab *after* the name, so the script's $sigone came
+		// back empty and two later assertions failed for a reason that
+		// had nothing to do with signals (#604).
+		//
+		// koi's signal set is the portable one and shorter than bash's,
+		// so the comparison is of the *shape* rather than the contents.
+		name: "kill", script: `kill -l | sed -n 's:^ 1) *\([^ 	]*\)[ 	].*$:\1:p'
+kill -l | head -1 | awk -F'\t' '{print NF}'
+trap -l | sed -n 's:^ 1) *\([^ 	]*\)[ 	].*$:\1:p'`,
 	},
 
 	{
