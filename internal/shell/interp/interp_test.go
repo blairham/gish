@@ -1475,6 +1475,49 @@ var runTests = []runTest{
 	{"d=([*]=q)", "[*]=q: cannot assign to non-numeric index\nexit status 1 #JUSTERR"},
 	{"d=([-1]=z)", "[-1]=z: bad array subscript\nexit status 1 #JUSTERR"},
 	{"d=([1]=ok [2]=fine); declare -p d", "declare -a d=([1]=\"ok\" [2]=\"fine\")\n"},
+	// Making that shape legal means the *tree* keeps the element it read
+	// and every reader survives it (#673). An empty subscript has no
+	// index node, so a printer asking only `Index != nil` dropped it and
+	// `a[]=v` came back as `a=v` -- a working assignment where the
+	// original is an error -- while an element with no value either
+	// panicked `ArrayElem.Pos`. `eval "$(declare -f f)"` is how a
+	// function moves between shells, so a definition printed back
+	// differently is a different function.
+	{
+		"f() { A=([]=); }; declare -f f",
+		"f () \n{ \n    A=([]=)\n}\n",
+	},
+	{
+		"f() { A=([]=y [1]=z); }; declare -f f",
+		"f () \n{ \n    A=([]=y [1]=z)\n}\n",
+	},
+	{
+		"f() { A=([]+=y); }; declare -f f",
+		"f () \n{ \n    A=([]+=y)\n}\n",
+	},
+	{
+		"f() { A+=([]=); }; declare -f f",
+		"f () \n{ \n    A+=([]=)\n}\n",
+	},
+	{
+		"f() { a[]=v; }; declare -f f",
+		"f () \n{ \n    a[]=v\n}\n",
+	},
+	{
+		"f() { a[]=; }; declare -f f",
+		"f () \n{ \n    a[]=\n}\n",
+	},
+	{
+		"f() { a[]+=v; }; declare -f f",
+		"f () \n{ \n    a[]+=v\n}\n",
+	},
+	// `[  ]` is a different subscript -- whitespace is an empty
+	// arithmetic expression, so it is index 0 (#582) -- and it must not
+	// be printed back as the empty one.
+	{
+		"f() { A=([ ]=); }; declare -f f",
+		"f () \n{ \n    A=([ ]=)\n}\n",
+	},
 	// A `[` inside a compound assignment opens a subscript only when the
 	// shape completes (#588): `[1]=14` does, a lone bracket does not, and
 	// bash reads the rest as ordinary words. koi used to refuse the line
@@ -2349,6 +2392,76 @@ var runTests = []runTest{
 	{"[[ ! ( x || x ) ]]; echo $?", "1\n"},
 	{"[[ ! x = y ]]; echo $?", "0\n"},
 	{`[[ ! -z "" && x ]]; echo $?`, "1\n"},
+	// `&&` binds tighter than `||` in bash's conditionals, so
+	// `[[ A && B || C ]]` is `(A && B) || C` (#669). Giving the two
+	// equal precedence and grouping right read it as `A && (B || C)`,
+	// which answers the *other* branch of one of the commonest idioms
+	// in shell with nothing printed to say so. Every case here puts a
+	// false-left `&&` to the left of a `||`, since that is the only
+	// arrangement the two groupings disagree about -- `[[ x || y && z ]]`
+	// answers the same either way and proves nothing.
+	{"[[ 1 == 2 && 1 == 2 || 1 == 1 ]]; echo $?", "0\n"},
+	{"[[ 1 == 2 && 1 == 1 || 1 == 1 ]]; echo $?", "0\n"},
+	{"[[ 1 == 2 && 1 == 2 && 1 == 2 || 1 == 1 ]]; echo $?", "0\n"},
+	{"[[ 1 == 2 && 1 == 2 || 1 == 2 || 1 == 1 ]]; echo $?", "0\n"},
+	{"[[ 1 == 2 && 1 == 2 || 1 == 1 && 1 == 1 ]]; echo $?", "0\n"},
+	// The other direction, which fails if `&&` is made *looser* rather
+	// than tighter: `(1 == 1 || 1 == 2) && 1 == 2` would be false.
+	{"[[ 1 == 1 || 1 == 2 && 1 == 2 ]]; echo $?", "0\n"},
+	// Which is why `!` had to move into the parser with it: the old
+	// negation swallowed everything to its right and interp put it back
+	// where it belonged, and no amount of that can rescue a `!` sitting
+	// inside the right operand of an `&&` -- it still eats the `|| C`.
+	{"[[ 1 == 2 && ! 1 == 1 || 1 == 1 ]]; echo $?", "0\n"},
+	{"[[ ! 1 == 1 && 1 == 1 || 1 == 1 ]]; echo $?", "0\n"},
+	{"[[ ! 1 == 2 && 1 == 2 ]]; echo $?", "1\n"},
+	{"[[ ! ! 1 == 2 && 1 == 2 ]]; echo $?", "1\n"},
+	{"[[ ! ( 1 == 2 && 1 == 2 ) ]]; echo $?", "0\n"},
+	// The classic form has the same shape and the same bug: POSIX makes
+	// `-o` looser than `-a`, and bash's test.c is or() over and() over
+	// term(), so a `!` binds to one term there too.
+	{"[ 1 = 2 -a 1 = 2 -o 1 = 1 ]; echo $?", "0\n"},
+	{"[ 1 = 2 -a 1 = 1 -o 1 = 1 ]; echo $?", "0\n"},
+	{"[ 1 = 2 -a 1 = 2 -o 1 = 1 -a 1 = 1 ]; echo $?", "0\n"},
+	{"[ ! 1 = 1 -a 1 = 1 -o 1 = 1 ]; echo $?", "0\n"},
+	{"[ 1 = 2 -a ! 1 = 2 -o 1 = 1 ]; echo $?", "0\n"},
+	{"[ ! 1 = 2 -a 1 = 2 ]; echo $?", "1\n"},
+	{"[ 1 = 1 -o 1 = 2 -a 1 = 2 ]; echo $?", "0\n"},
+	{"test 1 = 2 -a 1 = 2 -o 1 = 1; echo $?", "0\n"},
+	{`[ \( 1 = 2 -a 1 = 2 \) -o 1 = 1 ]; echo $?`, "0\n"},
+	// The two grammars that were already right, so a fix that reached
+	// them is caught rather than reasoned about. The ordinary shell
+	// grammar gives `&&` and `||` *equal* precedence, left to right, so
+	// `true || false && false` is `(true || false) && false`; the
+	// arithmetic evaluator is C's, where `&&` is tighter.
+	{"false && false || true; echo $?", "0\n"},
+	{"true || false && false; echo $?", "1\n"},
+	{"(( 0 && 0 || 1 )); echo $?", "0\n"},
+	// `(( 0 && 0 || 1 ))` alone cannot tell C's precedence from equal
+	// precedence read left to right -- both answer 1 -- so the case
+	// that can is the one with `&&` on the *right*: `1 || (0 && 0)` is
+	// 1 where `(1 || 0) && 0` is 0.
+	{"(( 1 || 0 && 0 )); echo $?", "0\n"},
+	{"echo $(( 1 || 0 && 0 ))", "1\n"},
+	// Short-circuiting follows the corrected tree: with `&&` grouped
+	// first, a false left operand skips the `&&`'s right side and the
+	// `||`'s right side decides -- the arithmetic assignment never runs.
+	{`v=1; [[ -z x && -n $(( v=42 )) || -n z ]]; echo "r=$? v=$v"`, "r=0 v=1\n"},
+	// The tree is what `declare -f` prints back, and `eval "$(declare -f
+	// f)"` is how a function moves between shells -- a definition that
+	// came back grouped differently would be a different function.
+	{
+		"f() { [[ 1 == 2 && 1 == 2 || 1 == 1 ]]; }; declare -f f",
+		"f () \n{ \n    [[ 1 == 2 && 1 == 2 || 1 == 1 ]]\n}\n",
+	},
+	{
+		"f() { [[ ! 1 == 1 && 1 == 1 ]]; }; declare -f f",
+		"f () \n{ \n    [[ ! 1 == 1 && 1 == 1 ]]\n}\n",
+	},
+	{
+		"f() { [ 1 = 2 -a 1 = 2 -o 1 = 1 ]; }; declare -f f",
+		"f () \n{ \n    [ 1 = 2 -a 1 = 2 -o 1 = 1 ]\n}\n",
+	},
 	// `[[ ]]` short-circuits, so the untaken side of && or || is never
 	// expanded and its side effects never happen (#652). The status
 	// cases below cannot tell on their own -- a shell that evaluates

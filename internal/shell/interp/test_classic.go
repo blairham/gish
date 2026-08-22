@@ -44,34 +44,63 @@ func (p *testParser) followWord(fval string) *syntax.Word {
 	return w
 }
 
-func (p *testParser) classicTest(fval string, pastAndOr bool) syntax.TestExpr {
-	var left syntax.TestExpr
-	if pastAndOr {
-		left = p.testExprBase(fval)
-	} else {
-		left = p.classicTest(fval, true)
+// classicOr parses the loosest level of POSIX `test`'s grammar: a chain
+// of `-o` over `-a` chains. bash's test.c is written that way -- or()
+// calls and(), which calls term() -- so `a -a b -o c` is `(a -a b) -o
+// c`. Giving the two equal precedence read it as `a -a (b -o c)` and
+// answered the wrong branch with nothing printed (#669).
+func (p *testParser) classicOr(fval string) syntax.TestExpr {
+	left := p.classicAnd(fval)
+	if left == nil || p.eof || p.val == ")" || testBinaryOp(p.val) != syntax.OrTest {
+		return left
 	}
+	b := &syntax.BinaryTest{Op: syntax.OrTest, X: left}
+	opStr := p.val
+	p.next()
+	if b.Y = p.classicOr(opStr); b.Y == nil {
+		p.errf("%s must be followed by an expression", opStr)
+	}
+	return b
+}
+
+// classicAnd parses a chain of `-a` over terms, which binds tighter
+// than `-o`.
+func (p *testParser) classicAnd(fval string) syntax.TestExpr {
+	left := p.classicTerm(fval)
+	if left == nil || p.eof || p.val == ")" || testBinaryOp(p.val) != syntax.AndTest {
+		return left
+	}
+	b := &syntax.BinaryTest{Op: syntax.AndTest, X: left}
+	opStr := p.val
+	p.next()
+	if b.Y = p.classicAnd(opStr); b.Y == nil {
+		p.errf("%s must be followed by an expression", opStr)
+	}
+	return b
+}
+
+// classicTerm parses one term -- bash's term(): a `!`, a parenthesized
+// expression, a unary operator and its word, or a word possibly
+// followed by a binary comparison.
+func (p *testParser) classicTerm(fval string) syntax.TestExpr {
+	left := p.testExprBase(fval)
 	if left == nil || p.eof || p.val == ")" {
 		return left
 	}
 	opStr := p.val
 	op := testBinaryOp(p.val)
-	if op == illegalTok {
+	switch op {
+	case illegalTok:
 		p.errf("not a valid test operator: %#q", p.val)
+	case syntax.AndTest, syntax.OrTest:
+		return left
 	}
 	b := &syntax.BinaryTest{
 		Op: op,
 		X:  left,
 	}
 	p.next()
-	switch b.Op {
-	case syntax.AndTest, syntax.OrTest:
-		if b.Y = p.classicTest(opStr, false); b.Y == nil {
-			p.errf("%s must be followed by an expression", opStr)
-		}
-	default:
-		b.Y = p.followWord(opStr)
-	}
+	b.Y = p.followWord(opStr)
 	return b
 }
 
@@ -84,12 +113,14 @@ func (p *testParser) testExprBase(fval string) syntax.TestExpr {
 	case syntax.TsNot:
 		u := &syntax.UnaryTest{Op: op}
 		p.next()
-		u.X = p.classicTest(op.String(), false)
+		// bash's term() negates one term, so `! a -a b` is
+		// `(!a) -a b` -- see classicOr (#669).
+		u.X = p.classicTerm(op.String())
 		return u
 	case syntax.TsParen:
 		pe := &syntax.ParenTest{}
 		p.next()
-		pe.X = p.classicTest(op.String(), false)
+		pe.X = p.classicOr(op.String())
 		if p.val != ")" {
 			p.errf("reached %s without matching '(' with ')'", p.val)
 		}

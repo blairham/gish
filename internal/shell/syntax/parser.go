@@ -2718,6 +2718,7 @@ func (p *Parser) getAssign(needEqual bool) *Assign {
 			ae.Comments, p.accComs = p.accComs, nil
 			if p.tok == leftBrack {
 				left := p.pos
+				ae.Lbrack = left
 				// `[]=v` inside a compound assignment is bash's
 				// runtime error rather than a parse error (#582), the
 				// same as a bare `name[]=v`.
@@ -3445,7 +3446,7 @@ func (p *Parser) testClause(s *Stmt) {
 	tc := &TestClause{Left: p.pos}
 	old := p.preNested(testExpr)
 	p.next()
-	if tc.X = p.testExprBinary(false); tc.X == nil {
+	if tc.X = p.testExprOr(); tc.X == nil {
 		p.followErrExp(tc.Left, dblLeftBrack)
 	}
 	tc.Right = p.pos
@@ -3456,64 +3457,112 @@ func (p *Parser) testClause(s *Stmt) {
 	s.Cmd = tc
 }
 
-func (p *Parser) testExprBinary(pastAndOr bool) TestExpr {
-	p.got(_Newl)
-	var left TestExpr
-	if pastAndOr {
-		left = p.testExprUnary()
-	} else {
-		left = p.testExprBinary(true)
+// testExprOr parses the loosest of the three levels in bash's `[[ ]]`
+// grammar: a chain of `||` over `&&` chains. bash's cond_or is written
+// over cond_and, so `a && b || c` is `(a && b) || c` -- giving the two
+// equal precedence read it as `a && (b || c)` and answered the wrong
+// branch, silently, for one of the commonest idioms in shell (#669).
+// Chains of one operator stay right-nested, as they were, since `&&`
+// and `||` are associative and the printer and the walker round-trip
+// that shape.
+func (p *Parser) testExprOr() TestExpr {
+	left := p.testExprAnd()
+	if left == nil {
+		return left
 	}
+	// A newline may sit between an operand and the operator after it,
+	// and each level has to skip it -- the operand may have ended at a
+	// tighter level than this one.
+	p.got(_Newl)
+	if p.tok != orOr {
+		return left
+	}
+	b := &BinaryTest{OpPos: p.pos, Op: OrTest, X: left}
+	p.next()
+	if b.Y = p.testExprOr(); b.Y == nil {
+		p.followErrExp(b.OpPos, b.Op)
+	}
+	return b
+}
+
+// testExprAnd parses a chain of `&&` over terms, which binds tighter
+// than `||`.
+func (p *Parser) testExprAnd() TestExpr {
+	left := p.testExprTerm()
 	if left == nil {
 		return left
 	}
 	p.got(_Newl)
-	switch p.tok {
-	case andAnd, orOr:
-	case _LitWord:
-		if p.val == "]]" {
-			return left
-		}
-		if p.tok = token(testBinaryOp(p.val)); p.tok == illegalTok {
-			p.curErr("not a valid test operator: %#q", p.val)
-		}
-	case rdrIn, rdrOut:
-	case _EOF, rightParen:
+	if p.tok != andAnd {
 		return left
-	case _Lit:
-		p.curErr("test operator words must consist of a single literal")
-	default:
-		p.curErr("not a valid test operator: %#q", p.tok)
 	}
-	b := &BinaryTest{
-		OpPos: p.pos,
-		Op:    BinTestOperator(p.tok),
-		X:     left,
-	}
-	switch b.Op {
-	case AndTest, OrTest:
-		p.next()
-		if b.Y = p.testExprBinary(false); b.Y == nil {
-			p.followErrExp(b.OpPos, b.Op)
-		}
-	case TsReMatch:
-		p.checkLang(p.pos, langBashLike|LangZsh, "regex tests")
-		p.rxOpenParens = 0
-		p.rxFirstPart = true
-		// TODO(mvdan): Using nested states within a regex will break in
-		// all sorts of ways. The better fix is likely to use a stop
-		// token, like we do with heredocs.
-		p.quote = testExprRegexp
-		fallthrough
-	default:
-		if _, ok := b.X.(*Word); !ok {
-			p.posErr(b.OpPos, "expected %#q, %#q or %#q after complex expr",
-				AndTest, OrTest, dblRightBrack)
-		}
-		p.next()
-		b.Y = p.followWordTok(token(b.Op), b.OpPos)
+	b := &BinaryTest{OpPos: p.pos, Op: AndTest, X: left}
+	p.next()
+	if b.Y = p.testExprAnd(); b.Y == nil {
+		p.followErrExp(b.OpPos, b.Op)
 	}
 	return b
+}
+
+// testExprTerm parses one term -- bash's cond_term: a `!`, a
+// parenthesized expression, a unary operator and its word, or a word
+// possibly followed by a binary comparison. It is where the tightest
+// operators live, so a comparison binds tighter than `&&`.
+func (p *Parser) testExprTerm() TestExpr {
+	p.got(_Newl)
+	left := p.testExprUnary()
+	if left == nil {
+		return left
+	}
+	// The loop runs at most twice in a well-formed term, since a
+	// comparison's own operand is a word: a second one round is how a
+	// stray token after `a == b` still gets the diagnostic naming it,
+	// rather than the enclosing `[[` reporting an unmatched bracket.
+	for {
+		p.got(_Newl)
+		switch p.tok {
+		case andAnd, orOr:
+			return left
+		case _LitWord:
+			if p.val == "]]" {
+				return left
+			}
+			if p.tok = token(testBinaryOp(p.val)); p.tok == illegalTok {
+				p.curErr("not a valid test operator: %#q", p.val)
+			}
+		case rdrIn, rdrOut:
+		case _EOF, rightParen:
+			return left
+		case _Lit:
+			p.curErr("test operator words must consist of a single literal")
+		default:
+			p.curErr("not a valid test operator: %#q", p.tok)
+		}
+		b := &BinaryTest{
+			OpPos: p.pos,
+			Op:    BinTestOperator(p.tok),
+			X:     left,
+		}
+		switch b.Op {
+		case TsReMatch:
+			p.checkLang(p.pos, langBashLike|LangZsh, "regex tests")
+			p.rxOpenParens = 0
+			p.rxFirstPart = true
+			// TODO(mvdan): Using nested states within a regex will break in
+			// all sorts of ways. The better fix is likely to use a stop
+			// token, like we do with heredocs.
+			p.quote = testExprRegexp
+			fallthrough
+		default:
+			if _, ok := b.X.(*Word); !ok {
+				p.posErr(b.OpPos, "expected %#q, %#q or %#q after complex expr",
+					AndTest, OrTest, dblRightBrack)
+			}
+			p.next()
+			b.Y = p.followWordTok(token(b.Op), b.OpPos)
+		}
+		left = b
+	}
 }
 
 func (p *Parser) testExprUnary() TestExpr {
@@ -3536,7 +3585,13 @@ func (p *Parser) testExprUnary() TestExpr {
 	case exclMark:
 		u := &UnaryTest{OpPos: p.pos, Op: TsNot}
 		p.next()
-		if u.X = p.testExprBinary(false); u.X == nil {
+		// bash's `!` negates a cond_term, not the whole expression:
+		// `! a && b` is `(!a) && b`. It used to swallow everything to
+		// the right and interp put the negation back where it belonged
+		// (#402), which cannot be done once the chain has precedence --
+		// a `!` inside the right operand of `&&` would still eat the
+		// `|| c` after it (#669).
+		if u.X = p.testExprTerm(); u.X == nil {
 			p.followErrExp(u.OpPos, u.Op)
 		}
 		return u
@@ -3551,7 +3606,7 @@ func (p *Parser) testExprUnary() TestExpr {
 	case leftParen:
 		pe := &ParenTest{Lparen: p.pos}
 		p.next()
-		if pe.X = p.testExprBinary(false); pe.X == nil {
+		if pe.X = p.testExprOr(); pe.X == nil {
 			p.followErrExp(pe.Lparen, leftParen)
 		}
 		pe.Rparen = p.matched(pe.Lparen, leftParen, rightParen)

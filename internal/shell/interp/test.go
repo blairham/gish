@@ -18,21 +18,6 @@ import (
 )
 
 // non-empty string is true, empty string is false
-// pushNotDown rewrites !(a && b) as (!a) && b, which is what bash's
-// precedence means. It recurses so `! a || b || c` negates only a, and
-// stops at anything that is not a logical operator.
-func pushNotDown(not *syntax.UnaryTest) (syntax.TestExpr, bool) {
-	bin, ok := not.X.(*syntax.BinaryTest)
-	if !ok || (bin.Op != syntax.AndTest && bin.Op != syntax.OrTest) {
-		return nil, false
-	}
-	inner := &syntax.UnaryTest{Op: syntax.TsNot, X: bin.X}
-	left := syntax.TestExpr(inner)
-	if pushed, ok := pushNotDown(inner); ok {
-		left = pushed
-	}
-	return &syntax.BinaryTest{Op: bin.Op, X: left, Y: bin.Y}, true
-}
 
 func (r *Runner) bashTest(ctx context.Context, expr syntax.TestExpr, classic bool) string {
 	switch x := expr.(type) {
@@ -87,17 +72,11 @@ func (r *Runner) bashTest(ctx context.Context, expr syntax.TestExpr, classic boo
 		}
 		return ""
 	case *syntax.UnaryTest:
-		if x.Op == syntax.TsNot {
-			// bash's `!` binds to the first term, not to the whole
-			// disjunction (#402): `[[ ! x || x ]]` is true. The parser
-			// gives us !(x || x), so the negation is pushed down to the
-			// leftmost operand of an && / || chain — and only there,
-			// since `[[ ! x = y ]]` negates the comparison and
-			// `[[ ! ( x || x ) ]]` negates what the parentheses group.
-			if pushed, ok := pushNotDown(x); ok {
-				return r.bashTest(ctx, pushed, classic)
-			}
-		}
+		// `!` binds to one term (#402): `[[ ! x || x ]]` is true. That
+		// used to be corrected here, because the parser handed over
+		// !(x || x) -- it now parses the term itself (#669), which is
+		// the only way to get `[[ a && ! b || c ]]` right, so there is
+		// nothing left to push down.
 		if r.unTest(ctx, x.Op, r.bashTest(ctx, x.X, classic), classic) {
 			return "1"
 		}
