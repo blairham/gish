@@ -214,11 +214,19 @@ func (c *Comment) End() Pos { return posAddCol(c.Hash, 1+len(c.Text)) }
 // compromised of a command and other components that may come before or after
 // it.
 type Stmt struct {
-	Comments   []Comment
-	Cmd        Command
-	Position   Pos
-	Semicolon  Pos  // position of ';', '&', or '|&', if any
-	Negated    bool // ! stmt
+	Comments  []Comment
+	Cmd       Command
+	Position  Pos
+	Semicolon Pos // position of ';', '&', or '|&', if any
+
+	// Negations is how many leading `!` tokens the statement carries, each
+	// of which inverts its exit status; `! stmt` is one. bash and mksh allow
+	// more than one, and the source count is kept rather than folded down to
+	// a bool so that the printer can write back what it read. What runs is
+	// decided by the parity, which is what bash does: `! ! false` fails and
+	// is not protected from errexit, exactly as a bare `false` is.
+	Negations int
+
 	Background bool // stmt &
 	Coprocess  bool // mksh's |&
 	Disown     bool // zsh's &| or &!
@@ -236,7 +244,7 @@ func (s *Stmt) End() Pos {
 		return end
 	}
 	end := s.Position
-	if s.Negated {
+	if s.Negations > 0 {
 		end = posAddCol(end, 1)
 	}
 	if s.Cmd != nil {
@@ -357,20 +365,35 @@ func (r *Redirect) End() Pos {
 //
 // If Args is empty, Assigns apply to the shell environment. Otherwise, they are
 // variables that cannot be arrays and which only apply to the call.
+//
+// If both are empty, this is a "null command": bash's `!` with nothing to
+// negate, which succeeds at doing nothing so that `!` on its own exits 1.
+// A node with no children of its own cannot answer Pos and End from them,
+// so Null carries the position; see [Stmt.Negations].
 type CallExpr struct {
 	Assigns []*Assign // a=x b=y args
 	Args    []*Word
+
+	// Null is the position of a null command, set only when both Assigns
+	// and Args are empty.
+	Null Pos
 }
 
 func (c *CallExpr) Pos() Pos {
 	if len(c.Assigns) > 0 {
 		return c.Assigns[0].Pos()
 	}
+	if len(c.Args) == 0 {
+		return c.Null
+	}
 	return c.Args[0].Pos()
 }
 
 func (c *CallExpr) End() Pos {
 	if len(c.Args) == 0 {
+		if len(c.Assigns) == 0 {
+			return c.Null
+		}
 		return c.Assigns[len(c.Assigns)-1].End()
 	}
 	return c.Args[len(c.Args)-1].End()

@@ -1123,7 +1123,7 @@ func (p *Printer) elemJoin(elems []*ArrayElem, last []Comment) {
 
 func (p *Printer) stmt(s *Stmt) {
 	p.wroteSemi = false
-	if s.Negated {
+	for range s.Negations {
 		p.spacedString("!", s.Pos())
 	}
 	var startRedirs int

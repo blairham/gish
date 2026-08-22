@@ -187,10 +187,11 @@ func ExampleDebugPrint() {
 	// .  .  .  .  .  .  }
 	// .  .  .  .  .  }
 	// .  .  .  .  }
+	// .  .  .  .  Null: 0:0
 	// .  .  .  }
 	// .  .  .  Position: 1:1
 	// .  .  .  Semicolon: 0:0
-	// .  .  .  Negated: false
+	// .  .  .  Negations: 0
 	// .  .  .  Background: false
 	// .  .  .  Coprocess: false
 	// .  .  .  Disown: false
