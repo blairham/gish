@@ -7,8 +7,8 @@ Suite: **bash 5.3** `tests/`. Oracle: **bash 5.3.15(1)-release** on the machine 
 | measure | result | what it answers |
 | --- | --- | --- |
 | **strict** | **19/83 files (22%)** | identical output *and* exit status for a whole file |
-| parsed | 69/83 files (83%) | koi can read the file at all |
-| line agreement | 9451/13655 lines (69%) | how much of bash's output koi reproduced exactly |
+| parsed | 74/83 files (89%) | koi can read the file at all |
+| line agreement | 10669/13655 lines (78%) | how much of bash's output koi reproduced exactly |
 
 **Quote the strict number.** It is the harshest of the three and the
 one a skeptic should use: one wrong line anywhere in a 369-line file of
@@ -19,7 +19,7 @@ denominator we chose ourselves.
 
 The other two are here because a single number would mislead in both
 directions. **Strict is a file count, and runtime behavior dominates
-it**: 50 files parse perfectly and then behave differently, against 14
+it**: 55 files parse perfectly and then behave differently, against 9
 koi cannot read at all.
 
 Parse coverage belongs to **line agreement** instead, where a construct
@@ -54,16 +54,10 @@ moved, not this one.
 
 | construct | files |
 | --- | --- |
-| `!` cannot form a statement alone | posixpipe.tests |
-| `%` must follow an expression | quotearray.tests |
-| `++` must follow a name | arith-for.tests |
-| `+=` must follow a name | arith.tests |
-| `[x]` must be followed by `=` | appendop.tests |
-| `select` must be followed by a literal | errors.tests |
+| `[x]` must be followed by `=` | appendop.tests, assoc.tests |
+| `!` can only be used in full statements | posixpipe.tests |
+| `for` must be followed by a literal | arith-for.tests |
 | a command can only contain words and redirects; encountered `(` | extglob.tests |
-| invalid parameter name | more-exp.tests |
-| not a valid arithmetic operator: `world` | assoc.tests |
-| not a valid parameter expansion operator: `*` | cond.tests |
 | reached EOF without closing quote `"` | posixexp2.tests |
 | reached EOF without matching `${` with `}` | posixexp.tests |
 | syntax error near unexpected token `&' | array.tests |
