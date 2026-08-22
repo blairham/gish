@@ -772,11 +772,20 @@ func actionCandidates(hc interp.HandlerContext, actions []string, cur string) []
 				out = append(out, c.Value)
 			}
 		case "builtin", "enabled":
-			// `enabled` is the same list: koi has no `enable -n`, so no
-			// builtin is ever switched off — which is also why
-			// `disabled` below answers nothing rather than being absent.
-			out = append(out, builtins.ShellBuiltins()...)
+			// `builtin` is every builtin name; `enabled` is that list
+			// minus what `enable -n` turned off, and `disabled` below is
+			// the complement (#603). The split is bash's: a disabled
+			// builtin is still a builtin name, so only the state
+			// listings move when one is switched off.
+			off := hc.DisabledBuiltins()
+			for _, name := range builtins.ShellBuiltins() {
+				if a == "enabled" && slices.Contains(off, name) {
+					continue
+				}
+				out = append(out, name)
+			}
 		case "disabled":
+			out = append(out, hc.DisabledBuiltins()...)
 		case "setopt":
 			out = append(out, interp.OptionNames()...)
 		case "shopt":
