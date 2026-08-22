@@ -1159,7 +1159,7 @@ func (r *Runner) builtin(ctx context.Context, pos syntax.Pos, name string, args 
 			},
 		}
 		p.next()
-		expr := p.classicTest("[", false)
+		expr := p.classicOr("[")
 		if parseErr {
 			exit.code = 2
 			return exit

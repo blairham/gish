@@ -232,7 +232,14 @@ func (p *funcPrinter) assign(as *syntax.Assign) {
 		return
 	}
 	p.sb.WriteString(as.Name.Value)
-	if as.Index != nil {
+	// An empty subscript has no index node to render, so it comes from
+	// the flag that recorded it: `a[]=v` printed back as `a=v` is a
+	// working assignment where the original is an error, and
+	// `eval "$(declare -f f)"` is how a function moves between shells
+	// (#673).
+	if as.BadIndex {
+		p.sb.WriteString("[]")
+	} else if as.Index != nil {
 		p.sb.WriteString("[")
 		p.arithm(as.Index)
 		p.sb.WriteString("]")
@@ -250,7 +257,13 @@ func (p *funcPrinter) assign(as *syntax.Assign) {
 			if i > 0 {
 				p.sb.WriteString(" ")
 			}
-			if el.Index != nil {
+			if el.BadIndex {
+				p.sb.WriteString("[]")
+				if el.Append {
+					p.sb.WriteString("+")
+				}
+				p.sb.WriteString("=")
+			} else if el.Index != nil {
 				p.sb.WriteString("[")
 				p.arithm(el.Index)
 				p.sb.WriteString("]")

@@ -329,12 +329,24 @@ func (a *Assign) End() Pos {
 		if a.Naked {
 			return posAddCol(a.Index.End(), len("]"))
 		}
+		if a.Append {
+			return posAddCol(a.Index.End(), len("]+="))
+		}
 		return posAddCol(a.Index.End(), len("]="))
 	}
 	if a.Naked {
 		return a.Name.End()
 	}
-	return posAddCol(a.Name.End(), 1)
+	// `name[]=` has brackets with nothing between them and no index node
+	// to measure from, so the width comes from the spelling (#673).
+	n := len("=")
+	if a.BadIndex {
+		n += len("[]")
+	}
+	if a.Append {
+		n += len("+")
+	}
+	return posAddCol(a.Name.End(), n)
 }
 
 // Redirect represents an input/output redirection.
@@ -1070,6 +1082,12 @@ type ArrayElem struct {
 	Value    *Word
 	Comments []Comment
 
+	// Lbrack is the `[` of a subscripted element, and zero for a plain
+	// `(value)`. It is the only position an element with an empty
+	// subscript and no value has -- `[]=` is all bracket -- so Pos and
+	// End read it rather than panicking on two nil fields (#673).
+	Lbrack Pos
+
 	// BadIndex marks `[]=value` inside a compound assignment — brackets
 	// with nothing at all between them, which bash reports when the
 	// assignment runs (`[]=value: bad array subscript`) rather than
@@ -1087,12 +1105,23 @@ func (a *ArrayElem) Pos() Pos {
 	if a.Index != nil {
 		return a.Index.Pos()
 	}
+	// `[]=` has an empty subscript, so there is no index node to ask and
+	// there may be no value either; the bracket is the whole element.
+	if a.BadIndex {
+		return a.Lbrack
+	}
 	return a.Value.Pos()
 }
 
 func (a *ArrayElem) End() Pos {
 	if a.Value != nil {
 		return a.Value.End()
+	}
+	if a.BadIndex {
+		if a.Append {
+			return posAddCol(a.Lbrack, len("[]+="))
+		}
+		return posAddCol(a.Lbrack, len("[]="))
 	}
 	if a.Append {
 		return posAddCol(a.Index.End(), len("]+="))

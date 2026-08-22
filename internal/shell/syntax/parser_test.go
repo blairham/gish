@@ -2674,6 +2674,81 @@ func TestPosEdgeCases(t *testing.T) {
 	qt.Check(t, qt.Equals(f.Stmts[1].End().String(), "2:9"))
 }
 
+// TestEmptySubscriptPosEnd covers the shape #582 made legal and #673
+// found unaudited: `[]=` is brackets with nothing between them, so
+// there is no index node to take a position from and the value may be
+// absent too. `ArrayElem.Pos` panicked on that pair through the
+// printer, which is a `syntax` crash rather than a live one in the
+// shell -- `koi --pretty-print` never reaches it, and the seed that
+// does is in FuzzParsePrint's corpus.
+func TestEmptySubscriptPosEnd(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in            string // one assignment, with or without an array
+		pos, end      string // of the assignment
+		ePos, eEnd    string // of the array element, empty when there is none
+		wantBadIndex  bool   // on whichever of the two carries the subscript
+		wantElem      bool   // the subscript is the element's, not the assignment's
+		wantPrintBack string
+	}{
+		{
+			in: "A=([]=)", pos: "1:1", end: "1:8",
+			ePos: "1:4", eEnd: "1:7", wantBadIndex: true, wantElem: true,
+			wantPrintBack: "A=([]=)\n",
+		},
+		{
+			in: "A=([]=y)", pos: "1:1", end: "1:9",
+			ePos: "1:4", eEnd: "1:8", wantBadIndex: true, wantElem: true,
+			wantPrintBack: "A=([]=y)\n",
+		},
+		{
+			in: "A=([]+=y)", pos: "1:1", end: "1:10",
+			ePos: "1:4", eEnd: "1:9", wantBadIndex: true, wantElem: true,
+			wantPrintBack: "A=([]+=y)\n",
+		},
+		{
+			in: "a[]=v", pos: "1:1", end: "1:6", wantBadIndex: true,
+			wantPrintBack: "a[]=v\n",
+		},
+		{
+			in: "a[]=", pos: "1:1", end: "1:5", wantBadIndex: true,
+			wantPrintBack: "a[]=\n",
+		},
+		{
+			in: "a[]+=v", pos: "1:1", end: "1:7", wantBadIndex: true,
+			wantPrintBack: "a[]+=v\n",
+		},
+		// `[  ]` is whitespace, which is an empty arithmetic expression
+		// and so index 0 -- a different subscript, and not this one.
+		{
+			in: "A=([ ]=)", pos: "1:1", end: "1:9",
+			ePos: "1:5", eEnd: "1:8",
+			wantPrintBack: "A=([ ]=)\n",
+		},
+	}
+	p := NewParser(KeepComments(true), Variant(LangBash))
+	printer := NewPrinter()
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			f, err := p.Parse(strings.NewReader(tc.in), "")
+			qt.Assert(t, qt.IsNil(err))
+			as := f.Stmts[0].Cmd.(*CallExpr).Assigns[0]
+			qt.Check(t, qt.Equals(as.BadIndex, tc.wantBadIndex && !tc.wantElem))
+			qt.Check(t, qt.Equals(as.Pos().String(), tc.pos))
+			qt.Check(t, qt.Equals(as.End().String(), tc.end))
+			if tc.ePos != "" {
+				el := as.Array.Elems[0]
+				qt.Check(t, qt.Equals(el.BadIndex, tc.wantBadIndex && tc.wantElem))
+				qt.Check(t, qt.Equals(el.Pos().String(), tc.ePos))
+				qt.Check(t, qt.Equals(el.End().String(), tc.eEnd))
+			}
+			var sb strings.Builder
+			qt.Assert(t, qt.IsNil(printer.Print(&sb, f)))
+			qt.Check(t, qt.Equals(sb.String(), tc.wantPrintBack))
+		})
+	}
+}
+
 func TestParseHighControlRunes(t *testing.T) {
 	t.Parallel()
 	// U+0080 and U+0081 must parse as regular characters even though the

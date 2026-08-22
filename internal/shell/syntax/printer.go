@@ -1116,7 +1116,17 @@ func (p *Printer) elemJoin(elems []*ArrayElem, last []Comment) {
 		} else if p.wantSpace == spaceRequired {
 			p.space()
 		}
-		if p.wroteIndex(el.Index) {
+		// An empty subscript has no index node to render, so it is
+		// written from the flag that recorded it -- dropping it turned
+		// `A=([]=y)` into `A=(y)`, a plain value that assigns where the
+		// original is an error (#673).
+		if el.BadIndex {
+			p.w.WriteString("[]")
+			if el.Append {
+				p.w.WriteByte('+')
+			}
+			p.w.WriteByte('=')
+		} else if p.wroteIndex(el.Index) {
 			if el.Append {
 				p.w.WriteByte('+')
 			}
@@ -1567,7 +1577,11 @@ func (p *Printer) assigns(assigns []*Assign) {
 		}
 		if a.Name != nil {
 			p.writeLit(a.Name.Value)
-			p.wroteIndex(a.Index)
+			if a.BadIndex {
+				p.w.WriteString("[]")
+			} else {
+				p.wroteIndex(a.Index)
+			}
 			if a.Append {
 				p.w.WriteByte('+')
 			}
