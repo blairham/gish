@@ -1,17 +1,7 @@
 package repl
 
 import (
-	"context"
-	"fmt"
-	"slices"
-	"strings"
-	"sync"
-
 	"github.com/blairham/koi-shell/internal/shell/syntax"
-
-	"github.com/blairham/koi-shell/internal/shell/interp"
-
-	"github.com/blairham/koi-shell/internal/builtins"
 )
 
 // Local fixes for substrate gaps the handler seams cannot reach (#119).
@@ -23,14 +13,22 @@ import (
 // own dispatch, so no handler ever observes them — and the only seam
 // left is the tree between parse and run:
 //
-//   - `declare -F` / `typeset -F` parse as a *declaration clause*, which
-//     the interpreter implements itself and which no handler observes
-//     (the same wall declcall.go documents from the other side).
-//
-// That one is how agent harnesses and init scripts enumerate a shell:
-// Claude Code's shell snapshot carries the user's functions across with
-// `declare -F`, so a shell that fails it is one those tools cannot drive
-// at all.
+// `declare -F` / `typeset -F` was the founding entry: it parses as a
+// *declaration clause*, which the interpreter implements itself and which
+// no handler observes (the same wall declcall.go documents from the other
+// side), and it is how agent harnesses and init scripts enumerate a shell
+// — Claude Code's shell snapshot carries the user's functions across with
+// it. The substrate refused it then and implements it now, so the rewrite
+// is gone (#615), and the reason is the one `>|` records below rather than
+// mere tidiness: a rewrite is equivalent only until the substrate learns a
+// distinction the rewrite was flattening, and here the distinction is the
+// attribute. `readonly -f f` makes `declare -F` report `declare -fr f`,
+// which a shim reading only the function *table* cannot know — so keeping
+// it would have shadowed the correct answer with a stale one on exactly
+// the path a snapshot takes. Two capabilities came back with the
+// deletion, both of which the scope note below had written off: a
+// subshell's own functions, and `declare -F` inside a `source` or an
+// `eval`.
 //
 // A quoted heredoc delimiter was a second entry here, restating the body
 // as the literal its delimiter promised (#244). It is gone because the
@@ -53,10 +51,10 @@ import (
 //
 // Scope, stated rather than discovered later: this rewrites what *koi*
 // parses — an interactive line, `-c`, and a script file. `source` and
-// `eval` re-parse inside the interpreter, so a `declare -F` in a sourced
-// file is still the substrate's answer (#242). Closing that means fixing
-// it in the substrate, which is what #119 tracks; this is the part koi
-// can carry meanwhile.
+// `eval` re-parse inside the interpreter, so a construct rewritten here
+// is still the substrate's answer inside a sourced file (#242). Closing
+// that means fixing it in the substrate, which is where every entry this
+// file has ever had has ended up.
 
 // clobberEquivalent maps each clobbering redirect to the plain form the
 // interpreter implements. These parse only under [syntax.LangZsh], which koi
@@ -92,140 +90,6 @@ func rewriteSubstrateGaps(node syntax.Node) {
 				rd.Op = plain
 			}
 		}
-		if call, ok := declFuncQuery(stmt.Cmd); ok {
-			stmt.Cmd = call
-		}
 		return true
 	})
 }
-
-// declFuncQuery converts `declare -F [name…]` into a call to the native
-// builtin, or reports false for every other declaration clause.
-//
-// Deliberately narrow: only the -F query, only when every argument is a
-// bare word. `declare -F` with an assignment in it is not a query, and
-// guessing at a mixed clause would be worse than the interpreter's
-// current refusal.
-func declFuncQuery(cmd syntax.Command) (*syntax.CallExpr, bool) {
-	decl, ok := cmd.(*syntax.DeclClause)
-	if !ok || decl.Variant == nil {
-		return nil, false
-	}
-	if decl.Variant.Value != "declare" && decl.Variant.Value != "typeset" {
-		return nil, false
-	}
-	names := make([]*syntax.Word, 0, len(decl.Args))
-	sawF := false
-	for _, arg := range decl.Args {
-		if !arg.Naked || arg.Index != nil || arg.Array != nil {
-			return nil, false
-		}
-		// A bare name arrives as a naked assign with no value — the
-		// parser has already told the two apart, and `declare -F name`
-		// is a name, not an option.
-		if arg.Value == nil {
-			if arg.Name == nil {
-				return nil, false
-			}
-			names = append(names, litWord(arg.Name.Value))
-			continue
-		}
-		lit, isLit := soleLit(arg.Value)
-		switch {
-		case isLit && lit == "-F":
-			sawF = true
-		case isLit && (strings.HasPrefix(lit, "-") || strings.HasPrefix(lit, "+")):
-			// Any other option changes what the clause means.
-			return nil, false
-		default:
-			names = append(names, arg.Value)
-		}
-	}
-	if !sawF {
-		return nil, false
-	}
-	return &syntax.CallExpr{Args: append([]*syntax.Word{litWord(declFuncsName)}, names...)}, true
-}
-
-// soleLit returns the word's value when it is a single unquoted
-// literal — the only shape an option can take.
-func soleLit(w *syntax.Word) (string, bool) {
-	if len(w.Parts) != 1 {
-		return "", false
-	}
-	lit, ok := w.Parts[0].(*syntax.Lit)
-	if !ok {
-		return "", false
-	}
-	return lit.Value, true
-}
-
-func litWord(s string) *syntax.Word {
-	return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: s}}}
-}
-
-// declFuncsName is the registry name the rewrite dispatches to; the
-// __koi_ prefix keeps it out of the user-facing builtin listing, like
-// every other rewritten name.
-const declFuncsName = "__koi_declare_funcs"
-
-// declareFuncs answers `declare -F`, reading the session runner's own
-// function table.
-//
-// bash's two output shapes are not a detail — the callers depend on
-// them. Bare `declare -F` prints `declare -f NAME` per function (which
-// is why harnesses pipe it through `cut -d' ' -f3`), while `declare -F
-// name` prints the bare name and exits 1 when it is not a function,
-// because that form is a test.
-//
-// Functions defined in a subshell are not visible here: the interpreter
-// gives a subshell its own copy of the table and this reads the
-// session's. Enumerating a shell from inside a subshell it will discard
-// is not a real use, and the alternative is threading a runner through
-// the exec seam.
-func declareFuncs(_ context.Context, hc interp.HandlerContext, args []string) error {
-	runner := sessionRunner()
-	if runner == nil {
-		hc.Errf("declare: no session to query\n")
-		return interp.ExitStatus(1)
-	}
-	if len(args) == 0 {
-		defined := make([]string, 0, len(runner.Funcs))
-		for name := range runner.Funcs {
-			defined = append(defined, name)
-		}
-		slices.Sort(defined)
-		for _, name := range defined {
-			fmt.Fprintf(hc.Stdout, "declare -f %s\n", name)
-		}
-		return nil
-	}
-	missing := false
-	for _, name := range args {
-		if _, ok := runner.Funcs[name]; !ok {
-			missing = true
-			continue
-		}
-		fmt.Fprintln(hc.Stdout, name)
-	}
-	if missing {
-		return interp.ExitStatus(1)
-	}
-	return nil
-}
-
-// registerSubstrateBuiltins wires the names the rewrite dispatches to.
-// Called from every session path, since a script asks these questions
-// as readily as an interactive line does.
-//
-// Once per process, not once per session: the builtin holds no session
-// state (it reads whichever runner is current), and the registry is a
-// package-level map that the test binary would otherwise have several
-// sessions writing at the same time.
-func registerSubstrateBuiltins() {
-	substrateBuiltinsOnce.Do(func() {
-		builtins.Register(declFuncsName, declareFuncs)
-	})
-}
-
-var substrateBuiltinsOnce sync.Once

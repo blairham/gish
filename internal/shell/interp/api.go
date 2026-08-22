@@ -145,6 +145,13 @@ type Runner struct {
 	// children as BASH_FUNC_<name>%% environment entries (#387).
 	exportedFuncs map[string]bool
 
+	// readonlyFuncs holds the names `readonly -f` and `declare -fr`
+	// marked (#615). Unlike exportedFuncs this never leaves the shell:
+	// measured, a child inheriting an exported function may redefine it
+	// freely, so the bit is per-shell state rather than part of the
+	// function's environment representation.
+	readonlyFuncs map[string]bool
+
 	// localOpts holds the shell options `local -` saved in the running
 	// function, to be put back when it returns (#385).
 	localOpts *runnerOpts
@@ -2215,6 +2222,11 @@ func (r *Runner) subshell(background bool) *Runner {
 	r2.writeEnv = newOverlayEnviron(r.writeEnv, background)
 	// Funcs are copied, since they might be modified.
 	r2.Funcs = maps.Clone(r.Funcs)
+	// A readonly function is still readonly inside a subshell — measured,
+	// `readonly -f f; ( f() { …; } )` refuses there too — and a subshell
+	// marking one must not mark it in the parent, so the set is cloned
+	// alongside the functions it describes (#615).
+	r2.readonlyFuncs = maps.Clone(r.readonlyFuncs)
 	r2.Vars = make(map[string]expand.Variable)
 	r2.alias = maps.Clone(r.alias)
 

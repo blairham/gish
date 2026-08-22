@@ -7034,6 +7034,127 @@ done <<< 2`,
 		"bar=foo\n",
 	},
 
+	// readonly functions (#615). Every refusal here answers 1 and lets
+	// the rest of the line run, which is *not* the plain assignment's
+	// abandonment above -- measured, and the reason each case keeps a
+	// command after the refusal.
+	{
+		// The redefinition is refused and the body is unchanged. Both
+		// halves matter: a test that only reads the message passes for a
+		// shell that prints the refusal and writes anyway.
+		"f() { echo orig; }; readonly -f f; f() { echo new; }; echo B; f",
+		"f: readonly function\nB\norig\n #JUSTERR",
+	},
+	{
+		"f() { echo orig; }; declare -fr f; f() { echo new; }; echo B; f",
+		"f: readonly function\nB\norig\n #JUSTERR",
+	},
+	{
+		"f() { echo orig; }; typeset -fr f; f() { echo new; }; echo B; f",
+		"f: readonly function\nB\norig\n #JUSTERR",
+	},
+	{
+		`f() { :; }; readonly -f f; f() { :; }; echo "stat=$?"`,
+		"f: readonly function\nstat=1\n #JUSTERR",
+	},
+	{
+		"f() { echo orig; }; readonly -f f; unset -f f; f",
+		"unset: f: cannot unset: readonly function\norig\n #JUSTERR",
+	},
+	{
+		// A bare `unset` resolves to the function when no variable holds
+		// the name, so it gets the function's refusal.
+		`f() { echo orig; }; readonly -f f; unset f; echo "stat=$?"; f`,
+		"unset: f: cannot unset: readonly function\nstat=1\norig\n #JUSTERR",
+	},
+	{
+		// and it carries on to the names which follow: a and c are gone
+		"a() { :; }; b() { :; }; c() { :; }; readonly -f b; unset -f a b c; declare -F",
+		"unset: b: cannot unset: readonly function\ndeclare -fr b\n #JUSTERR",
+	},
+	{
+		// `+r` is the one attribute a readonly function refuses to lose
+		`f() { echo orig; }; readonly -f f; declare -f +r f; echo "stat=$?"; declare -F`,
+		"declare: f: readonly function\nstat=1\ndeclare -fr f\n #JUSTERR",
+	},
+	{
+		// and only when it is readonly; on an ordinary function it is a
+		// silent no-op at 0
+		`f() { :; }; declare -f +r f; echo "stat=$?"; declare -F`,
+		"stat=0\ndeclare -f f\n",
+	},
+	{
+		// Re-marking is silent and 0, and the other attributes are still
+		// settable on a readonly function -- measured, rather than
+		// assumed from `+r`.
+		`f() { :; }; readonly -f f; declare -fr f; echo "a=$?"; readonly -f f; echo "b=$?"; declare -f +x f; echo "c=$?"`,
+		"a=0\nb=0\nc=0\n",
+	},
+	{
+		`readonly -f nope; echo "stat=$?"`,
+		"readonly: nope: not a function\nstat=1\n #JUSTERR",
+	},
+	{
+		// `declare -f*` keeps its existing silent 1 for a name that is
+		// not a function, where `readonly -f` names it
+		`declare -fr nope; echo "s1=$?"; typeset -fr nope; echo "s2=$?"`,
+		"s1=1\ns2=1\n",
+	},
+	{
+		"a() { :; }; readonly -f a nope; declare -F",
+		"readonly: nope: not a function\ndeclare -fr a\n #JUSTERR",
+	},
+	{
+		// A value alongside -f is refused, and the wording differs by
+		// variant: declare abandons the command, so g is never marked
+		`f() { :; }; g() { :; }; declare -fr f=1 g; echo "stat=$?"; declare -F`,
+		"declare: cannot use `-f' to make functions\nstat=1\ndeclare -f f\ndeclare -f g\n #JUSTERR",
+	},
+	{
+		// while readonly reads the whole word as the name it cannot
+		// find and carries on, so g *is* marked
+		"f() { :; }; g() { :; }; readonly -f f=1 g; declare -F",
+		"readonly: f=1: not a function\ndeclare -f f\ndeclare -fr g\n #JUSTERR",
+	},
+	{
+		// -r filters the listing to the readonly functions, where koi
+		// listed every one -- so this answered as if nothing were
+		// readonly at all
+		"f1() { :; }; f2() { :; }; readonly -f f1; declare -Fr; declare -F",
+		"declare -fr f1\ndeclare -fr f1\ndeclare -f f2\n",
+	},
+	{
+		// the attribute letters are ordered r then x, and -p is what
+		// asks a *named* function for them
+		"f() { :; }; readonly -f f; export -f f; declare -F f; declare -pF f; declare -F",
+		"f\ndeclare -frx f\ndeclare -frx f\n",
+	},
+	{
+		"f() { :; }; readonly -f f; declare -f f; declare -pf f",
+		"f () \n{ \n    :\n}\nf () \n{ \n    :\n}\ndeclare -fr f\n",
+	},
+	{
+		// -p also turns declare's silent 1 into a diagnostic
+		`declare -pF nope; echo "stat=$?"`,
+		"declare: nope: not found\nstat=1\n #JUSTERR",
+	},
+	{
+		// The bit crosses into a subshell
+		"f() { echo orig; }; readonly -f f; ( f() { echo new; }; f ); f",
+		"f: readonly function\norig\norig\n #JUSTERR",
+	},
+	{
+		// and a subshell marking one does not mark it in the parent
+		"f() { echo orig; }; ( readonly -f f ); f() { echo new; }; f",
+		"new\n",
+	},
+	{
+		// A readonly function does not make the *variable* of that name
+		// readonly; they are separate namespaces in bash
+		`f() { echo fn; }; readonly -f f; f=hello; echo "$f"; f`,
+		"hello\nfn\n",
+	},
+
 	// multiple var modes at once
 	{
 		"declare -r -x foo=bar; $ENV_PROG | grep '^foo='",
@@ -8928,7 +9049,7 @@ const oracleRetries = 5
 // from run to run.
 //
 // Matched on the exact script, the way [skipIfOracleGap] is and for the
-// same reason: the neighbouring `wait -n` cases were measured too and are
+// same reason: the neighboring `wait -n` cases were measured too and are
 // stable, so a predicate like "mentions wait" would hand a retry to cases
 // that have earned a single-shot check.
 //

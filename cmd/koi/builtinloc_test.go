@@ -89,10 +89,6 @@ var nativeDiagCases = map[string]nativeDiagCase{
 	"builtins": {noDiag: "it takes no arguments and only lists; there is no failing path"},
 	"times":    {noDiag: "it validates no options and its only error is a getrusage failure, which a test cannot provoke"},
 	"doctor":   {noDiag: "it is advisory by design (#67): every finding is a ✔/⚠/✘ line on stdout, never a diagnostic"},
-	"declare_funcs": {
-		noDiag: "the `declare -F` rewrite (#215) complains only when there is no session runner, " +
-			"and a script always has one",
-	},
 	"bind": {
 		noDiag: "a script has no line editor, so `bind` returns silently before it can " +
 			"diagnose anything — deliberate (#159): a tool's init sets a dozen bindings and " +
