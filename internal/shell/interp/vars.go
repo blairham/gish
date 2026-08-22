@@ -134,7 +134,8 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		vr.List = prev.List
 		vr.Indexes = prev.Indexes
 		vr.Map = prev.Map
-	} else if prev.ReadOnly && !droppingDanglingRef(prev.Variable, vr) {
+	} else if prev.ReadOnly && !droppingDanglingRef(prev.Variable, vr) &&
+		!declaringReadOnlyArray(prev.Variable, vr) {
 		return fmt.Errorf("readonly variable")
 	}
 	if !vr.IsSet() { // unsetting
@@ -161,6 +162,43 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 func droppingDanglingRef(prev, vr expand.Variable) bool {
 	return prev.Kind == expand.NameRef && prev.Str == "" &&
 		vr.Kind == expand.String && !vr.Set && vr.Str == ""
+}
+
+// declaringReadOnlyArray reports whether a write to a readonly scalar is
+// a naked subscript re-declaring it as an indexed array, which is the one
+// change bash makes to a readonly variable: `readonly V=1; declare V[2]`
+// answers 0 and leaves `declare -ar V=([0]="1")`, where the explicit
+// `declare -a V` on the same name is a refusal (#660, #723). It is the
+// only shape in that sweep where bash is more permissive than koi, so it
+// is an exemption rather than a rule to make stricter.
+//
+// Nothing is lost, which is presumably why bash allows it: the scalar's
+// value becomes element 0 and every attribute carries over unchanged. The
+// predicate checks exactly that and nothing looser, so no other write to
+// a readonly name can reach the store through it — the explicit `-a`/`-A`
+// refusal in [Runner.declClause] runs long before this, and a subscript
+// carrying a *value* (`declare V[3]=9`) fails the content test here as
+// well as being refused up there.
+func declaringReadOnlyArray(prev, vr expand.Variable) bool {
+	if vr.Kind != expand.Indexed {
+		return false
+	}
+	// A declared-but-unset readonly (`readonly Z`) has no kind recorded at
+	// all rather than an unset scalar's, so both spellings of "nothing
+	// here yet" are accepted: `readonly Z; declare Z[1]` is bash's
+	// `declare -ar Z` at 0.
+	if prev.Kind != expand.String && !(prev.Kind == expand.Unknown && !prev.Set) {
+		return false
+	}
+	if prev.ReadOnly != vr.ReadOnly || prev.Set != vr.Set ||
+		prev.Exported != vr.Exported || prev.Integer != vr.Integer ||
+		prev.CaseMod != vr.CaseMod {
+		return false
+	}
+	if !prev.Set {
+		return len(vr.List) == 0
+	}
+	return slices.Equal(vr.List, []string{prev.Str})
 }
 
 func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
@@ -250,15 +288,27 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		return expand.Variable{}
 	case "$":
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(os.Getpid())
-	case "PPID":
-		vr.Kind, vr.Str = expand.String, strconv.Itoa(os.Getppid())
 	case "RANDOM": // not for cryptographic use
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(r.randomValue())
+		vr.Integer = true
 	case "SECONDS":
 		// The dynamic variables a script times itself with, and they
 		// were simply absent — an empty string in arithmetic is zero,
 		// so a loop measuring elapsed time never advanced (#408).
+		//
+		//
+		// The integer attribute is bash's *read* function's rather than
+		// the variable's, and that is measured rather than cosmetic: it
+		// arrives on the first read and stays, so assignments after one
+		// really are arithmetic where the first is not (#720).
+		//
+		//	SECONDS=1+1; echo $SECONDS               # 0
+		//	: $SECONDS; SECONDS=1+1; echo $SECONDS   # 2
+		//
+		// which is also why a write alone never confers it and
+		// `SECONDS=10; declare -p` still prints `declare -- SECONDS`.
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(int(time.Since(r.startTime).Seconds())+r.secondsBase)
+		vr.Integer = r.readDynamic[name]
 	case "EPOCHSECONDS":
 		vr.Kind, vr.Str = expand.String, strconv.FormatInt(time.Now().Unix(), 10)
 	case "EPOCHREALTIME":
@@ -275,6 +325,7 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		// the shell's pid at the top level and a distinct number per
 		// subshell.
 		vr.Kind, vr.Str = expand.String, strconv.Itoa(r.bashPID())
+		vr.Integer = true
 	case "GROUPS":
 		vr.Kind, vr.Set = expand.Indexed, true
 		vr.List = r.groupsList()
@@ -283,6 +334,7 @@ func (r *Runner) lookupVar(name string) expand.Variable {
 		cryptorand.Read(p[:])
 		n := binary.NativeEndian.Uint32(p[:])
 		vr.Kind, vr.Str = expand.String, strconv.FormatUint(uint64(n), 10)
+		vr.Integer = true
 	case "SHELLOPTS":
 		// The "is this option on?" probe every portable script writes,
 		// and it was simply absent — under `set -u` an unbound-variable
@@ -408,6 +460,15 @@ func (r *Runner) setVarString(name, value string) {
 	r.setVar(name, expand.Variable{Set: true, Kind: expand.String, Str: value})
 }
 
+// setVarInt is [Runner.setVarString] for one of the shell's own numeric
+// variables, which bash marks `-i` (#720). It is a separate helper rather
+// than a flag on setVarString because the attribute has to survive every
+// write: `setVarString` replaces the variable whole, so OPTIND lost its
+// integer bit the first time `getopts` advanced the scan.
+func (r *Runner) setVarInt(name, value string) {
+	r.setVar(name, expand.Variable{Set: true, Kind: expand.String, Integer: true, Str: value})
+}
+
 // dynamicVars are the variables the shell answers from its own state
 // rather than from the variable table. A script can unset one, which
 // ends its specialness for the rest of the shell (#547); the two that
@@ -451,17 +512,32 @@ var unsettableNever = map[string]bool{
 // none of the shell's own arrays (#616). The value is the shape the
 // variable takes when the shell has nothing to report for it.
 //
-// Membership is measured rather than derived from [dynamicVars], because
-// bash's table does not hold every computed variable: RANDOM, SRANDOM,
-// SECONDS, EPOCHSECONDS, EPOCHREALTIME, BASHPID and LINENO appear in no
-// listing there, so adding them here would be a divergence of its own.
-// BASH_ARGC and BASH_ARGV are absent for the opposite reason — koi does
-// not have them at all yet (#637).
+// Membership is measured rather than derived from [dynamicVars]. The
+// previous note here said RANDOM, SRANDOM, SECONDS, EPOCHSECONDS,
+// EPOCHREALTIME, BASHPID and LINENO "appear in no listing" in bash; that
+// is wrong, and re-measuring is what turned #720 into a fix — a fresh
+// bash's `declare -p` lists every one of them, with no value:
 //
-// The two empty shapes differ, and that too is measured: FUNCNAME
+//	declare -i BASHPID
+//	declare -- EPOCHREALTIME
+//	declare -i RANDOM
+//	declare -- SECONDS
+//
+// so they are here now. BASH_ARGC and BASH_ARGV stay absent for the
+// reason #691 gave: koi does not have them at all yet (#637), and
+// listing a name the shell never supplies would claim an interface it
+// does not back. HISTCMD, BASH_SUBSHELL, COMP_WORDBREAKS and OPTERR are
+// absent on that same rule — bash lists all four and koi answers empty
+// for each, so they are recorded on #720 rather than faked here.
+//
+// The empty shapes differ per name, and each one is measured: FUNCNAME
 // outside a function prints with no value at all (`declare -a
-// FUNCNAME`), while BASH_SOURCE and BASH_LINENO in a `-c` string print
-// as an empty array (`declare -a BASH_SOURCE=()`).
+// FUNCNAME`), BASH_SOURCE and BASH_LINENO in a `-c` string print as an
+// empty array (`declare -a BASH_SOURCE=()`), and the scalars print bare.
+// So do the *attributes*: bash marks its own numeric variables `-i`
+// (#720), and SECONDS is the measured exception — it prints `declare --
+// SECONDS` until something reads it and `declare -i SECONDS="0"`
+// afterwards, so the integer bit is not on the entry this table holds.
 var dynamicListing = map[string]expand.Variable{
 	shellFuncNameVar: {Kind: expand.Indexed},
 	shellSourceVar:   {Kind: expand.Indexed, Set: true, List: []string{}},
@@ -470,7 +546,64 @@ var dynamicListing = map[string]expand.Variable{
 	"GROUPS":         {Kind: expand.Indexed, Set: true, List: []string{}},
 	"SHELLOPTS":      {Kind: expand.String, Set: true, ReadOnly: true},
 	"BASHOPTS":       {Kind: expand.String, Set: true, ReadOnly: true},
+	"PPID":           {Kind: expand.String, Integer: true, ReadOnly: true},
+	"BASHPID":        {Kind: expand.String, Integer: true},
+	"RANDOM":         {Kind: expand.String, Integer: true},
+	"SRANDOM":        {Kind: expand.String, Integer: true},
+	"SECONDS":        {Kind: expand.String},
+	"EPOCHSECONDS":   {Kind: expand.String},
+	"EPOCHREALTIME":  {Kind: expand.String},
+	"BASH_ARGV0":     {Kind: expand.String},
 }
+
+// lazyListing are the computed variables whose *value* bash's table does
+// not hold until something asks for it, which is what #689 is about:
+// a listing taken before anything has read one shows the name and no
+// value, and the same listing after a read shows the value.
+//
+//	$ printf 'declare -a\n' | bash              # nothing has read DIRSTACK
+//	declare -a DIRSTACK=()
+//	$ printf 'echo ${DIRSTACK[0]}; declare -a\n' | bash
+//	/tmp
+//	declare -a DIRSTACK=([0]="/tmp")
+//
+// koi answered from live state either way, so every one of these was a
+// diverging line in any file that lists before reading — four in
+// array.tests alone, which does not filter DIRSTACK out of its
+// `ignore_builtin_arrays` helper.
+//
+// What bash is really doing is caching a dynamic variable's value on
+// first use, and *that* is what a script can observe, so this is not
+// "keep listing history": the shell records that it has computed a value
+// for the name, which it has to know anyway. A **named** `declare -p X`
+// counts as a read and so does `${X+set}` — both measured — which is why
+// the marking sits in [Runner.lookupVar] rather than in the expansion
+// path alone.
+//
+// Membership is per name rather than per family. PPID, EUID, UID, OPTIND
+// and SHELLOPTS are all in a fresh listing *with* their values, and
+// FUNCNAME, BASH_SOURCE and BASH_LINENO need nothing here because their
+// live value genuinely is absent at a script's top level, which is what
+// [dynamicListing]'s empty shape already says.
+var lazyListing = map[string]bool{
+	"DIRSTACK": true, "GROUPS": true, "BASHPID": true, "SECONDS": true,
+	"EPOCHSECONDS": true, "EPOCHREALTIME": true, "BASH_ARGV0": true,
+}
+
+// neverListedValue are the two computed variables a listing never prints
+// a value for, whatever has read them.
+//
+// Reading them is not free: `$RANDOM` *advances* the shell's generator
+// and `$SRANDOM` draws from the system, so a `declare -p` that computed
+// one would be a listing with a side effect — the sequence a script
+// seeded with `RANDOM=42` would jump every time anything listed the
+// variables. bash prints its own cache there rather than recomputing,
+// which koi does not keep; SRANDOM it never caches at all, so
+// `declare -i SRANDOM` with no value is bash's answer even after a read.
+// Printing the name and no value is therefore right for one of the two
+// and a stated divergence for the other, and neither costs a script a
+// random number it was going to use.
+var neverListedValue = map[string]bool{"RANDOM": true, "SRANDOM": true}
 
 // dynamicListingVar answers a computed variable as a *listing* sees it,
 // or an undeclared variable for a name no listing shows.
@@ -491,10 +624,42 @@ func (r *Runner) dynamicListingVar(name string) expand.Variable {
 		// answer, and this reader has nothing to add.
 		return expand.Variable{}
 	}
+	if neverListedValue[name] {
+		return empty
+	}
+	if lazyListing[name] && !r.readDynamic[name] && !r.wroteDynamic[name] {
+		// Nothing has asked for its value, so the entry bash's table
+		// holds is the name and its attributes with no value (#689).
+		// Asking [Runner.lookupVar] here would both answer with a value
+		// bash does not print and *mark* the variable as read, so a
+		// listing would populate the very cache it is reporting on.
+		return empty
+	}
 	if vr := r.lookupVar(name); vr.Declared() {
 		return vr
 	}
 	return empty
+}
+
+// markDynamicRead records that something has asked a computed variable
+// for its value, which is what makes it appear *with* one in every later
+// listing (#689).
+//
+// It is called from the expansion seam and from `declare -p NAME` rather
+// than from [Runner.lookupVar], and the difference is measurable: an
+// assignment consults the previous variable through lookupVar without
+// reading it in bash's sense, so marking there would make
+// `SECONDS=10; declare -p` print `declare -i SECONDS="10"` where bash
+// prints `declare -- SECONDS="10"` — the integer bit is the *read*
+// function's, and a write must not confer it.
+func (r *Runner) markDynamicRead(name string) {
+	if !lazyListing[name] {
+		return
+	}
+	if r.readDynamic == nil {
+		r.readDynamic = make(map[string]bool)
+	}
+	r.readDynamic[name] = true
 }
 
 // unsetDynamicVar records that a computed variable has been unset. It is
@@ -545,8 +710,19 @@ func (r *Runner) setDynamic(name string, vr expand.Variable) bool {
 		return true
 	case "SECONDS":
 		// Not arithmetic, measured: bash answers 0 for `SECONDS=1+1`
-		// and -5 for `SECONDS=-5`.
+		// and -5 for `SECONDS=-5` — until something has *read* the
+		// variable, which is what turns the integer attribute on there
+		// and is why the two records below are separate.
 		r.startTime, r.secondsBase = time.Now(), wholeInt(vr.Str)
+		// A write gives a listing a value to print exactly as a read
+		// does: `SECONDS=10; declare -p` carries `="10"` where a fresh
+		// listing carries none (#689). Recorded only for the names this
+		// actually acts on — `BASHPID=1` is discarded, and bash's
+		// listing still prints `declare -i BASHPID` with no value.
+		if r.wroteDynamic == nil {
+			r.wroteDynamic = make(map[string]bool)
+		}
+		r.wroteDynamic[name] = true
 		return true
 	}
 	return false

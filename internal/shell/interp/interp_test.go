@@ -7584,8 +7584,12 @@ done <<< 2`,
 	{"a=x=y; declare $a; echo $a $x", "x=y y\n"},
 	{"a='x=(y)'; declare $a; echo $a $x", "x=(y) (y)\n"},
 	{"a='x=b y=c'; declare $a; echo $x $y", "b c\n"},
-	{"declare =bar", "declare: `': not a valid identifier\nexit status 1 #JUSTERR"},
-	{"declare $unset=$unset", "declare: `': not a valid identifier\nexit status 1 #JUSTERR"},
+	// The whole operand is quoted, not the base name before the `=`
+	// (#724). These three used to be `#JUSTERR`, pinning koi's answer
+	// without claiming it was bash's; they are bash's now and their
+	// differential cases live in TestRunnerRunConfirm.
+	{"declare =bar", "declare: `=bar': not a valid identifier\nexit status 1 #JUSTERR"},
+	{"declare $unset=$unset", "declare: `=': not a valid identifier\nexit status 1 #JUSTERR"},
 
 	// export
 	{"declare foo=bar; $ENV_PROG | grep '^foo='", "exit status 1"},
@@ -8548,7 +8552,7 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 	{"declare -x RUN_{VERY_,}EXPENSIVE_TESTS=yes; echo $RUN_EXPENSIVE_TESTS", "yes\n"},
 	{"declare {A,B}_VAR; A_VAR=1; B_VAR=2; echo $A_VAR $B_VAR", "1 2\n"},
 	{"declare {foo=x,bar=y}; echo $foo $bar", "x y\n"},
-	{`declare foo{bar=baz`, "declare: `foo{bar': not a valid identifier\nexit status 1 #JUSTERR"},
+	{`declare foo{bar=baz`, "declare: `foo{bar=baz': not a valid identifier\nexit status 1 #JUSTERR"},
 	{"{a,b}=value", "a=value: command not found\nexit status 127 #JUSTERR"},
 
 	// tilde expansion
@@ -9247,149 +9251,280 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 		"unset: BASH_SOURCE: cannot unset\nexit status 1 #JUSTERR",
 	},
 
-	// #675: extglob operators reach every parameter-expansion pattern
-	// operator, where the mode flag was missing so the group was ordinary
-	// text and the value came back unchanged.
+	// The listing residue that cluster left: #689, #697, #720, #722,
+	// #723, #724. Same rule as above -- a case whose subject is a state
+	// sends the diagnostic to /dev/null and asserts what `declare -p`
+	// shows, so it is differential rather than #JUSTERR.
+
+	// #697: -t alongside -f is the trace attribute, not a listing
+	// request. It printed the function's body instead, so a script that
+	// set an attribute and expected silence had its stdout corrupted at
+	// status 0.
 	{
-		"shopt -s extglob; x=abcdef; echo \"${x##+(a|b|c)} ${x#+(a|b)} ${x%%+(e|f)} ${x%+(f)}\"",
-		"def bcdef abcd abcde\n",
+		"f() { echo body; }; declare -ft f; echo rc=$?; declare -pF f",
+		"rc=0\ndeclare -ft f\n",
 	},
 	{
-		"shopt -s extglob; x=abcdef; echo \"${x//+(c|d)/-} ${x/+(a|b)/-} ${x/#+(a|b)/-} ${x/%+(e|f)/-}\"",
-		"ab-ef -cdef -cdef abcd-\n",
+		// +t takes it off, and the bare -F listing carries the letter.
+		"f() { echo body; }; declare -ft f; declare -F; declare -f +t f; declare -F",
+		"declare -ft f\ndeclare -f f\n",
 	},
 	{
-		// Case conversion matches one character at a time, so a group
-		// that cannot match one changes nothing -- which is why `@(abc)`
-		// is unchanged where `+(a|b)` reaches two characters.
-		"shopt -s extglob; x=abcdef; echo \"${x^^+(a|b)} ${x^^@(abc)} ${x^^@(b|c)} ${x,,+(A|B)}\"",
-		"ABcdef abcdef aBCdef abcdef\n",
+		// The letters compose. `declare -frx f` applied only -x before,
+		// because the chain returned at the first attribute it matched.
+		"f() { :; }; declare -frtx f; declare -pF f",
+		"declare -frtx f\n",
 	},
 	{
-		// Per element of a list, and the two idioms the issue named.
-		"shopt -s extglob; a=(abc abd); f=a/b/c/d; n=abc123; echo \"${a[@]##+(a|b)} ${f##+(*/)} ${n%%+([0-9])}\"",
-		"c d d abc\n",
+		// With no names, -t filters the listing, and two filters union
+		// as -r and -x already did.
+		"f() { :; }; g() { :; }; h() { :; }; declare -ft f; declare -fr g; declare -Ft; echo --; declare -Frt",
+		"declare -ft f\n--\ndeclare -ft f\ndeclare -fr g\n",
 	},
 	{
-		// Nested and repeated groups, and the operators whose group may
-		// match nothing.
-		"shopt -s extglob; x=abcdef; echo \"[${x##+(a|@(b|c))}] [${x##*(a|b|c)}] [${x##?(a)}] [${x%%*(e|f)}]\"",
-		"[def] [def] [bcdef] [abcd]\n",
+		// Every -f attribute needs the function to exist, and only
+		// export and readonly name what they could not find. koi was
+		// silently 0 for +x and +r and named it for -x.
+		"declare -ft nofunc; echo rc=$?; declare -fx nofunc 2>/dev/null; echo rc2=$?; declare -f +x nofunc; echo rc3=$?; declare -f +r nofunc; echo rc4=$?",
+		"rc=1\nrc2=1\nrc3=1\nrc4=1\n",
 	},
 	{
-		// A negation has no RE2 form, so these run the backtracking
-		// matcher; `#` and `%` find the empty match bash finds, which is
-		// why half of them are unchanged.
-		"shopt -s extglob; x=abcdef; echo \"[${x##!(z)}] [${x#!(z)}] [${x%%!(z)}] [${x%!(z)}] [${x##!(a*)}]\"",
-		"[] [abcdef] [] [abcdef] [abcdef]\n",
+		"export -nf nofunc 2>/dev/null; echo rc=$?",
+		"rc=1\n",
 	},
 	{
-		"shopt -s extglob; x=abcdef; y=aXbXc; echo \"[${x/!(z)/-}] [${y//!(X)/-}] [${x^^!(a)}] [${x/#!(z)/-}]\"",
-		"[-] [-] [aBCDEF] [-]\n",
+		// Dropping readonly is the one refusal, and it leaves the other
+		// letters of the same word unapplied.
+		"f() { :; }; export -f f; readonly -f f; declare -f +r +x f 2>/dev/null; echo rc=$?; declare -pF f",
+		"rc=1\ndeclare -frx f\n",
 	},
 	{
-		// With extglob off the group is ordinary text and matches
-		// nothing, which is what makes the mode flag the fix rather than
-		// always compiling with it.
-		"x='+(a|b)cd'; echo \"[${x##+(a|b)}] [${x%%cd}]\"",
-		"[cd] [+(a|b)]\n",
+		// The attribute is what the DEBUG trap consults, so it changes
+		// reachability rather than only what a listing reports.
+		"f() { echo in-f; }; declare -ft f; trap 'echo D:$BASH_COMMAND' DEBUG; f",
+		"D:f\nD:f\nD:echo in-f\nin-f\n",
+	},
+	{
+		// Inheritance is sticky: a traced function called from an
+		// untraced one inherits nothing, which is why the state is
+		// recorded on entry rather than asked of the innermost frame.
+		"f() { echo in-f; }; g() { echo in-g; f; }; declare -ft f; trap 'echo D:$BASH_COMMAND' DEBUG; g",
+		"D:g\nin-g\nin-f\n",
+	},
+	{
+		"f() { echo in-f; }; declare -ft f; trap 'echo RET' RETURN; f",
+		"in-f\nRET\n",
+	},
+	{
+		// And a DEBUG trap set inside a function is reachable there,
+		// which is the rule RETURN already had: koi ran the rest of the
+		// body untraced and started tracing only after it returned.
+		"f() { trap 'echo D:$BASH_COMMAND' DEBUG; echo one; echo two; }; f",
+		"D:echo one\none\nD:echo two\ntwo\n",
 	},
 
-	// #712: a pattern operator reads its word as a pattern, so a quoted
-	// meta is the character itself; sharing one literal expansion with
-	// the default/alternate family made it a glob that matched nothing.
+	// #720: the shell's own numeric variables carry the integer
+	// attribute, so `declare -i` lists them -- where koi listed none of
+	// its own and left PPID out of every listing.
 	{
-		"P='*@*'; echo \"[${P%\"*\"}] [${P%'*'}] [${P#\"*\"}] [${P##\"*\"}] [${P%%\"*\"}]\"",
-		"[*@] [*@] [@*] [@*] [*@]\n",
+		"declare -p UID EUID | sed 's/=.*//'",
+		"declare -ir UID\ndeclare -ir EUID\n",
 	},
 	{
-		"P='*@*'; echo \"[${P%\\*}] [${P#\\*}]\"",
-		"[*@] [@*]\n",
+		"declare -p PPID OPTIND BASHPID RANDOM SRANDOM SECONDS | sed 's/=.*//'",
+		"declare -ir PPID\ndeclare -i OPTIND\ndeclare -i BASHPID\ndeclare -i RANDOM\ndeclare -i SRANDOM\ndeclare -i SECONDS\n",
 	},
 	{
-		// A bracket expression and a question mark, quoted.
-		"R='x[y]z'; Q='a?b'; echo \"[${R%\"[y]z\"}] [${Q%\"?b\"}]\"",
-		"[x] [a]\n",
+		// PPID is readonly as well, which is the half with behavior
+		// under it: a write to it was accepted silently, so a script
+		// clobbering the name it finds its parent by was told it
+		// worked. The plain assignment runs in a subshell because it
+		// abandons the input unit (#308) and would take the `echo` with
+		// it.
+		"( PPID=1 ) 2>/dev/null; echo rc=$?; declare PPID=1 2>/dev/null; echo rc2=$?",
+		"rc=1\nrc2=1\n",
 	},
 	{
-		// Case conversion takes its word as a pattern too: a quoted star
-		// only matches the star.
-		"V='*abc'; echo \"[${V^^\"*\"}] [${V^^\\*}] [${V^^*}]\"",
-		"[*abc] [*abc] [*ABC]\n",
+		// The integer bit is not cosmetic -- OPTIND's assignments are
+		// arithmetic, and it survives a getopts advancing the scan.
+		"OPTIND=1+1; echo $OPTIND",
+		"2\n",
 	},
 	{
-		// The cases with nothing to quote still agree, which is what
-		// makes the quoted meta the discriminator.
-		"P='*@*'; echo \"[${P%\"\"}] [${P#\"$nosuch\"}] [${P%\\*\\*}]\"",
-		"[*@*] [*@*] [*@*]\n",
+		// SECONDS is the measured exception: `declare -p SECONDS`
+		// reports -i and yet `SECONDS=1+1` is not an arithmetic
+		// assignment, because the bit belongs to bash's *read* function
+		// rather than to the variable. A write alone never confers it.
+		"SECONDS=1+1; echo $SECONDS; SECONDS=2+2; echo $SECONDS; declare -p SECONDS",
+		"0\n4\ndeclare -i SECONDS=\"4\"\n",
+	},
+	{
+		// Two assignments with no read between them stay literal, which
+		// is what makes the read the thing that turns the bit on.
+		"SECONDS=1+1; SECONDS=2+2; echo $SECONDS",
+		"0\n",
+	},
+	{
+		"SECONDS=10; declare -p | grep -E ' SECONDS'",
+		"declare -- SECONDS=\"10\"\n",
+	},
+	{
+		"declare -i | sed 's/=.*//'",
+		"declare -i BASHPID\ndeclare -ir EUID\ndeclare -i OPTIND\ndeclare -ir PPID\ndeclare -i RANDOM\ndeclare -i SRANDOM\ndeclare -ir UID\n #IGNORE koi has no HISTCMD, which bash also lists here (#720)",
 	},
 
-	// #716: bash protects only the part of an `@A` answer that came from
-	// the variable's value, so the prefix it wrote itself is field-split
-	// -- which `echo` cannot see, hence the field counts.
+	// #689: a computed variable lists with no value until something
+	// reads it, because bash's listings print a cache its dynamic value
+	// function fills on first use.
 	{
-		"A=(ab 'cd ef'); set -- \"${A[@]@A}\"; echo \"$#\"; printf '<%s>' \"$@\"; echo",
-		"3\n<declare><-a><A=([0]=\"ab\" [1]=\"cd ef\")>\n",
+		"declare -a | grep DIRSTACK",
+		"declare -a DIRSTACK=()\n",
 	},
 	{
-		"set -- 'a b' c; set -- \"${@@A}\"; echo \"$#\"; printf '<%s>' \"$@\"; echo",
-		"4\n<set><--><'a b'><'c'>\n",
+		// A read fills it, and the same listing then carries the value.
+		"cd /; echo ${DIRSTACK[0]}; declare -a | grep DIRSTACK",
+		"/\ndeclare -a DIRSTACK=([0]=\"/\")\n",
 	},
 	{
-		"declare -A m=([k]='v w'); set -- \"${m[@]@A}\"; echo \"$#\"; printf '<%s>' \"$@\"; echo",
-		"3\n<declare><-A><m=([k]=\"v w\" )>\n",
+		// A *named* query counts as a read, which is why the marking
+		// cannot live in the expansion path alone.
+		"cd /; declare -p DIRSTACK >/dev/null; declare -a | grep DIRSTACK",
+		"declare -a DIRSTACK=([0]=\"/\")\n",
 	},
 	{
-		// The `*` forms are not split at all: an array's answer keeps its
-		// own spaces, and the positional one joins with IFS.
-		"A=(ab 'cd ef'); IFS=+; set -- \"${A[*]@A}\"; echo \"$#[$1]\"; set -- p 'q r'; set -- \"${*@A}\"; echo \"$#[$1]\"",
-		"1[declare -a A=([0]=\"ab\" [1]=\"cd ef\")]\n1[set -- 'p'+'q r']\n",
+		// So does `${x+set}`, and so does a write.
+		"x=${SECONDS+set}; declare -p | grep -E ' SECONDS'",
+		"declare -i SECONDS=\"0\"\n",
 	},
 	{
-		// The split is ordinary IFS field splitting over the prefix: no
-		// space in IFS is one field, and a separator inside the prefix
-		// cuts it there -- including inside the array's own name.
-		"A=(ab cd); IFS=+; set -- \"${A[@]@A}\"; echo \"a=$#\"; IFS='ea'; set -- \"${A[@]@A}\"; echo \"b=$#\"; zz=(1); IFS=z; set -- \"${zz[@]@A}\"; echo \"c=$#\"",
-		"a=1\nb=5\nc=3\n",
+		"declare -p | grep -E ' (SECONDS|RANDOM|BASHPID|EPOCHSECONDS)'",
+		"declare -i BASHPID\ndeclare -- EPOCHSECONDS\ndeclare -i RANDOM\ndeclare -- SECONDS\n",
 	},
 	{
-		// One bash quirk, measured rather than derived: a *null* IFS
-		// splits here where ordinary splitting of `$v` does not, so the
-		// separators fall back to the default when IFS is empty.
-		"A=(ab cd); v='x y'; IFS=; set -- $v; echo \"a=$#\"; set -- \"${A[@]@A}\"; echo \"b=$#\"; IFS=$'\\t'; set -- \"${A[@]@A}\"; echo \"c=$#\"",
-		"a=1\nb=3\nc=1\n",
+		// A write to a name the shell discards does not materialize it:
+		// bash still prints `declare -i BASHPID` with no value.
+		"BASHPID=1; declare -p | grep -E ' BASHPID'",
+		"declare -i BASHPID\n",
 	},
 	{
-		// A tab inside the value survives, because the value is the
-		// protected half.
-		"C=(x $'p\\tq'); IFS=$' \\t'; set -- \"${C[@]@A}\"; echo \"$#\"; printf '<%s>' \"$3\"; echo",
-		"3\n<C=([0]=\"x\" [1]=$'p\\tq')>\n",
+		// RANDOM and SRANDOM never get a value in a *listing* here, and
+		// the reason is a side effect rather than a cache: computing one
+		// draws a number, so a `declare -p` that did it would advance
+		// the sequence a script seeded. bash prints its own cache for
+		// RANDOM after a read, which is the stated divergence; SRANDOM
+		// it never caches, so the empty form is bash's answer there.
+		"declare -p | grep -E ' (RANDOM|SRANDOM)'",
+		"declare -i RANDOM\ndeclare -i SRANDOM\n",
 	},
 	{
-		// The scalar answer is one field even with a `declare -i ` prefix
-		// in it, which is what makes the split a property of the list.
-		"declare -i iv=5; set -- \"${iv@A}\"; echo \"a=$#[$1]\"; set -- \"${iv[@]@A}\"; echo \"b=$#[$1]\"",
-		"a=1[declare -i iv='5']\nb=1[declare -i iv='5']\n",
+		// The property that matters under it: listing the shell's
+		// variables must not consume a random number.
+		"RANDOM=42; a=$RANDOM; declare -p >/dev/null; b=$RANDOM; RANDOM=42; c=$RANDOM; d=$RANDOM; [ \"$a\" = \"$c\" ] && [ \"$b\" = \"$d\" ] && echo seq-ok",
+		"seq-ok\n",
 	},
 	{
-		// An answer bash has none of is zero fields, not one empty one.
-		"unset zzz; set -- \"${zzz[@]@A}\"; echo \"a=$#\"; set --; set -- \"${@@A}\"; echo \"b=$#\"; set --; set -- \"${@@Q}\"; echo \"c=$#\"",
-		"a=0\nb=0\nc=0\n",
+		// GROUPS is the same shape and is what array.tests filters,
+		// where DIRSTACK is what it does not.
+		"declare -p | grep -E ' GROUPS'",
+		"declare -a GROUPS=()\n",
+	},
+
+	// #722: `readonly -a NAME` and `export -a NAME` with nothing to
+	// assign do not apply the array kind. The rule is per builtin, so
+	// declare's own sticky attribute is asserted beside it.
+	{
+		"readonly -a arr; declare -p arr; readonly -A ass; declare -p ass",
+		"declare -r arr\ndeclare -r ass\n",
 	},
 	{
-		// A declared-but-unset array still has an attributes-only answer,
-		// and it splits like any other.
-		"declare -a dd; set -- \"${dd[@]@A}\"; echo \"a=$#\"; printf '<%s>' \"$@\"; echo; set -- \"${dd[@]@K}\"; echo \"b=$#\"; set -- \"${dd[@]@k}\"; echo \"c=$#\"",
-		"a=3\n<declare><-a><dd>\n" + "b=0\nc=0\n",
+		"export -a earr; declare -p earr; export -A eass; declare -p eass",
+		"declare -x earr\ndeclare -x eass\n",
 	},
 	{
-		// The other transforms are untouched, and `@A` still round-trips.
-		"A=(ab 'cd ef'); set -- \"${A[@]@a}\"; echo \"a=$#\"; set -- \"${A[@]@K}\"; echo \"b=$#\"; set -- \"${A[@]@k}\"; echo \"c=$#\"; set -- \"${A[@]@Q}\"; echo \"d=$#\"",
-		"a=2\nb=1\nc=4\nd=2\n",
+		// With a value it *is* an array in both, which is what makes the
+		// gap easy to miss.
+		"readonly -a arr2=(1 2); declare -p arr2; export -a earr2=(9); declare -p earr2",
+		"declare -ar arr2=([0]=\"1\" [1]=\"2\")\ndeclare -ax earr2=([0]=\"9\")\n",
 	},
 	{
-		"A=(ab 'cd ef'); unset A[0]; eval \"${A[@]@A}\"; echo \"[${A[1]}]\"",
-		"[cd ef]\n",
+		"declare -a c; declare -p c; declare -A m; declare -p m",
+		"declare -a c\ndeclare -A m\n",
+	},
+
+	// #723: a naked subscript on a readonly scalar converts it, at 0 --
+	// the one shape in #660's sweep where bash is *more* permissive than
+	// koi, so it is an exemption rather than a stricter rule.
+	{
+		"readonly V=1; declare V[2]; echo rc=$?; declare -p V",
+		"rc=0\ndeclare -ar V=([0]=\"1\")\n",
+	},
+	{
+		// The subscript's own text does not decide the kind, and a
+		// readonly with no value converts to a declared-but-unset array.
+		"readonly Y=4; declare Y[k]; echo rc=$?; declare -p Y; readonly Z; declare Z[1]; echo rc2=$?; declare -p Z",
+		"rc=0\ndeclare -ar Y=([0]=\"4\")\nrc2=0\ndeclare -ar Z\n",
+	},
+	{
+		// The explicit -a on the same name is still a refusal, which is
+		// what makes this an exemption for the subscript alone.
+		"readonly X=3; declare -a X 2>/dev/null; echo rc=$?; declare -p X",
+		"rc=1\ndeclare -r X=\"3\"\n",
+	},
+	{
+		// A subscript carrying a *value* is refused as before.
+		"readonly V2=1; declare V2[3]=9 2>/dev/null; echo rc=$?; declare -p V2",
+		"rc=1\ndeclare -r V2=\"1\"\n",
+	},
+	{
+		// A name that is already an array is left alone, of either kind:
+		// koi read the subscript as a request for an *indexed* array and
+		// answered `cannot convert associative to indexed array` at 1.
+		"declare -A m=([k]=v); declare m[z]; echo rc=$?; declare -p m",
+		"rc=0\ndeclare -A m=([k]=\"v\" )\n",
+	},
+	{
+		"declare -A M=([k]=v); readonly M; declare M[z]; echo rc=$?; readonly -a Q=(a b); declare Q[3]; echo rc2=$?; declare -p Q",
+		"rc=0\nrc2=0\ndeclare -ar Q=([0]=\"a\" [1]=\"b\")\n",
+	},
+	{
+		// Inside a function `declare` is `local`, and a fresh local of a
+		// readonly name is refused -- so the conversion is a top-level
+		// rule rather than a general one.
+		"readonly R=5; f() { declare R[9] 2>/dev/null; echo rc=$?; }; f; declare -p R",
+		"rc=1\ndeclare -r R=\"5\"\n",
+	},
+
+	// #724: the identifier refusal quotes the whole operand rather than
+	// the base name, which for the empty-name shapes left koi quoting
+	// nothing at all. The parse-error half of that issue is in
+	// syntax/parser.go and is untouched.
+	{
+		"declare =bar 2>/dev/null; echo rc=$?; declare z=1; declare -p z",
+		"rc=1\ndeclare -- z=\"1\"\n",
+	},
+	{
+		"declare =bar",
+		"declare: `=bar': not a valid identifier\nexit status 1 #JUSTERR",
+	},
+	{
+		"unset x; declare $x=$x",
+		"declare: `=': not a valid identifier\nexit status 1 #JUSTERR",
+	},
+	{
+		`unset x; declare "$x"=v`,
+		"declare: `=v': not a valid identifier\nexit status 1 #JUSTERR",
+	},
+	{
+		"declare =",
+		"declare: `=': not a valid identifier\nexit status 1 #JUSTERR",
+	},
+	{
+		"export =bar",
+		"export: `=bar': not a valid identifier\nexit status 1 #JUSTERR",
+	},
+	{
+		"readonly =bar",
+		"readonly: `=bar': not a valid identifier\nexit status 1 #JUSTERR",
 	},
 }
 

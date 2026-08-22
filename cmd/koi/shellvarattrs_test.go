@@ -66,3 +66,40 @@ func TestBashVersinfoIsReadonly(t *testing.T) {
 		t.Errorf("declare -p BASH_VERSINFO = %q, want a `declare -ar` line", attrs)
 	}
 }
+
+// The shell's own numeric variables carry bash's integer attribute, and a
+// fresh listing shows a computed variable with no value (#720, #689).
+//
+// interp's own table already asserts both against bash, and this runs a
+// real koi for the reason the case above does: internal/repl declares
+// variables of its own around the interpreter, so a later identity or
+// startup change could reintroduce the divergence without a single
+// interp case noticing — the shape most of these bugs have had.
+func TestShellNumericVarsListLikeBash(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped in -short")
+	}
+	koi := buildKoi(t)
+	bash := requireBash(t)
+
+	// sed drops the values, which are pids and uids: what is compared is
+	// the attribute letters and which names appear at all.
+	const script = "declare -p UID EUID PPID OPTIND BASHPID RANDOM SECONDS SRANDOM | sed 's/=.*//'\n" +
+		"declare -p | grep -E ' (DIRSTACK|GROUPS)'\n"
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "n.sh"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bashOut, _ := runInDir(t, dir, bash, "./n.sh")
+	koiOut, _ := runInDir(t, dir, koi, "./n.sh")
+
+	// The oracle has to be marking them, or every check below passes
+	// against a bash that never had the attribute either.
+	if !strings.Contains(bashOut, "declare -ir EUID") {
+		t.Fatalf("the oracle does not mark EUID, so this case cannot detect a missing attribute: %q", bashOut)
+	}
+	if bashOut != koiOut {
+		t.Errorf("listing differs from bash:\nbash: %q\nkoi:  %q", bashOut, koiOut)
+	}
+}
