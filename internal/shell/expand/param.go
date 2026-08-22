@@ -324,7 +324,7 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 		case pe.Index != nil && vr.Kind == Indexed:
 			strs = vr.indexedKeys()
 		case pe.Index != nil && vr.Kind == Associative:
-			strs = slices.Sorted(maps.Keys(vr.Map))
+			strs = vr.assocKeys()
 		case !vr.IsSet():
 			// The message names the parameter that pointed nowhere
 			// (#610). A diagnostic that names no variable is a search,
@@ -1450,7 +1450,7 @@ func (cfg *Config) varInd(vr Variable, idx syntax.ArithmExpr) (string, bool, err
 	case Associative:
 		switch lit := nodeLit(idx); lit {
 		case "@", "*":
-			strs := slices.Sorted(maps.Values(vr.Map))
+			strs := vr.assocValues()
 			if lit == "*" {
 				return cfg.ifsJoin(strs), vr.IsSet(), nil
 			}

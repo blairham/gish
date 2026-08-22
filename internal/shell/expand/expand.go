@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"iter"
-	"maps"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -137,6 +136,13 @@ type Config struct {
 	// `${x:=a\ b}` is two fields where `${x+a\ b}` is one, which is
 	// otherwise indistinguishable and was measured per operator (#541).
 	wordResultAssigned bool
+	// flatWord says the word being expanded stands in for a string that
+	// has already been built — an assignment operator's answer is the
+	// *variable's value*, not the word — so nothing inside it is a list
+	// any more. Re-expanding the word is how the escapes and quoted
+	// nulls survive, but `${v=$@}` must still answer one field rather
+	// than one per parameter: bash joined them before it assigned.
+	flatWord bool
 
 	// paramOuterQuote is the quoting context surrounding the parameter
 	// expansion being evaluated — set around each paramExp call — and
@@ -1285,7 +1291,21 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 							}
 							if ok {
 								set := len(elems) > 0
-								null := strings.Join(elems, "") == ""
+								// A list is null when the *joined* value
+								// is empty, which is not the same as
+								// every element being empty: `set -- ''
+								// ''` is two null parameters and bash
+								// still takes `${@:+X}`, because the
+								// separator between them is text. The
+								// separator is a space for `@` and IFS
+								// for `*`, which is measurable — under
+								// `IFS=` the same two parameters make
+								// `${*:+X}` null and `${@:+X}` not.
+								joined := strings.Join(elems, " ")
+								if star {
+									joined = cfg.ifsJoin(elems)
+								}
+								null := joined == ""
 								colon := wordOp == syntax.DefaultUnsetOrNull ||
 									wordOp == syntax.AlternateUnsetOrNull ||
 									wordOp == syntax.ErrorUnsetOrNull
@@ -1297,7 +1317,17 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 								}
 								switch {
 								case !taken && alternate:
-									continue // zero fields
+									// The alternate was not taken, so the
+									// answer is the empty string — which
+									// is zero fields only when the list
+									// has no elements to begin with. With
+									// one null parameter, `"${@:+X}"` is
+									// one empty field, exactly as `""`
+									// is.
+									if len(elems) > 0 {
+										hadNonList = true
+									}
+									continue
 								case !taken && star:
 									curField = append(curField, fieldPart{
 										quote: quoteDouble,
@@ -1322,6 +1352,16 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 									}
 									return UnsetParameterError{Node: pe, Message: msg}
 								case pe.Exp.Word == nil:
+									// The operator was taken and its word
+									// is empty, so the answer is the empty
+									// *string* — one field inside these
+									// quotes, not none. `set --; recho
+									// "${@-}"` prints one empty argument
+									// where `"${@}"` prints nothing at
+									// all, which is the difference a list
+									// with no elements makes and `echo`
+									// cannot show.
+									hadNonList = true
 									continue
 								default:
 									// The word, inside these quotes.
@@ -1365,10 +1405,11 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 							cfg.wordResult, cfg.wordResultPe = nil, nil
 							// Still the operator's word, so its closing
 							// brace is still escapable (#541).
-							oldExp := cfg.expWord
+							oldExp, oldFlat := cfg.expWord, cfg.flatWord
 							cfg.expWord = true
+							cfg.flatWord = oldFlat || cfg.wordResultAssigned
 							err := processQuoted(w.Parts)
-							cfg.expWord = oldExp
+							cfg.expWord, cfg.flatWord = oldExp, oldFlat
 							if err != nil {
 								return err
 							}
@@ -1440,10 +1481,11 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 				// — the flat string loses both.
 				w := cfg.wordResult
 				cfg.wordResult, cfg.wordResultPe = nil, nil
-				oldExp := cfg.expWord
+				oldExp, oldFlat := cfg.expWord, cfg.flatWord
 				cfg.expWord = true
+				cfg.flatWord = oldFlat || cfg.wordResultAssigned
 				subFields, err := cfg.wordFieldsBuf(w.Parts, false, true)
-				cfg.expWord = oldExp
+				cfg.expWord, cfg.flatWord = oldExp, oldFlat
 				if err != nil {
 					return nil, err
 				}
@@ -1509,6 +1551,11 @@ func (cfg *Config) listElems(pe *syntax.ParamExp) (elems []string, star, ok bool
 	if pe.Param == nil { // e.g. zsh's ${}; paramExp rejects it
 		return nil, false, false
 	}
+	if cfg.flatWord {
+		// Inside an assignment operator's word there are no lists left;
+		// see [Config.flatWord].
+		return nil, false, false
+	}
 	if pe.Bad {
 		// `${@*}` and `${@[@]}` name a list and are still shapes bash
 		// refuses when it expands them (#602). The verdict lives in
@@ -1527,7 +1574,7 @@ func (cfg *Config) listElems(pe *syntax.ParamExp) (elems []string, star, ok bool
 		case Indexed:
 			return cfg.sliceElems(pe, vr.List, vr.Indexes, false), lit == "*", true
 		case Associative:
-			return slices.Sorted(maps.Values(vr.Map)), lit == "*", true
+			return vr.assocValues(), lit == "*", true
 		}
 	}
 	return nil, false, false
@@ -1588,8 +1635,36 @@ func (cfg *Config) quotedElemFields(pe *syntax.ParamExp) ([]string, error) {
 			case Indexed:
 				return vr.indexedKeys(), nil
 			case Associative:
-				return slices.Collect(maps.Keys(vr.Map)), nil
+				return vr.assocKeys(), nil
 			}
+		}
+		// A plain `${!name}` pointing at a list is still a list:
+		// `foo=@; "${!foo}"` is `"$@"` and `foo='A[@]'; "${!foo}"` is
+		// `"${A[@]}"`, where the flat answer joins the elements into one
+		// field. The indirection is consumed and the expansion restated
+		// on the target, the same move paramExp makes for an operator
+		// after the indirection — and a target that names one value
+		// declines here and lets the flat path answer.
+		if pe.Names == 0 && pe.Index == nil && pe.Exp == nil &&
+			pe.Slice == nil && pe.Repl == nil {
+			pe2 := *pe
+			pe2.Excl = false
+			switch target := cfg.Env.Get(name).String(); target {
+			case "@", "*":
+				pe2.Param = &syntax.Lit{Value: target}
+			default:
+				base, sub, ok := cutNameRefSubscript(target)
+				if !ok {
+					return nil, nil
+				}
+				idx := subscriptWord(sub)
+				if idx == nil {
+					return nil, nil
+				}
+				pe2.Param = &syntax.Lit{Value: base}
+				pe2.Index = idx
+			}
+			return cfg.quotedElemFields(&pe2)
 		}
 		return nil, nil
 	}
