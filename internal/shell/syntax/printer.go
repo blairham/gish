@@ -1107,6 +1107,9 @@ func (p *Printer) elemJoin(elems []*ArrayElem, last []Comment) {
 			p.space()
 		}
 		if p.wroteIndex(el.Index) {
+			if el.Append {
+				p.w.WriteByte('+')
+			}
 			p.w.WriteByte('=')
 		}
 		if el.Value != nil {

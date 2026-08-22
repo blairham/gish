@@ -2726,7 +2726,25 @@ func (p *Parser) getAssign(needEqual bool) *Assign {
 					p.curErr("arrays cannot be nested")
 					return nil
 				}
-				p.follow(left, `[x]`, assgn)
+				// `[i]+=v` appends to the element instead of replacing
+				// it, which bash accepts here just as it does in a bare
+				// `name[i]+=v` (#605). The lexer's forward scan already
+				// counts `]+=` as completing the subscript shape (#588),
+				// so the `+=` reaches us as the head of the literal that
+				// follows `]` — the same shape the scalar path unpicks
+				// above. Refusing it cost the rest of the file for a
+				// line bash reads.
+				if !p.spaced && (p.tok == _Lit || p.tok == _LitWord) &&
+					strings.HasPrefix(p.val, "+=") {
+					ae.Append = true
+					p.val = p.val[len("+="):]
+					p.pos = posAddCol(p.pos, len("+="))
+					if p.val == "" {
+						p.next()
+					}
+				} else {
+					p.follow(left, `[x]`, assgn)
+				}
 			}
 			if ae.Value = p.getWord(); ae.Value == nil {
 				switch p.tok {

@@ -46,6 +46,23 @@ func SetIndexedElem(list []string, indexes []int, k int, val string) ([]string, 
 	return list, CanonicalIndexes(indexes)
 }
 
+// IndexedElem returns the element at index k and whether it was set,
+// which is what an append to an element needs to know: `a[7]+=x` on an
+// array with no element 7 appends to the empty string.
+func IndexedElem(list []string, indexes []int, k int) (string, bool) {
+	if indexes == nil {
+		if k < 0 || k >= len(list) {
+			return "", false
+		}
+		return list[k], true
+	}
+	pos, ok := slices.BinarySearch(indexes, k)
+	if !ok {
+		return "", false
+	}
+	return list[pos], true
+}
+
 // DeleteIndexedElem is like [SetIndexedElem], but unsetting the element at
 // index k, which may leave a hole.
 func DeleteIndexedElem(list []string, indexes []int, k int) ([]string, []int) {

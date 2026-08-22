@@ -613,7 +613,23 @@ func (r *Runner) setVar(name string, vr expand.Variable) {
 	}
 }
 
-func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax.ArithmExpr, vr expand.Variable) {
+// appendElemValue joins an element's existing value to what `+=` was
+// given. Under the integer attribute bash adds rather than concatenates,
+// exactly as it does for a scalar `n+=x`, and an unset element counts as
+// the empty string on both paths.
+func (r *Runner) appendElemValue(old, add string, integer bool) string {
+	if integer {
+		return r.arithmStr(old + "+(" + add + ")")
+	}
+	return old + add
+}
+
+// setVarWithIndex assigns to name, or to one of its elements when index
+// is non-nil. appendElem marks `name[i]+=v`, where the value is appended
+// to the element rather than replacing it (#625); the subscript is
+// evaluated here and only here, so the read of the old value has to
+// happen here too.
+func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax.ArithmExpr, vr expand.Variable, appendElem bool) {
 	if name == "BASH_ARGV0" {
 		// Writing BASH_ARGV0 sets $0, which is the point of it.
 		r.argv0 = vr.Str
@@ -688,6 +704,9 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 		if prev.Map == nil {
 			prev.Map = make(map[string]string)
 		}
+		if appendElem {
+			valStr = r.appendElemValue(prev.Map[k], valStr, prev.Integer)
+		}
 		prev.Map[k] = valStr
 		r.setVar(name, prev)
 		return
@@ -723,6 +742,10 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 			r.expandErr(fmt.Errorf("%s[%s]: bad array subscript", name, subscriptText(index)))
 			return
 		}
+	}
+	if appendElem {
+		old, _ := shinternal.IndexedElem(list, indexes, k)
+		valStr = r.appendElemValue(old, valStr, prev.Integer)
 	}
 	list, indexes = shinternal.SetIndexedElem(list, indexes, k, valStr)
 	prev.Kind = expand.Indexed
@@ -1063,6 +1086,21 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	prev.Set = true
 	if as.Value != nil {
 		s := r.literalAssign(as.Value)
+		if as.Append && as.Index != nil {
+			// `name[i]+=v` appends to *that* element, and which element
+			// it is only the subscript knows. Reading it here to join
+			// the halves would evaluate the subscript a second time,
+			// and bash evaluates it once — measured, `a[i++]+=Z` leaves
+			// i at 1 and appends to element 0 — so the suffix travels
+			// on as the value and setVarWithIndex, which is already
+			// where the subscript is evaluated, joins it to whatever
+			// the element holds (#625). Under `declare -i` that join is
+			// arithmetic rather than concatenation, and it belongs on
+			// the same side as the element it reads.
+			prev.Kind = expand.String
+			prev.Str = s
+			return name, prev
+		}
 		if !as.Append {
 			prev.Kind = expand.String
 			if valType == "-n" {
@@ -1141,7 +1179,14 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 			var words []string
 			for _, elem := range elems {
 				if w, ok := elem.Index.(*syntax.Word); ok {
-					words = append(words, "["+r.literal(w)+"]="+r.literal(elem.Value))
+					// Read back as the literal word it was written as,
+					// `+=` included: `declare -A m=(a b [k]+=v)` keys on
+					// the text `[k]+=v` (#605).
+					op := "]="
+					if elem.Append {
+						op = "]+="
+					}
+					words = append(words, "["+r.literal(w)+op+r.literal(elem.Value))
 					continue
 				}
 				words = append(words, r.literal(elem.Value))
@@ -1175,7 +1220,28 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 					r.errf("%s: bad array subscript\n", name)
 					continue
 				}
-				amap[r.literal(w)] = r.literal(elem.Value)
+				k, val := r.literal(w), r.literal(elem.Value)
+				if elem.Append {
+					// Which value `+=` appends to depends on the
+					// enclosing assignment, and the two answers are
+					// bash's implementation showing through: `m+=(…)`
+					// works in the variable's own table, so appends
+					// accumulate — `m=([a]=x); m+=([a]+=Z [a]+=Y)`
+					// answers `xZY` — while `m=(…)` builds a fresh
+					// table and its appends still read the *old* one,
+					// so each element sees the value from before the
+					// assignment began: `m=([a]=1); m=([a]+=2 [a]+=3)`
+					// answers `13`, not `123`. Measured both ways
+					// against bash 5.3 (#605). Indexed arrays differ
+					// here and accumulate in either form, which is why
+					// they read the working list below.
+					base := prev.Map
+					if as.Append {
+						base = amap
+					}
+					val = r.appendElemValue(base[k], val, prev.Integer)
+				}
+				amap[k] = val
 			}
 		}
 		prev.Kind = expand.Associative
@@ -1261,7 +1327,22 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 					break
 				}
 			}
-			list, indexes = shinternal.SetIndexedElem(list, indexes, index, elemVal(r.literal(elem.Value)))
+			val := r.literal(elem.Value)
+			if elem.Append {
+				// An indexed compound assignment appends to the list it
+				// is building, so appends accumulate within one
+				// assignment whichever form it took: `x=([0]=1 [0]+=2
+				// [0]+=3)` answers `123` (#605). A plain `x=(…)` starts
+				// from nothing, which is why `x=(1 2 3); x=([2]+=7)`
+				// answers `7` rather than `37` while `x+=([2]+=7)`
+				// answers `37`. The associative case above reads
+				// differently, and deliberately.
+				old, _ := shinternal.IndexedElem(list, indexes, index)
+				val = r.appendElemValue(old, val, prev.Integer)
+			} else {
+				val = elemVal(val)
+			}
+			list, indexes = shinternal.SetIndexedElem(list, indexes, index, val)
 			index++
 		} else {
 			// Implicit index, advancing for every word.

@@ -5147,6 +5147,33 @@ var fileTests = []fileTestCase{
 			}},
 		}}}, LangBash),
 	),
+	// `[i]+=v` appends to the element, which bash accepts here just as it
+	// does in a bare `name[i]+=v` (#605). The lexer's forward scan already
+	// counted `]+=` as completing the subscript shape (#588); refusing it
+	// in the parser cost the rest of the file for a line bash reads.
+	fileTest(
+		[]string{`a=([1]+=y)`},
+		langFile(&CallExpr{Assigns: []*Assign{{
+			Name: lit("a"),
+			Array: &ArrayExpr{Elems: []*ArrayElem{{
+				Index:  litWord("1"),
+				Value:  litWord("y"),
+				Append: true,
+			}}},
+		}}}, LangBash),
+	),
+	fileTest(
+		[]string{"a=(1 [2]+=7 [x]+= [3]=z)"},
+		langFile(&CallExpr{Assigns: []*Assign{{
+			Name: lit("a"),
+			Array: &ArrayExpr{Elems: []*ArrayElem{
+				{Value: litWord("1")},
+				{Index: litWord("2"), Value: litWord("7"), Append: true},
+				{Index: litWord("x"), Append: true},
+				{Index: litWord("3"), Value: litWord("z")},
+			}},
+		}}}, LangBash),
+	),
 	fileTest(
 		[]string{`a=(foo[0-9])`},
 		langFile(&CallExpr{Assigns: []*Assign{{

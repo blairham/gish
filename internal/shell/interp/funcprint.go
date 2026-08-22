@@ -253,7 +253,11 @@ func (p *funcPrinter) assign(as *syntax.Assign) {
 			if el.Index != nil {
 				p.sb.WriteString("[")
 				p.arithm(el.Index)
-				p.sb.WriteString("]=")
+				p.sb.WriteString("]")
+				if el.Append {
+					p.sb.WriteString("+")
+				}
+				p.sb.WriteString("=")
 			}
 			p.word(el.Value)
 		}

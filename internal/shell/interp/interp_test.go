@@ -1600,6 +1600,95 @@ var runTests = []runTest{
 	// exist answers 0 without ever reading the subscript, while
 	// `${name[…]}` on the same missing name reports the error.
 	{`unset foo; echo "[${#foo[1 2]}]"; echo after`, "[0]\nafter\n"},
+	// `name[i]+=v` appends to that element. It stored *nothing* — no
+	// diagnostic, status 0, the element left empty rather than left
+	// alone — because the append was computed against element 0 while
+	// the element path wrote the value the append had not produced
+	// (#625). Indexed and associative alike, and creating the element
+	// from the empty string when it was not there.
+	{`a=(x); a[0]+=y; declare -p a`, "declare -a a=([0]=\"xy\")\n"},
+	{`unset a; a[3]+=v; declare -p a`, "declare -a a=([3]=\"v\")\n"},
+	{`a=(1 2 3); a[5]+=Z; declare -p a`, "declare -a a=([0]=\"1\" [1]=\"2\" [2]=\"3\" [5]=\"Z\")\n"},
+	{`declare -A m; m[k]=1; m[k]+=2; echo "${m[k]}"`, "12\n"},
+	{`declare -A m; m[k]+=2; echo "${m[k]}"`, "2\n"},
+	// A negative index counts from one past the maximum, so the append
+	// lands on the last element rather than creating one.
+	{`a=(1 2 3); a[-1]+=Z; declare -p a`, "declare -a a=([0]=\"1\" [1]=\"2\" [2]=\"3Z\")\n"},
+	// The subscript is evaluated once, measured: `a[i++]+=Z` leaves i at
+	// 1 and appends to element 0. Reading the old value where the value
+	// is built would have evaluated it twice and advanced i to 2.
+	{
+		`i=0; a=(p q r); a[i++]+=Z; declare -p a; echo "i=$i"`,
+		"declare -a a=([0]=\"pZ\" [1]=\"q\" [2]=\"r\")\ni=1\n",
+	},
+	// Under the integer attribute the join is arithmetic rather than
+	// concatenation, exactly as it is for a scalar `n+=x` — and an unset
+	// element, or one whose value will not read as a number, is zero.
+	{`declare -i a; a[0]+=5; a[0]+=5; declare -p a`, "declare -ai a=([0]=\"10\")\n"},
+	{`declare -Ai m; m[k]=3; m[k]+=4; echo "${m[k]}"`, "7\n"},
+	// `declare` reaches the same element path, so it appends too.
+	{`a=(x); declare a[0]+=y; declare -p a`, "declare -a a=([0]=\"xy\")\n"},
+	{`declare -A m=([k]=1); declare m[k]+=2; echo "${m[k]}"`, "12\n"},
+	// `[i]+=v` inside a compound assignment was a *parse* error, so it
+	// cost the rest of the file for a line bash reads (#605). What it
+	// appends to depends on the enclosing assignment: a plain `x=(…)`
+	// clears first, so `[2]+=7` starts from nothing, while `x+=(…)`
+	// keeps the base and appends to what is there.
+	{
+		`x=( 1 2 [2]+=7 4 5 ); declare -p x`,
+		"declare -a x=([0]=\"1\" [1]=\"2\" [2]=\"7\" [3]=\"4\" [4]=\"5\")\n",
+	},
+	{`x=(1 2 3); x=( [2]+=7 ); declare -p x`, "declare -a x=([2]=\"7\")\n"},
+	{
+		`x=(1 2 3); x+=( [2]+=7 ); declare -p x`,
+		"declare -a x=([0]=\"1\" [1]=\"2\" [2]=\"37\")\n",
+	},
+	// An explicit subscript still resets the index counter, so the
+	// elements after the append carry on from one past it.
+	{
+		`x=( 1 2 [2]+=7 4 5 [1]+=Q ); declare -p x`,
+		"declare -a x=([0]=\"1\" [1]=\"2Q\" [2]=\"7\" [3]=\"4\" [4]=\"5\")\n",
+	},
+	// An *indexed* compound assignment appends to the list it is
+	// building, so appends accumulate within one assignment.
+	{`x=([0]=1 [0]+=2 [0]+=3); declare -p x`, "declare -a x=([0]=\"123\")\n"},
+	{
+		`x=( a b ); x+=( [0]+=Z [0]+=Y ); declare -p x`,
+		"declare -a x=([0]=\"aZY\" [1]=\"b\")\n",
+	},
+	{`declare -i n=(); n=( [0]+=5 [0]+=5 ); declare -p n`, "declare -ai n=([0]=\"10\")\n"},
+	{`declare -i n=(); n=([0]+=5 [0]+=x); declare -p n`, "declare -ai n=([0]=\"5\")\n"},
+	// An *associative* one does not, and the difference is bash's
+	// implementation showing through: `m=(…)` builds a fresh table while
+	// its appends still read the old one, so each element sees the value
+	// from before the assignment began — `m=([a]=1); m=([a]+=2 [a]+=3)`
+	// answers `13`, not `123`. `m+=(…)` works in the table itself and
+	// does accumulate. Both measured against bash 5.3.
+	{`declare -A m=([k]=1 [k]+=2); echo "${m[k]}"`, "2\n"},
+	{`declare -A m; m=([a]=1); m=([a]+=2 [a]+=3); echo "${m[a]}"`, "13\n"},
+	{`declare -A m=([a]=x); m+=([a]+=Z [a]+=Y); echo "${m[a]}"`, "xZY\n"},
+	{`declare -Ai m=([k]=2); m+=([k]+=5 [k]+=5); echo "${m[k]}"`, "12\n"},
+	// In the key/value-pairing mode a bracketed element is read back as
+	// the literal word it was written as, `+=` and all.
+	{`declare -A m=(a b [k]+=v); echo "[${m[a]}][${m['[k]+=v']}]"`, "[b][]\n"},
+	// `+=` with nothing after it appends nothing, which still creates the
+	// element — and the shapes the lexer's forward scan does *not* count
+	// as a subscript stay the ordinary words bash reads them as (#588).
+	{`x=( [2]+= ); declare -p x`, "declare -a x=([2]=\"\")\n"},
+	{`x=( [2]+ ); declare -p x`, "declare -a x=([0]=\"[2]+\")\n"},
+	{`x=( [2] +=7 ); declare -p x`, "declare -a x=([0]=\"[2]\" [1]=\"+=7\")\n"},
+	// `declare -f` has to print the `+` back, for the reason #631 gives:
+	// `eval "$(declare -f f)"` is how a function moves between shells, so
+	// dropping it would hand over a function that assigns where the
+	// original appended, with nothing saying so.
+	{
+		`f() { x=( 1 [2]+=7 ); x[0]+=Q; }; declare -f f`,
+		"f () \n{ \n    x=(1 [2]+=7);\n    x[0]+=Q\n}\n",
+	},
+	{
+		`f() { x=( 1 [2]+=7 ); }; eval "$(declare -f f)"; f; declare -p x`,
+		"declare -a x=([0]=\"1\" [2]=\"7\")\n",
+	},
 	// Re-parsing a *string* as arithmetic took a partial read for a whole
 	// one everywhere it happens, so text bash refuses evaluated to zero:
 	// a name read arithmetically, and a `[[ ]]` operand.
