@@ -97,6 +97,13 @@ type Config struct {
 	// that matches nothing an error rather than its literal self (#375).
 	FailGlob bool
 
+	// NoPatSubReplacement turns off bash's patsub_replacement, under
+	// which an unquoted `&` in a `${v/pat/rep}` replacement is the text
+	// that matched (#643). The option is on by default in bash 5.2 and
+	// later, so this is spelled negatively: the zero value is bash's
+	// default and `shopt -u patsub_replacement` is what sets it.
+	NoPatSubReplacement bool
+
 	// LineOffset shifts what $LINENO reports. A trap action is parsed as
 	// its own little file whose positions start at line 1, while bash
 	// reports lines continuing from a base — the triggering command's
@@ -325,7 +332,7 @@ func Pattern(cfg *Config, word *syntax.Word) (string, error) {
 		return "", nil
 	}
 	cfg = prepareConfig(cfg)
-	field, err := cfg.wordFieldMode(word.Parts, quoteNone, true)
+	field, err := cfg.wordFieldMode(word.Parts, quoteNone, escapeKeep)
 	if err != nil {
 		return "", err
 	}
@@ -369,7 +376,7 @@ func (cfg *Config) anchorPattern(word *syntax.Word) (byte, string, error) {
 	if word == nil {
 		return 0, "", nil
 	}
-	field, err := cfg.wordFieldMode(word.Parts, quoteNone, true)
+	field, err := cfg.wordFieldMode(word.Parts, quoteNone, escapeKeep)
 	if err != nil {
 		return 0, "", err
 	}
@@ -845,17 +852,32 @@ const (
 )
 
 func (cfg *Config) wordField(wps []syntax.WordPart, ql quoteLevel) ([]fieldPart, error) {
-	return cfg.wordFieldMode(wps, ql, false)
+	return cfg.wordFieldMode(wps, ql, escapeDrop)
 }
 
+// escapeMode says what an unquoted `\X` in a word's source becomes.
+type escapeMode uint8
+
+const (
+	// escapeDrop is quote removal: the backslash goes and X stays
+	// literal, so an assignment value or a case subject written `a\;b`
+	// reads back `a;b` (#357). Every ordinary consumer wants this.
+	escapeDrop escapeMode = iota
+	// escapeKeep leaves the backslash in place, which a *pattern* must
+	// have: there `\*` means a literal star at match time, and stripping
+	// it here would turn it into a glob.
+	escapeKeep
+	// escapeMark drops the backslash and records the byte it quoted as a
+	// quoted part of its own. A `${v/pat/rep}` replacement is the one
+	// consumer: whether a character survived expansion unquoted is what
+	// decides whether it is an operator, and by the time the field is one
+	// string that is gone (#643).
+	escapeMark
+)
+
 // wordFieldMode is [Config.wordField] with the backslash question made
-// explicit. In an unquoted word, `\X` is a quoting: quote removal drops
-// the backslash and keeps X literal, so an assignment value or a case
-// subject written `a\;b` reads back `a;b` (#357). A *pattern* is the one
-// consumer that must keep the backslash — there `\*` means a literal
-// star at match time, and stripping it here would turn it into a glob —
-// so [Pattern] passes keepEscapes and everything else does not.
-func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscapes bool) ([]fieldPart, error) {
+// explicit; see [escapeMode].
+func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, escapes escapeMode) ([]fieldPart, error) {
 	var field []fieldPart
 	for i, wp := range wps {
 		switch wp := wp.(type) {
@@ -909,7 +931,15 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 					sb.WriteByte(b)
 				}
 				s = sb.String()
-			} else if ql == quoteNone && !keepEscapes && strings.Contains(s, "\\") {
+			} else if ql == quoteNone && escapes == escapeMark && strings.Contains(s, "\\") {
+				// Unquoted, and the caller needs to know which bytes were
+				// quoted rather than only what they are: the backslash
+				// goes and the byte it quoted becomes a quoted part of
+				// its own (#643).
+				s, _, _ = strings.Cut(s, "\x00")
+				field = append(field, markedEscapes(s)...)
+				continue
+			} else if ql == quoteNone && escapes == escapeDrop && strings.Contains(s, "\\") {
 				// Unquoted: the backslash quotes the next byte, and quote
 				// removal drops it — the same pass wordFields applies to
 				// command words (#357).
@@ -948,7 +978,7 @@ func (cfg *Config) wordFieldMode(wps []syntax.WordPart, ql quoteLevel, keepEscap
 				// that: quotes literal, expansions live.
 				w, err := syntax.NewParser().Document(strings.NewReader("'" + wp.Value + "'"))
 				if err == nil && w != nil {
-					sub, err := cfg.wordFieldMode(w.Parts, quoteHeredoc, false)
+					sub, err := cfg.wordFieldMode(w.Parts, quoteHeredoc, escapeDrop)
 					if err != nil {
 						return nil, err
 					}
@@ -1357,7 +1387,7 @@ func (cfg *Config) wordFieldsBuf(wps []syntax.WordPart, useAlloc, splitLits bool
 					if _, ok := part.(*syntax.SglQuoted); ok {
 						oldCtx := cfg.paramQuoteCtx
 						cfg.paramQuoteCtx = quoteDouble
-						wfield, err := cfg.wordFieldMode([]syntax.WordPart{part}, quoteNone, false)
+						wfield, err := cfg.wordFieldMode([]syntax.WordPart{part}, quoteNone, escapeDrop)
 						cfg.paramQuoteCtx = oldCtx
 						if err != nil {
 							return err
@@ -1575,6 +1605,13 @@ func (cfg *Config) quotedElemFields(pe *syntax.ParamExp) ([]string, error) {
 		return elems, nil
 	}
 	if nodeLit(pe.Index) == "@" && !cfg.Env.Get(name).IsSet() {
+		if describesVariable(pe) {
+			// `${x[@]@A}` and `${x[@]@a}` on a name that is not an array
+			// are bash's scalar answers — `declare -rl x` for a
+			// declared-but-unset one — and the flat path is what builds
+			// them, so zero fields here would lose the answer (#647).
+			return nil, nil
+		}
 		// An unset "${name[@]}" produces zero fields, like an empty array.
 		return []string{}, nil
 	}

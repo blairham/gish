@@ -834,7 +834,17 @@ func (p *Printer) paramExp(pe *ParamExp) {
 		if pe.Repl.Orig != nil {
 			p.word(pe.Repl.Orig)
 		}
-		p.w.WriteByte('/')
+		// An empty pattern and an empty replacement both parse as a nil
+		// word, so the second slash is written unconditionally to keep
+		// `${x/a/}` and `${x///}` round-tripping. The one shape that
+		// cannot afford it is `${x/}` — nothing on either side and no
+		// second slash written — because the slash renames the
+		// expansion: `${#/}` is a bad substitution in bash where
+		// `${#//}` is the parameter count, so a diagnostic naming the
+		// wrong one names a working expansion (#672).
+		if pe.Repl.All || pe.Repl.Orig != nil || pe.Repl.With != nil {
+			p.w.WriteByte('/')
+		}
 		if pe.Repl.With != nil {
 			p.word(pe.Repl.With)
 		}

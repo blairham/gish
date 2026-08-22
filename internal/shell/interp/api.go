@@ -1600,6 +1600,15 @@ var bashOptsTable = [...]bashOpt{
 		defaultState: false,
 		support:      optImplemented,
 	},
+	{
+		// On by default, as in bash 5.2 and later: an unquoted `&` in a
+		// replacement is the text that matched (#643). Appended to the
+		// supported block rather than inserted, because the opt*
+		// constants below index this table positionally.
+		name:         "patsub_replacement",
+		defaultState: true,
+		support:      optImplemented,
+	},
 	// unsupported options, sorted alphabetically by name
 	{name: "array_expand_once"},
 	{name: "assoc_expand_once"},
@@ -1679,10 +1688,6 @@ var bashOptsTable = [...]bashOpt{
 		defaultState: true,
 		support:      optStateOnly,
 	},
-	{
-		name:         "patsub_replacement",
-		defaultState: true,
-	},
 	{name: "progcomp_alias", support: optStateOnly},
 	{
 		name:         "promptvars",
@@ -1746,6 +1751,7 @@ const (
 	optNoCaseGlob
 	optNullGlob
 	optVarRedirClose
+	optPatSubReplacement
 )
 
 // Reset returns a runner to its initial state, right before the first call to
