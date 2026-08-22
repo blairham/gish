@@ -4981,6 +4981,188 @@ set -- $(dirs); echo "$#:$(basename $1)"`,
 		"trap -- 'echo x' EXIT\nx\n",
 	},
 
+	// A compound command's *head* is its own DEBUG event (#629). Which
+	// heads have one had to be enumerated by running bash, exactly as
+	// #614's leaves did: `for`, `select` and `case` do, `while`,
+	// `until` and `if` do not, and a C-style `for` has no head at all —
+	// bash fires for its three arithmetic sections instead.
+	{
+		// Once per iteration, with the head as written and no `; do`.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; for i in 1 2; do echo b$i; done",
+		"D:[for i in 1 2]\nD:[echo b$i]\nb1\nD:[for i in 1 2]\nD:[echo b$i]\nb2\n",
+	},
+	{
+		// Which means an empty list traces nothing at all — the head is
+		// not an event of the loop's, it is an event of the iteration's.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; for i in ; do echo nope; done; echo after",
+		"D:[echo after]\nafter\n",
+	},
+	{
+		// `for i; do` reports the list it *means*, not the absence.
+		"set -- p q; trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; for i; do echo b$i; done",
+		"D:[for i in \"$@\"]\nD:[echo b$i]\nbp\nD:[for i in \"$@\"]\nD:[echo b$i]\nbq\n",
+	},
+	{
+		// The `case` head fires once whether or not anything matches,
+		// and the trailing space is bash's — the head is rendered with
+		// an empty pattern list after the `in`.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; case a in b) echo m;; esac; echo after",
+		"D:[case a in ]\nD:[echo after]\nafter\n",
+	},
+	{
+		// Unexpanded, like every other BASH_COMMAND.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; case $(echo a) in a) echo m;; esac",
+		"D:[case $(echo a) in ]\nD:[echo m]\nm\n",
+	},
+	{
+		// `select` traces its head exactly *once*, before the menu —
+		// the difference from `for` that no amount of reasoning from
+		// the two loops looking alike would produce.
+		"printf '1\\n' > sel.in; trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; select s in x y; do echo got$s; break; done < sel.in 2>/dev/null; echo end",
+		"D:[select s in x y]\nD:[echo got$s]\ngotx\nD:[break]\nD:[echo end]\nend\n",
+	},
+	{
+		// A C-style loop: init, then cond/body/post per iteration, then
+		// the cond that ends it. No `for` head anywhere.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; for ((i=0;i<2;i++)); do echo b$i; done",
+		"D:[((i=0))]\nD:[((i<2))]\nD:[echo b$i]\nb0\nD:[((i++))]\nD:[((i<2))]\nD:[echo b$i]\nb1\nD:[((i++))]\nD:[((i<2))]\n",
+	},
+	{
+		// An omitted section still fires, as the `((1))` it means.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; for ((;;)); do break; done",
+		"D:[((1))]\nD:[((1))]\nD:[break]\n",
+	},
+	{
+		// The negative half, which is what stops the rule generalizing
+		// to every compound: `while`, `until` and `if` have no head
+		// event, and their conditions trace as the leaves they are.
+		"trap 'echo \"D:[$BASH_COMMAND]\"' DEBUG; while [ -z \"$w\" ]; do w=1; done; until [ -n \"$u\" ]; do u=1; done; if true; then echo y; fi",
+		"D:[[ -z \"$w\" ]]\nD:[w=1]\nD:[[ -z \"$w\" ]]\nD:[[ -n \"$u\" ]]\nD:[u=1]\nD:[[ -n \"$u\" ]]\nD:[true]\nD:[echo y]\ny\n",
+	},
+	{
+		// extdebug's cancel rule reaches the head, and what it cancels
+		// is measured rather than assumed: declining a `for` head skips
+		// that iteration's body and leaves the loop running.
+		"shopt -s extdebug; trap '[[ $BASH_COMMAND != for* ]]' DEBUG; for i in 1 2; do echo b$i; done; echo end",
+		"end\n",
+	},
+	{
+		// Declining a `case` head skips the whole case.
+		"shopt -s extdebug; trap '[[ $BASH_COMMAND != case* ]]' DEBUG; case a in a) echo m;; esac; echo end",
+		"end\n",
+	},
+
+	// DEBUG is suppressed inside the DEBUG trap and nowhere else
+	// (#630). Every other trap's action is ordinary code: it traces,
+	// and so does a function it calls, which for a debugger is the
+	// handler it is stepping through.
+	{
+		// The RETURN action's own statement is traced, with $LINENO
+		// already set to what the trap will report — 4, the returning
+		// function's body line, not the last line the body ran.
+		"set -T\ntrap 'echo \"D:$LINENO\"' DEBUG\ntrap 'echo RET' RETURN\nf() { echo body; }\nf",
+		"D:3\nD:5\nD:4\nD:4\nbody\nD:4\nRET\n",
+	},
+	{
+		// And a function the RETURN action calls traces its own entry
+		// and its own body, at its own lines.
+		"set -T\ntrap 'echo \"D:$LINENO\"' DEBUG\ntrap 'r' RETURN\nr() { echo in-r; }\nf() { echo body; }\nf",
+		"D:3\nD:6\nD:5\nD:5\nbody\nD:5\nD:4\nD:4\nin-r\n",
+	},
+	{
+		// The same for ERR. BASH_COMMAND is *not* maintained inside a
+		// trap's action — every one of these reports the `false` that
+		// triggered it, including the two from inside e().
+		"set -T\ntrap 'echo \"D:[$BASH_COMMAND]\"' DEBUG\ntrap 'e' ERR\ne() { echo in-e; }\nfalse\necho end",
+		"D:[trap 'e' ERR]\nD:[false]\nD:[false]\nD:[false]\nD:[false]\nin-e\nD:[echo end]\nend\n",
+	},
+	{
+		// And for EXIT, whose action runs after the last command.
+		"set -T\ntrap 'echo D' DEBUG\ntrap 'e' EXIT\ne() { echo in-e; }\necho last",
+		"D\nD\nlast\nD\nD\nD\nin-e\n",
+	},
+	{
+		// The suppression that stays: a function called from the DEBUG
+		// action traces nothing, and its return fires no RETURN trap
+		// either — while the RETURN trap for h() still fires, and is
+		// itself traced.
+		"set -T\ng() { echo in-g; }\ntrap 'echo DBG; g' DEBUG\ntrap 'echo RET' RETURN\nh() { echo h-body; }\nh",
+		"DBG\nin-g\nDBG\nin-g\nDBG\nin-g\nDBG\nin-g\nh-body\nDBG\nin-g\nRET\n",
+	},
+
+	// BASH_ARGV and BASH_ARGC (#637): the arguments of every active
+	// call, innermost first, maintained under extdebug.
+	{
+		// bash's own dbg-support3.sub, which is what this is for. The
+		// order is reversed *within* a frame as well as across them —
+		// `f3 3 z` contributes `z` then `3` — so this is not the
+		// concatenation of the `$@`s.
+		"shopt -s extdebug; callstack(){ echo \"deep ${#BASH_ARGV[*]}\"; for f in ${BASH_ARGV[@]}; do echo \"- $f\"; done; }; f3(){ callstack; }; f2(){ f3 3 z; }; f1(){ f2 2 y; }; f1 1 x",
+		"deep 6\n- z\n- 3\n- y\n- 2\n- x\n- 1\n",
+	},
+	{
+		// BASH_ARGC is one count per frame, innermost first, which is
+		// what lets a reader slice BASH_ARGV back into frames.
+		"shopt -s extdebug; show(){ echo \"argc=[${BASH_ARGC[*]}]\"; }; f(){ show one; }; f a b",
+		"argc=[1 2 0]\n",
+	},
+	{
+		// Without extdebug only the bottom entry is there: a call made
+		// with the option off contributes nothing at all, not a zero.
+		"echo \"argc=[${BASH_ARGC[*]}] argv=[${BASH_ARGV[*]}]\"; f(){ echo \"in f argc=[${BASH_ARGC[*]}]\"; }; f q",
+		"argc=[0] argv=[]\nin f argc=[0]\n",
+	},
+	{
+		// Gated at the moment of the *call*: turning the option off
+		// inside f stops g's frame from being recorded even though the
+		// stack below it stays.
+		"shopt -s extdebug; f(){ shopt -u extdebug; g x y; }; g(){ echo \"argc=[${BASH_ARGC[*]}] argv=[${BASH_ARGV[*]}]\"; }; f a b",
+		"argc=[2 0] argv=[b a]\n",
+	},
+	{
+		// The bottom entry is a snapshot rather than a view: it is
+		// taken the first time the shell has reason to, and neither
+		// `shift` nor a later `set --` moves it afterwards.
+		"set -- a b c; echo \"argc=[${BASH_ARGC[*]}] argv=[${BASH_ARGV[*]}]\"; shift; echo \"argc=[${BASH_ARGC[*]}]\"",
+		"argc=[3] argv=[c b a]\n" + "argc=[3]\n",
+	},
+	{
+		// Taken *before* the `set --` here, so it holds nothing.
+		"echo \"start=[${BASH_ARGC[*]}]\"; set -- x y z; echo \"after=[${BASH_ARGC[*]}]\"",
+		"start=[0]\nafter=[0]\n",
+	},
+	{
+		// `shopt -s extdebug` is the other moment it is taken, which is
+		// why the second one here changes nothing.
+		"shopt -s extdebug; shopt -u extdebug; set -- q r; shopt -s extdebug; echo \"[${BASH_ARGC[*]}] [${BASH_ARGV[*]}]\"",
+		"[0] []\n",
+	},
+	{
+		// And a read from inside a function does not take it, which is
+		// bash's odd half: the parameters visible there are the
+		// function's, so the answer is the empty array until something
+		// at the top level asks.
+		"set -- a b; f(){ echo \"in=[${BASH_ARGC[*]}] [${BASH_ARGV[*]}]\"; }; f; shopt -s extdebug; f q",
+		"in=[] []\nin=[1 2] [q b a]\n",
+	},
+	{
+		// A subshell keeps the stack, since a stack-trace helper is
+		// usually reached through `$(…)`.
+		"shopt -s extdebug; f(){ ( echo \"sub=[${BASH_ARGV[*]}]\" ); }; f a b",
+		"sub=[b a]\n",
+	},
+	{
+		// Both names are in the variable table, so a listing prints
+		// them even though nothing ever assigned them.
+		"declare -p BASH_ARGC BASH_ARGV",
+		"declare -a BASH_ARGC=([0]=\"0\")\ndeclare -a BASH_ARGV=()\n",
+	},
+	{
+		// And both refuse `unset`, as BASH_SOURCE and BASH_LINENO do.
+		"unset BASH_ARGV; echo st=$?",
+		"unset: BASH_ARGV: cannot unset\nst=1\n #JUSTERR",
+	},
+
 	// RETURN (#295). The frame rules are covered end to end against real
 	// bash in cmd/koi/trapreturn_test.go, including `source`, which needs
 	// a file this table has no way to write. These are the in-package

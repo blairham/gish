@@ -126,10 +126,25 @@ type Runner struct {
 	// >0 to break or continue out of N enclosing loops
 	breakEnclosing, contnEnclosing int
 
-	inLoop       bool
-	inFunc       bool
-	inSource     bool
-	handlingTrap bool // whether we're currently in a trap callback
+	inLoop   bool
+	inFunc   bool
+	inSource bool
+	// handlingTrap records that *some* trap's action is running, which
+	// is what defers a real signal to the next statement boundary and
+	// what keeps a function's `exit` from firing the EXIT trap twice.
+	handlingTrap bool
+	// inDebugTrap records that the **DEBUG** trap's own action is
+	// running, which is a narrower fact and the only one that
+	// suppresses tracing (#630). bash suppresses DEBUG inside DEBUG and
+	// nowhere else: a RETURN, ERR, EXIT or signal action is ordinary
+	// code and traces normally, which is exactly what a debugger
+	// stepping through a handler needs. It also suppresses RETURN, so a
+	// function the DEBUG action calls fires no return trap either.
+	inDebugTrap bool
+	// runningTraps is the per-kind recursion guard, innermost last: a
+	// trap does not re-enter itself, and *only* itself. One flag for
+	// all of them made every other trap's action untraceable.
+	runningTraps []string
 
 	// track if a sourced script set positional parameters
 	sourceSetParams bool
@@ -386,6 +401,21 @@ type Runner struct {
 	// a file and a line per frame, and a frame for `source` as well as for
 	// a call, which is why this replaced it rather than growing beside it.
 	frames []callFrame
+
+	// argStack is BASH_ARGV and BASH_ARGC's own stack, innermost last:
+	// the words passed to each call made while `extdebug` was on
+	// (#637). It is deliberately *not* a field on [callFrame], because
+	// the two stacks do not line up — bash pushes an entry only while
+	// the option is set, so a call made with extdebug off has a frame
+	// and no arg record, and reading them in step would misattribute
+	// every argument above it.
+	//
+	// The script's own parameters are the bottom entry, and unlike the
+	// rest they are a *snapshot*: neither `set --` nor `shift` moves
+	// them once taken. See [Runner.initArgBase] for when that is.
+	argStack   [][]string
+	argBase    []string
+	argBaseSet bool
 
 	// mainScript is the script file this runner was started on, or empty
 	// for a command string. It decides whether the bottom frame exists at
@@ -2163,7 +2193,7 @@ func (r *Runner) runEpilogue(ctx context.Context, ended bool) error {
 			// exit 3` answers 9 — while an ordinary failing command in
 			// the action still restores it, since the body's first
 			// statement clears the in-flight exiting flag (#353).
-			r.runTrapCallback(ctx, r.callbackExit, "exit", r.callbackExitLine, true)
+			r.runTrapCallback(ctx, r.callbackExit, exitTrapName, r.callbackExitLine, true)
 		}
 	}
 	maps.Insert(r.Vars, r.writeEnv.Each)
@@ -2312,6 +2342,8 @@ func (r *Runner) subshell(background bool) *Runner {
 	// trap again from its own stages — which produced no output at all,
 	// and took the command that triggered the trap with it.
 	r2.handlingTrap = r.handlingTrap
+	r2.inDebugTrap = r.inDebugTrap
+	r2.runningTraps = slices.Clone(r.runningTraps)
 	// The trace hook crosses unconditionally: it is the shell's own
 	// instrumentation, not a script's trap, so no shell option governs
 	// whether a subshell or pipeline stage is traced (#474).
@@ -2338,6 +2370,11 @@ func (r *Runner) subshell(background bool) *Runner {
 	// command substitution that reported an empty stack would answer
 	// nothing to the only spelling anyone uses.
 	r2.frames = slices.Clone(r.frames)
+	// BASH_ARGV crosses for the same reason the frame stack does: a
+	// stack-trace helper is usually reached through `$(…)`. Measured —
+	// `f(){ ( echo "${BASH_ARGV[*]}" ); }; f a b` prints f's arguments.
+	r2.argStack = slices.Clone(r.argStack)
+	r2.argBase, r2.argBaseSet = r.argBase, r.argBaseSet
 	r2.mainScript = r.mainScript
 	r2.funcSource = maps.Clone(r.funcSource)
 	r2.extraFiles = maps.Clone(r.extraFiles)
