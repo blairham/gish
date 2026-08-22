@@ -805,7 +805,8 @@ func (a *ArithmCmd) End() Pos { return posAddCol(a.Right, 2) }
 
 // ArithmExpr represents all nodes that form arithmetic expressions.
 //
-// These are [*BinaryArithm], [*UnaryArithm], [*ParenArithm], [*FlagsArithm], and [*Word].
+// These are [*BinaryArithm], [*UnaryArithm], [*ParenArithm], [*FlagsArithm],
+// [*BadArithm], and [*Word].
 type ArithmExpr interface {
 	Node
 	arithmExprNode()
@@ -815,7 +816,29 @@ func (*BinaryArithm) arithmExprNode() {}
 func (*UnaryArithm) arithmExprNode()  {}
 func (*ParenArithm) arithmExprNode()  {}
 func (*FlagsArithm) arithmExprNode()  {}
+func (*BadArithm) arithmExprNode()    {}
 func (*Word) arithmExprNode()         {}
+
+// BadArithm is arithmetic this parser could not read, kept as the text
+// it was written as. bash parses an arithmetic expression when it
+// *evaluates* it, from a string, so a malformed one is a runtime error
+// there and only ever a runtime error: `$(( 4 ? : 3 ))` reports while
+// expanding and the shell reads the next line (#600). koi parses ahead
+// of what it runs, so refusing it here forfeited the rest of the file.
+//
+// The evaluator answers for it, and where the answer lands is the
+// distinction #597 drew: in a word it abandons the input unit, while
+// `(( ))`, a C-style loop's header and `let` are commands whose
+// evaluation failed. Value is the raw source between the construct's
+// delimiters, which the printer writes back so the diagnostic can name
+// the expression as written.
+type BadArithm struct {
+	ValuePos, ValueEnd Pos
+	Value              string
+}
+
+func (b *BadArithm) Pos() Pos { return b.ValuePos }
+func (b *BadArithm) End() Pos { return b.ValueEnd }
 
 // BinaryArithm represents a binary arithmetic expression.
 //

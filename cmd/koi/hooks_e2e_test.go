@@ -273,3 +273,52 @@ complete -F _line_complete probe
 	s.send("probe arg ")
 	s.sendUntil("\t", "point-10-cword-2")
 }
+
+// `compopt -o nospace` from inside a completion function (#612).
+//
+// This is the form the bash-completion corpus writes — a function turning
+// nospace on for one branch of its answer — and koi's compopt answered 0
+// and did nothing, so the space was inserted anyway. It is a property of
+// a live completion twice over: the option has to reach the *caller* of
+// the function, since nospace is read once the function has returned, and
+// the effect is a keystroke the human sees.
+//
+// The control case is the point of the pair: a shell that inserted no
+// space for either spec would pass the nospace half on its own.
+func TestCompoptNoSpaceReachesTheEditor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("pty e2e skipped in -short")
+	}
+	rc := `
+demo() { printf 'res[%s]\n' "$*"; }
+demoplain() { printf 'res[%s]\n' "$*"; }
+_demo_tight() { compopt -o nospace; COMPREPLY=( uniquecand ); }
+_demo_loose() { COMPREPLY=( uniquecand ); }
+complete -F _demo_tight demo
+complete -F _demo_loose demoplain
+`
+	s := hookSession(t, rc)
+	s.waitForPrompt()
+
+	// Without compopt the editor inserts the candidate and a space, so
+	// the next character typed starts a second word.
+	s.send("demoplain uniq")
+	s.sendUntil("\t", "uniquecand")
+	s.send("Z\r")
+	s.waitFor("res[uniquecand Z]")
+
+	// With it, there is no space and the character joins the candidate.
+	s.buf.Reset()
+	s.send("demo uniq")
+	s.sendUntil("\t", "uniquecand")
+	s.send("Z\r")
+	s.waitFor("res[uniquecandZ]")
+
+	// And the adjustment was transient, as bash's is: the registration it
+	// ran from is unchanged, which is why runCompletionSpec publishes a
+	// copy rather than the spec itself.
+	out := s.runProbe(`complete -p demo`, "complete -F _demo_tight demo")
+	if strings.Contains(out, "nospace") {
+		t.Errorf("compopt inside a completion persisted into the registration:\n%s", out)
+	}
+}

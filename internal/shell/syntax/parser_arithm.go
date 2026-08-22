@@ -23,6 +23,16 @@ func (p *Parser) arithmExprAssign(compact bool) ArithmExpr {
 		if compact && p.spaced {
 			return value
 		}
+		if value == nil {
+			// Nothing at all to assign to, as in `((=0))`. bash answers
+			// `((: =0: arithmetic syntax error` while evaluating, and
+			// koi built a [BinaryArithm] with a nil X, which every
+			// reader of the tree assumes cannot happen — the walker
+			// panicked and the user saw the panic guard. #597 dropped
+			// the name check here and this is the case underneath it
+			// that had no target rather than a bad one (#600).
+			p.curErr("%#q must follow an expression", p.tok)
+		}
 		// A target that is not a name is bash's *runtime* complaint —
 		// `$((1 ? 20 : x+=2))` reports "attempted assignment to
 		// non-variable" while evaluating, because bash parses arithmetic

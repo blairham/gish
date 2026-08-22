@@ -47,6 +47,25 @@ func (r *Runner) bashTest(ctx context.Context, expr syntax.TestExpr, classic boo
 		return r.bashTest(ctx, x.X, classic)
 	case *syntax.BinaryTest:
 		switch x.Op {
+		case syntax.AndTest, syntax.OrTest:
+			// `[[ ]]` short-circuits: bash never expands the untaken
+			// side, so the right operand's words — a command
+			// substitution, a `${H*}`, an arithmetic operand — are
+			// only reached once the left has failed to decide (#652).
+			// `[` and `test` are ordinary builtins whose whole argv
+			// was expanded before they ran, so `-a` / `-o` keep
+			// evaluating both sides, diagnostics included.
+			if !classic {
+				left := r.bashTest(ctx, x.X, classic) != ""
+				if left != (x.Op == syntax.AndTest) {
+					// A false && or a true || is already answered.
+					if left {
+						return "1"
+					}
+					return ""
+				}
+				return r.bashTest(ctx, x.Y, classic)
+			}
 		case syntax.TsMatchShort, syntax.TsMatch, syntax.TsNoMatch:
 			str := r.literal(x.X.(*syntax.Word))
 			yw := x.Y.(*syntax.Word)
