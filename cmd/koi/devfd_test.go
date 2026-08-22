@@ -256,18 +256,41 @@ func TestShellDescriptorPathsMatchBash(t *testing.T) {
 				// answers EINTR rather than retrying, which on a loaded
 				// macOS runner is most of the time (#685). That is bash
 				// failing to run the case, not koi disagreeing with it,
-				// so the case is re-run and then skipped rather than
-				// charged to koi.
+				// so the case is re-run rather than charged to koi.
+				//
+				// Three things measured on #688, since the race is the
+				// oracle's and cannot be reproduced to order. It is not
+				// the Go parent's SIGURG: the same body under the same
+				// load takes no EINTR in 60 runs from a plain bash loop
+				// nor in 40 from a Go program using os/exec, and SIGURG's
+				// default action is to be discarded, which is what an
+				// exec restores. koi cannot lose this race at all, which
+				// is why only bash ever does — Go retries EINTR around
+				// its own opens. And the fifo cannot be held open ahead
+				// of the reader to close the window: `exec 3<> ./f` makes
+				// the shell its own writer, so `. ./f` never sees EOF and
+				// the case hangs forever rather than flaking.
 				for range 5 {
 					bashOut, bashCode = runShape(t, t.TempDir(), bash, shape, tc.body)
 					if !strings.Contains(bashOut, "Interrupted system call") {
 						break
 					}
 				}
-				if strings.Contains(bashOut, "Interrupted system call") {
-					t.Skipf("the oracle was interrupted rather than running the case: %q", bashOut)
-				}
 				koiOut, koiCode := runShape(t, t.TempDir(), koi, shape, tc.body)
+				if strings.Contains(bashOut, "Interrupted system call") {
+					// Five interrupted oracle runs means this run cannot
+					// compare the two shells. Skipping the case outright
+					// dropped the coverage silently, so koi is still held
+					// to the behavior the case exists to detect — only
+					// the byte-for-byte agreement is lost.
+					if !strings.Contains(koiOut, tc.want) {
+						t.Errorf("the oracle was interrupted five times, so this run cannot compare against"+
+							" it, and koi did not produce %q on its own\n  koi:  %q (exit %d)\n  bash: %q",
+							tc.want, koiOut, koiCode, bashOut)
+					}
+					t.Logf("oracle interrupted five times; compared koi against %q alone", tc.want)
+					return
+				}
 				if !strings.Contains(bashOut, tc.want) {
 					t.Fatalf("the oracle did not produce %q, so this case cannot detect its absence: %q",
 						tc.want, bashOut)
