@@ -9760,6 +9760,111 @@ case "+(a|b[" in "+(a|b[") echo m;; esac`, "eq\nm\n"},
 		"readonly =bar",
 		"readonly: `=bar': not a valid identifier\nexit status 1 #JUSTERR",
 	},
+
+	// A taken default/alternate whose word is empty answers the empty
+	// *string*, which inside double quotes is one field and not none.
+	// `echo` cannot see the difference, which is why every case here
+	// counts fields.
+	{
+		"set --; set -- \"${@}\"; echo \"a=$#\"; set --; set -- \"${@-}\"; echo \"b=$#\"; set --; set -- \"${@:-}\"; echo \"c=$#\"; set --; set -- \"${*-}\"; echo \"d=$#\"",
+		"a=0\nb=1\nc=1\nd=1\n",
+	},
+	{
+		// With one null parameter the same forms are all one field, and
+		// so is a taken alternate.
+		"set -- ''; set -- \"${@:-}\"; echo \"a=$#\"; set -- ''; set -- \"${@+}\"; echo \"b=$#\"; set -- ''; set -- \"${@:+}\"; echo \"c=$#\"",
+		"a=1\nb=1\nc=1\n",
+	},
+	{
+		// An alternate that is *not* taken is zero fields only when the
+		// list has no elements: with a null parameter present it is the
+		// empty string, one field, the way `\"\"` is.
+		"set --; set -- \"${@+X}\"; echo \"a=$#\"; set -- ''; set -- \"${@:+X}\"; echo \"b=$#[$1]\"; A=(); set -- \"${A[@]+X}\"; echo \"c=$#\"; B=(''); set -- \"${B[@]:+X}\"; echo \"d=$#[$1]\"",
+		"a=0\nb=1[]\nc=0\nd=1[]\n",
+	},
+	{
+		// A list is null when the *joined* value is empty, which is not
+		// the same as every element being empty: two null parameters are
+		// separated by text, so the alternate is taken and the default
+		// is not.
+		"set -- '' ''; set -- \"${@:+X}\"; echo \"a=$#[$1]\"; set -- '' ''; set -- \"${@:-X}\"; echo \"b=$#\"; A=('' ''); set -- \"${A[@]:+X}\"; echo \"c=$#[$1]\"",
+		"a=1[X]\nb=2\nc=1[X]\n",
+	},
+	{
+		// The separator is a space for `@` and IFS for `*`, so a null
+		// IFS makes `${*:+X}` null while `${@:+X}` stays non-null.
+		"set -- '' ''; IFS=; set -- \"${@:+X}\"; echo \"a=$#[$1]\"; set -- '' ''; IFS=; set -- \"${*:+X}\"; echo \"b=$#[$1]\"; set -- '' ''; IFS=:; set -- \"${*:+X}\"; echo \"c=$#[$1]\"",
+		"a=1[X]\nb=1[]\nc=1[X]\n",
+	},
+
+	// An assignment operator's answer is the *variable's value*, so
+	// nothing inside its word is a list any more: bash joined the
+	// parameters before it assigned them.
+	{
+		"set -- abc 'def ghi' jkl; IFS=; unset v; set -- ${v=$*}; echo \"a=$#[$1]\"; set -- abc 'def ghi' jkl; IFS=; unset v; set -- ${v=$@}; echo \"b=$#[$1]\"",
+		"a=1[abcdef ghijkl]\nb=1[abc def ghi jkl]\n",
+	},
+	{
+		// The same inside quotes, where it shows without a null IFS at
+		// all: `\"${v=$@}\"` is one field however IFS reads.
+		"set -- abc 'def ghi' jkl; IFS=:; unset v; set -- \"${v=$@}\"; echo \"a=$#[$1]\"; set -- abc 'def ghi' jkl; unset v; set -- x${v=$@}y; echo \"b=$#[$1]\"",
+		"a=1[abc def ghi jkl]\nb=1[xabc def ghi jkly]\n",
+	},
+	{
+		// An array's list identity goes the same way, and a quoted
+		// `\"$@\"` inside the word does not save it.
+		"set -- abc 'def ghi' jkl; A=(\"$@\"); IFS=; unset v; set -- ${v=${A[@]}}; echo \"a=$#[$1]\"; set -- abc 'def ghi' jkl; IFS=; unset v; set -- ${v=\"$@\"}; echo \"b=$#[$1]\"",
+		"a=1[abc def ghi jkl]\nb=1[abc def ghi jkl]\n",
+	},
+	{
+		// The operators that do *not* assign keep the list: `${v-$*}` is
+		// still three fields under a null IFS, and an escape in an
+		// assigned word still splits where the value does.
+		"set -- abc 'def ghi' jkl; IFS=; unset v; set -- ${v-$*}; echo \"a=$#\"; IFS=' '; unset v; set -- ${v:=p\\ q}; echo \"b=$#[$1][$v]\"",
+		"a=3\nb=2[p][p q]\n",
+	},
+
+	// A quoted indirect expansion whose target names a list is a list:
+	// the flat answer joins the elements into one field.
+	{
+		"set -- a 'b c' d; foo=@; set -- \"${!foo}\"; echo \"a=$#[$2]\"; set -- a 'b c' d; foo=@; set -- ${!foo}; echo \"b=$#\"",
+		"a=3[b c]\nb=4\n",
+	},
+	{
+		"A=(x 'y z' w); foo='A[@]'; set -- \"${!foo}\"; echo \"a=$#[$2]\"; foo='A[*]'; IFS=:; set -- \"${!foo}\"; echo \"b=$#[$1]\"",
+		"a=3[y z]\nb=1[x:y z:w]\n",
+	},
+	{
+		// A target that names one value still answers as one field,
+		// which is what keeps the flat path in charge of everything else.
+		"set -- a 'b c' d; foo=1; set -- \"${!foo}\"; echo \"a=$#[$1]\"; A=(x 'y z'); foo='A[1]'; set -- \"${!foo}\"; echo \"b=$#[$1]\"",
+		"a=1[a]\nb=1[y z]\n",
+	},
+
+	// An associative array's keys and its values come out in the same
+	// order, because reading one against the other is what the two lists
+	// are for. koi's order is sorted by key where bash's is its hash
+	// table's, so the cases that can be compared are the ones that pair
+	// a key with its own value rather than naming an absolute order.
+	{
+		// The pairing is asserted, never the absolute order: values
+		// sorted independently of their keys line up plausibly and
+		// wrongly, which is what this catches.
+		"declare -A A=([k1]=zz [k2]=aa [k3]=mm); ks=(\"${!A[@]}\"); vs=(\"${A[@]}\"); ok=yes; for i in 0 1 2; do [[ ${A[${ks[i]}]} == ${vs[i]} ]] || ok=no; done; echo \"quoted=$ok\"; ks=(${!A[@]}); vs=(${A[@]}); ok=yes; for i in 0 1 2; do [[ ${A[${ks[i]}]} == ${vs[i]} ]] || ok=no; done; echo \"plain=$ok\"",
+		"quoted=yes\nplain=yes\n",
+	},
+	{
+		// The `[*]` forms join the same two lists, so they pair too.
+		"declare -A A=([k1]=zz [k2]=aa [k3]=mm); IFS=+; ks=(${!A[*]}); vs=(${A[*]}); ok=yes; for i in 0 1 2; do [[ ${A[${ks[i]}]} == ${vs[i]} ]] || ok=no; done; echo \"star=$ok\"",
+		"star=yes\n",
+	},
+	{
+		// And the order is stable within a shell, which a Go map's
+		// iteration is not: two evaluations of the same expansion must
+		// agree.
+		"declare -A A=([a]=1 [b]=2 [c]=3 [d]=4 [e]=5 [f]=6); x=(\"${!A[@]}\"); y=(\"${!A[@]}\"); [[ ${x[*]} == \"${y[*]}\" ]] && echo stable || echo \"unstable ${x[*]} / ${y[*]}\"",
+		"stable\n",
+	},
 }
 
 var runTestsUnix = []runTest{

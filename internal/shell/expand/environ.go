@@ -5,6 +5,7 @@ package expand
 
 import (
 	"cmp"
+	"maps"
 	"runtime"
 	"slices"
 	"strconv"
@@ -239,6 +240,27 @@ func (v Variable) indexedKeys() []string {
 		}
 	}
 	return keys
+}
+
+// assocKeys returns an associative array's keys in the one order every
+// expansion of it must agree on, and assocValues its values in that same
+// order. bash's own order is its hash table's, which koi does not
+// reproduce — but bash guarantees that `${!A[@]}` and `${A[@]}` line up
+// element for element, since reading a map by parallel key and value
+// lists is what an associative array is for. Sorting one by key and the
+// other by *value* answers both questions plausibly and pairs the wrong
+// value with every key.
+func (v Variable) assocKeys() []string {
+	return slices.Sorted(maps.Keys(v.Map))
+}
+
+func (v Variable) assocValues() []string {
+	keys := v.assocKeys()
+	vals := make([]string, len(keys))
+	for i, k := range keys {
+		vals[i] = v.Map[k]
+	}
+	return vals
 }
 
 // maxNameRefDepth defines the maximum number of times to follow references when
