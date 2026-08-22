@@ -335,3 +335,87 @@ func TestHelpSyntaxTopicsAreConstructsKoiRuns(t *testing.T) {
 		t.Errorf("suspend answered %q (status %d) — it works now, so it needs a help topic", out, status)
 	}
 }
+
+// The session-scoped builtins' drift guard (#618).
+//
+// `bind`, `complete`, `compopt` and `history` are answered by
+// `internal/repl` rather than by the interpreter or the native registry,
+// so they were in neither list `help`'s two guards walk — which is
+// exactly why nothing noticed that `type -t history` said `builtin` while
+// `help history` denied there was such a topic.
+//
+// This half is *derived* rather than declared, because a fourth hand-kept
+// list would be the same hole one name along. The candidate set is bash's
+// own builtin listing — a superset — and the rule asked of koi is: **a
+// name koi calls a builtin and does not refuse must have a help topic.**
+//
+// The second clause is what keeps `suspend` out without naming it: koi
+// answers `suspend: unsupported builtin`, so it is allowed to have no
+// topic, and the day it starts working this test asks for one.
+func TestEveryBuiltinKoiClaimsHasAHelpTopic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipped in -short")
+	}
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	candidates, _ := shellLines(t, bash, dir, "compgen -b")
+	if len(candidates) == 0 {
+		t.Fatal("bash listed no builtins, so this guard cannot detect a missing topic")
+	}
+	topics, _ := shellLines(t, koi, dir, "compgen -A helptopic")
+	if len(topics) == 0 {
+		t.Fatal("compgen -A helptopic listed nothing")
+	}
+
+	claimed, refused := 0, 0
+	for _, name := range candidates {
+		kind, _ := shellRows(t, koi, dir, "type -t "+name)
+		if len(kind) == 0 || kind[0] != "builtin" {
+			continue
+		}
+		claimed++
+
+		out, status := shellRows(t, koi, dir, "help "+singleQuoted(name))
+		if status == 0 {
+			// It has a topic, so it has to be offered as one too, and
+			// the entry has to have text behind it — a listed name with
+			// an empty entry passes a status check (#557).
+			if !slices.Contains(topics, name) {
+				t.Errorf("help answers about %q but compgen -A helptopic does not offer it", name)
+			}
+			// Five characters rather than a sentence: the point is that
+			// there is text behind the name at all, and the shortest
+			// honest description here is `remove aliases`.
+			if len(out) < 2 || len(strings.TrimSpace(out[1])) < 5 {
+				t.Errorf("help %q printed %q, want a synopsis and a description", name, out)
+			}
+			continue
+		}
+
+		// No topic. That is only honest for a builtin koi refuses, and
+		// the refusal is what is asserted rather than assumed.
+		refusal, rstatus := runHermetic(t, koi, name)
+		if rstatus == 0 || !strings.Contains(refusal, "unsupported builtin") {
+			t.Errorf("koi calls %q a builtin and answers it (%q, status %d), and `help %s` has no topic",
+				name, refusal, rstatus, name)
+			continue
+		}
+		refused++
+		if slices.Contains(topics, name) {
+			t.Errorf("compgen offers a %q help topic for a builtin koi refuses", name)
+		}
+	}
+
+	// Both counts are asserted, because either alone passes vacuously: a
+	// koi that claimed nothing would satisfy every check above, and one
+	// that refused nothing would never exercise the second branch.
+	if claimed < 40 {
+		t.Errorf("koi claimed only %d of bash's %d builtins — the loop above tested almost nothing",
+			claimed, len(candidates))
+	}
+	if refused == 0 {
+		t.Error("no builtin koi claims is refused, so the no-topic branch never ran")
+	}
+}

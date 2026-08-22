@@ -389,9 +389,10 @@ var compFamilyAccepted = []struct {
 	{"every -o name", `for o in bashdefault default dirnames filenames fullquote noquote nosort nospace plusdirs; do complete -o "$o" x || echo "refused -o $o"; done`},
 	{"every -A action", `for a in alias arrayvar binding builtin command directory disabled enabled export file function group helptopic hostname job keyword running service setopt shopt signal stopped user variable; do compgen -A "$a" >/dev/null; [ $? = 2 ] && echo "refused -A $a"; done`},
 
-	// The three catch-alls, -I included: bash 5.1 added it, koi records
-	// it and does not act on it yet (#609), and refusing it would reject
-	// a line bash takes.
+	// The three catch-alls, -I included: bash 5.1 added it and refusing
+	// it would reject a line bash takes. It is consulted for the command
+	// position as of #609; this case only asserts the registration is
+	// accepted.
 	{"the catch-all registrations", `complete -D -F f; complete -E -F f; complete -I -F f`},
 }
 
@@ -911,6 +912,90 @@ func uniqueLines(lines []string) []string {
 	return slices.Compact(slices.Clone(lines))
 }
 
+// `complete -p` and the three catch-alls (#609).
+//
+// `complete -D`, `-E` and `-I` live outside `byCommand`, which is all
+// `printCompletions` walked — so they were registered and then invisible:
+// `eval "$(complete -p)"`, the documented save-and-restore, silently
+// dropped every one of them, and `complete -p -D` complained about a name
+// containing a NUL byte.
+//
+// Differential on stdout, because the diagnostics differ by bash's
+// `file: line N:` prefix (#621) and its usage second line (#577). Order
+// is deliberately *not* what these compare against bash: bash's whole
+// listing is a hash-table walk and koi's is sorted (#269), so every case
+// that lists more than one spec reads a single name back.
+var completeCatchAllCases = []struct{ name, script string }{
+	{"printing the default spec", `f(){ :; }; complete -D -o nospace -F f; complete -p -D; echo "rc=$?"`},
+	{"printing the empty-line spec", `f(){ :; }; complete -E -F f; complete -p -E; echo "rc=$?"`},
+	{"printing the initial-word spec", `f(){ :; }; complete -I -F f; complete -p -I; echo "rc=$?"`},
+
+	// The listing has to *re-register* what it prints, which is the
+	// whole point of `complete -p`: a spec printed and then read back
+	// must be the same spec.
+	{"the listing round-trips", `f(){ :; }; complete -I -o nospace -W 'a b' -F f; saved=$(complete -p -I); complete -r -I; eval "$saved"; complete -p -I; echo "rc=$?"`},
+
+	// Absent is a diagnostic and exit 1, not an empty listing.
+	{"the default spec when there is none", `complete -p -D; echo "rc=$?"`},
+	{"the empty-line spec when there is none", `complete -p -E; echo "rc=$?"`},
+	{"the initial-word spec when there is none", `complete -p -I; echo "rc=$?"`},
+
+	// `complete -r -D` deleted a map entry under the marker and left the
+	// default spec exactly where it was.
+	{"removing the default spec", `f(){ :; }; complete -D -F f; complete -r -D; complete -p -D; echo "rc=$?"`},
+	{"removing everything takes the catch-alls too", `f(){ :; }; complete -D -F f; complete -I -F f; complete -F f foo; complete -r; complete -p; echo "rc=$?"`},
+
+	// A catch-all overrides the operands beside it — the same rule
+	// compopt follows (#612) — in all three forms.
+	{"a catch-all registration ignores the names", `f(){ :; }; complete -D -F f foo; complete -p -D; complete -p foo; echo "rc=$?"`},
+	{"a catch-all removal ignores the names", `f(){ :; }; complete -D -F f; complete -F f foo; complete -r -D foo; complete -p foo; echo "rc=$?"`},
+	{"they are mutually exclusive, D over E", `f(){ :; }; complete -D -E -F f; complete -p -D; echo "rc=$?"`},
+	{"they are mutually exclusive, E over I", `f(){ :; }; complete -I -E -F f; complete -p -E; echo "rc=$?"`},
+
+	// And a dash-word *after* an operand is an operand, so `-D` there is
+	// a name with no spec rather than the default (#556's rule).
+	{"a catch-all after an operand is a name", `f(){ :; }; complete -D -F f; complete -F f foo; complete -p foo -D; echo "rc=$?"`},
+}
+
+func TestCompleteCatchAllSpecsArePrintable(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+
+	for _, tc := range completeCatchAllCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			want, _ := shellRows(t, bash, dir, tc.script)
+			got, _ := shellRows(t, koi, dir, tc.script)
+			if !slices.Equal(got, want) {
+				t.Errorf("%s\n  koi:  %q\n  bash: %q", tc.script, got, want)
+			}
+		})
+	}
+}
+
+// The bare listing is the other half, and it cannot be compared line for
+// line: bash walks a hash table and koi sorts (#269). What is asserted is
+// that all three catch-alls are *in* it — the bug — and that each line
+// re-registers its spec.
+func TestCompleteListsTheCatchAllSpecs(t *testing.T) {
+	t.Parallel()
+	koi, bash := buildKoi(t), bashBin(t)
+	dir := t.TempDir()
+	script := `f(){ :; }; complete -D -F f; complete -E -F f; complete -I -F f; complete -F f foo; complete -p`
+
+	want, _ := shellLines(t, bash, dir, script)
+	got, _ := shellLines(t, koi, dir, script)
+	if !slices.Equal(got, want) {
+		t.Errorf("%s\n  koi:  %q\n  bash: %q", script, got, want)
+	}
+	for _, opt := range []string{"-D", "-E", "-I"} {
+		if !slices.Contains(got, "complete -F f "+opt) {
+			t.Errorf("koi's listing has no %s spec: %q", opt, got)
+		}
+	}
+}
+
 // `compopt` adjusts a completion's options (#612).
 //
 // koi's compopt parsed its arguments and then answered 0 whatever it was
@@ -944,9 +1029,10 @@ var compoptCases = []struct{ name, script string }{
 	{"the listing form for two names", `f(){ :; }; complete -o nospace -F f foo; complete -F f baz; compopt foo baz; echo "rc=$?"`},
 	{"the listing form with no options set", `f(){ :; }; complete -F f foo; compopt foo; echo "rc=$?"`},
 
-	// The three catch-alls. They live outside byCommand, so `complete -p`
-	// cannot read them back yet (#609) and compopt's own listing is what
-	// asserts the edit landed.
+	// The three catch-alls, read back through compopt's own listing.
+	// These were written when `complete -p` could not see a spec outside
+	// byCommand at all; #609 fixed that, and they stay on the listing
+	// because it is the form that shows every option's state at once.
 	{"the default spec", `f(){ :; }; complete -D -F f; compopt -o nospace -D; echo "rc=$?"; compopt -D`},
 	{"the empty-line spec", `f(){ :; }; complete -E -F f; compopt -o nospace -E; echo "rc=$?"; compopt -E`},
 	{"the initial-word spec", `f(){ :; }; complete -I -F f; compopt -o nospace -I; echo "rc=$?"; compopt -I`},

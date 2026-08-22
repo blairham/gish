@@ -178,6 +178,13 @@ func Arithm(cfg *Config, expr syntax.ArithmExpr) (int, error) {
 			return 0, err
 		}
 		return cfg.arithmWordStr(str)
+	case *syntax.BadArithm:
+		// Arithmetic the parser could not read. bash parses arithmetic
+		// when it evaluates it, from a string, so this is where the
+		// verdict belongs — and being an [ArithError] is what makes a
+		// word abandon its input unit while `(( ))` and `let` merely
+		// fail (#600, #597).
+		return 0, aerrf("%s: arithmetic syntax error", strings.TrimSpace(expr.Value))
 	case *syntax.ParenArithm:
 		return Arithm(cfg, expr.X)
 	case *syntax.UnaryArithm:

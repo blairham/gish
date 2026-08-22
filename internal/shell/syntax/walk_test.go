@@ -40,6 +40,7 @@ func TestWalk(t *testing.T) {
 		"*syntax.BinaryArithm": false,
 		"*syntax.UnaryArithm":  false,
 		"*syntax.ParenArithm":  false,
+		"*syntax.BadArithm":    false,
 		"*syntax.CaseClause":   false,
 		"*syntax.CaseItem":     false,
 		"*syntax.TestClause":   false,

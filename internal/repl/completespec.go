@@ -70,11 +70,10 @@ type completionRegistry struct {
 	fallback  *completionSpec
 	empty     *completionSpec
 	// initial is `complete -I`, bash 5.1's spec for the *first* word of a
-	// line. It is recorded so the option is not refused — bash accepts it
-	// and refusing what bash accepts is worse than the silence #556 fixed
-	// — and nothing consults it yet: the command position is answered by
-	// internal/complete's PATH/builtin/function providers, which never ask
-	// the registry (#609).
+	// line. #556 recorded it so the option would not be refused — bash
+	// accepts it, and refusing what bash accepts is worse than the silence
+	// #556 fixed — and for a while nothing read it, so the registration
+	// was accepted and did nothing. runInitialSpec consults it now (#609).
 	initial *completionSpec
 }
 
@@ -169,6 +168,18 @@ var completions = &completionRegistry{byCommand: map[string]completionSpec{}}
 
 func resetCompletions() {
 	completions = &completionRegistry{byCommand: map[string]completionSpec{}}
+}
+
+// remove deletes one spec, by command name or by catch-all key. `complete
+// -r -D` used to delete a map entry under the marker and leave the
+// default spec exactly where it was.
+func (r *completionRegistry) remove(key string) {
+	switch key {
+	case keyDefault, keyEmpty, keyInitial:
+		*r.catchAll(key) = nil
+		return
+	}
+	delete(r.byCommand, key)
 }
 
 // completeBudget bounds one completion function. Tab is an explicit,
@@ -591,6 +602,7 @@ func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []s
 	var spec completionSpec
 	names := slices.Clone(operands)
 	remove, print := false, false
+	catchAll := -1
 	target := &spec
 
 	for _, f := range flags {
@@ -621,12 +633,19 @@ func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []s
 			remove = true
 		case 'p':
 			print = true
-		case 'D':
-			names = append(names, keyDefault)
-		case 'E':
-			names = append(names, keyEmpty)
-		case 'I':
-			names = append(names, keyInitial)
+		case 'D', 'E', 'I':
+			// The catch-alls are mutually exclusive with a fixed
+			// priority — D over E over I, whatever order they were
+			// written in — and they **override the operands**:
+			// `complete -D -F f foo` registers the default spec and
+			// nothing named foo, and `complete -r -D foo` removes the
+			// default and leaves foo. Both measured; koi registered
+			// every one of them and every name besides.
+			for i, c := range catchAllSpecs {
+				if c.opt == f.letter && (catchAll < 0 || i < catchAll) {
+					catchAll = i
+				}
+			}
 		case 'P':
 			target.prefix = f.value
 		case 'S':
@@ -638,14 +657,18 @@ func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []s
 		}
 	}
 
+	if catchAll >= 0 {
+		names = []string{catchAllSpecs[catchAll].key}
+	}
+
 	switch {
 	case print && len(names) > 0:
 		// `complete -p name` prints just that spec, and says so when
 		// there is none — koi listed everything and answered 0.
 		missing := false
 		for _, n := range names {
-			if _, ok := completions.byCommand[n]; !ok {
-				fmt.Fprintf(errOut, "%scomplete: %s: no completion specification\n", errLoc, n)
+			if _, ok := completions.lookup(n); !ok {
+				fmt.Fprintf(errOut, "%scomplete: %s: no completion specification\n", errLoc, catchAllErrName(n))
 				missing = true
 				continue
 			}
@@ -668,7 +691,7 @@ func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []s
 			return []string{"true"}
 		}
 		for _, n := range names {
-			delete(completions.byCommand, n)
+			completions.remove(n)
 		}
 		return []string{"true"}
 	case len(names) == 0:
@@ -685,20 +708,35 @@ func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []s
 	return []string{"true"}
 }
 
-func printCompletions(out io.Writer, only ...string) bool {
-	names := slices.Sorted(maps.Keys(completions.byCommand))
-	if len(only) > 0 {
-		names = nil
-		for _, n := range only {
-			if _, ok := completions.byCommand[n]; ok {
-				names = append(names, n)
+// printCompletions renders `complete -p`.
+//
+// The three catch-alls used to be missing from it entirely — they live
+// outside byCommand, which is all this walked — so `eval "$(complete
+// -p)"`, the documented save-and-restore, silently dropped every one of
+// them and `complete -p -D` answered about a name containing a NUL.
+//
+// They are printed last, in the D-E-I priority order the rest of this
+// family uses. bash interleaves them with the commands because its whole
+// listing is a hash-table walk, which koi already diverges from by
+// sorting (#269); what matters is that they are there and that the line
+// re-registers the spec.
+func printCompletions(out io.Writer, only ...string) {
+	keys := only
+	if len(only) == 0 {
+		keys = slices.Sorted(maps.Keys(completions.byCommand))
+		for _, c := range catchAllSpecs {
+			if _, ok := completions.lookup(c.key); ok {
+				keys = append(keys, c.key)
 			}
 		}
 	}
-	for _, name := range names {
-		fmt.Fprintf(out, "%s %s\n", completions.byCommand[name].commandLine(), name)
+	for _, key := range keys {
+		spec, ok := completions.lookup(key)
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(out, "%s %s\n", spec.commandLine(), catchAllPrintName(key))
 	}
-	return len(names) == len(only) || len(only) == 0
 }
 
 // markLetterSpelled records that an action arrived as a bare letter, so
@@ -1236,13 +1274,26 @@ func globMatch(pattern, s string) bool {
 // bashCompletions runs a registered completion for the line, if there is
 // one. ok=false means no spec applies and the core providers should
 // answer instead.
-func bashCompletions(runner *interp.Runner, line string, cursor int) (cands []editor.Candidate, nospace, ok bool) {
+//
+// initialWord says the word being completed sits in **command position**,
+// which is what `complete -I` is about (#609). koi accepted `-I`, stored
+// it, and never asked it anything, so a "complete anything in command
+// position" registration was a line bash takes and koi silently dropped.
+//
+// The two precedence rules are measured, not guessed. On a genuinely
+// empty line `-E` wins over `-I`; anywhere else in command position —
+// including after a `;`, which is still an initial word to bash — `-I`
+// answers, and it beats `-D` too.
+func bashCompletions(runner *interp.Runner, line string, cursor int, initialWord bool) (cands []editor.Candidate, nospace, ok bool) {
 	fields := strings.Fields(line[:cursor])
+	if len(fields) == 0 && completions.empty != nil {
+		return runCompletionSpec(runner, *completions.empty, line, cursor, catchAllErrName(keyEmpty))
+	}
+	if initialWord && completions.initial != nil {
+		return runInitialSpec(runner, line, cursor)
+	}
 	if len(fields) == 0 {
-		if completions.empty == nil {
-			return nil, false, false
-		}
-		return runCompletionSpec(runner, *completions.empty, line, cursor, "")
+		return nil, false, false
 	}
 	cmd := fields[0]
 	spec, found := completions.byCommand[cmd]
@@ -1260,6 +1311,26 @@ func bashCompletions(runner *interp.Runner, line string, cursor int) (cands []ed
 		spec = *completions.fallback
 	}
 	return runCompletionSpec(runner, spec, line, cursor, cmd)
+}
+
+// runInitialSpec runs `complete -I` for a word in command position.
+//
+// The one rule that had to be measured rather than assumed is what
+// happens when it generates **nothing**: the issue guessed bash falls
+// back to its own command completion, and it does not. A `-I` spec
+// *replaces* command completion, so `comple<TAB>` under a spec producing
+// nothing stays `comple` where an unregistered shell completes it —
+// unless the spec carries `-o bashdefault`, which is the option that
+// exists to ask for that fallback and is the only thing that restores it.
+// (`-o default` is readline's filename default, a different answer, and
+// is left alone here rather than mapped onto koi's command providers.)
+func runInitialSpec(runner *interp.Runner, line string, cursor int) ([]editor.Candidate, bool, bool) {
+	spec := *completions.initial
+	cands, nospace, ok := runCompletionSpec(runner, spec, line, cursor, catchAllErrName(keyInitial))
+	if ok && len(cands) == 0 && slices.Contains(spec.options, "bashdefault") {
+		return nil, false, false
+	}
+	return cands, nospace, ok
 }
 
 // runCompletionSpec sets the COMP_* variables, runs the completion, and
@@ -1289,6 +1360,13 @@ func runCompletionSpec(runner *interp.Runner, spec completionSpec, line string, 
 	}
 	if cword > 0 {
 		prev = words[cword-1]
+	} else {
+		// bash's `prev` is `${COMP_WORDS[COMP_CWORD-1]}`, and at word 0
+		// that subscript counts from the end of the array — so the third
+		// argument to an initial-word completion is the current word
+		// again rather than the empty string. Measured under a pty; it
+		// is what `complete -I` and `complete -E` both see.
+		prev = cur
 	}
 
 	var generated []string
