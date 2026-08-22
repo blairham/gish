@@ -498,7 +498,14 @@ skipSpace:
 				p.rune()
 				p.rune()
 				p.tok = assgnParen
-			} else if p.quote == arrayElems {
+			} else if p.quote == arrayElems && p.tok == rightBrack && !p.spaced {
+				// Only the `=` that closes an `[idx]=val` element is an
+				// operator; everywhere else inside a compound assignment
+				// a leading `=` is an ordinary word character, so
+				// `x=( [] =c )` is two words and `x=(=c)` is one (#707).
+				// The `]` immediately before it is what tells them
+				// apart, and it is a token only when the shape completed
+				// — [Parser.bracketIsSubscript] decided that already.
 				p.rune()
 				p.tok = assgn
 			} else {

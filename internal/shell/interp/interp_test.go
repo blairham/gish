@@ -1530,6 +1530,38 @@ var runTests = []runTest{
 	{"a=(foo[0-9] bar); declare -p a", "declare -a a=([0]=\"foo[0-9]\" [1]=\"bar\")\n"},
 	{`a=("[1]=q"); declare -p a`, "declare -a a=([0]=\"[1]=q\")\n"},
 	{"a=([i]); declare -p a", "declare -a a=([0]=\"[i]\")\n"},
+	// A leading `=` inside a compound assignment is an operator only
+	// where an `[idx]` shape just closed; anywhere else it is an
+	// ordinary word character (#707). koi lexed every word-initial `=`
+	// as the assignment operator, so a word beginning with one was a
+	// syntax error — `x=( [] =c )` is two words to bash, and the
+	// divergence needed a bracketed span, whitespace after the `]`, and
+	// a next word starting with `=`.
+	{`x=( [] =c ); declare -p x`, "declare -a x=([0]=\"[]\" [1]=\"=c\")\n"},
+	{`x=( []	=c ); declare -p x`, "declare -a x=([0]=\"[]\" [1]=\"=c\")\n"},
+	{`x=( [] = ); declare -p x`, "declare -a x=([0]=\"[]\" [1]=\"=\")\n"},
+	{
+		// The same word after an *explicit* index, which also shows the
+		// implicit index carrying on from it.
+		`x=( [0]=a [1] =b ); declare -p x`,
+		"declare -a x=([0]=\"a\" [1]=\"[1]\" [2]=\"=b\")\n",
+	},
+	{
+		// bash's own array.tests shape, with the `+=` spelling (#605)
+		// in front of it.
+		`x=(a); x=( [0]+=b [] =c ); declare -p x`,
+		"declare -a x=([0]=\"b\" [1]=\"[]\" [2]=\"=c\")\n",
+	},
+	{`x=( [] +=c ); declare -p x`, "declare -a x=([0]=\"[]\" [1]=\"+=c\")\n"},
+	// The bug was wider than the bracket: a word beginning with `=` was
+	// refused with no bracket in sight.
+	{`x=(=c); declare -p x`, "declare -a x=([0]=\"=c\")\n"},
+	{`x=( =c ); declare -p x`, "declare -a x=([0]=\"=c\")\n"},
+	// And the operator still is one where the shape did complete, so
+	// this is not "every `=` is a word now".
+	{`x=( [0]=a ); declare -p x`, "declare -a x=([0]=\"a\")\n"},
+	{`x=( [0]+=b ); declare -p x`, "declare -a x=([0]=\"b\")\n"},
+	{`x=( [2]=a b c ); declare -p x`, "declare -a x=([2]=\"a\" [3]=\"b\" [4]=\"c\")\n"},
 	// A subscript is text bash cannot classify while reading it: whether
 	// `hello world` is an arithmetic expression or an associative key
 	// depends on the array, which only running knows (#564). Every one of
@@ -6102,6 +6134,75 @@ set -- $(dirs); echo "$#:$(basename $1)"`,
 		"for (( i=1; 7++; i++ )); do echo body; done; echo same=$?",
 		"((: 7++: arithmetic syntax error\nsame=1\n #JUSTERR",
 	},
+	// An *unquoted* `let` argument is the last member of that family
+	// (#670). bash evaluates each expanded argument as an arithmetic
+	// string, so a malformed one is the builtin's complaint under
+	// `let: ` with status 1, and — the whole point — the rest of the
+	// line still runs where a parse error forfeited the file.
+	{
+		"let 4+; echo same=$?",
+		"let: 4+: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		// The arguments before the bad one have already run and the ones
+		// after it have not, which is what proves the builtin stopped
+		// where bash's does rather than the line being lost.
+		`let x=1 4+ y=2; echo "same=$? x=$x y=[$y]"`,
+		"let: 4+: arithmetic syntax error\nsame=1 x=1 y=[]\n #JUSTERR",
+	},
+	{
+		// A word boundary ends an argument, so the `5` is an argument of
+		// its own and the complaint still names `4+` alone.
+		"let 4+ 5; echo same=$?",
+		"let: 4+: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		// The argument is named as bash names it — *expanded* — which is
+		// why a bailed-out argument is kept as a word rather than as its
+		// raw source.
+		"v=3; let $v+; echo same=$?",
+		"let: 3+: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		`let "x"4+; echo same=$?`,
+		"let: x4+: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		"let ++; echo same=$?",
+		"let: ++: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		"let 1+*2; echo same=$?",
+		"let: 1+*2: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		// `#` starts a comment only at the beginning of a word, so this
+		// is one argument and bash names all of it.
+		"let 4+#c; echo same=$?",
+		"let: 4+#c: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		// In a command substitution the word ends at the `)`, and the
+		// substitution's own status is not the line's.
+		"echo [$(let 4+)]; echo same=$?",
+		"let: 4+: arithmetic syntax error\n[]\nsame=0\n #JUSTERR",
+	},
+	{
+		// A stop token ends the argument too, so what follows is the
+		// next command rather than more of the expression.
+		"let 4+&& echo t; echo same=$?",
+		"let: 4+: arithmetic syntax error\nsame=1\n #JUSTERR",
+	},
+	{
+		// The arguments that read still read, which is the half a
+		// parse-time refusal was protecting.
+		`let "a = 3" b=a+1; echo "$a $b"`,
+		"3 4\n",
+	},
+	{
+		"let 2+2 && echo yes; echo same=$?",
+		"yes\nsame=0\n",
+	},
 	// The expressions that read keep reading, which is the half a
 	// parse-time refusal was protecting.
 	{
@@ -7378,6 +7479,72 @@ done <<< 2`,
 		// replacing them with their own single status
 		`{ true | false; }; echo "${PIPESTATUS[@]}"`,
 		"0 1\n",
+	},
+	// `time` and `!` are both in bash's pipeline prefix and compose in
+	// either order, so `time ! cmd` is an ordinary pipeline where koi
+	// answered a parse error and, parsing ahead, lost the rest of the
+	// file (#702). The timing lines are dropped rather than compared:
+	// they carry a clock, and what is under test is the status and the
+	// fact that the line after them runs at all.
+	{
+		`{ time ! echo a; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=1\n",
+	},
+	{
+		`{ time ! false; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=0\n",
+	},
+	{
+		// The negated command really runs, side effects and all — a
+		// status-only case cannot tell that from a swallowed line.
+		`v=; { time ! read -r v <<< hi; } >/dev/null 2>&1; echo "same=$? v=$v"`,
+		"same=1 v=hi\n",
+	},
+	{
+		`x=; { time ! x=set; } >/dev/null 2>&1; echo "same=$? x=$x"`,
+		"same=1 x=set\n",
+	},
+	{
+		// `-p` is its own prefix and sits before the negation.
+		`{ time -p ! true; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=1\n",
+	},
+	{
+		// A bare `!` is a negated null command (#632), so `time !` is a
+		// timed one and `time ! !` negates it twice.
+		`{ time !; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=1\n",
+	},
+	{
+		`{ time ! !; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=0\n",
+	},
+	{
+		`{ time ! ! true; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=0\n",
+	},
+	{
+		// The negation covers the whole pipeline, not its first stage.
+		`{ time ! echo a | cat; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=1\n",
+	},
+	{
+		`{ time ! false | true; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=1\n",
+	},
+	{
+		// The other order already worked, and both nest.
+		`{ ! time ! true; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=0\n",
+	},
+	{
+		`{ time ! time ! true; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=0\n",
+	},
+	{
+		// A `return` is not negated, measured rather than assumed.
+		`f(){ time ! return 3; }; { f; } >/dev/null 2>&1; echo "same=$?"`,
+		"same=3\n",
 	},
 	{`if true | false; then :; fi; echo "${PIPESTATUS[@]}"`, "0 1\n"},
 	{`for i in 1; do true | false; done; echo "${PIPESTATUS[@]}"`, "0 1\n"},

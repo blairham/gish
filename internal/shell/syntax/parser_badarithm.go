@@ -1,6 +1,9 @@
 package syntax
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // arithmBailout is what a parse error inside an arithmetic expression
 // panics with, so that the construct reading it regains control with
@@ -26,7 +29,31 @@ const (
 	// arithmEndBrace is the `}` of a `${x:off:len}` slice, whose halves
 	// are the one arithmetic that lives inside an expansion.
 	arithmEndBrace
+	// arithmEndWord is a `let` argument, which has no delimiter of its
+	// own: it ends where the *word* ends, so at a blank, at a shell
+	// metacharacter or at the end of the input (#670).
+	arithmEndWord
 )
+
+// endsWord reports whether a byte ends an unquoted word at bracket
+// depth zero. The blanks and the metacharacters bash's own lexer
+// recognizes, and no others — `#` in particular starts a comment only
+// at the beginning of a word, so `let 4+#c` is the single argument
+// `4+#c` and bash names all of it.
+func endsWord(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', ';', '&', '|', '<', '>':
+		return true
+	}
+	return false
+}
+
+// opensSubst reports whether a byte makes the `(` after it part of the
+// word rather than the metacharacter it otherwise is: `$(`, and the
+// `<(`/`>(` of a process substitution.
+func opensSubst(b byte) bool {
+	return b == '$' || b == '<' || b == '>'
+}
 
 // beginRaw starts recording source bytes for an arithmetic construct,
 // so a bailout can name the expression as written. Regions nest — a
@@ -165,6 +192,9 @@ func (p *Parser) badArithm(startPos Pos, end arithmEnd) ArithmExpr {
 	}
 	sc := arithmScan{end: end}
 	stop, found := sc.advance(p.arithmRaw[i:], p.peek())
+	if end == arithmEndWord {
+		return p.badArithmWord(startPos, base, i, &sc, stop, found)
+	}
 	if found && i+stop < int(p.nextPos().Offset())-base {
 		// The delimiter is behind the lexer: it is the token the parse
 		// was holding when it gave up, so nothing more needs reading.
@@ -190,6 +220,65 @@ func (p *Parser) badArithm(startPos Pos, end arithmEnd) ArithmExpr {
 	return &BadArithm{ValuePos: startPos, ValueEnd: endPos, Value: string(p.arithmRaw[i : i+stop])}
 }
 
+// badArithmWord finishes a bailed-out `let` argument, which differs from
+// every other construct here in two ways (#670).
+//
+// Its delimiter is **not a token**: a word ends at a blank, and the
+// lexer skips blanks — so by the time an argument gives up, the lexer is
+// usually already holding the *next* argument, which is exactly where
+// the caller's loop needs it. Nothing is consumed in that case; where
+// the end is still ahead the source is read out to it and the delimiter
+// lexed, so `let 4+;;` leaves the `;;` for the statement parser to
+// object to as bash does.
+//
+// And **the input running out is a delimiter**, since a word needs
+// nothing to close it — provided nothing else was left open, because an
+// unterminated quote or bracket is a syntax error in bash too.
+func (p *Parser) badArithmWord(startPos Pos, base, i int, sc *arithmScan, stop int, found bool) ArithmExpr {
+	if found && i+stop <= int(p.pos.Offset())-base {
+		return p.badArithmValue(startPos, i, stop)
+	}
+	outer := p.quote
+	p.quote = runeByRune
+	for !found && !sc.giveUp && p.r != runeEOF {
+		p.rune()
+		stop, found = sc.advance(p.arithmRaw[i:], p.peek())
+	}
+	if !found && !sc.giveUp && sc.depth == 0 && sc.quote == 0 {
+		stop, found = len(p.arithmRaw)-i, true
+	}
+	p.quote = outer
+	if !found || i+stop != int(p.nextPos().Offset())-base {
+		p.stopErr(p.bailErr)
+		return nil
+	}
+	x := p.badArithmValue(startPos, i, stop)
+	if x != nil {
+		// The blank or metacharacter the word ended at; the caller reads
+		// whatever follows it as its own next argument or stop token.
+		p.next()
+	}
+	return x
+}
+
+// badArithmValue answers with the argument as a [*Word], sub-parsed from
+// the source it was written in and positioned where it stands.
+//
+// A word rather than a [*BadArithm] because that is what bash evaluates:
+// `let` takes each *expanded* argument and reads it as an arithmetic
+// string, so `v=3; let $v+` reports `3+` and `let "x"4+` reports `x4+`.
+// Raw source would name the text before expansion in both. [expand.Arithm]
+// already sends a word through `arithmWordStr`, which is the same path a
+// quoted `let '4 +'` has always taken.
+func (p *Parser) badArithmValue(startPos Pos, i, stop int) ArithmExpr {
+	w, err := p.fragment(startPos).wholeWord(strings.NewReader(string(p.arithmRaw[i : i+stop])))
+	if err != nil || w == nil {
+		p.stopErr(p.bailErr)
+		return nil
+	}
+	return w
+}
+
 // arithmScan finds the delimiter that ends an arithmetic construct in
 // raw source. Only the quotes, a backslash, a backquote and the nesting
 // brackets are significant, for the same reason they are the only
@@ -201,12 +290,18 @@ type arithmScan struct {
 	i     int  // how far into the text the scan has read
 	depth int  // open brackets
 	quote byte // the quote the scan is inside, if any
+	// giveUp means the text is not a shape bash would have formed at
+	// all, so the parse error the expression had is the answer.
+	giveUp bool
 }
 
 // advance reads text from where it left off, reporting the index of the
 // delimiter if it is in there. tailPeek is the byte following the text,
 // which a `))` needs to be recognized at the very end of it.
 func (s *arithmScan) advance(text []byte, tailPeek byte) (int, bool) {
+	if s.giveUp {
+		return 0, false
+	}
 	for ; s.i < len(text); s.i++ {
 		b := text[s.i]
 		if s.quote != 0 {
@@ -214,6 +309,40 @@ func (s *arithmScan) advance(text []byte, tailPeek byte) (int, bool) {
 				s.i++
 			} else if b == s.quote {
 				s.quote = 0
+			}
+			continue
+		}
+		if s.end == arithmEndWord {
+			// A word answers to the shell's own lexer rather than to a
+			// bracket: only the parens nest, since `$( … )` carries a
+			// `)` that is not the word's end, while `[`, `]`, `{` and
+			// `}` are ordinary text — `let a[=1` is the single word
+			// bash names in `a[=1: bad array subscript`.
+			switch b {
+			case '\\':
+				s.i++ // whatever follows is literal, including a blank
+			case '\'', '"', '`':
+				s.quote = b
+			case '(':
+				// A bare `(` is a metacharacter to bash's lexer, so a
+				// word cannot contain one and `let (a)++` is a syntax
+				// error there rather than a runtime complaint. Only the
+				// parens an expansion opens are part of a word, and
+				// those are recognizable by what precedes them.
+				if s.depth == 0 && (s.i == 0 || !opensSubst(text[s.i-1])) {
+					s.giveUp = true
+					return 0, false
+				}
+				s.depth++
+			case ')':
+				if s.depth == 0 {
+					return s.i, true
+				}
+				s.depth--
+			default:
+				if s.depth == 0 && endsWord(b) {
+					return s.i, true
+				}
 			}
 			continue
 		}

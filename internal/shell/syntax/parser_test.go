@@ -1491,39 +1491,33 @@ var errorCases = []errorCase{
 	// *builtin* answers `let: expression expected` with status 1 (#593).
 	// `let ))` and `` `let` { foo; } `` below are still parse errors,
 	// because bash calls those syntax errors too.
-	errCase(
-		"let a+ b",
-		langErr("1:6: `+` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
-		"let + a",
-		langErr("1:5: `+` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
-		"let a ++",
-		langErr("1:7: `++` must be followed by a literal", LangBash|LangMirBSDKorn|LangZsh),
-	),
+	// A malformed *unquoted* `let` argument is not a parse error either
+	// (#670). bash's `let` evaluates each expanded argument as an
+	// arithmetic string, so it answers under `let: ` with status 1 and
+	// the line carries on, exactly as a quoted `let '4 +'` always has.
+	// Measured against bash 5.3, all status 1:
+	//
+	//	let a+ b   let: a+: arithmetic syntax error: operand expected
+	//	let + a    let: +: …
+	//	let a ++   let: ++: …
+	//	let 1++    let: 1++: …
+	//	let a+     let: a+: …
+	//	let a:b    let: a:b: arithmetic syntax error in expression
+	//	let --$a   let: expression expected
+	//
+	// The two below keep their parse errors because bash refuses them
+	// too: a bare `(` is a metacharacter, so `let (a)++` is bash's
+	// `syntax error near unexpected token 'a'` rather than anything the
+	// builtin ever sees.
 	errCase(
 		"let (a)++",
 		langErr("1:8: `++` must follow a name", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
-		"let 1++",
-		langErr("1:6: `++` must follow a name", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	// `let $0++` is the same: bash reads it and complains about the
 	// value $0 spells, not about the shape.
 	errCase(
 		"let --(a)",
 		langErr("1:5: `--` must be followed by a literal", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
-		"let --$a",
-		langErr("1:5: `--` must be followed by a literal", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
-		"let a+\n",
-		langErr("1:6: `+` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		// Still a parse error, as in bash — only the wording moved, since
@@ -1535,10 +1529,6 @@ var errorCases = []errorCase{
 	errCase(
 		"`let !`",
 		langErr("1:6: `!` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
-	),
-	errCase(
-		"let a:b",
-		langErr("1:6: ternary operator missing `?` before `:`", LangBash|LangMirBSDKorn|LangZsh),
 	),
 	// `let a+b=c` parses and the builtin refuses it: bash answers
 	// `let: a+b=c: attempted assignment to non-variable` with status 1
@@ -1869,11 +1859,12 @@ var errorCases = []errorCase{
 		"time { foo;",
 		langErr("1:6: reached EOF without matching `{` with `}`", LangBash|LangMirBSDKorn|LangZsh),
 	),
-	errCase(
-		"time ! foo",
-		langErr("1:6: `!` can only be used in full statements", LangBash|LangMirBSDKorn|LangZsh),
-		flipConfirm(LangBash), // TODO: why is this valid?
-	),
+	// `time ! foo` is gone rather than reworded, which answers the
+	// "TODO: why is this valid?" the case carried: bash's grammar is
+	// `timespec pipeline_command` and a pipeline_command may itself
+	// begin with `!`, so the two prefixes compose in either order
+	// (#702). Confirmed in all three languages this case covered —
+	// bash 5.3, zsh 5.9 and ksh all run `time ! true` and answer 1.
 	errCase(
 		"coproc",
 		langErr("1:1: coproc clause requires a command", LangBash),

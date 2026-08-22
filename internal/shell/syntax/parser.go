@@ -2862,40 +2862,52 @@ func (p *Parser) doRedirect(s *Stmt) {
 	}
 }
 
-func (p *Parser) getStmt(readEnd, binCmd, fnBody bool) *Stmt {
-	pos, ok := p.gotRsrv("!")
-	s := &Stmt{Position: pos}
-	nullCmd := false
-	bang := pos
-	if ok {
-		// bash's grammar is `BANG pipeline_command`, so the bangs nest and
-		// there may be any number of them; koi keeps the count on the one
-		// statement instead. The innermost may negate nothing at all.
-		s.Negations = 1
-		for {
-			if p.nullCmdEnd() {
-				p.checkLang(bang, langBashLike|LangZsh, "a negated null command")
-				nullCmd = true
-				break
-			}
-			pos, ok := p.gotRsrv("!")
-			if !ok {
-				break
-			}
-			p.checkLang(s.Pos(), langBashLike|LangMirBSDKorn, "negating a command more than once")
-			s.Negations++
-			bang = pos
-		}
-		if p.err != nil {
-			return nil
-		}
+// pipelineCommand reads bash's `pipeline_command`: any number of `!`
+// prefixes and then a pipeline. It is what a statement begins with and
+// equally what follows a `time`, since bash's grammar puts the two in
+// the same prefix — `timespec pipeline_command`, whose right-hand side
+// may itself begin with `!` — so `time ! cmd` is an ordinary pipeline
+// and not the parse error koi answered (#702).
+func (p *Parser) pipelineCommand(s *Stmt) *Stmt {
+	bang, ok := p.gotRsrv("!")
+	if !ok {
+		return p.gotStmtPipe(s, false)
 	}
-	if nullCmd {
-		// Never a nil Stmt.Cmd: every reader assumes it is non-nil, so the
-		// null command is an empty CallExpr, which every `len(Args) == 0`
-		// path already treats as "assign nothing, run nothing, exit 0".
-		s.Cmd = &CallExpr{Null: posAddCol(bang, 1)}
-	} else if s = p.gotStmtPipe(s, false); s == nil || p.err != nil {
+	s.Position = bang
+	// bash's grammar is `BANG pipeline_command`, so the bangs nest and
+	// there may be any number of them; koi keeps the count on the one
+	// statement instead. The innermost may negate nothing at all.
+	s.Negations = 1
+	for {
+		if p.nullCmdEnd() {
+			p.checkLang(bang, langBashLike|LangZsh, "a negated null command")
+			if p.err != nil {
+				return nil
+			}
+			// Never a nil Stmt.Cmd: every reader assumes it is non-nil, so
+			// the null command is an empty CallExpr, which every
+			// `len(Args) == 0` path already treats as "assign nothing, run
+			// nothing, exit 0".
+			s.Cmd = &CallExpr{Null: posAddCol(bang, 1)}
+			return s
+		}
+		pos, ok := p.gotRsrv("!")
+		if !ok {
+			break
+		}
+		p.checkLang(s.Pos(), langBashLike|LangMirBSDKorn, "negating a command more than once")
+		s.Negations++
+		bang = pos
+	}
+	if p.err != nil {
+		return nil
+	}
+	return p.gotStmtPipe(s, false)
+}
+
+func (p *Parser) getStmt(readEnd, binCmd, fnBody bool) *Stmt {
+	s := p.pipelineCommand(&Stmt{Position: p.pos})
+	if s == nil || p.err != nil {
 		return nil
 	}
 	// instead of using recursion, iterate manually
@@ -3671,7 +3683,7 @@ func (p *Parser) timeClause(s *Stmt) {
 	if _, ok := p.gotRsrv("-p"); ok {
 		tc.PosixFormat = true
 	}
-	tc.Stmt = p.gotStmtPipe(&Stmt{Position: p.pos}, false)
+	tc.Stmt = p.pipelineCommand(&Stmt{Position: p.pos})
 	s.Cmd = tc
 }
 
@@ -3707,14 +3719,23 @@ func (p *Parser) coprocClause(s *Stmt) {
 func (p *Parser) letClause(s *Stmt) {
 	lc := &LetClause{Let: p.pos}
 	old := p.preNested(arithmExprLet)
+	// One recording spans every argument, seeded before the first one is
+	// lexed so a bailout can name an argument from where it starts —
+	// `let` evaluates each of its arguments as an arithmetic *string*,
+	// so a malformed one is the builtin's complaint rather than a parse
+	// error and only that argument's own text is at fault (#670, #600).
+	p.beginRaw()
 	p.next()
 	for !p.stopToken() && !p.peekRedir() {
-		x := p.arithmExpr(true)
+		x := p.arithmRead(p.pos, arithmEndWord, func() ArithmExpr {
+			return p.arithmExpr(true)
+		})
 		if x == nil {
 			break
 		}
 		lc.Exprs = append(lc.Exprs, x)
 	}
+	p.endRaw()
 	if len(lc.Exprs) == 0 && !p.stopToken() && !p.peekRedir() {
 		// Something is there and it is not an expression, which bash
 		// also calls a syntax error. A bare `let` is different: bash
