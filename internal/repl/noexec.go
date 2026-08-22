@@ -64,6 +64,14 @@ func CheckStdin() error {
 // second-guess at what koi accepts. A syntax check that disagrees with
 // the shell it checks for is worse than none — it would pass scripts that
 // then fail to run, which is the failure mode CI uses `-n` to prevent.
+//
+// The one place it is deliberately *looser* is a mode a run would have
+// set, which a static check cannot know: this parser is given neither
+// `set -o posix` (#450) nor `shopt -s extglob` (#619), so it reads an
+// extglob group in word position where a run of the same file would
+// refuse it until the option was on. bash -n rejects those files, so the
+// divergence is koi accepting more rather than rejecting a script that
+// runs — the direction that cannot break a hook.
 func checkSyntax(r io.Reader, name string) error {
 	_, err := syntax.NewParser().Parse(r, name)
 	return err

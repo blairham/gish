@@ -43,6 +43,52 @@ func POSIXMode(enabled bool) ParserOption {
 	return func(p *Parser) { p.posix = enabled }
 }
 
+// extGlobMode is what the parser has been told about bash's
+// `shopt extglob`. The zero value is what a parser with no shell behind
+// it uses; see [ExtendedGlobs].
+type extGlobMode uint8
+
+const (
+	// extGlobUnset parses a non-empty `@(…)` as an [ExtGlob] and leaves
+	// `@()` to be a function named `@`, which is what a parser with
+	// nobody to ask can do: a tree that keeps the group is what a
+	// printer and a highlighter need, and an empty group is far more
+	// often a function definition than a pattern matching nothing.
+	extGlobUnset extGlobMode = iota
+	extGlobOn
+	extGlobOff
+)
+
+// ExtendedGlobs tells the parser whether bash's `shopt extglob` is on,
+// which decides whether `+(`, `@(`, `!(`, `?(` and `*(` open an extended
+// globbing group or are ordinary characters (#619).
+//
+// It is a *parsing* question, not a matching one. With the option off
+// bash does not read `echo +(a|b)c` as a pattern and then decline to
+// expand it; it fails to read the line at all, with a syntax error at
+// the `(`. With the option on, an empty group is legal — `echo +()c`
+// prints `+()c` — and `@() { … }` stops being a way to define a function
+// named `@`, because `@()` is now a group. Both measured against bash
+// 5.3.
+//
+// Because a script turns the option on as it runs, a shell applies this
+// to its live parser between input lines, exactly as it does
+// [POSIXMode]: `shopt -s extglob; echo +(a|b)c` on one line still fails,
+// because bash reads a whole line before running any of it (#450).
+//
+// Never calling it leaves the parser deciding on its own; see
+// [extGlobUnset] for what that means and why it is not the same as
+// either answer.
+func ExtendedGlobs(enabled bool) ParserOption {
+	return func(p *Parser) {
+		if enabled {
+			p.extGlob = extGlobOn
+		} else {
+			p.extGlob = extGlobOff
+		}
+	}
+}
+
 // LangVariant describes a shell language variant to use when tokenizing and
 // parsing shell code. The zero value is [LangBash].
 //
@@ -571,6 +617,8 @@ type Parser struct {
 	lang         LangVariant
 	// posix is bash's `set -o posix`; see [POSIXMode].
 	posix bool
+	// extGlob is bash's `shopt extglob`; see [ExtendedGlobs].
+	extGlob extGlobMode
 	// sglQuoteLiteral is set while lexing the word of a `${name+word}`
 	// expansion which posix mode says quotes are not special in. See
 	// [POSIXMode] and [Parser.paramExpExp].

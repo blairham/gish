@@ -543,17 +543,34 @@ func (p *Parser) extendedGlob() bool {
 		// We don't support e.g. `function @() { ... }` at the moment, but we could.
 		return false
 	}
-	if p.peek() == '(' {
-		// NOTE: empty pattern list is a valid globbing syntax like `@()`,
-		// but we'll operate on the "likelihood" that it is a function;
-		// only tokenize if its a non-empty pattern list.
-		// We do this after peeking for just one byte, so that the input `echo *`
-		// followed by a newline does not hang an interactive shell parser until
-		// another byte is input.
-		_, p2 := p.peekTwo()
-		return p2 != ')'
+	if p.peek() != '(' {
+		return false
 	}
-	return false
+	// We decide after peeking for just one byte, so that the input
+	// `echo *` followed by a newline does not hang an interactive shell
+	// parser until another byte is input.
+	switch {
+	case p.quote == testExpr:
+		// `[[ ]]` matches extended patterns whatever `shopt extglob`
+		// says: bash answers yes to `[[ abc == +(a|b)c ]]` and to
+		// `[[ "" == @() ]]` with the option off, because the conditional
+		// command's right-hand side is a pattern by grammar rather than
+		// by option. Measured against 5.3.
+		return true
+	case p.extGlob == extGlobOff:
+		// The group is not syntax at all, so `+` is an ordinary
+		// character and the `(` after it is a syntax error, which is
+		// what bash reports (#619).
+		return false
+	case p.extGlob == extGlobOn:
+		// An empty pattern list is a group like any other — `echo +()c`
+		// prints `+()c` — and with the option on bash does not read
+		// `@() { … }` as a function definition either.
+		return true
+	}
+	// Nobody has said; see [extGlobUnset].
+	_, p2 := p.peekTwo()
+	return p2 != ')'
 }
 
 func (p *Parser) peek() byte {
