@@ -881,6 +881,13 @@ func TraceHook(fn func(TraceEvent)) RunnerOption {
 // Params("+e") will unset the "-e" option and leave the parameters untouched.
 //
 // This is similar to what the interpreter's "set" builtin does.
+// setUsageError is an invalid option *letter*, which bash follows with
+// set's usage line. An invalid `-o` *name* is not one of these: bash
+// prints that message on its own, measured.
+type setUsageError struct{ msg string }
+
+func (e setUsageError) Error() string { return e.msg }
+
 func Params(args ...string) RunnerOption {
 	return func(r *Runner) error {
 		fp := flagParser{remaining: args}
@@ -897,14 +904,25 @@ func Params(args ...string) RunnerOption {
 			if flag[1] != 'o' {
 				status, opt := r.posixOptByFlag(flag[1])
 				if status == nil {
-					return fmt.Errorf("invalid option: %q", flag)
+					return setUsageError{fmt.Sprintf("%s: invalid option", flag)}
 				}
 				if err := r.setPosixOpt(status, opt, enable); err != nil {
 					return err
 				}
 				continue
 			}
-			value := fp.value()
+			// `-o` takes an option *name*, and only as a separate word
+			// that does not itself begin with a sign: `set -o -B` is the
+			// listing followed by braceexpand and `set -oe` is the
+			// listing followed by errexit, both measured. koi read the
+			// next word whatever it was, so bash's own builtins.tests
+			// counted the listing at one line instead of twenty-seven.
+			value := ""
+			if fp.current == "" && len(fp.remaining) > 0 {
+				if a := fp.remaining[0]; a == "" || (a[0] != '-' && a[0] != '+') {
+					value = fp.value()
+				}
+			}
 			if value == "" && enable {
 				for _, i := range posixOptNames() {
 					r.printOptLine(posixOptsTable[i].name, setOptColumn, r.opts[i])
@@ -923,7 +941,7 @@ func Params(args ...string) RunnerOption {
 			}
 			status, opt := r.posixOptByName(value)
 			if status == nil {
-				return fmt.Errorf("invalid option: %q", value)
+				return fmt.Errorf("%s: invalid option name", value)
 			}
 			if err := r.setPosixOpt(status, opt, enable); err != nil {
 				return err
@@ -1643,6 +1661,36 @@ var bashOptsTable = [...]bashOpt{
 		defaultState: true,
 		support:      optImplemented,
 	},
+	{
+		// Escape interpretation is what this option decides, so the bit
+		// alone would have been a claim about `echo` that was not true —
+		// which is why #542 and #575 both singled it out as a refusal
+		// rather than state. The behavior is implemented now, so the
+		// refusal is no longer honest (#604). Appended to the supported
+		// block for the same reason varredir_close was: the opt*
+		// constants index this table positionally.
+		name:    "xpg_echo",
+		support: optImplemented,
+	},
+	{
+		// Whether `.` searches $PATH for a bare name. koi searched it
+		// unconditionally and the shell around the interpreter accepted
+		// `shopt -u sourcepath` and dropped it, so turning the search
+		// off left the search on — the same accept-and-ignore shape
+		// #566 fixed one layer up. Appended for the positional reason
+		// above.
+		name:         "sourcepath",
+		defaultState: true,
+		support:      optImplemented,
+	},
+	{
+		// Verify a hashed path before running it, and search again when
+		// the program has moved or gone — the option exists because a
+		// long-lived shell's hash table goes stale. Appended for the
+		// positional reason above.
+		name:    "checkhash",
+		support: optImplemented,
+	},
 	// unsupported options, sorted alphabetically by name
 	{name: "array_expand_once"},
 	{name: "assoc_expand_once"},
@@ -1650,7 +1698,6 @@ var bashOptsTable = [...]bashOpt{
 	{name: "bash_source_fullpath"},
 	{name: "cdable_vars"},
 	{name: "cdspell", support: optStateOnly},
-	{name: "checkhash"},
 	{name: "checkjobs", support: optStateOnly},
 	{
 		name:         "checkwinsize",
@@ -1730,11 +1777,6 @@ var bashOptsTable = [...]bashOpt{
 	},
 	{name: "restricted_shell"},
 	{name: "shift_verbose"},
-	{
-		name:         "sourcepath",
-		defaultState: true,
-	},
-	{name: "xpg_echo"},
 }
 
 // To access the shell options arrays without a linear search when we
@@ -1786,6 +1828,9 @@ const (
 	optNullGlob
 	optVarRedirClose
 	optPatSubReplacement
+	optXpgEcho
+	optSourcePath
+	optCheckHash
 )
 
 // Reset returns a runner to its initial state, right before the first call to

@@ -26,7 +26,9 @@ import (
 // is real but unavoidable, and it is the same thing every other shell
 // does.
 
-const umaskUsage = "usage: umask [-p] [-S] [mode]"
+// bash prefixes its usage line with the builtin's name, which koi's
+// ulimit already did and its umask did not.
+const umaskUsage = "umask: usage: umask [-p] [-S] [mode]"
 
 // Umask reports or sets the file mode creation mask.
 func Umask(_ context.Context, hc interp.HandlerContext, args []string) error {
@@ -63,7 +65,11 @@ operand:
 		syscall.Umask(current)
 		mode, err := parseUmask(args[0], current)
 		if err != nil {
-			hc.Errf("umask: %s: %v\n", args[0], err)
+			// The error carries its whole body, because bash words the
+			// two families differently: the octal one names the mode
+			// (`999: octal number out of range`) and the symbolic one
+			// names the byte it stopped at instead.
+			hc.Errf("umask: %v\n", err)
 			return interp.ExitStatus(1)
 		}
 		syscall.Umask(mode)
@@ -98,79 +104,155 @@ operand:
 // parseUmask reads an octal mode, or a symbolic one against the mask
 // already in force (#411) — `umask u=rwx,g=rwx,o=rx` is how a script
 // states what it wants to *allow*, and koi refused it outright.
+//
+// Which of the two it is comes down to the first byte, which is bash's
+// rule and not a guess: `9x` is `9x: octal number out of range` there
+// rather than a symbolic mode, and koi called it an invalid symbolic
+// mode because it only took the octal path when every byte was a digit.
 func parseUmask(s string, current int) (int, error) {
 	if s == "" {
 		return 0, fmt.Errorf("octal number expected")
 	}
-	for _, r := range s {
-		if r < '0' || r > '7' {
-			return parseSymbolicUmask(s, current)
-		}
+	if s[0] < '0' || s[0] > '9' {
+		return parseSymbolicUmask(s, current)
 	}
 	v, err := strconv.ParseInt(s, 8, 32)
-	if err != nil || v < 0 || v > 0o777 {
-		return 0, fmt.Errorf("octal number out of range")
+	// The ceiling is 07777 rather than 0777: bash accepts `umask 1000`
+	// and reads it back as `1000`, so the setuid, setgid and sticky bits
+	// are part of the mode a script may set. Measured.
+	if err != nil || v < 0 || v > 0o7777 {
+		return 0, fmt.Errorf("%s: octal number out of range", s)
 	}
 	return int(v), nil
 }
 
-// parseSymbolicUmask applies a comma-separated symbolic mode. The
-// clauses describe the permissions that are *allowed*, so the work
-// happens on the complement of the mask and is inverted at the end —
-// which is why `umask =` answers 0777 rather than 0.
+// parseSymbolicUmask applies a symbolic mode. The clauses describe the
+// permissions that are *allowed*, so the work happens on the complement
+// of the mask and is inverted at the end — which is why `umask =`
+// answers 0777 rather than 0.
+//
+// The grammar is `[ugoa]* (op [rwxXst ugo]*)+ (, ...)*`, and the two
+// pieces koi was missing are exactly the ones bash's own builtins8.sub
+// is made of. **A clause may carry more than one action**: `u=r+w` is
+// `u`, then `=r`, then `+w`, and koi cut the clause at the first
+// operator and read `r+w` as a permission list, so seven of that file's
+// eighteen cases came back "invalid symbolic mode". **A permission may
+// be a who letter**, meaning "whatever that one has right now" — `o=u`,
+// `g+u`, `o+ru` — and it mixes freely with `rwx`, all measured.
+//
+// The scan is one pass over the whole string rather than a split on
+// commas, because that is the only way to report the byte bash reports:
+// a leading comma is `,': invalid symbolic mode operator` there, which a
+// split would have turned into an empty first clause.
 func parseSymbolicUmask(s string, current int) (int, error) {
 	perm := ^current & 0o777
-	for _, clause := range strings.Split(s, ",") {
-		if clause == "" {
-			return 0, fmt.Errorf("invalid symbolic mode")
-		}
-		i := strings.IndexAny(clause, "+-=")
-		if i < 0 {
-			return 0, fmt.Errorf("invalid symbolic mode")
-		}
-		whoSpec, op, permSpec := clause[:i], clause[i], clause[i+1:]
-		mask := 0
-		if whoSpec == "" {
-			whoSpec = "a"
-		}
-		for _, w := range whoSpec {
-			switch w {
+	// copyOf answers "what this who is allowed right now", spread across
+	// all three positions so the caller's who-mask can pick out the ones
+	// it wants — chmod's `g+u` rule.
+	copyOf := func(shift uint) int {
+		v := (perm >> shift) & 7
+		return v | v<<3 | v<<6
+	}
+	for i := 0; i < len(s); {
+		who := 0
+		for ; i < len(s); i++ {
+			switch s[i] {
 			case 'u':
-				mask |= 0o700
+				who |= 0o700
 			case 'g':
-				mask |= 0o070
+				who |= 0o070
 			case 'o':
-				mask |= 0o007
+				who |= 0o007
 			case 'a':
-				mask |= 0o777
+				who |= 0o777
 			default:
-				return 0, fmt.Errorf("invalid symbolic mode")
+				goto actions
 			}
 		}
-		bits := 0
-		for _, c := range permSpec {
-			switch c {
-			case 'r':
-				bits |= 0o444
-			case 'w':
-				bits |= 0o222
-			case 'x', 'X':
-				bits |= 0o111
-			default:
-				return 0, fmt.Errorf("invalid symbolic mode")
-			}
+	actions:
+		if who == 0 {
+			// No who at all means all of them, so `+x` is `a+x`.
+			who = 0o777
 		}
-		bits &= mask
-		switch op {
-		case '+':
-			perm |= bits
-		case '-':
-			perm &^= bits
-		case '=':
-			perm = perm&^mask | bits
+		for first := true; ; first = false {
+			if i >= len(s) {
+				if first {
+					return 0, badUmaskOperator(s, i)
+				}
+				return ^perm & 0o777, nil
+			}
+			op := s[i]
+			if op != '+' && op != '-' && op != '=' {
+				return 0, badUmaskOperator(s, i)
+			}
+			i++
+			bits := 0
+		permList:
+			for ; i < len(s); i++ {
+				switch c := s[i]; c {
+				case 'r':
+					bits |= 0o444
+				case 'w':
+					bits |= 0o222
+				case 'x':
+					bits |= 0o111
+				case 'X':
+					// Conditional execute: only when something is
+					// already executable, since there is no file here to
+					// ask about. `umask 777; umask a+X` is a no-op.
+					if perm&0o111 != 0 {
+						bits |= 0o111
+					}
+				case 's', 't':
+					// setuid, setgid and sticky are accepted and do not
+					// reach the nine bits `umask -S` prints; koi refused
+					// them outright.
+				case 'u':
+					bits |= copyOf(6)
+				case 'g':
+					bits |= copyOf(3)
+				case 'o':
+					bits |= copyOf(0)
+				case '+', '-', '=', ',':
+					break permList
+				default:
+					return 0, fmt.Errorf("`%c': invalid symbolic mode character", c)
+				}
+			}
+			bits &= who
+			switch op {
+			case '+':
+				perm |= bits
+			case '-':
+				perm &^= bits
+			case '=':
+				perm = perm&^who | bits
+			}
+			if i < len(s) && s[i] == ',' {
+				i++
+				if i >= len(s) {
+					// A trailing comma promises another clause, so bash
+					// reports the byte after it — the terminator.
+					return 0, badUmaskOperator(s, i)
+				}
+				break
+			}
 		}
 	}
 	return ^perm & 0o777, nil
+}
+
+// badUmaskOperator words bash's complaint about the byte where an
+// operator should have been. Running off the end of the string is the
+// odd one: bash reads the terminator and prints it, so the message
+// really does carry a NUL between its backquotes — matched rather than
+// tidied, because this text is what a caller diffs.
+func badUmaskOperator(s string, i int) error {
+	c := byte(0)
+	if i < len(s) {
+		c = s[i]
+	}
+	return fmt.Errorf("`%c': invalid symbolic mode operator", c)
 }
 
 // symbolicUmask renders the mask the way `umask -S` does: the

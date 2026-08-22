@@ -79,35 +79,79 @@ func (r *Runner) dirStackEntry(dir string, full bool) string {
 	return dir
 }
 
+// signedWord reports whether a word carries a leading + or -, which is
+// what makes it a candidate stack index rather than a directory.
+//
+// The length check is load-bearing: `pushd ""` and `popd ""` reach here,
+// and indexing byte zero of an empty operand took the shell down with a
+// panic. What bash does with those two is measured and different in
+// each — pushd refuses a null directory when it would move and stacks
+// the empty string under -n, popd reads it as `-0` — so neither is
+// "no operand".
+func signedWord(s string) bool {
+	return s != "" && (s[0] == '+' || s[0] == '-')
+}
+
+// dirsUsage and friends are the usage lines bash prints under a bad
+// argument. They are data a caller may match, so they are bash's byte
+// for byte.
+const (
+	dirsUsage  = "dirs: usage: dirs [-clpv] [+N] [-N]\n"
+	pushdUsage = "pushd: usage: pushd [-n] [+N | -N | dir]\n"
+	popdUsage  = "popd: usage: popd [-n] [+N | -N]\n"
+)
+
 // dirs implements the builtin: `dirs [-clpv] [+N|-N]`.
 func (r *Runner) dirs(args []string) exitStatus {
 	full, perLine, verbose := false, false, false
 	var index string
 	for _, arg := range args {
-		switch {
-		case arg == "-c":
+		if arg == "--" {
+			// `--` ends the options, and dirs takes no operands, so
+			// everything after it is ignored: `dirs -- +1` is the plain
+			// listing rather than entry 1, measured. koi read the `--`
+			// itself as a stack index and answered "out of range".
+			break
+		}
+		switch arg {
+		case "-c":
 			// Clearing leaves the current directory, which is entry 0
 			// rather than something the stack can drop.
 			r.dirStack = r.dirStack[:1]
 			r.dirStackSync()
 			return exitStatus{}
-		case arg == "-l":
+		case "-l":
 			full = true
-		case arg == "-p":
+		case "-p":
 			perLine = true
-		case arg == "-v":
+		case "-v":
 			verbose, perLine = true, true
-		case strings.HasPrefix(arg, "+") || strings.HasPrefix(arg, "-"):
-			index = arg
 		default:
-			r.errf("dirs: %s: invalid option\n", arg)
-			return exitStatus{code: 2}
+			if arg == "" || (arg[0] != '-' && arg[0] != '+') {
+				r.errf("dirs: %s: invalid option\n", arg)
+				r.rawErrf("%s", dirsUsage)
+				return exitStatus{code: 2}
+			}
+			// Anything else beginning with a sign has to be a +N or -N.
+			// The options do not cluster here — `dirs -lp` is bash's
+			// `-lp: invalid number` rather than -l and -p — so a signed
+			// word that is not a number gets the number's complaint.
+			if _, ok := parseStackIndex(arg); !ok {
+				r.errf("dirs: %s: invalid number\n", arg)
+				r.rawErrf("%s", dirsUsage)
+				return exitStatus{code: 2}
+			}
+			// The last index given wins: `dirs +1 +2` prints entry 2.
+			index = arg
 		}
 	}
 	if index != "" {
 		n, ok := r.dirStackIndex(index)
 		if !ok {
-			r.errf("dirs: %s: directory stack index out of range\n", index)
+			// The sign is dropped: bash prints the number it parsed, so
+			// `dirs +8` and `dirs -8` both complain about `8`.
+			num, _ := parseStackIndex(index)
+			r.errf("dirs: %d: directory stack index out of range\n", num)
 			return exitStatus{code: 1}
 		}
 		r.outf("%s\n", r.dirStackEntry(r.dirStack[n], full))
@@ -135,12 +179,41 @@ func (r *Runner) dirs(args []string) exitStatus {
 
 // pushd implements the builtin: `pushd [-n] [+N|-N|dir]`.
 func (r *Runner) pushd(ctx context.Context, args []string) exitStatus {
-	change := true
-	if len(args) > 0 && args[0] == "-n" {
-		change = false
-		args = args[1:]
+	change, literal := true, false
+	for len(args) > 0 {
+		if args[0] == "-n" {
+			change = false
+			args = args[1:]
+			continue
+		}
+		if args[0] == "--" {
+			// After `--` a `+1` is a *directory name* rather than a
+			// stack index — measured, `pushd -- +1` is bash's `+1: No
+			// such file or directory` — and with nothing after it the
+			// bare-pushd swap is what is left. koi read the `--` as the
+			// directory to change to.
+			literal = true
+			args = args[1:]
+		}
+		break
 	}
 	r.dirStackSync()
+	if len(args) > 0 && !literal && args[0] != "-" && signedWord(args[0]) {
+		// A bare `-` is the exception and is a directory, since `pushd -`
+		// is `cd -`. Everything else carrying a sign must be a number,
+		// and the check comes before the arity one: `pushd -x /tmp` is
+		// bash's `-x: invalid number`, not "too many arguments".
+		if _, ok := parseStackIndex(args[0]); !ok {
+			r.errf("pushd: %s: invalid number\n", args[0])
+			r.rawErrf("%s", pushdUsage)
+			return exitStatus{code: 2}
+		}
+	}
+	if len(args) > 1 {
+		// bash answers 1 here rather than the usual usage 2, measured.
+		r.errf("pushd: too many arguments\n")
+		return exitStatus{code: 1}
+	}
 	switch len(args) {
 	case 0:
 		if !change {
@@ -160,8 +233,8 @@ func (r *Runner) pushd(ctx context.Context, args []string) exitStatus {
 			r.dirStack[0], r.dirStack[1] = r.dirStack[1], r.dirStack[0]
 			return exitStatus{code: code}
 		}
-	case 1:
-		if n, ok := r.dirStackIndex(args[0]); ok {
+	default:
+		if n, ok := r.dirStackIndex(args[0]); ok && !literal {
 			// A stack argument *rotates* rather than pushing: the
 			// named entry becomes the top and the ones above it move
 			// underneath. koi read it as a filename and answered
@@ -176,31 +249,38 @@ func (r *Runner) pushd(ctx context.Context, args []string) exitStatus {
 			}
 			break
 		}
-		if strings.HasPrefix(args[0], "+") || strings.HasPrefix(args[0], "-") {
-			if _, err := strconv.Atoi(args[0][1:]); err == nil {
-				r.errf("pushd: %s: directory stack index out of range\n", args[0])
-				return exitStatus{code: 1}
-			}
+		if !literal && args[0] != "-" && signedWord(args[0]) {
+			// It parsed as a number above, so the only way here is out
+			// of range.
+			r.errf("pushd: %s: directory stack index out of range\n", args[0])
+			return exitStatus{code: 1}
 		}
+		dir := args[0]
 		if !change {
 			// -n inserts below the current directory without moving:
 			// the new entry lands at index 1, where pushing it on top
 			// would leave a directory the shell is not in at index 0.
 			r.dirStack = append(r.dirStack, "")
 			copy(r.dirStack[2:], r.dirStack[1:])
-			r.dirStack[1] = args[0]
+			r.dirStack[1] = dir
 			break
+		}
+		if dir == "-" {
+			// `pushd -` is `cd -`: the previous directory, echoed the
+			// way cd echoes it. koi answered "-: No such file or
+			// directory", so the one-keystroke way back was unreachable
+			// through pushd. Only on the moving path — `pushd -n -`
+			// stacks the literal `-`, measured.
+			dir = r.envGet("OLDPWD")
+			r.outf("%s\n", dir)
 		}
 		r.dirStack = append(r.dirStack, "")
 		copy(r.dirStack[1:], r.dirStack)
-		if code := r.changeDir(ctx, "pushd", args[0]); code != 0 {
+		if code := r.changeDir(ctx, "pushd", dir); code != 0 {
 			r.dirStack = r.dirStack[1:]
 			return exitStatus{code: code}
 		}
 		r.dirStack[0] = r.Dir
-	default:
-		r.errf("pushd: too many arguments\n")
-		return exitStatus{code: 2}
 	}
 	return r.dirs(nil)
 }
@@ -208,9 +288,31 @@ func (r *Runner) pushd(ctx context.Context, args []string) exitStatus {
 // popd implements the builtin: `popd [-n] [+N|-N]`.
 func (r *Runner) popd(ctx context.Context, args []string) exitStatus {
 	change := true
-	if len(args) > 0 && args[0] == "-n" {
-		change = false
-		args = args[1:]
+	for len(args) > 0 {
+		if args[0] == "-n" {
+			change = false
+			args = args[1:]
+			continue
+		}
+		if args[0] == "--" {
+			// popd takes no operand after `--`: `popd -- +8` pops the
+			// top, measured, which is bash's own "this needs a fix to
+			// work right" comment in builtins12.sub. koi read the `--`
+			// as the index and refused it.
+			args = nil
+		}
+		break
+	}
+	// Only the first operand is read; bash ignores the rest rather than
+	// calling it too many arguments (`popd +1 +1` pops entry 1).
+	if len(args) > 1 {
+		args = args[:1]
+	}
+	if len(args) == 1 && args[0] == "" {
+		// An empty operand is bash's `-0`, the entry at the *bottom*:
+		// its sign character is the string terminator, which is not a
+		// `+`, and bash counts from the bottom for anything else.
+		args = []string{"-0"}
 	}
 	r.dirStackSync()
 	switch len(args) {
@@ -231,11 +333,14 @@ func (r *Runner) popd(ctx context.Context, args []string) exitStatus {
 		if code := r.changeDir(ctx, "popd", r.dirStack[0]); code != 0 {
 			return exitStatus{code: code}
 		}
-	case 1:
+	default:
 		n, ok := r.dirStackIndex(args[0])
 		if !ok {
-			// bash separates a malformed argument from an in-range
-			// one: the first is a usage error, the second a range one.
+			// bash separates three answers here, and koi had two: a
+			// signed word that is not a number is an *invalid number*
+			// (`popd -x`), an unsigned one is an invalid argument
+			// (`popd dir`), and a well-formed index past the end is a
+			// range error.
 			if _, isIndex := parseStackIndex(args[0]); isIndex {
 				if len(r.dirStack) < 2 {
 					r.errf("popd: directory stack empty\n")
@@ -244,8 +349,12 @@ func (r *Runner) popd(ctx context.Context, args []string) exitStatus {
 				r.errf("popd: %s: directory stack index out of range\n", args[0])
 				return exitStatus{code: 1}
 			}
-			r.errf("popd: %s: invalid argument\n", args[0])
-			r.rawErrf("popd: usage: popd [-n] [+N | -N]\n")
+			what := "invalid argument"
+			if signedWord(args[0]) {
+				what = "invalid number"
+			}
+			r.errf("popd: %s: %s\n", args[0], what)
+			r.rawErrf("%s", popdUsage)
 			return exitStatus{code: 2}
 		}
 		if len(r.dirStack) < 2 {
@@ -262,9 +371,6 @@ func (r *Runner) popd(ctx context.Context, args []string) exitStatus {
 		if code := r.changeDir(ctx, "popd", r.dirStack[0]); code != 0 {
 			return exitStatus{code: code}
 		}
-	default:
-		r.errf("popd: too many arguments\n")
-		return exitStatus{code: 2}
 	}
 	return r.dirs(nil)
 }

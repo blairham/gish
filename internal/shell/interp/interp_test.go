@@ -303,9 +303,9 @@ var runTests = []runTest{
 	},
 
 	// we don't need to follow bash error strings
-	{"exit a", "invalid exit status code: \"a\"\nexit status 2 #JUSTERR"},
-	{"exit 1 2", "exit cannot take multiple arguments\nexit status 1 #JUSTERR"},
-	{"f() { return a; }; f", "invalid return status code: \"a\"\nexit status 2 #JUSTERR"},
+	{"exit a", "exit: a: numeric argument required\nexit status 2 #JUSTERR"},
+	{"exit 1 2", "exit: too many arguments\nexit status 1 #JUSTERR"},
+	{"f() { return a; }; f", "return: a: numeric argument required\nexit status 2 #JUSTERR"},
 
 	// echo
 	{"echo", "\n"},
@@ -2687,6 +2687,47 @@ var runTests = []runTest{
 	{"hash -p /bin/ls myls; type myls", "myls is hashed (/bin/ls)\n"},
 	{"hash -p /bin/echo myecho; myecho hi", "hi\n"},
 	{"hash; echo rc=$?", "hash: hash table empty\nrc=0\n"},
+	// -l, -t and -d were accepted and ignored, so `hash -t name` — the
+	// way a script asks where a name resolved — printed the whole table
+	// and answered 0 for a name that was not in it (#604).
+	{"hash -p /bin/ls myls; hash -t myls", "/bin/ls\n"},
+	{"hash -p /bin/ls myls; hash -p /bin/cat mycat; hash -t myls mycat", "myls\t/bin/ls\nmycat\t/bin/cat\n"},
+	{"hash -p /bin/ls myls; hash -lt myls", "builtin hash -p /bin/ls myls\n"},
+	{"hash -p /bin/ls myls; hash -l", "builtin hash -p /bin/ls myls\n"},
+	{"hash -l", ""},
+	{"hash -t nope", "hash: nope: not found\nexit status 1 #JUSTERR"},
+	{"hash -p /bin/ls myls; hash -d myls; hash", "hash: hash table empty\n"},
+	{"hash -d nope", "hash: nope: not found\nexit status 1 #JUSTERR"},
+	// -d and -t together prints rather than deletes, and -r wins
+	// wherever it appears. Both measured.
+	{"hash -p /bin/ls myls; hash -dt myls; hash -t myls", "/bin/ls\n/bin/ls\n"},
+	{"hash -p /bin/ls myls; hash -l -r; hash", "hash: hash table empty\n"},
+	// A path that does not exist is a legal pin; a directory is not.
+	{"hash -p /nosuchdir/x myx; hash -t myx", "/nosuchdir/x\n"},
+	{"hash -p / myroot", "hash: /: Is a directory\nexit status 1 #JUSTERR"},
+	{"hash -x", "hash: -x: invalid option\nhash: usage: hash [-lr] [-p pathname] [-dt] [name ...]\nexit status 2 #JUSTERR"},
+	{"hash -p", "hash: -p: option requires an argument\nhash: usage: hash [-lr] [-p pathname] [-dt] [name ...]\nexit status 2 #JUSTERR"},
+	{"hash -p /bin/ls", "hash: usage: hash [-lr] [-p pathname] [-dt] [name ...]\nexit status 2 #JUSTERR"},
+	// `checkhash` verifies the pin before running it, so a stale entry
+	// is dropped and the name searched again. It governs running only:
+	// `type` still answers with the pin.
+	{
+		// The path `ls` really has is the platform's — /bin/ls on darwin
+		// and /usr/bin/ls on linux — so the assertion is that the stale
+		// pin was *replaced* by something runnable rather than that it
+		// was replaced by one particular path. Without checkhash the
+		// line above shows what happens instead: exit 127 and the pin
+		// still in the table.
+		`hash -p /nosuchdir/nosuchls ls; shopt -s checkhash; ls >/dev/null
+p=$(hash -t ls); [[ $p != /nosuchdir/nosuchls && -x $p ]] && echo re-searched`,
+		"re-searched\n",
+	},
+	{"hash -p /nosuchdir/nosuchls ls; shopt -s checkhash; type ls", "ls is hashed (/nosuchdir/nosuchls)\n"},
+	{"hash -p /nosuchdir/nosuchls ls; ls >/dev/null", "/nosuchdir/nosuchls: No such file or directory\nexit status 127 #JUSTERR"},
+	// `command -v` reads the pin too, which is the one answer a pin
+	// exists to override and the one koi answered from PATH.
+	{"hash -p /nosuchdir/x mycat; command -v mycat", "/nosuchdir/x\n"},
+	{"hash -p /nosuchdir/x mycat; command -V mycat", "mycat is hashed (/nosuchdir/x)\n"},
 
 	// A command substitution runs without errexit unless
 	// inherit_errexit asks for it (#412): koi passed it down, so the
@@ -2717,6 +2758,23 @@ var runTests = []runTest{
 		`set -x; for ((i=0;i<2;i++)); do :; done; set +x`,
 		"+ (( i=0 ))\n+ (( i<2 ))\n+ :\n+ (( i++ ))\n+ (( i<2 ))\n+ :\n+ (( i++ ))\n+ (( i<2 ))\n+ set +x\n",
 	},
+	// A trace quotes each *field* on its own (#604). koi joined them
+	// into one string and quoted that, and only for a builtin — so
+	// `echo a b` traced as one field where the command received two,
+	// and `/bin/echo "a b"` as two where it received one. A trace is
+	// what someone re-runs, and both re-ran as a different command.
+	{`set -x; echo a b; set +x`, "+ echo a b\na b\n+ set +x\n"},
+	{`set -x; echo "a b" c; set +x`, "+ echo 'a b' c\na b c\n+ set +x\n"},
+	{`set -x; /bin/echo "a b"; set +x`, "+ /bin/echo 'a b'\na b\n+ set +x\n"},
+	{`set -x; echo ""; set +x`, "+ echo ''\n\n+ set +x\n"},
+	{`set -x; f() { :; }; f "x y"; set +x`, "+ f 'x y'\n+ :\n+ set +x\n"},
+	// bash's own quoting rules, which are not a general-purpose
+	// quoter's: single quotes rather than double, `#` and `,` and `]`
+	// left alone, and a control byte spelled in octal.
+	{`set -x; : "it's"; set +x`, "+ : 'it'\\''s'\n+ set +x\n"},
+	{`set -x; : a#b a,b "]" "~"; set +x`, "+ : a#b a,b ']' '~'\n+ set +x\n"},
+	{`set -x; : $'a\tb'; set +x`, "+ : $'a\\tb'\n+ set +x\n"},
+	{`set -x; : $'\001'; set +x`, "+ : $'\\001'\n+ set +x\n"},
 
 	// An alias is replacement *text*, spliced into the command line and
 	// re-parsed (#407). koi built a word list at definition time, so
@@ -2873,7 +2931,7 @@ q`,
 		// listing test in cmd/koi caught it being listed, which is
 		// where the whole `set -o` table is compared to bash's.
 		"set -o restricted; echo rc=$?",
-		"set: invalid option: \"restricted\"\nrc=2\n #JUSTERR",
+		"set: restricted: invalid option name\nrc=2\n #JUSTERR",
 	},
 
 	// POSIX mode (#395). koi refused it — honestly, and at the cost of
@@ -3972,7 +4030,54 @@ q`,
 	{"set -- $(dirs); echo $# ${#DIRSTACK[@]}", "1 1\n"},
 	{"pushd", "pushd: no other directory\nexit status 1 #JUSTERR"},
 	{"pushd -n", ""},
-	{"pushd foo bar", "pushd: too many arguments\nexit status 2 #JUSTERR"},
+	{"pushd foo bar", "pushd: too many arguments\nexit status 1 #JUSTERR"},
+	// `--` ends the options in all three, which koi read as an operand:
+	// as a stack index for dirs, and as a directory name for the other
+	// two (#604). dirs and popd ignore whatever follows it; pushd reads
+	// it as a *directory*, so `pushd -- +1` is not a rotation.
+	{"mkdir a; pushd a >/dev/null; set -- $(dirs --); echo $#", "2\n"},
+	{"mkdir a; pushd a >/dev/null; set -- $(dirs -- +1); echo $#", "2\n"},
+	{"mkdir a; pushd a >/dev/null; pushd -- +1", "pushd: +1: No such file or directory\nexit status 1 #JUSTERR"},
+	{"mkdir a; pushd a >/dev/null; popd -- +8 >/dev/null; set -- $(dirs); echo $#", "1\n"},
+	{"mkdir a; pushd a >/dev/null; pushd -- >/dev/null; set -- $(dirs); echo $#", "2\n"},
+	// A signed word that is not a number is an "invalid number" with a
+	// usage line, which koi answered three different wrong ways.
+	{"dirs -x", "dirs: -x: invalid number\ndirs: usage: dirs [-clpv] [+N] [-N]\nexit status 2 #JUSTERR"},
+	{"dirs -lp", "dirs: -lp: invalid number\ndirs: usage: dirs [-clpv] [+N] [-N]\nexit status 2 #JUSTERR"},
+	{"pushd -x", "pushd: -x: invalid number\npushd: usage: pushd [-n] [+N | -N | dir]\nexit status 2 #JUSTERR"},
+	{"popd -x", "popd: -x: invalid number\npopd: usage: popd [-n] [+N | -N]\nexit status 2 #JUSTERR"},
+	{"popd dir", "popd: dir: invalid argument\npopd: usage: popd [-n] [+N | -N]\nexit status 2 #JUSTERR"},
+	// The out-of-range complaint prints the number bash parsed, sign
+	// dropped.
+	{"dirs +8", "dirs: 8: directory stack index out of range\nexit status 1 #JUSTERR"},
+	// popd reads the first operand and ignores the rest rather than
+	// calling it too many arguments.
+	{"mkdir a b; pushd a >/dev/null; pushd ../b >/dev/null; popd +1 +1 >/dev/null; set -- $(dirs); echo $#", "2\n"},
+	// An empty operand is not "no operand" in any of the three, and it
+	// is a different thing in each: dirs calls it an invalid option,
+	// pushd refuses it as a null directory when it would move, and popd
+	// reads it as `-0` — the entry at the *bottom*. koi indexed byte
+	// zero of it and took the shell down with a panic.
+	{`dirs ""`, "dirs: : invalid option\ndirs: usage: dirs [-clpv] [+N] [-N]\nexit status 2 #JUSTERR"},
+	{`pushd ""`, "pushd: null directory\nexit status 1 #JUSTERR"},
+	{`mkdir a; pushd a >/dev/null; pushd -n "" >/dev/null; echo ${#DIRSTACK[@]}`, "3\n"},
+	{
+		// The stack has to be three deep for this to say anything: with
+		// two entries, dropping the bottom and dropping the top both
+		// leave one. `basename` names which one went.
+		`mkdir a b; pushd a >/dev/null; pushd ../b >/dev/null; popd "" >/dev/null
+set -- $(dirs); echo "$#:$(basename $1):$(basename $2)"`,
+		"2:b:a\n",
+	},
+	{
+		// The control: a bare popd drops the *top*, so the answer is
+		// different in both fields. Without this the case above passes
+		// under a popd that ignores the operand entirely.
+		`mkdir a b; pushd a >/dev/null; pushd ../b >/dev/null; popd >/dev/null
+set -- $(dirs); echo "$#:$(basename $1)"`,
+		"2:a\n",
+	},
+
 	{"pushd does-not-exist; set -- $(dirs); echo $#", "pushd: does-not-exist: No such file or directory\n1\n #IGNORE"},
 	{"mkdir a; pushd a >/dev/null; set -- $(dirs); echo $#", "2\n"},
 	{"mkdir a; set -- $(pushd a); echo $#", "2\n"},
@@ -6228,7 +6333,7 @@ q`,
 	},
 	{
 		"set -U",
-		"set: invalid option: \"-U\"\nexit status 2 #JUSTERR",
+		"set: -U: invalid option\nset: usage: set [-abefhkmnptuvxBCEHPT] [-o option-name] [--] [-] [arg ...]\nexit status 2 #JUSTERR",
 	},
 	{
 		"set -e; false; echo foo",
@@ -6417,7 +6522,22 @@ q`,
 	{"set -n; set +n; echo foo", ""},
 	{
 		"set -o foobar",
-		"set: invalid option: \"foobar\"\nexit status 2 #JUSTERR",
+		"set: foobar: invalid option name\nexit status 2 #JUSTERR",
+	},
+	{
+		// `-o` takes an option name only as a separate word that does
+		// not itself begin with a sign, so this is the listing followed
+		// by braceexpand rather than an option named `-B`. bash's own
+		// builtins.tests counts the listing's lines to check exactly
+		// this, and koi answered one line instead of twenty-seven.
+		"set -o -B | wc -l | tr -d ' '",
+		"27\n",
+	},
+	{
+		// A cluster never supplies the name either: `-oe` is the listing
+		// and then errexit.
+		"set -oe >/dev/null; case $- in *e*) echo errexit ;; esac",
+		"errexit\n",
 	},
 	{"set -o noexec; echo foo", ""},
 	{"set +o noexec; echo foo", "foo\n"},
@@ -6759,10 +6879,51 @@ done <<< 2`,
 		"listed\n",
 	},
 	{
-		// Asking for behavior koi does not have is the other question,
-		// and still gets the honest refusal.
-		"shopt -s xpg_echo",
-		"shopt: unsupported option \"xpg_echo\"\nexit status 1 #IGNORE",
+		// xpg_echo is implemented now, so the refusal is gone and the
+		// behavior is the answer: escapes are interpreted without -e
+		// (#604).
+		"shopt -s xpg_echo; echo 'a\\tb'",
+		"a\tb\n",
+	},
+	{
+		"shopt -u xpg_echo; echo 'a\\tb'",
+		"a\\tb\n",
+	},
+	{
+		// -E still overrides it and -e still asks for it.
+		"shopt -s xpg_echo; echo -E 'a\\tb'; echo -e 'a\\tb'",
+		"a\\tb\na\tb\n",
+	},
+	{
+		// -n too, until posix mode joins it: with both on, echo
+		// recognizes no options at all and prints the flag as an
+		// operand. Measured against bash 5.3 both ways.
+		"shopt -s xpg_echo; echo -n 'a\\tb'; echo",
+		"a\tb\n",
+	},
+	{
+		"shopt -s xpg_echo; set -o posix; echo -n 'a\\tb'",
+		"-n a\tb\n",
+	},
+	{
+		// The two spellings that reach the replacement seam move with
+		// it, which is the bug #565 was opened for.
+		"shopt -s xpg_echo; command echo 'a\\tb'; builtin echo 'a\\tb'",
+		"a\tb\na\tb\n",
+	},
+	{
+		// printf is untouched: its format has always expanded.
+		"shopt -s xpg_echo; printf 'a\\tb\\n'",
+		"a\tb\n",
+	},
+	{
+		// A request that is satisfied is answered 0 and read back (#575).
+		"shopt -s xpg_echo; echo $?; shopt -p xpg_echo; shopt -q xpg_echo; echo $?",
+		"0\nshopt -s xpg_echo\n0\n",
+	},
+	{
+		"shopt -s xpg_echo; case :$BASHOPTS: in *:xpg_echo:*) echo listed ;; esac",
+		"listed\n",
 	},
 	{
 		"shopt -u xpg_echo",
@@ -7256,8 +7417,81 @@ done <<< 2`,
 
 	// source
 	{
+		// bash's wording and its usage line, in place of koi's
+		// "source: need filename" (#604).
 		"source",
-		"1:1: source: need filename\nexit status 2 #JUSTERR",
+		"source: filename argument required\nsource: usage: source [-p path] filename [arguments]\nexit status 2 #JUSTERR",
+	},
+	{
+		".",
+		".: filename argument required\n.: usage: . [-p path] filename [arguments]\nexit status 2 #JUSTERR",
+	},
+	{
+		"source -x a",
+		"source: -x: invalid option\nsource: usage: source [-p path] filename [arguments]\nexit status 2 #JUSTERR",
+	},
+	{
+		"source -p",
+		"source: -p: option requires an argument\nsource: usage: source [-p path] filename [arguments]\nexit status 2 #JUSTERR",
+	},
+	{
+		// `-p path` searches an explicit list rather than $PATH, and
+		// searches it whether or not sourcepath is on.
+		"mkdir srcd; echo 'echo SRC' >srcd/sfile; . -p $PWD/srcd sfile",
+		"SRC\n",
+	},
+	{
+		"mkdir srcd; echo 'echo SRC' >srcd/sfile; shopt -u sourcepath; source -p $PWD/srcd sfile",
+		"SRC\n",
+	},
+	{
+		// An empty element — including the whole of `-p ''` — means the
+		// current directory, and nothing else reaches it.
+		"echo 'echo CWD' >sfile; . -p '' sfile",
+		"CWD\n",
+	},
+	{
+		"mkdir srcd; echo 'echo CWD' >sfile; . -p $PWD/srcd:. sfile",
+		"CWD\n",
+	},
+	{
+		// The search running out is worded differently from the plain
+		// form's strerror message, and it names the builtin as called.
+		"mkdir srcd; echo 'echo CWD' >sfile; . -p $PWD/srcd sfile",
+		".: sfile: file not found\nexit status 1 #JUSTERR",
+	},
+	{
+		"mkdir srcd; echo 'echo CWD' >sfile; source -p $PWD/srcd sfile",
+		"source: sfile: file not found\nexit status 1 #JUSTERR",
+	},
+	{
+		// `--` ends the options; a name with a slash is never searched.
+		"echo 'echo CWD' >sfile; . -- sfile",
+		"CWD\n",
+	},
+	{
+		// sourcepath off means no $PATH search at all, which koi
+		// accepted and ignored.
+		"mkdir srcd; echo 'echo SRC' >srcd/sfile; PATH=$PWD/srcd:$PATH; shopt -u sourcepath; . sfile",
+		"sfile: No such file or directory\nexit status 1 #JUSTERR",
+	},
+	{
+		"mkdir srcd; echo 'echo SRC' >srcd/sfile; PATH=$PWD/srcd:$PATH; . sfile",
+		"SRC\n",
+	},
+	{
+		// posix mode drops the current-directory fallback entirely, so a
+		// bare name is found on $PATH or nowhere.
+		"echo 'echo CWD' >sfile; set -o posix; . sfile",
+		".: sfile: file not found\nexit status 1 #JUSTERR",
+	},
+	{
+		"echo 'echo CWD' >sfile; set -o posix; . ./sfile",
+		"CWD\n",
+	},
+	{
+		"mkdir srcd; echo 'echo SRC' >srcd/sfile; PATH=$PWD/srcd:$PATH; set -o posix; shopt -u sourcepath; . sfile",
+		".: sfile: file not found\nexit status 1 #JUSTERR",
 	},
 	{
 		"echo 'echo foo' >a; source ./a; . ./a",

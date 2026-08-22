@@ -81,13 +81,34 @@ func (r *Runner) ulimitBuiltin(args []string) exitStatus {
 	wantSoft, wantHard := false, false
 	all := false
 	var requests []ulimitRequest
+	operand, haveOperand := "", false
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "--" {
+			// `--` ends the options and the word after it is the limit,
+			// which is how bash's own builtins11.sub writes
+			// `ulimit -c -S -- 1999`. koi read the `--` as a resource
+			// letter and answered "invalid option", so that line and
+			// the one after it set nothing.
+			if i+1 < len(args) {
+				operand, haveOperand = args[i+1], true
+			}
+			break
+		}
 		if !strings.HasPrefix(arg, "-") || arg == "-" {
-			// A bare word with no resource before it is bash's leftover:
-			// `ulimit -n 100 200` sets from 100 and ignores 200.
-			continue
+			// A word no resource letter claimed is the limit itself:
+			// `ulimit unlimited` is `ulimit -f unlimited`, the line
+			// bash's own builtins11.sub opens with, and koi ignored it
+			// and answered with a *read* of -f — so the line looked
+			// like it had worked.
+			//
+			// It also ends the option scanning, the way getopt stops at
+			// the first operand: `ulimit 1999 -c` sets -f and leaves -c
+			// alone, measured. Anything after it is ignored, which is
+			// what keeps `ulimit -n 100 200` setting 100.
+			operand, haveOperand = arg, true
+			break
 		}
 		for j := 1; j < len(arg); j++ {
 			switch letter := arg[j]; letter {
@@ -100,8 +121,8 @@ func (r *Runner) ulimitBuiltin(args []string) exitStatus {
 			default:
 				spec, ok := lookupUlimitSpec(letter)
 				if !ok {
-					r.errf("ulimit: invalid option %q\n", "-"+string(letter))
-					r.rawErrf("ulimit: usage: ulimit [-SHa%s] [limit]\n", ulimitLetters())
+					r.errf("ulimit: -%c: invalid option\n", letter)
+					r.rawErrf("%s", ulimitUsage)
 					exit.code = 2
 					return exit
 				}
@@ -144,6 +165,13 @@ func (r *Runner) ulimitBuiltin(args []string) exitStatus {
 		}
 		requests = append(requests, ulimitRequest{spec: spec})
 	}
+	if last := &requests[len(requests)-1]; haveOperand && !last.set {
+		// An unclaimed operand is the limit for the resource named
+		// *last*: `ulimit -c -d -- 1999` reads c and sets d, measured.
+		// A resource that already took a value keeps it, which is the
+		// `ulimit -n 100 200` rule.
+		last.value, last.set = operand, true
+	}
 
 	labelled := len(requests) > 1
 	for _, req := range requests {
@@ -153,7 +181,10 @@ func (r *Runner) ulimitBuiltin(args []string) exitStatus {
 				return failf(1, "ulimit: %s: invalid number\n", req.value)
 			}
 			if err := writeUlimit(req.spec, wantSoft, wantHard, raw); err != nil {
-				return failf(1, "ulimit: %s: cannot modify limit: %v\n", req.spec.label, err)
+				// strerror's capitalisation, which is what bash prints
+				// and what koi's other diagnostics already use: Go
+				// spells the same errno "operation not permitted".
+				return failf(1, "ulimit: %s: cannot modify limit: %s\n", req.spec.label, strerror(err))
 			}
 			continue
 		}
@@ -178,14 +209,23 @@ func lookupUlimitSpec(letter byte) (ulimitSpec, bool) {
 	return ulimitSpecs[i], true
 }
 
-// ulimitLetters renders the supported letters for the usage line, in the
-// same order they are listed.
-func ulimitLetters() string {
-	var b strings.Builder
-	for _, spec := range ulimitSpecs {
-		b.WriteByte(spec.letter)
+// ulimitUsage is bash's usage line verbatim. It is a fixed string there
+// rather than a render of the platform's own resource table — bash on
+// darwin advertises `-b` and then refuses it — and koi rendered the
+// eleven letters it has, which made a usage line a caller diffs differ
+// on every platform. koi's *accepted* set is byte-for-byte bash's on
+// each platform, which is what makes borrowing the claim honest.
+const ulimitUsage = "ulimit: usage: ulimit [-SHabcdefiklmnpqrstuvxPRT] [limit]\n"
+
+// strerror renders an errno the way C's strerror does, which is the
+// wording bash prints: Go's errno strings are the same text with a
+// lowercase first letter.
+func strerror(err error) string {
+	msg := err.Error()
+	if msg == "" || msg[0] < 'a' || msg[0] > 'z' {
+		return msg
 	}
-	return b.String()
+	return string(msg[0]-('a'-'A')) + msg[1:]
 }
 
 // ulimitLabel renders the description column of the labelled form.

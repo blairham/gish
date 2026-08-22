@@ -75,7 +75,7 @@ func TestTrapListMatchesKillList(t *testing.T) {
 	if trapList != killList {
 		t.Errorf("trap -l and kill -l disagree:\ntrap -l:\n%s\nkill -l:\n%s", trapList, killList)
 	}
-	if !strings.Contains(trapList, ") SIGINT\n") {
+	if !strings.Contains(trapList, ") SIGINT") {
 		t.Errorf("the signal listing is missing SIGINT:\n%s", trapList)
 	}
 }

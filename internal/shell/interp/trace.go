@@ -184,31 +184,121 @@ func (r *Runner) tracedCall(ctx context.Context, cm *syntax.CallExpr, fields []s
 	r.traceHook(ev)
 }
 
-// call prints a command and its arguments with varying formats depending on the cmd type,
-// for example, built-in command's arguments are printed enclosed in single quotes,
-// otherwise, call defaults to printing with double quotes.
+// call prints one traced command: the command word and each expanded
+// field, quoted individually.
+//
+// Individually is the whole point. koi joined the fields into one string
+// and quoted *that*, only for builtins, so `echo a b` traced as `echo 'a
+// b'` — one field where the command received two — while
+// `/bin/echo "a b"` traced as two fields where it received one. A trace
+// is what someone re-runs to reproduce a failure, and both of those
+// re-run as a different command than the one that ran.
+//
+// The `set -x` that turns tracing on needs no special case: the tracer is
+// built from the option as it stood before the command ran, so there is
+// nothing to print from. `set` used to be skipped entirely, which dropped
+// every later `set` from the trace and still emitted the line's newline —
+// a stray blank line in the middle of a trace (#413).
 func (t *tracer) call(cmd string, args ...string) {
 	if t == nil {
 		return
 	}
 
-	s := strings.Join(args, " ")
-	if strings.TrimSpace(s) == "" {
-		// fields may be empty for function () {} declarations
-		t.string(cmd)
-	} else if IsBuiltin(cmd) {
-		// `set` used to be skipped entirely, which dropped every later
-		// `set` from the trace and still emitted the line's newline —
-		// a stray blank line in the middle of a trace (#413). The
-		// `set -x` that turns tracing *on* needs no special case: the
-		// tracer is built from the option as it stood before the
-		// command ran, so there is nothing to print from.
-		qs, err := syntax.Quote(s, syntax.LangBash)
-		if err != nil { // should never happen
-			panic(err)
-		}
-		t.stringf("%s %s", cmd, qs)
-	} else {
-		t.stringf("%s %s", cmd, s)
+	var sb strings.Builder
+	sb.WriteString(traceQuote(cmd))
+	for _, arg := range args {
+		sb.WriteByte(' ')
+		sb.WriteString(traceQuote(arg))
 	}
+	t.string(sb.String())
+}
+
+// traceQuote quotes one field for a trace line the way bash's
+// xtrace_print_word_list does, which is not the same as quoting it to be
+// re-parsed: bash reaches for `'...'` where [syntax.Quote] picks the
+// shortest form and answers `"it's"`, and it leaves `#`, `,` and `]`
+// alone where a general-purpose quoter does not. Measured against bash
+// 5.3 byte by byte: the two disagree on five shapes, so this is its own
+// function rather than a call into that one.
+func traceQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	// A control byte wins over everything else, even when the field also
+	// holds a space: bash reaches for the ANSI-C form first.
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x20 || c == 0x7f {
+			return traceQuoteANSIC(s)
+		}
+	}
+	if !traceNeedsQuote(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// traceNeedsQuote reports whether a field holds anything the shell would
+// have read as syntax, which is what decides whether bash quotes it.
+func traceNeedsQuote(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case ' ', '\'', '"', '\\', '|', '&', ';', '(', ')', '<', '>',
+			'!', '{', '}', '*', '[', '?', ']', '^', '$', '`':
+			return true
+		case '~':
+			// Tilde expansion only happens at the front of a word or
+			// just past the `:` or `=` of an assignment, so that is the
+			// only place a tilde needs hiding.
+			if i == 0 || s[i-1] == ':' || s[i-1] == '=' {
+				return true
+			}
+		case '#':
+			// A comment can only start a word, so `a#b` needs nothing.
+			if i == 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// traceQuoteANSIC renders a field as bash's ansic_quote does: the named
+// escapes it knows, three-digit octal for any other unprintable byte,
+// and `"` and `$` straight through, since `$'...'` expands neither.
+func traceQuoteANSIC(s string) string {
+	var sb strings.Builder
+	sb.WriteString("$'")
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '\a':
+			sb.WriteString(`\a`)
+		case '\b':
+			sb.WriteString(`\b`)
+		case '\f':
+			sb.WriteString(`\f`)
+		case '\n':
+			sb.WriteString(`\n`)
+		case '\r':
+			sb.WriteString(`\r`)
+		case '\t':
+			sb.WriteString(`\t`)
+		case '\v':
+			sb.WriteString(`\v`)
+		case 0x1b:
+			// bash spells escape `\E`, never `\e`.
+			sb.WriteString(`\E`)
+		case '\\':
+			sb.WriteString(`\\`)
+		case '\'':
+			sb.WriteString(`\'`)
+		default:
+			if c < 0x20 || c == 0x7f {
+				fmt.Fprintf(&sb, `\%03o`, c)
+				continue
+			}
+			sb.WriteByte(c)
+		}
+	}
+	sb.WriteByte('\'')
+	return sb.String()
 }

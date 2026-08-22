@@ -239,7 +239,26 @@ func listSignals(hc interp.HandlerContext) {
 			list[j], list[j-1] = list[j-1], list[j]
 		}
 	}
-	for _, e := range list {
-		fmt.Fprintf(hc.Stdout, "%2d) SIG%s\n", e.num, e.name)
+	// Five to a row, tab-separated, which is bash's layout and not a
+	// cosmetic choice: bash's own builtins.tests reads the first entry
+	// with `sed -n 's:^ 1) *\([^ \t]*\)[ \t].*$:\1:p'`, and that
+	// pattern needs a space or a tab *after* the name. One per line gave
+	// it nothing to match, so the script's $sigone came back empty and
+	// two later assertions failed for a reason that had nothing to do
+	// with signals. The trailing tab on a short final row is bash's too.
+	for i, e := range list {
+		fmt.Fprintf(hc.Stdout, "%2d) SIG%s", e.num, e.name)
+		if (i+1)%signalsPerRow == 0 {
+			fmt.Fprint(hc.Stdout, "\n")
+			continue
+		}
+		fmt.Fprint(hc.Stdout, "\t")
+	}
+	if len(list)%signalsPerRow != 0 {
+		fmt.Fprint(hc.Stdout, "\n")
 	}
 }
+
+// signalsPerRow is how many entries bash puts on one line of `kill -l`
+// and `trap -l`.
+const signalsPerRow = 5
