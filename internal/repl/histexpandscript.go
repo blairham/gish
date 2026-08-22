@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blairham/koi-shell/internal/history"
 	"github.com/blairham/koi-shell/internal/shell/interp"
 )
 
@@ -52,7 +53,13 @@ import (
 // lines. Everything it needs comes from the runner: the two options, the
 // stderr in force, and whether there is a file to name in a diagnostic at
 // all — which is the shell's own rule (#571) rather than a second one.
-func historyExpandFilter(runner *interp.Runner) interp.LineFilter {
+//
+// It is also where the recorder learns that a line was *read*, which is
+// the only place that can be known (#693): bash adds a line to history in
+// its reader, so a line that yields no statement — a comment — is an
+// entry there, and whether it is one depends on `set -o history` at the
+// moment it was read rather than at the moment something ran.
+func historyExpandFilter(runner *interp.Runner, rec *historyRecorder) interp.LineFilter {
 	// dropped counts the lines expansion has taken out of the input, so
 	// the diagnostic can name the line bash names. bash's line counter
 	// steps *back* over a line whose expansion came out empty — it is one
@@ -63,14 +70,21 @@ func historyExpandFilter(runner *interp.Runner) interp.LineFilter {
 	// rather than reproducing it twice in two counters.
 	dropped := 0
 	return func(line string, num int) string {
-		if !runner.OptionSet("histexpand") || !runner.OptionSet("history") {
+		// The line's number in the parser's own coordinates, which is
+		// what the recorder and the diagnostic both name — a line
+		// expansion dropped never reaches the parser, so it costs one.
+		history := runner.OptionSet("history")
+		if rec != nil {
+			rec.readLine(uint(num-dropped), history)
+		}
+		if !runner.OptionSet("histexpand") || !history {
 			return line
 		}
 		body, nl := splitLineEnd(line)
 		if body == "" {
 			return line
 		}
-		expanded, changed, printOnly, err := expandHistoryLine(body, sessionHistoryMatch())
+		expanded, changed, printOnly, err := expandHistoryLine(body, sessionHistorySource(), sessionHistChars(runner))
 		if err != nil {
 			fmt.Fprintf(runner.Stderr(), "%s%v\n", runner.InputLocation(num-dropped), err)
 			dropped++
@@ -102,27 +116,84 @@ func splitLineEnd(line string) (body, end string) {
 	return line, ""
 }
 
-// sessionHistoryMatch is the lookup the expander takes: the newest entry
-// starting with prefix, skipping n matches.
+// sessionHistorySource is the list the expander looks in.
 //
 // The session list is the one the `history` builtin reports, so what a
 // script recalls with `!!` and what `history` prints cannot disagree —
 // and a script's entries get there through the same ambient recording
 // `set -o history` turns on (#277), which fires before a statement runs
 // and so has already recorded the line above the one being expanded.
-func sessionHistoryMatch() func(prefix string, n int) (string, bool) {
+//
+// The numbering is the listing's own, `historyBase` plus the index, which
+// is what makes `!2` and the `2` in `history`'s output the same entry
+// even after HISTSIZE has trimmed the front off the list (#692).
+func sessionHistorySource() histSource {
 	entries := historyEntries()
-	return func(prefix string, n int) (string, bool) {
-		seen := 0
-		for i := len(entries) - 1; i >= 0; i-- {
-			if !strings.HasPrefix(entries[i], prefix) {
-				continue
+	base := historyBase()
+	return histSource{
+		prefix: func(prefix string, n int) (string, bool) {
+			seen := 0
+			for i := len(entries) - 1; i >= 0; i-- {
+				if !strings.HasPrefix(entries[i], prefix) {
+					continue
+				}
+				if seen == n {
+					return entries[i], true
+				}
+				seen++
 			}
-			if seen == n {
-				return entries[i], true
+			return "", false
+		},
+		search: func(s string) (string, bool) {
+			for i := len(entries) - 1; i >= 0; i-- {
+				if strings.Contains(entries[i], s) {
+					return entries[i], true
+				}
 			}
-			seen++
-		}
-		return "", false
+			return "", false
+		},
+		numbered: func(n int) (string, bool) {
+			i := n - base - 1
+			if i < 0 || i >= len(entries) {
+				return "", false
+			}
+			return entries[i], true
+		},
 	}
+}
+
+// storeHistorySource is the interactive session's list: the editor's
+// shared store (#40) rather than the interpreter's ambient one, which is
+// why `set -o history` is not a gate on the interactive path. The
+// numbering comes from what the `history` builtin prints, so `!2` and the
+// `2` in its listing name the same entry there too.
+func storeHistorySource(store *history.Store) histSource {
+	entries := historyEntries()
+	base := historyBase()
+	return histSource{
+		prefix: store.Match,
+		search: func(s string) (string, bool) { return store.Search(s, 0) },
+		numbered: func(n int) (string, bool) {
+			i := n - base - 1
+			if i < 0 || i >= len(entries) {
+				return "", false
+			}
+			return entries[i], true
+		},
+	}
+}
+
+// sessionHistChars reads $histchars as the running script sees it, which
+// is what makes it a live value rather than a startup one (#695).
+func sessionHistChars(runner *interp.Runner) histChars {
+	if runner == nil {
+		return defaultHistChars
+	}
+	v := runner.LookupVar("histchars")
+	chars := histCharsOf(v.String(), v.IsSet())
+	// readline's history_quotes_inhibit_expansion, which bash turns on
+	// with `set -o posix` — so under posix a `!` inside double quotes is
+	// ordinary text while one outside them still expands (measured).
+	chars.quotesInhibit = runner.OptionSet("posix")
+	return chars
 }

@@ -84,7 +84,7 @@ func (s *scriptStream) run(ctx context.Context) (err error, perr error) {
 		// before parsing, so it hangs off the same boundary a mode does
 		// (#559) — one step earlier, on the raw text rather than on the
 		// parser's options.
-		reader.Filter(historyExpandFilter(s.runner))
+		reader.Filter(historyExpandFilter(s.runner, s.rec))
 		s.rec.restart(reader.Source)
 		switched := false
 		for stmts, rerr := range reader.Lines() {
@@ -130,6 +130,10 @@ func (s *scriptStream) run(ctx context.Context) (err error, perr error) {
 			break
 		}
 	}
+	// The input ran out, so anything after the last statement — a
+	// trailing comment — is still an entry bash would have recorded
+	// (#693).
+	s.rec.finish()
 	// The input ran out, which is the moment the EXIT trap fires and the
 	// script's status is settled.
 	err = safely("finishing "+s.name, func() error { return s.runner.Finish(ctx) })
