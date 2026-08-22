@@ -1605,11 +1605,15 @@ func (cfg *Config) quotedElemFields(pe *syntax.ParamExp) ([]string, error) {
 		return elems, nil
 	}
 	if nodeLit(pe.Index) == "@" && !cfg.Env.Get(name).IsSet() {
-		if describesVariable(pe) {
+		if describesVariable(pe) && cfg.Env.Get(name).Declared() {
 			// `${x[@]@A}` and `${x[@]@a}` on a name that is not an array
 			// are bash's scalar answers — `declare -rl x` for a
 			// declared-but-unset one — and the flat path is what builds
 			// them, so zero fields here would lose the answer (#647).
+			//
+			// A name that was never declared has no answer at all, and
+			// falling through to the flat path there produced one empty
+			// field where bash has none (#716).
 			return nil, nil
 		}
 		// An unset "${name[@]}" produces zero fields, like an empty array.
@@ -1767,15 +1771,6 @@ func (cfg *Config) expandUser(field string, moreFields bool) (prefix, rest strin
 		return "", field
 	}
 	return u.HomeDir, rest
-}
-
-func findAllIndex(pat, name string, n int) [][]int {
-	expr, err := pattern.Regexp(pat, 0)
-	if err != nil {
-		return nil
-	}
-	rx := regexp.MustCompile(expr)
-	return rx.FindAllStringIndex(name, n)
 }
 
 var (
