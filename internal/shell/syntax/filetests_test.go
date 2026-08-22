@@ -2688,13 +2688,21 @@ var fileTests = []fileTestCase{
 		), LangZsh),
 	),
 	fileTest(
-		[]string{
-			`${foo[1]}`,
-			`${foo[ 1 ]}`,
-		},
+		[]string{`${foo[1]}`},
 		langFile(&ParamExp{
 			Param: lit("foo"),
 			Index: litWord("1"),
+		}, LangBash|LangMirBSDKorn|LangZsh),
+		langErr2("1:6: arrays are a bash/mksh/zsh feature; tried parsing as LANG", LangPOSIX),
+	),
+	// A subscript keeps its spacing, because the spacing is part of an
+	// associative key: bash's key for `m[ 1 ]` is ` 1 ` (#626). An indexed
+	// array trims it when it evaluates the text as arithmetic.
+	fileTest(
+		[]string{`${foo[ 1 ]}`},
+		langFile(&ParamExp{
+			Param: lit("foo"),
+			Index: litWord(" 1 "),
 		}, LangBash|LangMirBSDKorn|LangZsh),
 		langErr2("1:6: arrays are a bash/mksh/zsh feature; tried parsing as LANG", LangPOSIX),
 	),
@@ -2731,15 +2739,23 @@ var fileTests = []fileTestCase{
 			lit("b"),
 		), LangZsh),
 	),
+	// zsh's slice subscript is the same text as everything else between
+	// brackets, so it arrives as one word rather than a comma expression:
+	// nothing can decide while reading that `1,3` is a pair of bounds
+	// rather than a key (#626).
 	fileTest(
-		[]string{`${foo[1,3]}`, `${foo[ 1 , 3 ]}`},
+		[]string{`${foo[1,3]}`},
 		langFile(&ParamExp{
 			Param: lit("foo"),
-			Index: &BinaryArithm{
-				Op: Comma,
-				X:  litWord("1"),
-				Y:  litWord("3"),
-			},
+			Index: litWord("1,3"),
+		}, LangBash|LangMirBSDKorn|LangZsh),
+		langErr2("1:6: arrays are a bash/mksh/zsh feature; tried parsing as LANG", LangPOSIX),
+	),
+	fileTest(
+		[]string{`${foo[ 1 , 3 ]}`},
+		langFile(&ParamExp{
+			Param: lit("foo"),
+			Index: litWord(" 1 , 3 "),
 		}, LangBash|LangMirBSDKorn|LangZsh),
 		langErr2("1:6: arrays are a bash/mksh/zsh feature; tried parsing as LANG", LangPOSIX),
 	),
@@ -2747,14 +2763,7 @@ var fileTests = []fileTestCase{
 		[]string{`${foo[1,-1]}`},
 		langFile(&ParamExp{
 			Param: lit("foo"),
-			Index: &BinaryArithm{
-				Op: Comma,
-				X:  litWord("1"),
-				Y: &UnaryArithm{
-					Op: Minus,
-					X:  litWord("1"),
-				},
-			},
+			Index: litWord("1,-1"),
 		}, LangBash|LangMirBSDKorn|LangZsh),
 		langErr2("1:6: arrays are a bash/mksh/zsh feature; tried parsing as LANG", LangPOSIX),
 	),
@@ -2762,20 +2771,14 @@ var fileTests = []fileTestCase{
 		[]string{`${@[-1]}`},
 		langFile(&ParamExp{
 			Param: lit("@"),
-			Index: &UnaryArithm{
-				Op: Minus,
-				X:  litWord("1"),
-			},
+			Index: litWord("-1"),
 		}, LangZsh),
 	),
 	fileTest(
 		[]string{`${*[-1]}`},
 		langFile(&ParamExp{
 			Param: lit("*"),
-			Index: &UnaryArithm{
-				Op: Minus,
-				X:  litWord("1"),
-			},
+			Index: litWord("-1"),
 		}, LangZsh),
 	),
 	fileTest(
@@ -2783,11 +2786,7 @@ var fileTests = []fileTestCase{
 		langFile(&ParamExp{
 			Short: true,
 			Param: lit("foo"),
-			Index: &BinaryArithm{
-				Op: Comma,
-				X:  litWord("1"),
-				Y:  litWord("3"),
-			},
+			Index: litWord("1,3"),
 		}, LangZsh),
 	),
 	fileTest(
@@ -2891,10 +2890,7 @@ var fileTests = []fileTestCase{
 		[]string{`${foo[-1]}`},
 		langFile(&ParamExp{
 			Param: lit("foo"),
-			Index: &UnaryArithm{
-				Op: Minus,
-				X:  litWord("1"),
-			},
+			Index: litWord("-1"),
 		}, LangBash|LangMirBSDKorn|LangZsh),
 	),
 	fileTest(
@@ -5018,11 +5014,8 @@ var fileTests = []fileTestCase{
 				Value: litWord("b"),
 			},
 			{
-				Name: lit("c"),
-				Index: &UnaryArithm{
-					Op: Minus,
-					X:  litWord("3"),
-				},
+				Name:  lit("c"),
+				Index: litWord("-3"),
 			},
 			{
 				Name:   lit("d"),
@@ -5040,25 +5033,27 @@ var fileTests = []fileTestCase{
 	fileTest(
 		[]string{"arr[0,1]=x"},
 		langFile(&CallExpr{Assigns: []*Assign{{
-			Name: lit("arr"),
-			Index: &BinaryArithm{
-				Op: Comma,
-				X:  litWord("0"),
-				Y:  litWord("1"),
-			},
+			Name:  lit("arr"),
+			Index: litWord("0,1"),
 			Value: litWord("x"),
 		}}}, LangZsh),
 		langFile(lit("arr[0,1]=x"), LangPOSIX),
 	),
 	fileTest(
-		[]string{
-			"b[i]+=2",
-			"b[ i ]+=2",
-		},
+		[]string{"b[i]+=2"},
 		langFile(&CallExpr{Assigns: []*Assign{{
 			Append: true,
 			Name:   lit("b"),
 			Index:  litWord("i"),
+			Value:  litWord("2"),
+		}}}, LangBash|LangMirBSDKorn|LangZsh),
+	),
+	fileTest(
+		[]string{"b[ i ]+=2"},
+		langFile(&CallExpr{Assigns: []*Assign{{
+			Append: true,
+			Name:   lit("b"),
+			Index:  litWord(" i "),
 			Value:  litWord("2"),
 		}}}, LangBash|LangMirBSDKorn|LangZsh),
 	),
@@ -5085,15 +5080,22 @@ var fileTests = []fileTestCase{
 		})), LangBash),
 	),
 	fileTest(
-		[]string{
-			`a[$"x y"]=b`,
-			`a[ $"x y" ]=b`,
-		},
+		[]string{`a[$"x y"]=b`},
 		langFile(&CallExpr{Assigns: []*Assign{{
 			Name: lit("a"),
 			Index: word(&DblQuoted{Dollar: true, Parts: []WordPart{
 				lit("x y"),
 			}}),
+			Value: litWord("b"),
+		}}}, LangBash),
+	),
+	fileTest(
+		[]string{`a[ $"x y" ]=b`},
+		langFile(&CallExpr{Assigns: []*Assign{{
+			Name: lit("a"),
+			Index: word(lit(" "), &DblQuoted{Dollar: true, Parts: []WordPart{
+				lit("x y"),
+			}}, lit(" ")),
 			Value: litWord("b"),
 		}}}, LangBash),
 	),
@@ -5110,14 +5112,24 @@ var fileTests = []fileTestCase{
 		}), LangBash|LangMirBSDKorn|LangZsh),
 	),
 	fileTest(
-		[]string{
-			`a=(["x y"]=b)`,
-			`a=( [ "x y" ]=b)`,
-		},
+		[]string{`a=(["x y"]=b)`},
 		langFile(&CallExpr{Assigns: []*Assign{{
 			Name: lit("a"),
 			Array: &ArrayExpr{Elems: []*ArrayElem{{
 				Index: word(dblQuoted(lit("x y"))),
+				Value: litWord("b"),
+			}}},
+		}}}, LangBash),
+	),
+	fileTest(
+		[]string{`a=( [ "x y" ]=b)`},
+		// The space before the `[` is layout the printer owns; the spaces
+		// *inside* the brackets are part of the key and are kept (#626).
+		printsAs(`a=([ "x y" ]=b)`),
+		langFile(&CallExpr{Assigns: []*Assign{{
+			Name: lit("a"),
+			Array: &ArrayExpr{Elems: []*ArrayElem{{
+				Index: word(lit(" "), dblQuoted(lit("x y")), lit(" ")),
 				Value: litWord("b"),
 			}}},
 		}}}, LangBash),

@@ -1514,6 +1514,74 @@ var runTests = []runTest{
 		"a b\ndeclare -A m=()\n",
 	},
 	{`a=(1 2 3); echo "${a[1 ]} ${a[ 1]} ${a[1+1]}"`, "2 2 3\n"},
+	// The array decides what the text means, and the sharpest case is a
+	// key that *also* reads as arithmetic: `a-b` is a subtraction, `-1` a
+	// count from the end, `(1)` a parenthesized one and `x[1]` another
+	// array's element — and every one of them is an ordinary key here
+	// (#626). Reading them as arithmetic while parsing dropped the write
+	// without a word and crashed the read on an interface conversion.
+	{"declare -A m; m[a-b]=1; declare -p m", "declare -A m=([a-b]=\"1\" )\n"},
+	{"declare -A m; m[-1]=v; declare -p m", "declare -A m=([-1]=\"v\" )\n"},
+	{"declare -A m; m[+1]=v; declare -p m", "declare -A m=([+1]=\"v\" )\n"},
+	{"declare -A m; m[1+2]=v; declare -p m", "declare -A m=([1+2]=\"v\" )\n"},
+	{"declare -A m; m[(1)]=w; declare -p m", "declare -A m=([\"(1)\"]=\"w\" )\n"},
+	{"declare -A m; m[!z]=q; declare -p m", "declare -A m=([\"!z\"]=\"q\" )\n"},
+	{"declare -A m; m[a|b]=x; declare -p m", "declare -A m=([\"a|b\"]=\"x\" )\n"},
+	// The nested bracket is the one that stored under the *empty* key, so
+	// the stored key is read back independently of the read path.
+	{
+		`declare -A m; m[x[1]]=q; declare -p m; echo "${!m[@]}"`,
+		"declare -A m=([\"x[1]\"]=\"q\" )\nx[1]\n",
+	},
+	{`declare -A m; echo "[${m[a-b]}]"`, "[]\n"},
+	{`declare -A m; echo "[${m[-1]}]"`, "[]\n"},
+	{`declare -A m; echo "[${m[a-b]=v}]"; declare -p m`, "[v]\ndeclare -A m=([a-b]=\"v\" )\n"},
+	{`declare -A m; echo "[${m[a-b]:-default}]"`, "[default]\n"},
+	{`declare -A m; echo "${#m[a-b]}"`, "0\n"},
+	{`declare -A m; m[a-b]=hello; echo "${#m[a-b]}"`, "5\n"},
+	{`declare -A m; m[a-b]=1; m[a-b]=2; echo "${m[a-b]}"`, "2\n"},
+	{`declare -A m; m[a-b]=1; unset "m[a-b]"; declare -p m`, "declare -A m=()\n"},
+	{`declare -A m; m[x[1]]=1; unset "m[x[1]]"; declare -p m`, "declare -A m=()\n"},
+	{`declare -A m; m[a-b]=1; [[ -v m[a-b] ]]; echo "v=$?"`, "v=0\n"},
+	// A compound assignment's keys are the same text, read back one at a
+	// time rather than through `declare -p`, whose order is bash's hash.
+	{
+		`declare -A m=([a-b]=1 [-1]=2 [x[1]]=3); echo "[${m[a-b]}][${m[-1]}][${m[x[1]]}]"`,
+		"[1][2][3]\n",
+	},
+	// The key is the expansion's *result*, so it cannot be the raw source.
+	{`a=X; b=Y; declare -A m; m[$a-$b]=1; declare -p m`, "declare -A m=([X-Y]=\"1\" )\n"},
+	// An indirection and a nameref reach a subscript from a *string*, and
+	// each one has to read it the way the parser reads one in place.
+	{`declare -A m; m[a-b]=1; n=m[a-b]; echo "[${!n}]"`, "[1]\n"},
+	{`declare -n r=m[a-b]; declare -A m; r=1; declare -p m`, "declare -A m=([a-b]=\"1\" )\n"},
+	// The same characters in an *indexed* array's subscript are the
+	// arithmetic they look like, which is the whole point of not deciding
+	// while reading: a-b is index 0, -1 is the last element, x[1] reads
+	// another array, 0x10 is sixteen.
+	{"declare -a a=(z0 z1 z2 z3); a[-1]=V; declare -p a", "declare -a a=([0]=\"z0\" [1]=\"z1\" [2]=\"z2\" [3]=\"V\")\n"},
+	{"declare -a a=(z0 z1 z2 z3); a[a-b]=V; declare -p a", "declare -a a=([0]=\"V\" [1]=\"z1\" [2]=\"z2\" [3]=\"z3\")\n"},
+	{"declare -a a=(z0 z1 z2 z3); a[x[1]]=V; declare -p a", "declare -a a=([0]=\"V\" [1]=\"z1\" [2]=\"z2\" [3]=\"z3\")\n"},
+	{"declare -a a=(z0 z1 z2 z3); a[0x10]=V; declare -p a", "declare -a a=([0]=\"z0\" [1]=\"z1\" [2]=\"z2\" [3]=\"z3\" [16]=\"V\")\n"},
+	{`declare -a a=(z0 z1 z2 z3); a[1+2]=V; echo "${a[1+2]}"`, "V\n"},
+	// Spacing is part of a key and is trimmed by the arithmetic reader,
+	// so ` k ` and `k` are two keys while ` 1 ` and `1` are one index.
+	{"declare -A m; m[ a - b ]=V; declare -p m", "declare -A m=([\" a - b \"]=\"V\" )\n"},
+	{`declare -A m; m[ k ]=1; echo "[${m[ k ]}][${m[k]}]"`, "[1][]\n"},
+	{`a=(x y z); echo "[${a[ 1 ]}]"`, "[y]\n"},
+	// And ` @ ` is not the every-element subscript: bash reads the spaced
+	// form arithmetically and refuses it, where trimming made it `@`.
+	{`a=(x y z); echo "[${a[ @ ]}]"; echo after`, "@: arithmetic syntax error\nexit status 1 #JUSTERR"},
+	// `declare -p` leaves a key bare or quotes it per character, measured:
+	// `+ , : = @ %` are plain wherever they fall, `#` and `~` are plain
+	// only away from the head, where one starts a comment and the other a
+	// tilde expansion — which only matters now that a key spelled like
+	// arithmetic can exist at all (#626).
+	{"declare -A m; m[a#b]=v; declare -p m", "declare -A m=([a#b]=\"v\" )\n"},
+	{`declare -A m; m['#x']=v; declare -p m`, "declare -A m=([\"#x\"]=\"v\" )\n"},
+	{`declare -A m; m['~x']=v; declare -p m`, "declare -A m=([\"~x\"]=\"v\" )\n"},
+	{"declare -A m; m[a:b=c]=v; declare -p m", "declare -A m=([a:b=c]=\"v\" )\n"},
+	{"declare -A m; m[a^b]=v; declare -p m", "declare -A m=([\"a^b\"]=\"v\" )\n"},
 	// An *indexed* array reads the same text arithmetically and reports it
 	// while running, which abandons the rest of the line — where the parse
 	// error used to cost the rest of the file. bash names the token it

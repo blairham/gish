@@ -23,13 +23,15 @@ var simplifyTests = [...]simplifyTest{
 	{"$((a + (((b - c)))))", "$((a + (b - c)))"},
 	{"$(((b - c)))", "$((b - c))"},
 	{"(((b - c)))", "((b - c))"},
-	{"${foo[(1)]}", "${foo[1]}"},
 	{"${foo:(1):(2)}", "${foo:1:2}"},
-	{"a[(1)]=2", "a[1]=2"},
 	{"$(($a + ${b}))", "$((a + b))"},
 	noSimple("$((${!a} + ${#b}))"),
 	noSimple("a[$b]=2"),
 	noSimple("${a[$b]}"),
+	// A subscript is text whose meaning the array decides (#626), so
+	// nothing in it is rewritten — the parens may be part of a key.
+	noSimple("${foo[(1)]}"),
+	noSimple("a[(1)]=2"),
 	noSimple("${a[@]}"),
 	noSimple("((${a[@]}))"),
 	noSimple("((${a[*]}))"),

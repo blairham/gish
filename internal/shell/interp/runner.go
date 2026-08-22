@@ -3096,13 +3096,15 @@ func (r *Runner) runTrapCallback(ctx context.Context, callback, name string, bas
 }
 
 // nameRefElem splits a nameref target that names an array element into
-// the array's name and its subscript, parsed as arithmetic.
+// the array's name and its subscript, read as a word the way the parser
+// reads one in place — the array the reference resolves to is what decides
+// whether that word is arithmetic or a key (#626).
 func (r *Runner) nameRefElem(target string) (string, syntax.ArithmExpr, bool) {
 	base, sub, ok := cutElemSubscript(target)
 	if !ok {
 		return "", nil, false
 	}
-	idx, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
+	idx, err := syntax.NewParser().Subscript(strings.NewReader(sub))
 	if err != nil || idx == nil {
 		return "", nil, false
 	}
@@ -3275,9 +3277,26 @@ func declQuote(s string) string {
 func declQuoteKey(k string) string {
 	plain := k != ""
 	for i := range len(k) {
-		if c := k[i]; !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
-			c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.' || c == '/') {
+		c := k[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '_', c == '-', c == '.', c == '/',
+			c == '+', c == ',', c == ':', c == '=', c == '@', c == '%':
+			// bash leaves these unquoted wherever they fall, measured
+			// per character — which matters now that a key whose text
+			// also reads as arithmetic can exist at all (#626): `+1`
+			// and `1+2` print bare, exactly as `a-b` and `-1` do.
+		case c == '#', c == '~':
+			// Plain in the middle of a key and quoted at its head,
+			// where one would start a comment and the other a tilde
+			// expansion. Also measured.
+			if i == 0 {
+				plain = false
+			}
+		default:
 			plain = false
+		}
+		if !plain {
 			break
 		}
 	}

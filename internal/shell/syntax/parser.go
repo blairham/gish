@@ -547,6 +547,21 @@ func (p *Parser) Document(r io.Reader) (*Word, error) {
 	return w, p.err
 }
 
+// Subscript parses the text between a subscript's brackets, as if the input
+// had been written inside `name[…]`. That is one whole [Word]: spaces are
+// ordinary characters and quotes are quotes, because a subscript's meaning
+// is decided when it runs rather than while it is read (#564) — an indexed
+// array evaluates the word's text as arithmetic, an associative one uses it
+// as a key (#626).
+//
+// Every caller re-reading a subscript from a *string* wants this rather than
+// [Parser.Arithmetic]: a nameref's target, an indirection's target, and an
+// `unset a[k]` argument all name a subscript whose array is not known yet,
+// and reading one as arithmetic loses the key it spells.
+func (p *Parser) Subscript(r io.Reader) (*Word, error) {
+	return p.wholeWord(r)
+}
+
 // Arithmetic parses a single arithmetic expression. That is, as if the input
 // were within the $(( and )) tokens.
 //
@@ -2449,29 +2464,29 @@ func (p *Parser) badParamExp(pe *ParamExp, outer quoteState, pos Pos, consumed s
 	return pe
 }
 
-// subscriptExpr is the subscript's text as a node: an arithmetic
-// expression when it reads as one, and otherwise the word it spells,
-// which is what lets `m[hello world]` and `m[%]` be keys instead of
-// parse errors (#564). An indexed array reaching a word that is not
-// arithmetic is bash's runtime `arithmetic syntax error in expression`,
-// raised where the assignment runs.
+// subscriptExpr is the subscript's text as a node: the *word* the text
+// spells, never an arithmetic reading of it, because which of the two a
+// subscript means depends on the array and the array is only known when
+// the subscript runs (#564). An indexed array evaluates that word's text
+// as arithmetic where it stands (see expand.Arithm on a [Word], which
+// re-parses); an associative one uses the text as its key (#626).
 //
-// Both halves are parsed by a sub-parser seeded with the text's real
+// Reading the text as arithmetic *here* is what lost the key: `a-b`,
+// `-1`, `(1)` and `x[1]` all parse as arithmetic, so the tree held a
+// [BinaryArithm], a [UnaryArithm], a [ParenArithm] or — worse, because
+// it looks right — a [Word] wrapping the arithmetic-flavoured parameter
+// `x[1]`, and the characters bash would have keyed on were gone. The
+// word keeps them, including the spacing an arithmetic reading trims:
+// bash's key for `m[ a - b ]` is ` a - b `, spaces and all.
+//
+// The word is parsed by a sub-parser seeded with the text's real
 // position, so a diagnostic about a subscript names the column it is at.
 func (p *Parser) subscriptExpr(startPos Pos, raw string) ArithmExpr {
-	// [Parser.Arithmetic] takes the whole text or nothing, so a subscript
-	// that only *starts* as arithmetic — `hello world` reads `hello` and
-	// stops — falls through to the word rather than silently losing its
-	// second half.
-	if expr, err := p.fragment(startPos).Arithmetic(strings.NewReader(raw)); err == nil {
-		return expr
-	}
-	sub := p.fragment(startPos)
-	w, err := sub.wholeWord(strings.NewReader(raw))
+	w, err := p.fragment(startPos).wholeWord(strings.NewReader(raw))
 	if err != nil {
-		// The text cannot be read either way — an unterminated quote or
-		// expansion inside it — and that is a parse error like any
-		// other, reported where it is.
+		// The text cannot be read as a word at all — an unterminated
+		// quote or expansion inside it — and that is a parse error like
+		// any other, reported where it is.
 		p.err = err
 		return nil
 	}

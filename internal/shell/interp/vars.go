@@ -670,20 +670,18 @@ func (r *Runner) setVarWithIndex(prev expand.Variable, name string, index syntax
 		list = slices.Clone(prev.List)
 		indexes = slices.Clone(prev.Indexes)
 	case expand.Associative:
-		// if the existing variable is already an AssocArray, try our
-		// best to convert the key to a string
-		k := ""
-		if w, ok := index.(*syntax.Word); ok {
-			k = r.literal(w)
-		} else if index != nil {
+		// The key is the subscript's text, whatever that text also reads
+		// as: `m[a-b]=1` keys on `a-b`, where taking the arithmetic
+		// reading of it dropped the assignment without a word (#626).
+		k, err := expand.SubscriptKey(r.ecfg, index)
+		if err != nil {
+			r.expandErr(err)
 			return
 		}
 		// A nil index is `m[  ]=v`, a subscript of nothing but
 		// whitespace: an empty arithmetic expression for an indexed
 		// array, and here the empty key. bash keeps the spaces
-		// themselves as the key, which is the same whitespace koi
-		// already drops from `m[  k  ]` (#582 records it) — dropping the
-		// assignment instead would be the silent failure.
+		// themselves as the key, which is what the word carries now.
 
 		// TODO: only clone when inside a subshell and getting a var from outside for the first time
 		prev.Map = maps.Clone(prev.Map)
