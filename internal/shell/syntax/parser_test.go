@@ -527,19 +527,24 @@ var errorCases = []errorCase{
 		"echo $((a |\x80",
 		langErr("1:12: invalid UTF-8 encoding"),
 	),
+	// A bare `!` is a negated null command in bash and negation nests, so
+	// none of `!`, `! !`, `! ! foo` or `! ! !` is an error there any more
+	// (#632) — measured: `!` answers 1, `! !` answers 0, `! ! true` 0 and
+	// `! ! !` 1. The two `flipConfirm`s that used to say "bash allows lone
+	// `!`, unlike dash, mksh, and us" were the record of that gap; koi is
+	// no longer on the far side of it. The other languages keep the parse
+	// error, which is what the langErr restrictions below carry.
 	errCase(
 		"!",
-		langErr("1:1: `!` cannot form a statement alone"),
+		langErr("1:1: a negated null command is a bash/zsh feature; tried parsing as LANG", LangPOSIX|LangMirBSDKorn),
 	),
 	errCase(
 		"! !",
-		langErr("1:1: cannot negate a command multiple times"),
-		flipConfirm(LangBash), // bash allows lone `!`, unlike dash, mksh, and us.
+		langErr("1:1: negating a command more than once is a bash/mksh feature; tried parsing as LANG", LangPOSIX),
 	),
 	errCase(
 		"! ! foo",
-		langErr("1:1: cannot negate a command multiple times"),
-		flipConfirm(LangBash|LangMirBSDKorn), // bash allows lone `!`, unlike dash, mksh, and us.
+		langErr("1:1: negating a command more than once is a bash/mksh feature; tried parsing as LANG", LangPOSIX),
 	),
 	errCase(
 		"}",

@@ -209,7 +209,7 @@ func (r *Runner) fillExpandConfig(ctx context.Context) {
 // catShortcutArg checks if a statement is of the form "$(<file)". The redirect
 // word is returned if there's a match, and nil otherwise.
 func catShortcutArg(stmt *syntax.Stmt) *syntax.Word {
-	if stmt.Cmd != nil || stmt.Negated || stmt.Background || stmt.Coprocess || stmt.Disown {
+	if stmt.Cmd != nil || stmt.Negations > 0 || stmt.Background || stmt.Coprocess || stmt.Disown {
 		return nil
 	}
 	if len(stmt.Redirs) != 1 {
@@ -1130,8 +1130,12 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 			closers = append(closers, cls)
 		}
 	}
+	// bash folds the leading bangs down to one inverting flag, so an even
+	// number of them is not a negation at all: `! ! false` answers 1 and,
+	// measured, exits a `set -e` shell exactly as a bare `false` does.
+	negated := st.Negations%2 == 1
 	if r.exit.ok() && st.Cmd != nil {
-		if st.Negated {
+		if negated {
 			// A negated statement is immune to errexit, and the
 			// suppression has to be in force *while it runs*: koi
 			// applied the negation afterwards, so `! eval false` under
@@ -1150,7 +1154,7 @@ func (r *Runner) stmtSync(ctx context.Context, st *syntax.Stmt) {
 	// the statuses the commands actually exited with; "! false" leaves $? as 0
 	// but PIPESTATUS as 1.
 	r.setPipeStatus()
-	if st.Negated {
+	if negated {
 		if r.exit.ok() {
 			r.exit.code = 1
 		} else {

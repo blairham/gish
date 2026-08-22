@@ -163,7 +163,10 @@ func (p *funcPrinter) indent() {
 
 // stmt renders one statement without its terminator.
 func (p *funcPrinter) stmt(st *syntax.Stmt) {
-	if st.Negated {
+	// bash prints the folded flag rather than the bangs it read, so
+	// `f() { ! ! ; }` comes back with an empty body; matched deliberately,
+	// since this printer's job is to render what bash renders.
+	if st.Negations%2 == 1 {
 		p.sb.WriteString("! ")
 	}
 	p.cmd(st.Cmd)

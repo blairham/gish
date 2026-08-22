@@ -2565,6 +2565,24 @@ func (p *Parser) backquoteEnd() bool {
 	return p.lastBquoteEsc < p.openBquotes
 }
 
+// nullCmdEnd reports whether the current token can follow a `!` which negates
+// nothing at all. bash's grammar spells this `BANG list_terminator`, so it is a
+// far narrower set than [Parser.stopToken]: `!` then a newline, a `;`, an `&` or
+// EOF is a negated null command, while `! | cat`, `! && x`, `( ! )`, `! ;;` and
+// `{ ! }` are all syntax errors there. Zsh accepts `( ! )` and refuses `! &`,
+// which is why the closing paren is language-dependent.
+func (p *Parser) nullCmdEnd() bool {
+	switch p.tok {
+	case _EOF, _Newl, semicolon:
+		return true
+	case and:
+		return !p.lang.in(LangZsh)
+	case rightParen:
+		return p.lang.in(LangZsh)
+	}
+	return false
+}
+
 // ValidName returns whether val is a valid name as per the POSIX spec.
 func ValidName(val string) bool {
 	if val == "" {
@@ -2828,16 +2846,37 @@ func (p *Parser) doRedirect(s *Stmt) {
 func (p *Parser) getStmt(readEnd, binCmd, fnBody bool) *Stmt {
 	pos, ok := p.gotRsrv("!")
 	s := &Stmt{Position: pos}
+	nullCmd := false
+	bang := pos
 	if ok {
-		s.Negated = true
-		if p.stopToken() {
-			p.posErr(s.Pos(), `%#q cannot form a statement alone`, exclMark)
+		// bash's grammar is `BANG pipeline_command`, so the bangs nest and
+		// there may be any number of them; koi keeps the count on the one
+		// statement instead. The innermost may negate nothing at all.
+		s.Negations = 1
+		for {
+			if p.nullCmdEnd() {
+				p.checkLang(bang, langBashLike|LangZsh, "a negated null command")
+				nullCmd = true
+				break
+			}
+			pos, ok := p.gotRsrv("!")
+			if !ok {
+				break
+			}
+			p.checkLang(s.Pos(), langBashLike|LangMirBSDKorn, "negating a command more than once")
+			s.Negations++
+			bang = pos
 		}
-		if _, ok := p.gotRsrv("!"); ok {
-			p.posErr(s.Pos(), `cannot negate a command multiple times`)
+		if p.err != nil {
+			return nil
 		}
 	}
-	if s = p.gotStmtPipe(s, false); s == nil || p.err != nil {
+	if nullCmd {
+		// Never a nil Stmt.Cmd: every reader assumes it is non-nil, so the
+		// null command is an empty CallExpr, which every `len(Args) == 0`
+		// path already treats as "assign nothing, run nothing, exit 0".
+		s.Cmd = &CallExpr{Null: posAddCol(bang, 1)}
+	} else if s = p.gotStmtPipe(s, false); s == nil || p.err != nil {
 		return nil
 	}
 	// instead of using recursion, iterate manually
@@ -2936,7 +2975,7 @@ func (p *Parser) gotStmtPipe(s *Stmt, binCmd bool) *Stmt {
 		case "esac":
 			p.curErr("%#q can only be used to end a `case`", p.val)
 		case "!":
-			if !s.Negated {
+			if s.Negations == 0 {
 				p.curErr(`%#q can only be used in full statements`, exclMark)
 				break
 			}
@@ -3076,8 +3115,7 @@ func (p *Parser) gotStmtPipe(s *Stmt, binCmd bool) *Stmt {
 		s.Cmd = b
 		s.Comments, b.X.Comments = b.X.Comments, nil
 		// in "! x | y", the bang applies to the entire pipeline
-		s.Negated = b.X.Negated
-		b.X.Negated = false
+		s.Negations, b.X.Negations = b.X.Negations, 0
 	}
 	return s
 }

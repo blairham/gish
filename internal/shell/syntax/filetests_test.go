@@ -1883,8 +1883,8 @@ var fileTests = []fileTestCase{
 	fileTest(
 		[]string{"! foo"},
 		langFile(&Stmt{
-			Negated: true,
-			Cmd:     litCall("foo"),
+			Negations: 1,
+			Cmd:       litCall("foo"),
 		}),
 		langSkip(LangZsh), // fails to confirm?
 	),
@@ -1901,7 +1901,7 @@ var fileTests = []fileTestCase{
 			"! if foo; then bar; fi>/dev/null&",
 		},
 		langFile(&Stmt{
-			Negated: true,
+			Negations: 1,
 			Cmd: &IfClause{
 				Cond: litStmts("foo"),
 				Then: litStmts("bar"),
@@ -1933,8 +1933,8 @@ var fileTests = []fileTestCase{
 		langFile(&BinaryCmd{
 			Op: AndStmt,
 			X: &Stmt{
-				Cmd:     litCall("foo"),
-				Negated: true,
+				Cmd:       litCall("foo"),
+				Negations: 1,
 			},
 			Y: litStmt("bar"),
 		}),
@@ -1948,7 +1948,7 @@ var fileTests = []fileTestCase{
 				X:  litStmt("foo"),
 				Y:  litStmt("bar"),
 			},
-			Negated: true,
+			Negations: 1,
 		}),
 		langSkip(LangZsh), // fails to confirm?
 	),
