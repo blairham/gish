@@ -1095,7 +1095,7 @@ var errorCases = []errorCase{
 	// but at evaluation time rather than while parsing.
 	errCase(
 		"echo $((()))",
-		langErr("1:9: `(` must be followed by an expression"),
+		langErr("1:9: `(` must be followed by an expression", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $(((3))",
@@ -1103,15 +1103,15 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo $((+))",
-		langErr("1:9: `+` must be followed by an expression"),
+		langErr("1:9: `+` must be followed by an expression", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a b c))",
-		langErr("1:11: not a valid arithmetic operator: `b`"),
+		langErr("1:11: not a valid arithmetic operator: `b`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a ; c))",
-		langErr("1:11: not a valid arithmetic operator: `;`"),
+		langErr("1:11: not a valid arithmetic operator: `;`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	// `echo $((foo) )` was an error case here, marked "note that we
 	// don't backtrack". bash runs it as a command substitution — the
@@ -1120,19 +1120,19 @@ var errorCases = []errorCase{
 	// (#424).
 	errCase(
 		"echo $((a *))",
-		langErr("1:11: `*` must be followed by an expression"),
+		langErr("1:11: `*` must be followed by an expression", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((++))",
-		langErr("1:9: `++` must be followed by a literal"),
+		langErr("1:9: `++` must be followed by a literal", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a ? b))",
-		langErr("1:11: ternary operator missing `:` after `?`"),
+		langErr("1:11: ternary operator missing `:` after `?`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((a : b))",
-		langErr("1:11: ternary operator missing `?` before `:`"),
+		langErr("1:11: ternary operator missing `?` before `:`", LangPOSIX|LangMirBSDKorn|LangZsh),
 	),
 	errCase(
 		"echo $((/",
@@ -1809,7 +1809,7 @@ var errorCases = []errorCase{
 	),
 	errCase(
 		"echo $((a[]))",
-		langErr("1:10: `[` must be followed by an expression", LangBash|LangMirBSDKorn|LangZsh),
+		langErr("1:10: `[` must be followed by an expression", LangMirBSDKorn|LangZsh),
 		flipConfirm(LangMirBSDKorn), // wrong?
 	),
 	errCase(
@@ -2948,6 +2948,55 @@ func TestPOSIXModeQuoteRule(t *testing.T) {
 			_, err := NewParser(POSIXMode(true)).Parse(strings.NewReader(tc.in), "")
 			if gotErr := err != nil; gotErr != tc.posixErrs {
 				t.Fatalf("posix mode on %q: err = %v, want an error: %t", tc.in, err, tc.posixErrs)
+			}
+		})
+	}
+}
+
+// bash's extglob option decides whether `+(`, `@(`, `!(`, `?(` and `*(`
+// open a group, which is a *parsing* question and not a matching one
+// (#619): with the option off bash does not read `echo +(a|b)c` as a
+// pattern and decline to expand it, it fails to read the line at all.
+// Every expectation below was measured against bash 5.3, with the option
+// set on a line of its own so that bash's own line-by-line reading has
+// applied it.
+func TestExtendedGlobsOption(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		// Whether bash reports a syntax error with extglob off and on.
+		offErrs, onErrs bool
+	}{
+		// The group in an ordinary word: syntax with the option, a
+		// syntax error without it.
+		{"word", `echo +(a|b)c`, true, false},
+		{"every operator", `echo @(a) !(a) ?(a) *(a) +(a)`, true, false},
+		// An empty pattern list is a group when the option is on —
+		// `echo +()c` prints `+()c` — and with it off the same text is
+		// how a function named `+` is defined.
+		{"empty group", `echo +()c`, true, false},
+		{"function named @", "@() { echo hi; }", false, true},
+		// A case pattern is the same question: bash rejects the whole
+		// `case` without the option.
+		{"case pattern", `case abc in +(a|b)c) echo yes;; esac`, true, false},
+		// A conditional command's right-hand side is a pattern by
+		// grammar, so the option does not reach it either way.
+		{"test expression", `[[ abc == +(a|b)c ]]`, false, false},
+		{"empty group in test", `[[ "" == @() ]]`, false, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, on := range []bool{false, true} {
+				_, err := NewParser(ExtendedGlobs(on)).Parse(strings.NewReader(tc.in), "")
+				want := tc.offErrs
+				if on {
+					want = tc.onErrs
+				}
+				if gotErr := err != nil; gotErr != want {
+					t.Fatalf("ExtendedGlobs(%t) on %q: err = %v, want an error: %t",
+						on, tc.in, err, want)
+				}
 			}
 		})
 	}

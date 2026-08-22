@@ -190,6 +190,17 @@ retry:
 	}
 	if b := p.bs[p.bsp]; b < utf8.RuneSelf {
 		p.bsp++
+		// Record the source of the arithmetic construct being read, if
+		// any, so an expression the parser cannot read can be named as
+		// it was written (#600). This is every byte consumed rather
+		// than every rune returned — a `\r\n` and an escaped newline
+		// have to land in it too, or an offset stops indexing it — and
+		// it is written out at each site rather than through a helper,
+		// because a variadic call here costs the parser a quarter of
+		// its throughput.
+		if p.arithmRawDepth > 0 {
+			p.arithmRaw = append(p.arithmRaw, b)
+		}
 		switch b {
 		case '\x00':
 			// Ignore null bytes while parsing, like bash.
@@ -203,10 +214,16 @@ retry:
 		case '\\':
 			if p.r == '\\' {
 			} else if p.peek() == '\n' {
+				if p.arithmRawDepth > 0 {
+					p.arithmRaw = append(p.arithmRaw, '\n')
+				}
 				p.bsp++
 				p.w, p.r = 1, escNewl
 				return escNewl
 			} else if p1, p2 := p.peekTwo(); p1 == '\r' && p2 == '\n' { // \\\r\n turns into \\\n
+				if p.arithmRawDepth > 0 {
+					p.arithmRaw = append(p.arithmRaw, '\r', '\n')
+				}
 				p.col++
 				p.bsp += 2
 				p.w, p.r = 2, escNewl
@@ -245,6 +262,9 @@ decodeRune:
 	}
 	if p.litBs != nil {
 		p.litBs = append(p.litBs, p.bs[p.bsp:p.bsp+uint(w)]...)
+	}
+	if p.arithmRawDepth > 0 {
+		p.arithmRaw = append(p.arithmRaw, p.bs[p.bsp:p.bsp+uint(w)]...)
 	}
 	p.bsp += uint(w)
 	if p.r == utf8.RuneError && w == 1 {
@@ -555,17 +575,34 @@ func (p *Parser) extendedGlob() bool {
 		// We don't support e.g. `function @() { ... }` at the moment, but we could.
 		return false
 	}
-	if p.peek() == '(' {
-		// NOTE: empty pattern list is a valid globbing syntax like `@()`,
-		// but we'll operate on the "likelihood" that it is a function;
-		// only tokenize if its a non-empty pattern list.
-		// We do this after peeking for just one byte, so that the input `echo *`
-		// followed by a newline does not hang an interactive shell parser until
-		// another byte is input.
-		_, p2 := p.peekTwo()
-		return p2 != ')'
+	if p.peek() != '(' {
+		return false
 	}
-	return false
+	// We decide after peeking for just one byte, so that the input
+	// `echo *` followed by a newline does not hang an interactive shell
+	// parser until another byte is input.
+	switch {
+	case p.quote == testExpr:
+		// `[[ ]]` matches extended patterns whatever `shopt extglob`
+		// says: bash answers yes to `[[ abc == +(a|b)c ]]` and to
+		// `[[ "" == @() ]]` with the option off, because the conditional
+		// command's right-hand side is a pattern by grammar rather than
+		// by option. Measured against 5.3.
+		return true
+	case p.extGlob == extGlobOff:
+		// The group is not syntax at all, so `+` is an ordinary
+		// character and the `(` after it is a syntax error, which is
+		// what bash reports (#619).
+		return false
+	case p.extGlob == extGlobOn:
+		// An empty pattern list is a group like any other — `echo +()c`
+		// prints `+()c` — and with the option on bash does not read
+		// `@() { … }` as a function definition either.
+		return true
+	}
+	// Nobody has said; see [extGlobUnset].
+	_, p2 := p.peekTwo()
+	return p2 != ')'
 }
 
 func (p *Parser) peek() byte {

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -75,6 +76,93 @@ type completionRegistry struct {
 	// internal/complete's PATH/builtin/function providers, which never ask
 	// the registry (#609).
 	initial *completionSpec
+}
+
+// The three catch-all specs have three spellings each, and keeping them
+// apart is what makes them addressable at all: the option letter that
+// selects one, the key this registry files it under, and the name a
+// diagnostic calls it by.
+//
+// That last one is bash's internal placeholder command name —
+// `compopt -o nospace -D` with no default spec answers `compopt:
+// _DefaultCmD_: no completion specification` — and it is matched rather
+// than replaced with something of koi's own, because it is the observable
+// answer and inventing a second spelling would be a divergence with
+// nothing behind it.
+const (
+	keyDefault = "\x00default"
+	keyEmpty   = "\x00empty"
+	keyInitial = "\x00initial"
+)
+
+var catchAllSpecs = []struct {
+	opt     byte
+	key     string
+	errName string
+}{
+	{'D', keyDefault, "_DefaultCmD_"},
+	{'E', keyEmpty, "_EmptycmD_"},
+	{'I', keyInitial, "_InitialWorD_"},
+}
+
+// lookup reads one spec by registry key, where a key is either a command
+// name or one of the three catch-all markers.
+func (r *completionRegistry) lookup(key string) (completionSpec, bool) {
+	switch key {
+	case keyDefault, keyEmpty, keyInitial:
+		if p := r.catchAll(key); p != nil && *p != nil {
+			return **p, true
+		}
+		return completionSpec{}, false
+	}
+	spec, ok := r.byCommand[key]
+	return spec, ok
+}
+
+// store writes one spec back under the same keys lookup reads.
+func (r *completionRegistry) store(key string, spec completionSpec) {
+	switch key {
+	case keyDefault, keyEmpty, keyInitial:
+		s := spec
+		*r.catchAll(key) = &s
+		return
+	}
+	r.byCommand[key] = spec
+}
+
+func (r *completionRegistry) catchAll(key string) **completionSpec {
+	switch key {
+	case keyDefault:
+		return &r.fallback
+	case keyEmpty:
+		return &r.empty
+	case keyInitial:
+		return &r.initial
+	}
+	return nil
+}
+
+// catchAllPrintName is what the listing calls a spec: a command by its
+// name, a catch-all by the option that selects it.
+func catchAllPrintName(key string) string {
+	for _, c := range catchAllSpecs {
+		if c.key == key {
+			return "-" + string(c.opt)
+		}
+	}
+	return key
+}
+
+// catchAllErrName is what a diagnostic calls a spec, which for the three
+// catch-alls is bash's own placeholder command name rather than the
+// option.
+func catchAllErrName(key string) string {
+	for _, c := range catchAllSpecs {
+		if c.key == key {
+			return c.errName
+		}
+	}
+	return key
 }
 
 var completions = &completionRegistry{byCommand: map[string]completionSpec{}}
@@ -150,8 +238,15 @@ var (
 // answered nothing were #606, the same honesty problem as accepting a
 // name that does not exist, one step further in.
 var (
+	// In bash's own order, which is alphabetical — and the order matters
+	// now that `compopt name` prints the whole vocabulary back (#612).
+	// `fullquote` is bash 5.3's ninth and was missing, so `complete -o
+	// fullquote x` was refused: a line bash accepts, rejected, which is
+	// the wrong-rejection #556 was careful not to trade its silent drop
+	// for. Nothing acts on it here — it is kept and printed like -P, -S,
+	// -X and -G are.
 	compOptionNames = []string{
-		"bashdefault", "default", "dirnames", "filenames",
+		"bashdefault", "default", "dirnames", "filenames", "fullquote",
 		"noquote", "nosort", "nospace", "plusdirs",
 	}
 	compActionNames = []string{
@@ -291,14 +386,35 @@ func compStatus(status int) []string {
 	return []string{"eval", fmt.Sprintf("(exit %d)", status)}
 }
 
-// runCompopt adjusts options mid-completion. The adjustment is still
-// accepted and ignored — the only one that changes what the user sees
-// here is nospace, and a wrong space is a papercut while an error in the
-// middle of a completion is a broken shell — but an option bash refuses
-// is now refused, and what compopt does not do is written down in #612
-// rather than answered with a 0.
+// runCompopt adjusts a completion's options (#612).
+//
+// It used to parse its arguments and then answer 0 whatever it was asked,
+// which is the shape #566 names: a layer that accepts a *request* and
+// answers a *question* wrongly. `compopt -o nospace foo` said the
+// adjustment happened and nothing changed, and `compopt -o nospace bar`
+// — the probe a script writes to ask whether a spec exists — said yes for
+// every name in the world.
+//
+// There are three forms and each was measured rather than reasoned about:
+//
+//   - **Named.** `compopt [-o|+o opt]… name…` edits the registered specs.
+//     A name with no spec is `compopt: NAME: no completion specification`
+//     and exit 1, and the *other* names are still edited — bash reports
+//     and carries on rather than abandoning the call.
+//   - **Catch-all.** `-D`, `-E` and `-I` select the three specs that live
+//     outside byCommand, and they **override any names given**: `compopt
+//     -o nospace -D foo` edits the default spec and leaves foo alone.
+//     They are mutually exclusive with a fixed priority of D over E over
+//     I, whatever order they were written in.
+//   - **Unnamed.** With no names and no catch-all, compopt edits the
+//     completion **currently executing** — and says so when there is
+//     none, which is the case koi answered 0 for.
+//
+// With no `-o`/`+o` at all it is a *listing* rather than a request: bash
+// prints the whole option vocabulary back with `-o` on the ones that are
+// set and `+o` on the rest, then the name.
 func runCompopt(hc interp.HandlerContext, args []string) []string {
-	flags, _, err := parseCompArgs(compoptOpts, args)
+	flags, names, err := parseCompArgs(compoptOpts, args)
 	if err == nil {
 		err = validateCompFlags(compoptOpts.cmd, flags)
 	}
@@ -306,7 +422,157 @@ func runCompopt(hc interp.HandlerContext, args []string) []string {
 		hc.Errf("%v\n", err)
 		return compStatus(2)
 	}
-	return []string{"true"}
+
+	var edits []compFlag
+	catchAll := -1
+	for _, f := range flags {
+		if f.letter == 'o' {
+			edits = append(edits, f)
+			continue
+		}
+		for i, c := range catchAllSpecs {
+			// Highest priority wins regardless of the order written:
+			// `-E -D` and `-D -E` both edit the default spec.
+			if c.opt == f.letter && (catchAll < 0 || i < catchAll) {
+				catchAll = i
+			}
+		}
+	}
+
+	if catchAll >= 0 {
+		c := catchAllSpecs[catchAll]
+		return compoptEdit(hc, []string{c.key}, edits)
+	}
+	if len(names) > 0 {
+		return compoptEdit(hc, names, edits)
+	}
+	return compoptRunning(hc, edits)
+}
+
+// compoptEdit applies one compopt call to registered specs.
+func compoptEdit(hc interp.HandlerContext, keys []string, edits []compFlag) []string {
+	failed := false
+	for _, key := range keys {
+		spec, ok := completions.lookup(key)
+		if !ok {
+			hc.Errf("compopt: %s: no completion specification\n", catchAllErrName(key))
+			failed = true
+			continue
+		}
+		if len(edits) == 0 {
+			fmt.Fprintln(hc.Stdout, compoptLine(spec, catchAllPrintName(key)))
+			continue
+		}
+		completions.store(key, applyCompopt(spec, edits))
+	}
+	if failed {
+		return compStatus(1)
+	}
+	return compStatus(0)
+}
+
+// compoptRunning is the unnamed form: it edits the completion the editor
+// is executing right now, which is what a completion function calling
+// `compopt -o nospace` means. Outside one there is nothing to edit, and
+// saying so is the whole point — exit 0 there claims an adjustment that
+// never happened.
+func compoptRunning(hc interp.HandlerContext, edits []compFlag) []string {
+	spec, ok := editRunningCompletion(func(spec completionSpec) completionSpec {
+		return applyCompopt(spec, edits)
+	})
+	if !ok {
+		hc.Errf("compopt: not currently executing completion function\n")
+		return compStatus(1)
+	}
+	if len(edits) == 0 {
+		fmt.Fprintln(hc.Stdout, compoptLine(spec, ""))
+	}
+	return compStatus(0)
+}
+
+// applyCompopt adds what `-o` names and removes what `+o` names. The
+// option list is cloned rather than appended to in place: a spec read out
+// of the registry shares its backing array with the registered one, so an
+// append with spare capacity would edit a spec nobody asked about.
+func applyCompopt(spec completionSpec, edits []compFlag) completionSpec {
+	opts := slices.Clone(spec.options)
+	for _, f := range edits {
+		if f.plus {
+			opts = slices.DeleteFunc(opts, func(o string) bool { return o == f.value })
+			continue
+		}
+		if !slices.Contains(opts, f.value) {
+			opts = append(opts, f.value)
+		}
+	}
+	spec.options = opts
+	return spec
+}
+
+// compoptLine renders bash's listing form: every option name, `-o` when
+// it is set and `+o` when it is not, then the name it belongs to (empty
+// for the currently-executing completion, which has none).
+func compoptLine(spec completionSpec, name string) string {
+	var b strings.Builder
+	b.WriteString("compopt")
+	for _, o := range compOptionNames {
+		sign := " +o "
+		if slices.Contains(spec.options, o) {
+			sign = " -o "
+		}
+		b.WriteString(sign + o)
+	}
+	if name != "" {
+		b.WriteString(" " + name)
+	}
+	return b.String()
+}
+
+// runningCompletion is the spec the editor is executing right now, which
+// is the thing `compopt` with no names edits (#612). bash calls it
+// pcomp_curcs.
+//
+// It is a **copy** of the registered spec, which was measured rather than
+// assumed: under a real pty, `compopt -o nospace` inside a completion
+// function suppresses that completion's trailing space, and `complete -p`
+// afterwards prints the registered spec unchanged. So the adjustment
+// reaches the caller of the completion and stops there.
+var runningCompletion struct {
+	mu   sync.Mutex
+	spec *completionSpec
+}
+
+// setRunningCompletion publishes a completion and returns the previous
+// one, so the caller can restore it — a completion function may call
+// another, and a nil restore would leave the outer one unreachable.
+func setRunningCompletion(spec *completionSpec) *completionSpec {
+	runningCompletion.mu.Lock()
+	defer runningCompletion.mu.Unlock()
+	prev := runningCompletion.spec
+	runningCompletion.spec = spec
+	return prev
+}
+
+// editRunningCompletion applies edit to the running completion in place,
+// reporting whether there was one. The edited spec is returned so the
+// listing form can print it without a second lock.
+func editRunningCompletion(edit func(completionSpec) completionSpec) (completionSpec, bool) {
+	runningCompletion.mu.Lock()
+	defer runningCompletion.mu.Unlock()
+	if runningCompletion.spec == nil {
+		return completionSpec{}, false
+	}
+	*runningCompletion.spec = edit(*runningCompletion.spec)
+	return *runningCompletion.spec, true
+}
+
+// runningHasOption reads one option back off a published spec under the
+// same lock compopt writes it under: the completion function runs
+// arbitrary shell, and a pipeline stage inside it is another goroutine.
+func runningHasOption(spec *completionSpec, name string) bool {
+	runningCompletion.mu.Lock()
+	defer runningCompletion.mu.Unlock()
+	return slices.Contains(spec.options, name)
 }
 
 // runCompleteBuiltin parses a `complete` registration.
@@ -356,11 +622,11 @@ func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []s
 		case 'p':
 			print = true
 		case 'D':
-			names = append(names, "\x00default")
+			names = append(names, keyDefault)
 		case 'E':
-			names = append(names, "\x00empty")
+			names = append(names, keyEmpty)
 		case 'I':
-			names = append(names, "\x00initial")
+			names = append(names, keyInitial)
 		case 'P':
 			target.prefix = f.value
 		case 'S':
@@ -414,19 +680,7 @@ func runCompleteBuiltin(out, errOut io.Writer, errLoc string, args []string) []s
 	}
 
 	for _, n := range names {
-		switch n {
-		case "\x00default":
-			s := spec
-			completions.fallback = &s
-		case "\x00empty":
-			s := spec
-			completions.empty = &s
-		case "\x00initial":
-			s := spec
-			completions.initial = &s
-		default:
-			completions.byCommand[n] = spec
-		}
+		completions.store(n, spec)
 	}
 	return []string{"true"}
 }
@@ -1019,6 +1273,15 @@ func runCompletionSpec(runner *interp.Runner, spec completionSpec, line string, 
 	ctx, cancel := context.WithTimeout(context.Background(), completeBudget)
 	defer cancel()
 
+	// Publish this run's options so a completion function's `compopt -o
+	// nospace` can reach them (#612). The copy is bash's own behavior:
+	// the adjustment governs this completion and does not persist into
+	// the registered spec.
+	running := spec
+	running.options = slices.Clone(spec.options)
+	prevRunning := setRunningCompletion(&running)
+	defer setRunningCompletion(prevRunning)
+
 	words, cword := compWords(line, cursor)
 	cur, prev := "", ""
 	if cword < len(words) {
@@ -1055,7 +1318,11 @@ func runCompletionSpec(runner *interp.Runner, spec completionSpec, line string, 
 		return nil, false, true
 	}
 
-	nospace := slices.Contains(spec.options, "nospace")
+	// Read the option off the published copy rather than off `spec`: a
+	// completion function that turned nospace on for this branch did it
+	// there, and reading the registration back is what made `compopt`
+	// have no effect at all.
+	nospace := runningHasOption(&running, "nospace")
 	out := make([]editor.Candidate, 0, len(generated))
 	for _, g := range generated {
 		out = append(out, editor.Candidate{Value: g, Display: g})

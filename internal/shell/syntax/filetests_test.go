@@ -399,7 +399,10 @@ var fileTests = []fileTestCase{
 			},
 			Unsigned: true,
 		}, LangMirBSDKorn),
-		langErr2("1:1: unsigned expressions are a mksh feature; tried parsing as LANG", LangBash),
+		// bash has no unsigned marker and does not refuse it while
+		// reading: `$(( # 1 + 2 ))` is an arithmetic syntax error while
+		// it expands, which is #600's shape, so the tree keeps it as
+		// the text it is.
 	),
 	fileTest(
 		[]string{"$((# 1 + 2))", "$(( # 1 + 2 ))"},
@@ -411,7 +414,10 @@ var fileTests = []fileTestCase{
 			},
 			Unsigned: true,
 		}, LangMirBSDKorn),
-		langErr2("1:1: unsigned expressions are a mksh feature; tried parsing as LANG", LangBash),
+		// bash has no unsigned marker and does not refuse it while
+		// reading: `$(( # 1 + 2 ))` is an arithmetic syntax error while
+		// it expands, which is #600's shape, so the tree keeps it as
+		// the text it is.
 	),
 	fileTest(
 		[]string{"((3#20))"},
@@ -424,7 +430,28 @@ var fileTests = []fileTestCase{
 			X:  litWord("1.2"),
 			Y:  litWord("0.3"),
 		}), LangZsh),
-		langErr2("1:4: floating point arithmetic is a zsh feature; tried parsing as LANG", LangBash|LangMirBSDKorn),
+		// Same again: bash reports `1.2 > 0.3` while evaluating it and
+		// carries on, so only mksh still refuses it here (#600).
+		langErr2("1:4: floating point arithmetic is a zsh feature; tried parsing as LANG", LangMirBSDKorn),
+	),
+	// Arithmetic bash reads as text and refuses when it runs: the shape
+	// is kept and the source is what the printer writes back, so the
+	// evaluator's diagnostic can name the expression as written (#600).
+	fileTest(
+		[]string{"echo $(( 4 ? : 3 ))"},
+		langFile(call(litWord("echo"), word(arithmExp(&BadArithm{Value: " 4 ? : 3 "}))),
+			LangBash|LangBats),
+	),
+	fileTest(
+		[]string{"(( 4 + ))"},
+		langFile(arithmCmd(&BadArithm{Value: " 4 + "}), LangBash|LangBats),
+	),
+	fileTest(
+		[]string{"echo ${#:%}"},
+		langFile(call(litWord("echo"), word(&ParamExp{
+			Param: lit("#"),
+			Slice: &Slice{Offset: &BadArithm{Value: "%"}},
+		})), LangBash|LangBats),
 	),
 	fileTest(
 		[]string{
