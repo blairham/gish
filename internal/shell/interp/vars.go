@@ -80,6 +80,36 @@ func (o *overlayEnviron) Get(name string) expand.Variable {
 	return expand.Variable{}
 }
 
+// selfRefOuter reports whether name is bound to a reference to itself,
+// which bash creates for `typeset -n v=v` inside a function (#663). The
+// value such a reference stands for lives in the scope *outside* the one
+// holding it — see [expand.OuterEnviron] for the reading half — so a
+// write through it has to descend rather than land on the reference's own
+// cell, which would both lose the reference and shadow the variable it
+// names. [expand.Variable.Global] is the write-time signal for that.
+func (r *Runner) selfRefOuter(name string) bool {
+	vr := r.writeEnv.Get(name)
+	return vr.Kind == expand.NameRef && vr.Str == name
+}
+
+// OuterGet implements [expand.OuterEnviron]: it skips the innermost
+// scope that binds name, which is what a self-referencing nameref needs
+// (#663).
+func (o *overlayEnviron) OuterGet(name string) expand.Variable {
+	if o.parent == nil {
+		return expand.Variable{}
+	}
+	if _, ok := o.values[o.normalize(name)]; !ok {
+		// This scope does not bind the name, so the one to skip is
+		// further out.
+		if outer, ok := o.parent.(expand.OuterEnviron); ok {
+			return outer.OuterGet(name)
+		}
+		return expand.Variable{}
+	}
+	return o.parent.Get(name)
+}
+
 func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	normalized := o.normalize(name)
 	prev, inOverlay := o.values[normalized]
@@ -104,7 +134,7 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 		vr.List = prev.List
 		vr.Indexes = prev.Indexes
 		vr.Map = prev.Map
-	} else if prev.ReadOnly {
+	} else if prev.ReadOnly && !droppingDanglingRef(prev.Variable, vr) {
 		return fmt.Errorf("readonly variable")
 	}
 	if !vr.IsSet() { // unsetting
@@ -119,6 +149,18 @@ func (o *overlayEnviron) Set(name string, vr expand.Variable) error {
 	vr.Local = prev.Local || vr.Local
 	o.values[normalized] = namedVariable{name, vr}
 	return nil
+}
+
+// droppingDanglingRef reports whether a write is `declare +n` taking the
+// nameref attribute off a readonly reference that points at nothing.
+// bash allows exactly that — `declare -r -n foo5; declare +n foo5`
+// answers `declare -r foo5` at 0 — while refusing it on a reference with
+// a target, because there the attribute is what decides which variable a
+// write reaches. Neither variable's value changes: a reference to
+// nothing holds nothing (#660).
+func droppingDanglingRef(prev, vr expand.Variable) bool {
+	return prev.Kind == expand.NameRef && prev.Str == "" &&
+		vr.Kind == expand.String && !vr.Set && vr.Str == ""
 }
 
 func (o *overlayEnviron) Each(f func(name string, vr expand.Variable) bool) {
@@ -378,6 +420,22 @@ var dynamicVars = map[string]bool{
 	"EPOCHSECONDS": true, "EPOCHREALTIME": true, "BASHPID": true,
 	"GROUPS": true, "DIRSTACK": true, "FUNCNAME": true,
 	"BASH_SOURCE": true, "BASH_LINENO": true,
+}
+
+// unsettableNever are the computed variables bash refuses to unset,
+// with no "readonly variable" behind the refusal — `unset: BASH_SOURCE:
+// cannot unset` at 1, for -v and -n alike and for an element as well as
+// the whole array. It is *not* "the computed variables refuse unset":
+// FUNCNAME, DIRSTACK and GROUPS are all unsettable in bash and keep
+// #547's one-way rule, so membership is measured per name (#691).
+//
+// BASH_ARGV and BASH_ARGC refuse in bash too and are absent here for the
+// reason [dynamicListing] gives: koi does not have them yet (#637), and
+// refusing to unset a name the shell never supplies would claim an
+// interface it does not back.
+var unsettableNever = map[string]bool{
+	shellSourceVar: true,
+	shellLineNoVar: true,
 }
 
 // LINENO is absent from that list on purpose: it is answered in
@@ -1076,6 +1134,7 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	if valType != "-n" {
 		if n, v := prev.Resolve(r.writeEnv); n != "" {
 			name, prev = n, v
+			prev.Global = prev.Global || r.selfRefOuter(n)
 		} else if prev.Kind == expand.NameRef {
 			danglingRef = true
 		}
@@ -1083,6 +1142,10 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 	if danglingRef {
 		valType = "-n"
 	}
+	// Whether the variable had a value *before* this assignment, which is
+	// what an array append needs: a declared-but-unset scalar (#690) has
+	// no element 0 to carry into the new array.
+	hadValue := prev.Set
 	prev.Set = true
 	if as.Value != nil {
 		s := r.literalAssign(as.Value)
@@ -1256,7 +1319,13 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 		switch prev.Kind {
 		case expand.Unknown:
 		case expand.String:
-			list = []string{prev.Str}
+			// A scalar's value carries to element 0, but only when it
+			// has one: `declare a` records a declared-but-unset scalar
+			// (#690), and `a+=(b)` on it is one element in bash rather
+			// than an empty element 0 followed by b.
+			if hadValue {
+				list = []string{prev.Str}
+			}
 		case expand.Indexed:
 			// TODO: only clone when inside a subshell and getting a var from outside for the first time
 			list = slices.Clone(prev.List)
@@ -1374,7 +1443,7 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 // its own value, because that is what a nameref's value has always been.
 // Detaching first would have assigned "other" to foo itself and lost
 // both halves.
-func (r *Runner) unsetNameRef(name string, as *syntax.Assign) {
+func (r *Runner) unsetNameRef(variant, name string, as *syntax.Assign) {
 	self := r.lookupVar(name)
 	if !as.Naked {
 		// Assign through the reference, exactly as a plain `foo=other`
@@ -1382,9 +1451,32 @@ func (r *Runner) unsetNameRef(name string, as *syntax.Assign) {
 		target, tv := r.assignVal(name, self, as, "")
 		r.setVar(target, tv)
 	}
-	if self.Kind == expand.NameRef {
-		self.Kind = expand.String
+	if self.Kind != expand.NameRef {
+		// There is no reference to detach, and bash answers 0 without
+		// touching the variable — including a readonly one, where
+		// re-storing it made koi report `V: readonly variable` for a
+		// command bash treats as a no-op (#660). Returning here is also
+		// what keeps `declare +n p=2` on an ordinary p: the write above
+		// had already landed and re-storing `self` put the old value
+		// back over it.
+		return
 	}
+	if self.ReadOnly && self.Str != "" {
+		// A readonly reference that has a target cannot lose the
+		// attribute that decides which variable a write reaches, and
+		// bash names the builtin doing the asking: `typeset +n fr` is
+		// `typeset: fr: readonly variable`, where setVar's own wording
+		// left the builtin's name off (#660).
+		//
+		// A *dangling* readonly reference does lose it, measured:
+		// `declare -r -n foo5; declare +n foo5` answers `declare -r
+		// foo5` at 0, since a reference to nothing holds nothing and
+		// dropping the attribute changes no value.
+		r.errf("%s: %s: readonly variable\n", variant, name)
+		r.exit.code = 1
+		return
+	}
+	self.Kind = expand.String
 	r.setVar(name, self)
 }
 

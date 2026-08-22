@@ -246,6 +246,24 @@ func (v Variable) indexedKeys() []string {
 // program quite easily.
 const maxNameRefDepth = 100
 
+// OuterEnviron is an [Environ] with nested scopes that can answer a name
+// from the scope *outside* the innermost one binding it.
+//
+// It exists for the one shape that needs it: a nameref whose target is
+// its own name. bash creates one for `typeset -n v=v` inside a function
+// — it warns and declares it anyway (#663) — and resolves it against the
+// enclosing scope, so a read through it answers the outer v and the
+// reference itself stays a reference. Following it in the scope that
+// holds it would loop instead, which is the difference between koi
+// answering "inside" and answering the value the function shadowed.
+type OuterEnviron interface {
+	Environ
+
+	// OuterGet answers name from outside the innermost scope that binds
+	// it, or an unset variable when no outer scope has it.
+	OuterGet(name string) Variable
+}
+
 // Resolve follows a number of nameref variables, returning the last reference
 // name that was followed and the variable that it points to.
 func (v Variable) Resolve(env Environ) (string, Variable) {
@@ -264,6 +282,18 @@ func (v Variable) Resolve(env Environ) (string, Variable) {
 		}
 		name = v.Str // keep name for the next iteration
 		v = env.Get(name)
+		if v.Kind == NameRef && v.Str == name {
+			// The variable called name is a reference to itself, so the
+			// value lives in the scope outside the one holding it — see
+			// [OuterEnviron]. A self-reference cannot exist at the top
+			// level, where bash refuses the declaration outright, so
+			// there is nothing to answer when no scope encloses it.
+			outer, ok := env.(OuterEnviron)
+			if !ok {
+				return name, Variable{}
+			}
+			v = outer.OuterGet(name)
+		}
 	}
 	return name, Variable{}
 }
