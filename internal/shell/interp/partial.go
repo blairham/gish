@@ -43,6 +43,7 @@ type ScriptReader struct {
 	parser *syntax.Parser
 	rd     io.Reader
 	name   string
+	filter LineFilter
 	// src is everything read so far. Statement positions are offsets
 	// into it, so a caller can slice a statement's source out of it —
 	// which is what ambient history recording does, and what
@@ -69,6 +70,31 @@ func (sr *ScriptReader) Configure(opts ...syntax.ParserOption) {
 // Source is everything read so far.
 func (sr *ScriptReader) Source() string { return sr.src.String() }
 
+// LineFilter rewrites one physical input line — its newline included —
+// on its way from the script to the parser. num is the line's number in
+// this stream, counting from 1, which is what a diagnostic about the line
+// has to name.
+//
+// The replacement is what the parser reads and therefore what
+// [ScriptReader.Source] reports, so a caller which records history
+// records the rewritten line, as bash does. Returning the empty string
+// refuses the line: nothing is parsed from it, nothing runs, reading
+// carries on, and — because the parser never sees its newline — every
+// later line numbers one lower, which is exactly what bash does with a
+// line its own history expansion emptied.
+type LineFilter func(line string, num int) string
+
+// Filter installs a line filter, the seam for a transformation of the
+// *line* rather than of the tree.
+//
+// History expansion is the one bash has: `!!` is replaced before the
+// line is parsed, which is why it applies inside a double-quoted string
+// and not inside a single-quoted one. It belongs to the shell around the
+// interpreter — the history list is the session's — so this reader only
+// provides the boundary, one line at a time and never inside a
+// here-document body.
+func (sr *ScriptReader) Filter(f LineFilter) { sr.filter = f }
+
 // Lines yields the statements of each input line as it is read.
 //
 // A parse error is yielded once, with no statements, and ends the
@@ -82,7 +108,11 @@ func (sr *ScriptReader) Source() string { return sr.src.String() }
 func (sr *ScriptReader) Lines() iter.Seq2[[]*syntax.Stmt, error] {
 	return func(yield func([]*syntax.Stmt, error) bool) {
 		var line []*syntax.Stmt
-		for stmt, err := range sr.parser.StmtsSeq(io.TeeReader(sr.rd, &sr.src)) {
+		src := sr.rd
+		if sr.filter != nil {
+			src = &filteredLines{rd: sr.rd, filter: sr.filter, inHdoc: sr.parser.InHereDoc}
+		}
+		for stmt, err := range sr.parser.StmtsSeq(io.TeeReader(src, &sr.src)) {
 			if err != nil {
 				yield(nil, sr.named(err))
 				return
@@ -114,6 +144,63 @@ func (sr *ScriptReader) Lines() iter.Seq2[[]*syntax.Stmt, error] {
 			yield(nil, sr.named(rec[0]))
 		}
 	}
+}
+
+// filteredLines hands the parser one physical line at a time, each one
+// through a [LineFilter] first.
+//
+// The line is the unit because it is bash's: the option a filter reads
+// can be turned on by the line before, and never by the line itself. The
+// parser makes that exact granularity available for free — it reads no
+// further than the newline that ends the statement it is about to yield,
+// so the filter for line N+1 runs after line N has run. Measured, and
+// re-measured for a compound command, a backslash continuation and a
+// here-document, because the whole design rests on it.
+//
+// Reads from the underlying stream keep the shape they had without a
+// filter — one read of the parser's own buffer size, never more — so a
+// script which *is* the shell's standard input does not lose bytes its
+// commands were going to read.
+type filteredLines struct {
+	rd     io.Reader
+	filter LineFilter
+	inHdoc func() bool
+	raw    []byte // read from rd, not yet given to the filter
+	out    []byte // filtered, not yet given to the parser
+	num    int    // physical lines handed over so far
+	err    error  // rd's, held until everything read has been handed over
+}
+
+func (f *filteredLines) Read(p []byte) (int, error) {
+	for len(f.out) == 0 {
+		i := bytes.IndexByte(f.raw, '\n')
+		if i < 0 {
+			if f.err == nil {
+				buf := make([]byte, len(p))
+				n, err := f.rd.Read(buf)
+				f.raw = append(f.raw, buf[:n]...)
+				f.err = err
+				continue
+			}
+			if len(f.raw) == 0 {
+				return 0, f.err
+			}
+			// The last line of a file which does not end in a newline.
+			i = len(f.raw) - 1
+		}
+		line := string(f.raw[:i+1])
+		f.raw = f.raw[i+1:]
+		f.num++
+		// A here-document's body is the document's text, not the shell's
+		// input: bash hands it over untouched.
+		if !f.inHdoc() {
+			line = f.filter(line, f.num)
+		}
+		f.out = []byte(line)
+	}
+	n := copy(p, f.out)
+	f.out = f.out[n:]
+	return n, nil
 }
 
 // Recoverable reports whether err is a parse error bash discards an

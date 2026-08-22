@@ -342,22 +342,11 @@ func historyExpand(hc interp.HandlerContext, args []string) []string {
 	// `history -p` removes its own line first (measured), which is also
 	// what makes its `!!` mean the previous command rather than itself.
 	historyPopSelf()
-	entries := historyEntries()
-	match := func(prefix string, n int) (string, bool) {
-		// Newest first, skipping n matches, which is the contract
-		// history.Store.Match has and expandHistory expects.
-		seen := 0
-		for i := len(entries) - 1; i >= 0; i-- {
-			if !strings.HasPrefix(entries[i], prefix) {
-				continue
-			}
-			if seen == n {
-				return entries[i], true
-			}
-			seen++
-		}
-		return "", false
-	}
+	// Newest first, skipping n matches, which is the contract
+	// history.Store.Match has and expandHistory expects — and the same
+	// lookup a script's own lines are expanded against (#559), so
+	// `history -p '!!'` and a bare `!!` cannot disagree.
+	match := sessionHistoryMatch()
 	status := 0
 	for _, arg := range args {
 		expanded, _, err := expandHistory(arg, match)

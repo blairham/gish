@@ -682,6 +682,25 @@ func (p *Parser) Incomplete() bool {
 	return p.openNodes > 0 || len(p.litBs) > 0
 }
 
+// InHereDoc reports whether the next input bytes belong to the body of a
+// here-document.
+//
+// Like [Parser.Incomplete] it is only meaningful while the parser is
+// blocked on a read, and that is exactly where a shell which transforms
+// its input lines needs it: bash performs history expansion on each line
+// as it reads it, and a here-document's body lines are the one exception
+// — `cat <<EOF` with `!!` in the body writes `!!`, with a quoted
+// delimiter or without one (measured).
+// The pending-redirect half is load-bearing and not belt-and-braces:
+// [Parser.doHeredocs] consumes the newline *before* it enters the body's
+// lexer state, so the read that fetches the first body line happens one
+// step too early to see it — measured, by expanding a here-document body
+// that must not be expanded.
+func (p *Parser) InHereDoc() bool {
+	return p.quote == hdocBody || p.quote == hdocBodyTabs ||
+		len(p.heredocs) > p.buriedHdocs
+}
+
 const bufSize = 1 << 10
 
 func (p *Parser) reset() {

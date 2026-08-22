@@ -1433,10 +1433,7 @@ var posixOptsTable = [...]posixOpt{
 	// Known and listed, but koi cannot leave the state bash starts them
 	// in. Asking for that state is answered rather than pretended.
 	//
-	// notify and monitor are job control (#5). histexpand is the line
-	// editor's, not the interpreter's, and is already off in a
-	// non-interactive shell — which is the state scripts ask for.
-	// verbose would have to
+	// notify and monitor are job control (#5). verbose would have to
 	// echo input as it is read, which the interpreter never sees: it is
 	// handed statements, not lines. posix changes behavior across the
 	// whole interpreter and is its own piece of work, named by #308 for
@@ -1461,7 +1458,21 @@ var posixOptsTable = [...]posixOpt{
 	// on job control being on, exactly as in bash, and `lastpipe` stops
 	// applying, which is bash's rule too and is observable.
 	{'m', "monitor", false, true},
-	{'H', "histexpand", false, false},
+	// History expansion (#559). It is off in a non-interactive shell and
+	// a script turns it on with `set -H`, which koi refused — so `!!` in
+	// a script was an ordinary command name and every later line of
+	// bash's own histexp.tests diverged. The expansion itself is a
+	// transformation of the *line*, applied before parsing, so it lives
+	// in the shell around the interpreter; what lives here is the bit,
+	// because the bit is what a line changes and what the next line is
+	// read under. See [ScriptReader.Filter] for the seam and #96 for the
+	// expander.
+	//
+	// The gate is *both* this and history, measured in both directions:
+	// `set -H` alone expands nothing, and `set +o history` after both
+	// were on stops the expansion rather than merely stopping the
+	// recording.
+	{'H', "histexpand", false, true},
 	{' ', "history", false, true},
 	// The line editor's dialect (#576). The behavior is the shell's
 	// around the interpreter rather than the interpreter's own, which is

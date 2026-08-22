@@ -37,9 +37,11 @@ func TestShellFlagsReportTheInvocation(t *testing.T) {
 			"Bci",
 		},
 		{
+			// H is absent here on purpose: history expansion is an
+			// option now, so the interpreter renders its letter (#559).
 			"the interactive loop",
-			sessionFlags{interactive: true, histExpand: true, invocation: invokedStdin},
-			"BHis",
+			sessionFlags{interactive: true, invocation: invokedStdin},
+			"Bis",
 		},
 	}
 	for _, tc := range tests {
@@ -68,8 +70,8 @@ func TestJobControlLetterNeedsBothFacts(t *testing.T) {
 // change on any line, and a copy that went stale is exactly the bug
 // (#265). Nothing in this half may answer for errexit and friends.
 func TestShellFlagsNeverClaimOptionLetters(t *testing.T) {
-	every := sessionFlags{interactive: true, jobControl: true, histExpand: true, invocation: invokedStdin}
-	for _, letter := range "aefuxCETn" {
+	every := sessionFlags{interactive: true, jobControl: true, invocation: invokedStdin}
+	for _, letter := range "aefuxCETnH" {
 		if strings.ContainsRune(shellFlags(every), letter) {
 			t.Errorf("%q is the interpreter's to report, and was claimed here", letter)
 		}

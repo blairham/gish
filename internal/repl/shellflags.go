@@ -47,13 +47,19 @@ const (
 //
 // Each field is claimed rather than inferred, because the honest answer
 // differs by path and inferring would overclaim: `koi -ic` is interactive
-// and sources the rc, but runs no line editor, so it has neither history
-// expansion nor job control — and saying otherwise in a variable whose
-// entire purpose is to be probed is how a caller takes the wrong branch.
+// and sources the rc, but runs no line editor, so it has no job control —
+// and saying otherwise in a variable whose entire purpose is to be probed
+// is how a caller takes the wrong branch.
+//
+// History expansion used to be claimed here and is not any more (#559).
+// It is an option now, so the interpreter renders its letter off the live
+// table like every other option's, which is what makes `set +H` remove
+// the letter it turns off — a letter supplied from out here would have
+// been one the caller could not clear, which is precisely #265's rule and
+// the reason `h` is still absent.
 type sessionFlags struct {
 	interactive bool // -i, or a session on a terminal
 	jobControl  bool // process groups and terminal handoff are live (#5)
-	histExpand  bool // `!!` and friends are being expanded (#96)
 	invocation  invocation
 }
 
@@ -70,9 +76,6 @@ func shellFlags(f sessionFlags) string {
 	flags := "B" // brace expansion, always on
 	if f.interactive {
 		flags += "i"
-	}
-	if f.histExpand {
-		flags += "H"
 	}
 	if f.jobControl && jobs.Supported() {
 		flags += "m"

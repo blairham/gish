@@ -80,6 +80,11 @@ func (s *scriptStream) run(ctx context.Context) (err error, perr error) {
 	}()
 	for {
 		reader := interp.NewScriptReader(s.src, s.name, s.runner.ParserOptions()...)
+		// History expansion is a transformation of the line, applied
+		// before parsing, so it hangs off the same boundary a mode does
+		// (#559) — one step earlier, on the raw text rather than on the
+		// parser's options.
+		reader.Filter(historyExpandFilter(s.runner))
 		s.rec.restart(reader.Source)
 		switched := false
 		for stmts, rerr := range reader.Lines() {

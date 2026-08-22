@@ -5804,6 +5804,30 @@ set +o xtrace
 	{`f() { set -o vi; }; f; set -o | grep -E '^vi ' | awk '{print $2}'`, "on\n"},
 	{`(set -o vi); set -o | grep -E '^vi ' | awk '{print $2}'`, "off\n"},
 
+	// History expansion's *bit* (#559). The expansion itself is a
+	// transformation of an input line, so it belongs to the shell around
+	// this interpreter and is covered over a real script file in
+	// cmd/koi; what is here is what a script can say and read back,
+	// which was `set: cannot turn histexpand on: not implemented`.
+	//
+	// Both spellings, both directions, and through a function and a
+	// subshell, because this option was answered from somewhere else
+	// entirely until now — the same shape #576 left for `vi`.
+	{`set -H; set -o | grep -E '^histexpand ' | awk '{print $2}'`, "on\n"},
+	{`set -H; set +H; set -o | grep -E '^histexpand ' | awk '{print $2}'`, "off\n"},
+	{`set -o histexpand; case $- in *H*) echo yes;; *) echo no;; esac`, "yes\n"},
+	{`set -H; set +o histexpand; case $- in *H*) echo yes;; *) echo no;; esac`, "no\n"},
+	{`case $- in *H*) echo yes;; *) echo no;; esac`, "no\n"},
+	{`set -H; set +o | grep -E ' histexpand$'`, "set -o histexpand\n"},
+	{`set -H; case :$SHELLOPTS: in *:histexpand:*) echo yes;; *) echo no;; esac`, "yes\n"},
+	{`set -H; shopt -o histexpand >/dev/null; echo st=$?`, "st=0\n"},
+	{`f() { set -H; }; f; set -o | grep -E '^histexpand ' | awk '{print $2}'`, "on\n"},
+	{`(set -H); set -o | grep -E '^histexpand ' | awk '{print $2}'`, "off\n"},
+	// Asserted as the answer to a probe rather than as the whole string,
+	// which is #265's rule: the string carries claims koi deliberately
+	// does not make, and pinning it would pin those too.
+	{`set -aeH; case $- in *e*H*) echo ordered;; esac`, "ordered\n"},
+
 	// unset
 	{
 		"a=1; echo $a; unset a; echo $a",
