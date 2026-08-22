@@ -238,6 +238,7 @@ func (r *Runner) updateExpandOpts() {
 	r.ecfg.NoUnset = r.opts[optNoUnset]
 	r.ecfg.ExtGlob = r.opts[optExtGlob]
 	r.ecfg.FailGlob = r.opts[optFailGlob]
+	r.ecfg.NoPatSubReplacement = !r.opts[optPatSubReplacement]
 }
 
 func (r *Runner) expandErr(err error) {

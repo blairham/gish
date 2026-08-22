@@ -79,6 +79,57 @@ func paramTransformNeedsValue(text string) bool {
 	return true
 }
 
+// badLengthOperator reports whether an expansion is one of the `${#…}`
+// shapes bash reads and then refuses while expanding (#672).
+//
+// `${#}` is the parameter count, and an operator after that `#` is not a
+// name, so bash reads the `#` as the *parameter* rather than as the
+// length prefix — `${#/2/X}` really does replace in the count, and
+// `${#%2}` really does remove a suffix from it. What it refuses is the
+// operator with nothing after it: `${#%}`, `${#=}`, `${#+}` and `${#/}`,
+// the four listed by name in bash's own source beside the rule, whose
+// condition is that the operator is followed immediately by the closing
+// brace. `${#:}` is the fifth and is already answered by the empty-slice
+// rule; `${#-}` and `${#?}` are neither, since `-` and `?` are parameter
+// names and those are the length of `$-` and `$?`.
+func badLengthOperator(pe *syntax.ParamExp) bool {
+	if pe.Param == nil || pe.Param.Value != "#" || pe.Length || pe.Excl ||
+		pe.Width || pe.IsSet || pe.Index != nil {
+		return false
+	}
+	if pe.Repl != nil {
+		// `${#//}` has a second slash between the operator and the
+		// brace, which is what makes it an ordinary replacement.
+		return !pe.Repl.All && emptyWord(pe.Repl.Orig) && pe.Repl.With == nil
+	}
+	if pe.Exp == nil {
+		return false
+	}
+	switch pe.Exp.Op {
+	case syntax.UpperFirst, syntax.UpperAll, syntax.LowerFirst,
+		syntax.LowerAll, syntax.ToggleFirst, syntax.ToggleAll:
+		// A case-conversion operator is refused whatever follows it —
+		// `${#^}`, `${#^^}`, `${#,a}` and `${#~a}` are all bad
+		// substitutions (measured) — because bash reads its character
+		// into the *name* and then finds `#^` is not a length expression.
+		return true
+	}
+	if !emptyWord(pe.Exp.Word) {
+		return false
+	}
+	switch pe.Exp.Op {
+	case syntax.RemSmallSuffix, syntax.AssignUnset, syntax.AlternateUnset:
+		// Only the one-character spellings: `${#%%}`, `${#:=}` and
+		// `${#:+}` all put a character between the `#` and the brace.
+		return true
+	}
+	return false
+}
+
+func emptyWord(w *syntax.Word) bool {
+	return w == nil || len(w.Parts) == 0
+}
+
 func overridingUnset(pe *syntax.ParamExp) bool {
 	if pe.Exp == nil {
 		return false
@@ -108,6 +159,13 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 	}
 	if pe.Param == nil { // e.g. zsh's ${}
 		return "", fmt.Errorf("unsupported")
+	}
+	if badLengthOperator(pe) {
+		// A `${#` followed by an operator and nothing else. bash reads
+		// it, refuses it while expanding, and loses the command (#672),
+		// where koi answered the parameter count as if the operator were
+		// not there.
+		return "", fmt.Errorf("%s: bad substitution", nodeText(pe))
 	}
 	name := pe.Param.Value
 	index := pe.Index
@@ -437,18 +495,26 @@ func (cfg *Config) paramExp(pe *syntax.ParamExp) (string, error) {
 			syntax.ToggleFirst, syntax.ToggleAll:
 			str = join(cfg.caseConvElems(op, arg, elems))
 		case syntax.OtherParamOps:
-			str, err = cfg.paramTransform(pe, name, orig, str, set)
-			if err != nil {
-				return "", err
+			fields, terr := cfg.transformFields(pe, name, vr, elems, set)
+			if terr != nil {
+				return "", terr
 			}
+			str = join(fields)
 		}
 	}
 	return str, nil
 }
 
-// paramTransform answers a `${x@…}`, whose operator bash reads as text
-// and judges when it runs rather than while parsing (#602).
-func (cfg *Config) paramTransform(pe *syntax.ParamExp, name string, orig Variable, str string, set bool) (string, error) {
+// transformFields answers a `${x@…}` as the fields bash answers with:
+// one per element for the transforms that read the value, and a single
+// answer for the four that describe the variable rather than its value
+// (#647). The operator itself is text bash reads and judges when it runs
+// rather than while parsing (#602).
+//
+// vr is the variable after nameref resolution and name is its name, which
+// is what bash reports: `declare -ri x=5; declare -n r=x; ${r@A}` names x
+// and answers with x's attributes rather than the reference's (measured).
+func (cfg *Config) transformFields(pe *syntax.ParamExp, name string, vr Variable, elems []string, set bool) ([]string, error) {
 	// The transform is the source between the `@` and the brace, not what
 	// that source expands to.
 	xform := ""
@@ -461,50 +527,136 @@ func (cfg *Config) paramTransform(pe *syntax.ParamExp, name string, orig Variabl
 		// does not have. `${x@Q}` on an unset x is empty rather than the
 		// two quotes it would answer for an empty value, for the same
 		// reason.
-		return "", nil
+		return nil, nil
+	}
+	if len(elems) == 0 && paramTransformNeedsValue(xform) {
+		// A list with no elements has no value for bash to read either,
+		// so it never gets as far as the letter: `a=(); ${a[@]@nope}` is
+		// the empty string where `a=(1 2); ${a[@]@nope}` is fatal.
+		return nil, nil
 	}
 	if !paramTransformValid(xform) {
-		return "", BadOperatorError{Node: pe}
+		return nil, BadOperatorError{Node: pe}
 	}
+	// `${a[@]@A}` describes the whole array, so which of the two shapes
+	// answers depends on whether the expansion names a list at all.
+	list := listExpansion(name, vr, pe.Index)
+	positional := name == "@" || name == "*"
 	switch xform {
-	case "Q", "E", "P", "U", "u", "L":
-		return paramTransformValue(xform, str), nil
-	case "a":
-		// ${var@a} returns variable attribute flags.
-		// We use orig (before nameref resolve) for the attributes.
-		return orig.Flags(), nil
 	case "A":
-		// ${var@A} returns a declare statement that recreates the variable.
-		flags := orig.Flags()
-		quoted, err := syntax.Quote(str, syntax.LangBash)
-		if err != nil {
-			return "", err
+		switch {
+		case positional:
+			// bash's pos_params_assignment: the `set --` that would
+			// restate the parameters, with each one quoted reusably.
+			if len(elems) == 0 {
+				return nil, nil
+			}
+			quoted := make([]string, len(elems))
+			for i, elem := range elems {
+				quoted[i] = cfg.quoteReusable(elem)
+			}
+			return oneField("set -- " + strings.Join(quoted, " ")), nil
+		case list:
+			return oneField(cfg.arrayAssignment(name, vr)), nil
+		case !vr.Declared():
+			// bash answers nothing at all for a name it cannot find,
+			// where quoting the empty string would answer `x=''`.
+			return nil, nil
 		}
-		if flags == "" {
-			return fmt.Sprintf("%s=%s", name, quoted), nil
+		return oneField(cfg.scalarAssignment(name, vr, firstElem(elems), set)), nil
+	case "a":
+		if positional {
+			// bash's string_transform answers nothing for `a` with no
+			// variable behind it, which becomes an empty word per
+			// element: `set -- a b; "${@@a}"` is a single space.
+			return make([]string, len(elems)), nil
 		}
-		return fmt.Sprintf("declare -%s %s=%s", flags, name, quoted), nil
+		flags := vr.Flags()
+		if list && vr.IsSet() {
+			// The flags describe the variable and bash repeats them once
+			// per element, which is what its list_transform does.
+			out := make([]string, len(elems))
+			for i := range out {
+				out[i] = flags
+			}
+			return out, nil
+		}
+		// An unset array answers its flags once rather than never, which
+		// is bash's special case in array_transform.
+		return oneField(flags), nil
+	case "K":
+		if list && !positional {
+			return oneField(cfg.kvPairs(vr)), nil
+		}
+	case "k":
+		if list && !positional {
+			return kvPairList(vr), nil
+		}
 	}
-	// "K" and "k" are valid and not implemented: like @A but listing the
-	// keys of an associative array.
-	// TODO: implement them.
-	return str, nil
+	out := make([]string, len(elems))
+	for i, elem := range elems {
+		out[i] = cfg.paramTransformValue(xform, elem)
+	}
+	return out, nil
+}
+
+// listExpansion reports whether an expansion names a whole list rather
+// than one value: `$@`, `$*`, and a `[@]` or `[*]` subscript on a name
+// that is an array. It is what decides between the two shapes `${x@A}`
+// has, since bash builds `declare -a a=(…)` for an array and
+// `name=value` for anything else.
+func listExpansion(name string, vr Variable, index syntax.ArithmExpr) bool {
+	switch name {
+	case "@", "*":
+		return true
+	}
+	switch nodeLit(index) {
+	case "@", "*":
+		switch vr.Kind {
+		case Indexed, Associative:
+			return true
+		}
+	}
+	return false
+}
+
+// describesVariable reports whether an expansion carries one of the
+// `${x@…}` transforms that answer about the variable rather than about its
+// value, which have an answer even when there is no value to read.
+func describesVariable(pe *syntax.ParamExp) bool {
+	if pe.Exp == nil || pe.Exp.Op != syntax.OtherParamOps || pe.Exp.Word == nil {
+		return false
+	}
+	return !paramTransformNeedsValue(nodeText(pe.Exp.Word))
+}
+
+// oneField is a transform's single answer as a field list. An empty
+// answer is no field at all, which is bash returning NULL — the
+// difference shows in `printf "<%s>"`, not in `echo`.
+func oneField(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return []string{s}
+}
+
+func firstElem(elems []string) string {
+	if len(elems) == 0 {
+		return ""
+	}
+	return elems[0]
 }
 
 // paramTransformValue is the half of a `${x@…}` that reads only the value
 // it is given, which is what makes it the per-element half too: bash
 // applies these to each element of a list, so `"${a[@]@Q}"` quotes every
 // element rather than quoting them joined (#602).
-func paramTransformValue(xform, str string) string {
+func (cfg *Config) paramTransformValue(xform, str string) string {
 	switch xform {
-	case "Q":
-		quoted, err := syntax.Quote(str, syntax.LangBash)
-		if err != nil {
-			// Is this even possible? If a user runs into this panic,
-			// it's most likely a bug we need to fix.
-			panic(err)
-		}
-		return quoted
+	case "Q", "K", "k":
+		// `@K` and `@k` are `@Q` for anything that is not a whole array;
+		// only there do they answer with key/value pairs (#647).
+		return cfg.quoteReusable(str)
 	case "E":
 		tail := str
 		var rns []rune
@@ -532,31 +684,22 @@ func paramTransformValue(xform, str string) string {
 	return str
 }
 
-// transformElems applies a `${a[@]@…}` to each element, which is how bash
-// applies one to a list. The four transforms that describe the *variable*
-// rather than its value — `a`, `A`, `k`, `K` — are not per-element and
-// stay on the flat path, where they are still a divergence (#647).
+// transformElems applies a `${a[@]@…}` on the per-element path, where the
+// elements have already been read out of the variable. It answers through
+// the same function the flat path uses, so the four transforms that
+// describe the variable agree on both (#647).
 func (cfg *Config) transformElems(pe *syntax.ParamExp, elems []string) ([]string, error) {
-	xform := ""
-	if pe.Exp.Word != nil {
-		xform = nodeText(pe.Exp.Word)
+	name := pe.Param.Value
+	vr := cfg.Env.Get(name)
+	if n, v := vr.Resolve(cfg.Env); n != "" {
+		name, vr = n, v
 	}
-	if !paramTransformNeedsValue(xform) {
-		return elems, nil
+	set := vr.IsSet()
+	if name == "@" || name == "*" {
+		// $@ and $* count as unset with no positional parameters.
+		set = len(elems) > 0
 	}
-	if len(elems) == 0 {
-		// No value, so bash never looks at the letter — the same rule
-		// [Config.paramTransform] follows for an unset parameter.
-		return elems, nil
-	}
-	if !paramTransformValid(xform) {
-		return nil, BadOperatorError{Node: pe}
-	}
-	out := make([]string, len(elems))
-	for i, elem := range elems {
-		out[i] = paramTransformValue(xform, elem)
-	}
-	return out, nil
+	return cfg.transformFields(pe, name, vr, elems, set)
 }
 
 func removePattern(str, pat string, fromEnd, shortest bool) string {
@@ -638,12 +781,7 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 	if orig == "" && anchor == 0 {
 		return elems, nil // nothing to replace
 	}
-	// The replacement is expanded once and written verbatim per match,
-	// which is why an unquoted `&` — bash's "the text that matched",
-	// on by default since 5.2 — is still a literal ampersand here. It
-	// needs the same quote-awareness `anchorPattern` uses, on the other
-	// half of the operator, and is filed as #643 rather than folded in.
-	with, err := Literal(cfg, repl.With)
+	with, expandRep, err := cfg.replacementText(repl.With)
 	if err != nil {
 		return nil, err
 	}
@@ -659,20 +797,33 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 	if cLocale {
 		orig, with = LatinBytes(orig), LatinBytes(with)
 	}
+	// The replacement is expanded once, and rewritten per match only when
+	// there is an `&` or an escape in it to rewrite: bash scans the
+	// expanded string once and leaves it alone otherwise, backslashes
+	// included, which is why `s='a\b'` in `${v/aa/$s}` keeps its
+	// backslash (measured).
+	replacement := func(matched string) string {
+		if !expandRep {
+			return with
+		}
+		return expandReplacement(with, matched)
+	}
 	out := make([]string, len(elems))
 	for i, elem := range elems {
 		if cLocale {
 			elem = LatinBytes(elem)
 		}
 		if anchor != 0 {
-			out[i] = replaceAnchored(orig, elem, with, anchor == '%')
+			out[i] = replaceAnchored(orig, elem, replacement, anchor == '%')
 		} else {
 			locs := findAllIndex(orig, elem, n)
 			sb := cfg.strBuilder()
 			last := 0
 			for _, loc := range locs {
 				sb.WriteString(elem[last:loc[0]])
-				sb.WriteString(with)
+				if with != "" {
+					sb.WriteString(replacement(elem[loc[0]:loc[1]]))
+				}
 				last = loc[1]
 			}
 			sb.WriteString(elem[last:])
@@ -683,6 +834,119 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 		}
 	}
 	return out, nil
+}
+
+// replacementText expands a `${v/pat/rep}` replacement and reports
+// whether each match rewrites it.
+//
+// An unquoted `&` in the replacement is the text that matched — bash's
+// patsub_replacement, on by default since 5.2 — while `\&`, `"&"` and
+// `'&'` are a literal ampersand (#643). What separates them is whether
+// the character survived expansion *unquoted*, which is #636's rule for
+// the anchor arriving on the other half of the same operator, and which
+// the finished replacement string cannot answer: quoting a character that
+// is not special to the pattern engine leaves no trace in it.
+//
+// So the answer is bash's intermediate form (quote_string_for_repl): the
+// expanded text with a backslash written in front of every `&` and `\`
+// that was quoted in the source, which [expandReplacement] then reads.
+// With the option off the plain expansion is the answer, since quote
+// removal has already made those characters ordinary.
+func (cfg *Config) replacementText(word *syntax.Word) (string, bool, error) {
+	if cfg.NoPatSubReplacement {
+		with, err := Literal(cfg, word)
+		return with, false, err
+	}
+	if word == nil {
+		return "", false, nil
+	}
+	field, err := cfg.wordFieldMode(word.Parts, quoteNone, escapeMark)
+	if err != nil {
+		return "", false, err
+	}
+	sb := cfg.strBuilder()
+	for _, part := range field {
+		if part.quote == quoteNone {
+			sb.WriteString(part.val)
+			continue
+		}
+		for i := range len(part.val) {
+			if c := part.val[i]; c == '&' || c == '\\' {
+				sb.WriteByte('\\')
+			}
+			sb.WriteByte(part.val[i])
+		}
+	}
+	with := sb.String()
+	return with, with != "" && shouldExpandReplacement(with), nil
+}
+
+// markedEscapes splits a literal at its backslashes, marking each byte a
+// backslash quoted as quoted and dropping the backslash. See [escapeMark].
+func markedEscapes(s string) []fieldPart {
+	var parts []fieldPart
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			continue
+		}
+		if i > start {
+			parts = append(parts, fieldPart{val: s[start:i]})
+		}
+		// quoteSingle rather than quoteDouble: a backslash quotes the
+		// next byte whatever it is, which is the stronger of the two.
+		parts = append(parts, fieldPart{quote: quoteSingle, val: s[i+1 : i+2]})
+		i++
+		start = i + 1
+	}
+	if start < len(s) {
+		parts = append(parts, fieldPart{val: s[start:]})
+	}
+	return parts
+}
+
+// shouldExpandReplacement reports whether a replacement has anything for
+// [expandReplacement] to do: bash's shouldexp_replacement, which is what
+// makes a replacement with no `&` and no escape in it pass through
+// untouched. A trailing lone backslash answers no, as it does there.
+func shouldExpandReplacement(rep string) bool {
+	for i := 0; i < len(rep); i++ {
+		switch rep[i] {
+		case '\\':
+			if i++; i >= len(rep) {
+				return false
+			}
+			if rep[i] == '&' || rep[i] == '\\' {
+				return true
+			}
+		case '&':
+			return true
+		}
+	}
+	return false
+}
+
+// expandReplacement writes one match's replacement: bash's strcreplace
+// with its escape-backslash flag. An unquoted `&` becomes the matched
+// text — the empty string for an empty match, which is what makes
+// `${v/#/P&}` a plain prepend — while `\&` and `\\` lose their backslash
+// and stay literal.
+func expandReplacement(rep, matched string) string {
+	var sb strings.Builder
+	sb.Grow(len(rep))
+	for i := 0; i < len(rep); i++ {
+		c := rep[i]
+		if c == '&' {
+			sb.WriteString(matched)
+			continue
+		}
+		if c == '\\' && i+1 < len(rep) && (rep[i+1] == '&' || rep[i+1] == '\\') {
+			i++
+			c = rep[i]
+		}
+		sb.WriteByte(c)
+	}
+	return sb.String()
 }
 
 // replaceAnchored replaces the single match of pat that starts at the
@@ -701,7 +965,12 @@ func (cfg *Config) replaceElems(repl *syntax.Replace, elems []string) ([]string,
 // the engine for bash's semantics rather than to rely on that staying
 // true. There is no submatch to read back, since the whole match is the
 // span being replaced, which is what makes Longest usable at all.
-func replaceAnchored(pat, str, with string, atEnd bool) string {
+//
+// The replacement is a function of the matched text rather than a string
+// because an unquoted `&` in it is that text (#643) — and the anchored
+// forms are exactly where bash's own comment says the rule matters, since
+// an empty pattern makes them sed's `^` and `$`.
+func replaceAnchored(pat, str string, replacement func(string) string, atEnd bool) string {
 	expr, err := pattern.Regexp(pat, 0)
 	if err != nil {
 		return str
@@ -718,7 +987,7 @@ func replaceAnchored(pat, str, with string, atEnd bool) string {
 	if loc == nil {
 		return str
 	}
-	return str[:loc[0]] + with + str[loc[1]:]
+	return str[:loc[0]] + replacement(str[loc[0]:loc[1]]) + str[loc[1]:]
 }
 
 // removePatternElems applies a pattern removal operator to each element.

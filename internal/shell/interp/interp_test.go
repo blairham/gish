@@ -828,12 +828,14 @@ var runTests = []runTest{
 		"ax\n",
 	},
 	{
+		// `@A` quotes its value with `@Q`, which single-quotes
+		// unconditionally (#648).
 		`a=hello; echo "${a@A}"`,
-		"a=hello\n #IGNORE bash always single-quotes",
+		"a='hello'\n",
 	},
 	{
 		`export e=1; echo "${e@A}"`,
-		"declare -x e=1\n #IGNORE bash always single-quotes",
+		"declare -x e='1'\n",
 	},
 	{
 		`a=Hello; echo "${a@U}"`,
@@ -848,8 +850,10 @@ var runTests = []runTest{
 		"hello\n",
 	},
 	{
+		// `@K` and `@k` are `@Q` for anything that is not a whole array
+		// (#647).
 		`a=foo; echo "<${a@K}><${a@k}>"`,
-		"<foo><foo>\n #IGNORE not implemented; must not panic",
+		"<'foo'><'foo'>\n",
 	},
 	{
 		"declare a; a+=(b); echo ${a[@]} ${#a[@]}",
@@ -3057,6 +3061,167 @@ q`,
 	},
 	{`a=(ab cd); echo "[${a[@]@u}]"`, "[Ab Cd]\n"},
 	{`a=(1 2); echo "[${a[@]@nope}]"`, "${a[@]@nope}: bad substitution\nexit status 1 #JUSTERR"},
+
+	// `${x@Q}` quotes unconditionally: bash's sh_quote_reusable, whose
+	// callers rely on the answer always being a quoted word, where
+	// [syntax.Quote] picks the shortest form and hands a plain word back
+	// unchanged (#648).
+	{`x=hello; echo "${x@Q}"`, "'hello'\n"},
+	{`x=1; echo "${x@Q}"`, "'1'\n"},
+	{`x="a b"; echo "${x@Q}"`, "'a b'\n"},
+	{`x="it's"; echo "${x@Q}"`, "'it'\\''s'\n"},
+	{
+		// A lone single quote is bash's other special case, since the
+		// general rule would wrap it in two empty quoted spans.
+		`x="'"; echo "${x@Q}"`,
+		"\\'\n",
+	},
+	{`x=$'a\tb'; echo "${x@Q}"`, "$'a\\tb'\n"},
+	{`x=$'\001'; echo "${x@Q}"`, "$'\\001'\n"},
+	{
+		// bash's ansic_quote spells escape with a capital E.
+		`x=$'\033'; echo "${x@Q}"`,
+		"$'\\E'\n",
+	},
+	{`a=(1 2); echo "${a[@]@Q}"`, "'1' '2'\n"},
+
+	// The four transforms that describe the variable rather than its
+	// value answer for the whole variable, not per element (#647).
+	{`a=(1 2); echo "${a[@]@A}"`, "declare -a a=([0]=\"1\" [1]=\"2\")\n"},
+	{
+		// `@a` is the exception: the flags describe the variable and bash
+		// repeats them once per element.
+		`a=(1 2); echo "${a[@]@a}"`,
+		"a a\n",
+	},
+	{`declare -A m=([k]=v); echo "${m[@]@A}"`, "declare -A m=([k]=\"v\" )\n"},
+	{`declare -A m=([k]=v); echo "${m[@]@K}"`, "k \"v\" \n"},
+	{`a=(zero one); echo "${a[@]@K}"`, "0 \"zero\" 1 \"one\"\n"},
+	{
+		// `@k` is `@K`'s list form: keys and values as separate fields.
+		`a=(zero one); printf "<%s>" "${a[@]@k}"; echo`,
+		"<0><zero><1><one>\n",
+	},
+	{`set -- a b; echo "${@@A}"`, "set -- 'a' 'b'\n"},
+	{
+		// With no variable behind it, `@a` answers nothing per element.
+		`set -- a b; echo "[${@@a}]"`,
+		"[ ]\n",
+	},
+	{`set -- a b; echo "${@@K}"`, "'a' 'b'\n"},
+	{`x=foo; echo "<${x@K}><${x@k}>"`, "<'foo'><'foo'>\n"},
+	{
+		// Declared but never assigned prints its attributes and no value.
+		`declare -lr V; echo "${V@A}"`,
+		"declare -rl V\n",
+	},
+	{`declare -lr V; echo "${V[@]@a}"`, "rl\n"},
+	{`declare -alr W; echo "${W[@]@A}"`, "declare -arl W\n"},
+	{`B=(); echo "[${B[@]@A}]"`, "[declare -a B=()]\n"},
+	{
+		// An empty array has no element zero, so the scalar form has no
+		// value to print even though the variable was assigned.
+		`declare -ia f=(); echo "${f@A}"`,
+		"declare -ai f\n",
+	},
+	{
+		// A nameref answers about its target, and names it.
+		`declare -ri n=5; declare -n r=n; echo "${r@a}"`,
+		"ir\n",
+	},
+	{`declare -ri n=5; declare -n r=n; echo "${r@A}"`, "declare -ir n='5'\n"},
+
+	// An unquoted `&` in a replacement is the text that matched, which is
+	// bash's patsub_replacement and on by default since 5.2 (#643).
+	{`v=aabb; echo "${v/aa/[&]}"`, "[aa]bb\n"},
+	{`v=aabb; echo "${v//b/<&>}"`, "aa<b><b>\n"},
+	{`v=aabb; echo "${v/#aa/[&]}"`, "[aa]bb\n"},
+	{`v=aabb; echo "${v/%bb/[&]}"`, "aa[bb]\n"},
+	{
+		// An `&` that arrives from an expansion is unquoted too, so it is
+		// the match; the same expansion in double quotes is not.
+		`v=aabb; r="[&]"; echo "${v/aa/$r}"`,
+		"[aa]bb\n",
+	},
+	{`v=aabb; r="[&]"; echo "${v/aa/"$r"}"`, "[&]bb\n"},
+	{`v=aabb; echo "${v/aa/\&}"`, "&bb\n"},
+	{`v=aabb; echo "${v/aa/"&"}"`, "&bb\n"},
+	{
+		// An escaped ampersand in a *value* loses its backslash too, by
+		// the other route: the replacement is rewritten per match, and
+		// that pass is what removes it.
+		`v=aabb; s="\&"; echo "${v/aa/$s}"`,
+		"&bb\n",
+	},
+	{
+		// With no `&` and no escape to act on, the replacement is used
+		// exactly as it expanded — backslash included.
+		`v=aabb; s="a\b"; echo "${v/aa/$s}"`,
+		"a\\bbb\n",
+	},
+	{`v=aabb; echo "${v/aa/a\\b}"`, "a\\bbb\n"},
+	{`v=aabb; echo ${v/aa/a\b}`, "abbb\n"},
+	{
+		// An anchored empty pattern is sed's `^` and `$`, where the match
+		// is the empty string.
+		`v=aabb; echo "${v/#/P&}"`,
+		"Paabb\n",
+	},
+	{`v=aabb; echo "${v/%/&S}"`, "aabbS\n"},
+	{`e=; echo "[${e/#/[&]}]"`, "[[]]\n"},
+	{`v=aabb; echo "${v//?/[&]}"`, "[a][a][b][b]\n"},
+	{`v=aabb; echo "${v/aa/&}"`, "aabb\n"},
+	{`a=(ab cd); echo "${a[@]/?/[&]}"`, "[a]b [c]d\n"},
+	{
+		// The option is koi's to hold both ways now that there is a
+		// behaviour behind it (#575's rule).
+		`shopt -u patsub_replacement; v=aabb; echo "${v/aa/[&]}"`,
+		"[&]bb\n",
+	},
+	{`shopt -p patsub_replacement`, "shopt -s patsub_replacement\n"},
+	{
+		// `shopt -p` answers 1 for an option that is off, so the status
+		// is the script's.
+		`shopt -u patsub_replacement; shopt -p patsub_replacement`,
+		"shopt -u patsub_replacement\nexit status 1",
+	},
+
+	// `${#` followed by an operator and nothing else is a shape bash
+	// reads and refuses while expanding, where the same operator with a
+	// word is an ordinary expansion of the parameter count (#672).
+	{`set -- a b; echo "${#/2/X}"`, "X\n"},
+	{`set -- a b; echo "${#%%}"`, "2\n"},
+	{`set -- a b; echo "${#//}"`, "2\n"},
+	{`set -- a b; echo "${#:+x}"`, "x\n"},
+	{`set -- a b; echo "${#=x}"`, "2\n"},
+	{`set -- a b; echo "${#//a/b}"`, "2\n"},
+	{
+		// `-` and `?` are parameter names, so these are the length of
+		// `$-` and `$?` rather than an operator after the count.
+		`set -- a b; echo "${#?}"`,
+		"1\n",
+	},
+	{`set -- a b; echo "${#/}"`, "${#/}: bad substitution\nexit status 1 #JUSTERR"},
+	{`set -- a b; echo "${#%}"`, "${#%}: bad substitution\nexit status 1 #JUSTERR"},
+	{`set -- a b; echo "${#=}"`, "${#=}: bad substitution\nexit status 1 #JUSTERR"},
+	{`set -- a b; echo "${#+}"`, "${#+}: bad substitution\nexit status 1 #JUSTERR"},
+	{
+		// A case-conversion operator is refused whatever follows it,
+		// since bash reads its character into the name.
+		`set -- a b; echo "${#^}"`,
+		"${#^}: bad substitution\nexit status 1 #JUSTERR",
+	},
+	{`set -- a b; echo "${#,a}"`, "${#,a}: bad substitution\nexit status 1 #JUSTERR"},
+	{
+		// It costs the line rather than the script, which is #469's
+		// category: the statements sharing the line never run and the
+		// next line does. The diagnostic itself is out of the way
+		// because bash names `bash: line N:` for a script on standard
+		// input where koi names nothing (#120), so what is compared here
+		// is which commands ran.
+		"set -- a b\nexec 2>/dev/null\necho \"${#+}\"; echo same\necho next",
+		"next\n",
+	},
 
 	// A replacement can be anchored to the start or the end of the value
 	// (#636): `${v/#pat/rep}` and `${v/%pat/rep}`, which koi read as
