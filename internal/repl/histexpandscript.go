@@ -49,8 +49,9 @@ import (
 // so everything after one is numbered one lower — `$LINENO` included.
 
 // historyExpandFilter is the [interp.LineFilter] that expands a script's
-// lines. name is only for the record; the diagnostic's location comes
-// from the runner, which knows whether there is a file to name at all.
+// lines. Everything it needs comes from the runner: the two options, the
+// stderr in force, and whether there is a file to name in a diagnostic at
+// all — which is the shell's own rule (#571) rather than a second one.
 func historyExpandFilter(runner *interp.Runner) interp.LineFilter {
 	// dropped counts the lines expansion has taken out of the input, so
 	// the diagnostic can name the line bash names. bash's line counter
