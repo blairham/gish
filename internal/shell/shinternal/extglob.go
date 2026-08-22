@@ -45,19 +45,17 @@ func extGlobMatcher(pat string, mode pattern.Mode) (func(string) bool, error) {
 	}
 	fold := mode&pattern.NoGlobCase != 0
 	filenames := mode&pattern.Filenames != 0
-	dotOK := mode&pattern.GlobLeadingDot != 0
-	patDot := len(nodes) > 0 && func() bool {
-		l, ok := nodes[0].(extLit)
-		return ok && l.r == '.'
-	}()
+	// dotGuard is bash's FNM_PERIOD: a dot at the start of a filename
+	// may only be consumed by a literal dot in the pattern, decided per
+	// position rather than once for the whole pattern, because every
+	// alternative of a group carries the rule on its own — @(.a|*)
+	// matches .a and not .ab (#674).
+	dotGuard := filenames && mode&pattern.GlobLeadingDot == 0
 	return func(name string) bool {
-		if filenames && !dotOK && strings.HasPrefix(name, ".") && !patDot {
-			return false
-		}
 		if fold {
 			name = strings.ToLower(name)
 		}
-		return matchExtSeq(nodes, []rune(name), filenames)
+		return matchExtSeq(nodes, []rune(name), filenames, dotGuard, true)
 	}, nil
 }
 
@@ -150,41 +148,40 @@ func parseExtSeq(pat string, mode pattern.Mode, inGroup bool) ([]extNode, string
 // pat[0] == '[', honoring the leading-]-is-literal rule and [:class:]
 // forms. ok is false for an unterminated expression.
 func scanBracket(pat string) (class, rest string, ok bool) {
-	i := 1
-	if i < len(pat) && (pat[i] == '!' || pat[i] == '^') {
-		i++
+	end := pattern.BracketEnd(pat)
+	if end < 0 {
+		return "", "", false
 	}
-	if i < len(pat) && pat[i] == ']' {
-		i++ // a leading ] is literal
-	}
-	for i < len(pat) {
-		switch {
-		case pat[i] == '[' && i+1 < len(pat) && (pat[i+1] == ':' || pat[i+1] == '.' || pat[i+1] == '='):
-			delim := pat[i+1]
-			end := strings.Index(pat[i+2:], string(delim)+"]")
-			if end < 0 {
-				return "", "", false
-			}
-			i += 2 + end + 2
-		case pat[i] == ']':
-			return pat[:i+1], pat[i+1:], true
-		default:
-			i++
-		}
-	}
-	return "", "", false
+	return pat[:end], pat[end:], true
 }
 
-// matchExtSeq reports whether nodes match all of name.
-func matchExtSeq(nodes []extNode, name []rune, filenames bool) bool {
+// matchExtSeq reports whether nodes match all of name. dotGuard turns on
+// bash's leading-dot rule; nameStart says whether position 0 of name is
+// the start of a filename, which is false for the tail of a name handed
+// to a group's alternatives — x@(*) matches x.a, while @(.a|*) does not
+// match .ab.
+func matchExtSeq(nodes []extNode, name []rune, filenames, dotGuard, nameStart bool) bool {
 	type key struct{ pi, ni int }
 	memo := map[key]bool{}
 	sep := func(r rune) bool { return filenames && r == '/' }
+	// atNameStart reports whether ni begins a filename, so that a dot
+	// there is protected.
+	atNameStart := func(ni int) bool {
+		if ni == 0 {
+			return nameStart
+		}
+		return filenames && name[ni-1] == '/'
+	}
+	// dotAt reports whether the character at ni is a leading dot that
+	// only a literal dot in the pattern may consume.
+	dotAt := func(ni int) bool {
+		return dotGuard && ni < len(name) && name[ni] == '.' && atNameStart(ni)
+	}
 	var match func(pi, ni int) bool
 	// altsMatch reports whether any alternative matches name[from:to].
 	altsMatch := func(alts [][]extNode, from, to int) bool {
 		for _, alt := range alts {
-			if matchExtSeq(alt, name[from:to], filenames) {
+			if matchExtSeq(alt, name[from:to], filenames, dotGuard, atNameStart(from)) {
 				return true
 			}
 		}
@@ -204,11 +201,17 @@ func matchExtSeq(nodes []extNode, name []rune, filenames bool) bool {
 		case extLit:
 			return ni < len(name) && name[ni] == n.r && match(pi+1, ni+1)
 		case extAny:
-			return ni < len(name) && !sep(name[ni]) && match(pi+1, ni+1)
+			return !dotAt(ni) && ni < len(name) && !sep(name[ni]) && match(pi+1, ni+1)
 		case extClass:
-			return ni < len(name) && !sep(name[ni]) &&
+			return !dotAt(ni) && ni < len(name) && !sep(name[ni]) &&
 				n.rx.MatchString(string(name[ni])) && match(pi+1, ni+1)
 		case extStar:
+			// A protected dot ends the star outright rather than
+			// leaving it the empty match: *.a does not match .a, where
+			// the group in ?(x).a does (#674).
+			if dotAt(ni) {
+				return false
+			}
 			for j := ni; j <= len(name); j++ {
 				if match(pi+1, j) {
 					return true
@@ -238,6 +241,11 @@ func matchExtSeq(nodes []extNode, name []rune, filenames bool) bool {
 				}
 				return false
 			case '!':
+				// A negation never names a leading dot, whatever it
+				// holds: !(.foo) answers bar alone (#674).
+				if dotAt(ni) {
+					return false
+				}
 				// Any span the list does not match, the rest matching
 				// after it — the whole reason this matcher exists.
 				for j := ni; j <= len(name); j++ {
