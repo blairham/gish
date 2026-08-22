@@ -859,7 +859,13 @@ func (r *Runner) varIsSet(x string) bool {
 
 // unsetElem unsets a single element of an indexed or associative array, like
 // `unset 'a[3]'`. Unsetting an indexed array element may leave a hole.
-func (r *Runner) unsetElem(name, sub string) {
+//
+// viaRef says the element was named by a nameref rather than written out,
+// which changes one verdict: `unset ref` where ref points at `x[2]` and x
+// is a scalar is silent in bash, where the same subscript written out is
+// "not an array variable" at status 1 (#610). It reports whether the
+// caller should stay at status 0.
+func (r *Runner) unsetElem(name, sub string, viaRef bool) bool {
 	vr := r.lookupVar(name)
 	if n, v := vr.Resolve(r.writeEnv); n != "" {
 		name, vr = n, v
@@ -868,24 +874,22 @@ func (r *Runner) unsetElem(name, sub string) {
 	case expand.Indexed:
 		if sub == "@" || sub == "*" {
 			r.delVar(name)
-			return
+			return true
 		}
 		expr, err := syntax.NewParser().Arithmetic(strings.NewReader(sub))
 		if err != nil {
 			r.errf("unset: %s[%s]: bad array subscript\n", name, sub)
-			r.exit.code = 1
-			return
+			return false
 		}
 		if expr == nil {
-			return // an empty subscript like `unset 'a[]'` is a no-op
+			return true // an empty subscript like `unset 'a[]'` is a no-op
 		}
 		k := r.arithm(expr)
 		if k < 0 {
 			// Negative indices count from one past the maximum index.
 			if k += shinternal.IndexedMax(vr.List, vr.Indexes) + 1; k < 0 {
 				r.errf("unset: %s[%s]: bad array subscript\n", name, sub)
-				r.exit.code = 1
-				return
+				return false
 			}
 		}
 		// TODO: only clone when inside a subshell and getting a var from outside for the first time
@@ -896,7 +900,7 @@ func (r *Runner) unsetElem(name, sub string) {
 	case expand.Associative:
 		if sub == "@" || sub == "*" {
 			r.delVar(name)
-			return
+			return true
 		}
 		// TODO: only clone when inside a subshell and getting a var from outside for the first time
 		vr.Map = maps.Clone(vr.Map)
@@ -904,13 +908,17 @@ func (r *Runner) unsetElem(name, sub string) {
 		r.setVar(name, vr)
 	case expand.String:
 		// A scalar can be unset via subscript zero.
-		if sub == "0" {
+		switch {
+		case sub == "0":
 			r.delVar(name)
-		} else {
+		case viaRef:
+			// Silent in bash, and only through a reference (#610).
+		default:
 			r.errf("unset: %s: not an array variable\n", name)
-			r.exit.code = 1
+			return false
 		}
 	}
+	return true
 }
 
 func (r *Runner) setFunc(name string, body *syntax.Stmt) {
@@ -1008,7 +1016,13 @@ func (r *Runner) assignVal(name string, prev expand.Variable, as *syntax.Assign,
 		if !as.Append {
 			prev.Kind = expand.String
 			if valType == "-n" {
+				// A reference's value is a *name*, so the integer
+				// attribute has nothing to evaluate and bash drops it
+				// (#610): `typeset -i x=1; typeset -n x=y` leaves
+				// `declare -n x="y"`, where evaluating the target as
+				// arithmetic pointed x at whatever y happened to hold.
 				prev.Kind = expand.NameRef
+				prev.Integer = false
 			}
 			if prev.Integer {
 				s = r.arithmStr(s)

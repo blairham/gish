@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -176,4 +177,104 @@ func runStdout(t *testing.T, bin, script string) (string, int) {
 		t.Fatalf("running %s: %v", bin, err)
 	}
 	return stdout.String(), code
+}
+
+// What a reference's diagnostics say and what they cost (#610).
+//
+// Differential, and it has to be a script *file*: the two halves this
+// pins are both invisible in a `-c` string. A command string has no file
+// to name (#120, #571), so the `source: line N: ` prefix the two
+// indirect-expansion messages now carry would be empty; and a command
+// string is a single input unit, so "abandon this line and keep reading"
+// (#469) and "abandon everything" look identical there.
+//
+// The `declare` lines are the other half of that split, measured by
+// #308 and #582: a refused declaration answers 1 and carries on to the
+// next command, where the plain assignment above it loses the rest of
+// its line.
+const namerefDiagScript = `bar=one
+declare -n ref=bar
+readonly ref
+declare -p ref bar
+ref=two; echo "unreachable after a refused assignment"
+echo "the next line runs"
+declare ref=three; echo "declare answered $?"
+declare -a arr=(x y); declare -n arr=bar; echo "declare -n over an array answered $?"
+declare -p arr
+declare -n elem[3]=bar; echo "a subscripted reference answered $?"
+unset nosuch_target
+declare -n ptr=nosuch_target
+. ./nrlib.sh
+echo "end"
+`
+
+// Sourced, because a sourced file is the second place the location has
+// to be right and the first place the abandonment used to be too wide
+// (#585): the library must lose the rest of each offending line and keep
+// reading the ones after it.
+const namerefDiagLib = `echo "${!nosuch_var}"; echo "unreachable after a bad indirect"
+echo "the library keeps reading"
+bad='a b'
+echo "${!bad}"; echo "unreachable after a bad name"
+echo "library end"
+`
+
+func TestNameRefDiagnosticsMatchBash(t *testing.T) {
+	if testing.Short() {
+		t.Skip("differential nameref diagnostics skipped in -short")
+	}
+	koi := buildKoi(t)
+	bash := requireBash(t)
+
+	tmp := t.TempDir()
+	for name, body := range map[string]string{
+		"nrmain.sh": namerefDiagScript,
+		"nrlib.sh":  namerefDiagLib,
+	} {
+		if err := os.WriteFile(filepath.Join(tmp, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Run from inside tmp so both shells are handed the same relative
+	// path: bash names a script as it was written, not as it resolves.
+	bashOut, bashCode := runInDir(t, tmp, bash, "./nrmain.sh")
+	koiOut, koiCode := runInDir(t, tmp, koi, "./nrmain.sh")
+	if bashOut != koiOut || bashCode != koiCode {
+		t.Errorf("nameref diagnostics differ from bash\n  bash: %q (exit %d)\n  koi: %q (exit %d)",
+			bashOut, bashCode, koiOut, koiCode)
+	}
+	// Two shells agreeing on an answer that never reached the cases
+	// would pass while proving nothing. The oracle has to show the
+	// located diagnostic, the refusal that costs a line, the refusal
+	// that does not, and the line *after* each — which is the half a
+	// too-wide abandonment would swallow.
+	for _, want := range []string{
+		"./nrlib.sh: line 1: nosuch_var: invalid indirect expansion",
+		"./nrlib.sh: line 4: a b: invalid variable name",
+		"./nrmain.sh: line 5: bar: readonly variable",
+		"declare: arr: reference variable cannot be an array",
+		"declare: elem[3]: reference variable cannot be an array",
+		"the next line runs",
+		"the library keeps reading",
+		"library end",
+	} {
+		if !strings.Contains(bashOut, want) {
+			t.Errorf("the oracle's output lacks %q, so this case cannot detect a regression: %q",
+				want, bashOut)
+		}
+	}
+	// The mirror of the above: an assignment refused through a reference
+	// must not happen, and the line it was on must not survive it.
+	// Asserting only the message would pass against the original bug,
+	// where koi printed nothing and assigned anyway.
+	for _, unwanted := range []string{
+		"unreachable after a refused assignment",
+		"unreachable after a bad indirect",
+		"unreachable after a bad name",
+	} {
+		if strings.Contains(bashOut, unwanted) {
+			t.Errorf("the oracle printed %q, so this case is asserting the wrong rule: %q",
+				unwanted, bashOut)
+		}
+	}
 }

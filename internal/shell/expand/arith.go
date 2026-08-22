@@ -527,7 +527,7 @@ func (cfg *Config) arithTarget(x syntax.ArithmExpr) (arithTarget, error) {
 	if len(w.Parts) == 1 {
 		switch part := w.Parts[0].(type) {
 		case *syntax.Lit:
-			return arithTarget{name: part.Value}, nil
+			return cfg.followNameRefTarget(arithTarget{name: part.Value}), nil
 		case *syntax.ParamExp:
 			// `a[i]` reaches the parser as a short parameter expansion
 			// with an index and nothing else; anything more is a value
@@ -544,7 +544,31 @@ func (cfg *Config) arithTarget(x syntax.ArithmExpr) (arithTarget, error) {
 	if err != nil {
 		return arithTarget{}, err
 	}
-	return arithTarget{name: name}, nil
+	return cfg.followNameRefTarget(arithTarget{name: name}), nil
+}
+
+// followNameRefTarget resolves a reference before an arithmetic
+// assignment writes through it (#610): `declare -n r=v; (( r = 20 ))`
+// sets **v**, where writing the name unseen made r an ordinary variable
+// and left v alone. A reference may also name an element, which becomes
+// a subscripted target the same way a parameter expansion's does.
+func (cfg *Config) followNameRefTarget(t arithTarget) arithTarget {
+	if t.index != nil {
+		return t
+	}
+	vr := cfg.Env.Get(t.name)
+	if vr.Kind != NameRef {
+		return t
+	}
+	if base, sub, ok := cutNameRefSubscript(vr.Str); ok {
+		if idx := subscriptWord(sub); idx != nil {
+			return arithTarget{name: base, index: idx}
+		}
+	}
+	if n, _ := vr.Resolve(cfg.Env); n != "" {
+		t.name = n
+	}
+	return t
 }
 
 // readTarget is the target's current value, empty when it is unset.

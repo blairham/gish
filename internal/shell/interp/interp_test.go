@@ -587,7 +587,7 @@ var runTests = []runTest{
 	{"set -- a bc; echo ${#@} ${#*} $#", "2 2 2\n"},
 	{
 		"echo ${!a}; echo more",
-		"invalid indirect expansion\nexit status 1 #JUSTERR",
+		"a: invalid indirect expansion\nexit status 1 #JUSTERR",
 	},
 	{
 		"a=b; echo ${!a}; b=c; echo ${!a}",
@@ -607,11 +607,11 @@ var runTests = []runTest{
 	// as an unset variable.
 	{
 		`foo=; echo "${!foo-def}"`,
-		"invalid indirect expansion\nexit status 1 #JUSTERR",
+		": invalid variable name\nexit status 1 #JUSTERR",
 	},
 	{
 		`x='a b'; echo "${!x}"`,
-		"invalid indirect expansion\nexit status 1 #JUSTERR",
+		"a b: invalid variable name\nexit status 1 #JUSTERR",
 	},
 	{
 		"a=foo_very_long; echo ${a:1}; echo ${a: -1}; echo ${a: -10}; echo ${a:5}",
@@ -1759,6 +1759,77 @@ var runTests = []runTest{
 		"1 3\n",
 	},
 
+	// A reference is resolved on read *and* on write (#610). Without
+	// -n, a declaration's attributes land on the target rather than on
+	// the reference, which is one bug seen from both ends: assigning
+	// through a reference to a readonly variable was allowed, and
+	// re-pointing a reference whose target is readonly was refused.
+	{
+		`bar=one; declare -n ref=bar; readonly ref; declare -p ref bar`,
+		"declare -n ref=\"bar\"\ndeclare -r bar=\"one\"\n",
+	},
+	{
+		// The value matters as much as the message: a silent assignment
+		// passes any test that only reads the diagnostic. The subshell
+		// keeps the abandonment (#308) from costing the rest of the line.
+		`bar=one; declare -n ref=bar; readonly ref; ( ref=two ); declare -p bar`,
+		"bar: readonly variable\n" + `declare -r bar="one"` + "\n #JUSTERR",
+	},
+	{
+		// Re-pointing is not an assignment to the target, so a for loop
+		// walks all three where koi answered `ref: readonly variable`
+		// and kept the first.
+		`readonly one=1 two=2; declare -n ref=one; readonly ref; for ref in one two; do echo "${!ref}=$ref"; done; declare -p ref`,
+		"one=1\ntwo=2\n" + `declare -n ref="two"` + "\n",
+	},
+	{
+		`b=1; declare -n r=b; declare -x r; declare -p r b`,
+		"declare -n r=\"b\"\ndeclare -x b=\"1\"\n",
+	},
+	// A reference cannot be an array or an array element, and what it
+	// refused is left exactly as it was.
+	{
+		`declare -a a=(x y); z=1; declare -n a=z; echo rc=$?; declare -p a`,
+		"declare: a: reference variable cannot be an array\nrc=1\n" +
+			`declare -a a=([0]="x" [1]="y")` + "\n #JUSTERR",
+	},
+	{
+		`z=1; declare -n r[3]=z; echo rc=$?; declare -p r`,
+		"declare: r[3]: reference variable cannot be an array\nrc=1\n" +
+			"declare: r: not found\nexit status 1 #JUSTERR",
+	},
+	{
+		// A reference's value is a name, so the integer attribute has
+		// nothing to evaluate and bash drops it.
+		`declare -i x=1; y=42; declare -n x=y; echo "$x"; declare -p x`,
+		"42\n" + `declare -n x="y"` + "\n",
+	},
+	// unset through a reference to an element of something that is not
+	// an array is silent, where the same subscript written out is not.
+	{
+		`y=42; declare -n r='y[2]'; unset r; echo "rc=$? y=$y"`,
+		"rc=0 y=42\n",
+	},
+	{
+		`y=42; unset 'y[2]'; echo "rc=$? y=$y"`,
+		"unset: y: not an array variable\nrc=1 y=42\n #JUSTERR",
+	},
+	// Arithmetic follows a reference in both directions.
+	{
+		`v=7; declare -n r=v; echo $((r+1)); (( r = 20 )); echo "$v"; (( r += 5 )); echo "$v"`,
+		"8\n20\n25\n",
+	},
+	// An indirect expansion may point at an array element, and a
+	// reference to a reference to one resolves through both.
+	{
+		`arr=(a b); i='arr[1]'; echo ${!i}`,
+		"b\n",
+	},
+	{
+		`bar=4; declare -n foo='bar[0]'; f(){ declare -n one=$1; echo "[$one]"; }; f foo`,
+		"[4]\n",
+	},
+
 	// The directory stack is bash's: entry 0 is the current directory,
 	// so cd moves it, dirs prints it first, and pushd/popd take +N/-N
 	// stack arguments (#390).
@@ -2020,6 +2091,65 @@ var runTests = []runTest{
 	{"enable -n test; type -t test", "file\n"},
 	{"enable -n test; enable test; type -t test", "builtin\n"},
 	{"enable nosuchxyz; echo rc=$?", "enable: nosuchxyz: not a shell builtin\nrc=1\n #JUSTERR"},
+	// -s lists the sixteen POSIX special builtins and nothing else, in
+	// the same `enable NAME` shape as the plain listing. The pair below
+	// asserts both states of one name: `exit` appears as enabled here
+	// and as disabled in the next case, because a listing checked only
+	// for what it lacks passes vacuously against an empty listing.
+	{
+		"enable -ps",
+		"enable .\nenable :\nenable break\nenable continue\nenable eval\n" +
+			"enable exec\nenable exit\nenable export\nenable readonly\nenable return\n" +
+			"enable set\nenable shift\nenable source\nenable times\nenable trap\nenable unset\n",
+	},
+	{
+		"enable -n exit; enable -as",
+		"enable .\nenable :\nenable break\nenable continue\nenable eval\n" +
+			"enable exec\nenable -n exit\nenable export\nenable readonly\nenable return\n" +
+			"enable set\nenable shift\nenable source\nenable times\nenable trap\nenable unset\n",
+	},
+	// -n alone lists what is off rather than turning anything off, and
+	// -p forces that listing even when names follow it -- bash's own
+	// branch order, which no reading of the manual would predict.
+	{"enable -nps", ""},
+	{"enable -n test; enable -pn test", "enable -n test\n"},
+	// `builtin` asks for the shell's version of a name, and for a
+	// disabled builtin there no longer is one. This is the one place it
+	// parts company with `command`, which runs the program instead.
+	{
+		"enable -n printf; builtin printf x",
+		"builtin: printf: not a shell builtin\nexit status 1 #JUSTERR",
+	},
+	// -d removes a builtin that -f loaded, so here it can only refuse --
+	// with bash's two answers rather than with "invalid option", which
+	// would read as koi not knowing the flag (#603).
+	{"enable -d test", "enable: test: not dynamically loaded\nexit status 1 #JUSTERR"},
+	{"enable -d nosuchxyz", "enable: nosuchxyz: not a shell builtin\nexit status 1 #JUSTERR"},
+	// A lone dash is a name in bash, not an option, and so is a `+`
+	// word -- which also ends the options, so the builtin after it is
+	// left alone rather than switched off.
+	{"enable -", "enable: -: not a shell builtin\nexit status 1 #JUSTERR"},
+	{"enable +n test", "enable: +n: not a shell builtin\nexit status 1 #JUSTERR"},
+	{
+		"enable -x",
+		"enable: -x: invalid option\n" +
+			"enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\nexit status 2 #JUSTERR",
+	},
+	{
+		"enable -f",
+		"enable: -f: option requires an argument\n" +
+			"enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\nexit status 2 #JUSTERR",
+	},
+	{
+		// The one deliberate divergence: bash reaches dlopen here and
+		// reports a platform-specific loader error, while koi cannot
+		// load a builtin object at all. The message is bash's own for
+		// exactly this case -- what a bash compiled without dlopen
+		// prints, EX_USAGE included. #JUSTERR asserts only that bash
+		// also refuses, which is the honest comparison to make.
+		"enable -f /nosuch.so printf",
+		"enable: dynamic loading not available\nexit status 2 #JUSTERR",
+	},
 	// `hash -p` pins a name to a path, and the pin is consulted before
 	// PATH — koi accepted the line and did nothing with it.
 	{"hash -p /bin/ls myls; type myls", "myls is hashed (/bin/ls)\n"},

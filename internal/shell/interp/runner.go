@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/blairham/koi-shell/internal/shell/expand"
@@ -303,7 +304,11 @@ func (r *Runner) expandErr(err error) {
 		// the next line. Measured against 5.3.
 		r.exit.code = 1
 		r.exit.aborting = true
-	case errMsg == "invalid indirect expansion":
+	case strings.HasSuffix(errMsg, "invalid indirect expansion"),
+		// bash's other wording for the same family, which names the
+		// *value* rather than the parameter and abandons the line the
+		// same way (#610): `x='a b'; echo ${!x}`.
+		strings.HasSuffix(errMsg, "invalid variable name"):
 		// An invalid indirect is the readonly-assignment shape (#308),
 		// not the nounset one: bash abandons the current input unit and
 		// goes back to reading, so a script file continues at the next
@@ -467,7 +472,15 @@ func (r *Runner) extraFileSlice() []*os.File {
 	}
 	files := make([]*os.File, highest-2)
 	for fd, rwc := range r.extraFiles {
-		// Only a real file can be handed to another process.
+		// Only a real file can be handed to another process, and one of
+		// the shell's own descriptors is handed on as the file behind it
+		// rather than as the wrapper standing in for it (#645).
+		if dup, ok := rwc.(shellFD); ok {
+			if f := dup.file(); f != nil {
+				files[fd-3] = f
+			}
+			continue
+		}
 		if f, ok := rwc.(*os.File); ok {
 			files[fd-3] = f
 		}
@@ -504,6 +517,121 @@ func (r *Runner) fdReader(fd int) io.Reader {
 	}
 	if f, ok := r.extraFiles[fd]; ok {
 		return f
+	}
+	return nil
+}
+
+// shellFDPath reports the descriptor a path names when it names one of the
+// shell's own: /dev/stdin, /dev/stdout, /dev/stderr and /dev/fd/N are the
+// spellings bash and every script that reads a pipe by name use.
+//
+// They are not ordinary files: opening one is a dup of a descriptor the
+// shell holds, which is why they cannot go to the operating system here.
+// bash gets that for free because its redirections are real dup2 calls on
+// real descriptors; koi models the table, so a path has to be resolved
+// against the model (#645).
+func shellFDPath(path string) (int, bool) {
+	switch path {
+	case "/dev/stdin":
+		return 0, true
+	case "/dev/stdout":
+		return 1, true
+	case "/dev/stderr":
+		return 2, true
+	}
+	rest, ok := strings.CutPrefix(path, "/dev/fd/")
+	if !ok {
+		return 0, false
+	}
+	fd, err := strconv.Atoi(rest)
+	if err != nil || fd < 0 {
+		return 0, false
+	}
+	return fd, true
+}
+
+// openShellFD answers an open of one of the shell's own descriptors. The
+// third result reports whether it answered at all: a descriptor above 2
+// which the shell does not hold is left to the operating system, since the
+// process may well have inherited one under that number (#419) and koi's
+// table only knows what it was told about.
+func (r *Runner) openShellFD(path string, fd, flags int) (io.ReadWriteCloser, error, bool) {
+	if fd > 2 {
+		if _, ok := r.extraFiles[fd]; !ok {
+			return nil, nil, false
+		}
+	}
+	rd, wr := r.fdReader(fd), r.fdWriter(fd)
+	if rd == nil && wr == nil {
+		// The descriptor is closed, which is bash's "Bad file
+		// descriptor" rather than a missing file: `. /dev/stdin` with
+		// fd 0 closed is an error, not an empty script.
+		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EBADF}, true
+	}
+	var dup shellFD
+	wantRead := flags&os.O_WRONLY == 0 // O_RDONLY or O_RDWR
+	wantWrite := flags&(os.O_WRONLY|os.O_RDWR) != 0
+	if wantRead {
+		dup.rd = rd
+	}
+	if wantWrite {
+		dup.wr = wr
+	}
+	// A descriptor opened one way cannot be opened the other way through
+	// its /dev/fd name — bash answers "Permission denied" for `. /dev/fd/N`
+	// on a descriptor opened for writing, and koi must, since the table
+	// holds one entry whichever direction it was opened in. The table says
+	// which *side* a descriptor is on, and the kernel says which modes the
+	// file was opened with; both are asked, because the table's answer for
+	// a plain file is "either".
+	denied := (wantRead && dup.rd == nil) || (wantWrite && dup.wr == nil)
+	if f := dup.file(); !denied && f != nil {
+		if readable, writable, known := fdAccess(f); known {
+			denied = (wantRead && !readable) || (wantWrite && !writable)
+		}
+	}
+	if denied {
+		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.EACCES}, true
+	}
+	return dup, nil, true
+}
+
+// shellFD is one of the shell's own descriptors handed out as an open file.
+// Reads and writes go to the descriptor the shell holds, sharing its offset
+// the way a dup does, and Close is a no-op: whoever asked for it — a
+// redirection, or `source` — does not own it, and closing the shell's
+// standard input because a sourced file ended would be a bug with a very
+// long fuse.
+type shellFD struct {
+	rd io.Reader
+	wr io.Writer
+}
+
+func (f shellFD) Read(p []byte) (int, error) {
+	if f.rd == nil {
+		return 0, os.ErrInvalid
+	}
+	return f.rd.Read(p)
+}
+
+func (f shellFD) Write(p []byte) (int, error) {
+	if f.wr == nil {
+		return 0, os.ErrInvalid
+	}
+	return f.wr.Write(p)
+}
+
+func (shellFD) Close() error { return nil }
+
+// file reports the real file behind the descriptor, if there is one.
+// Handing a descriptor to a child process, or to the shell's own standard
+// input, needs the file itself rather than a wrapper around it.
+func (f shellFD) file() *os.File {
+	if file, ok := f.rd.(*os.File); ok {
+		return file
+	}
+	if file, ok := f.wr.(*os.File); ok {
+		return file
 	}
 	return nil
 }
@@ -1948,6 +2076,30 @@ assignLoop:
 			r.unsetNameRef(name, as)
 			continue
 		}
+		if valType == "-n" {
+			// A reference cannot be an array or an array element (#610).
+			// bash names the element as written for a subscript and the
+			// variable for a name that already holds an array, answers 1,
+			// and leaves what it refused exactly as it was — so `typeset
+			// -n x=y` over `x=(the browns suck)` keeps the array rather
+			// than replacing it with a reference to y.
+			//
+			// Checked *before* the target validation below, because
+			// `typeset -n x[3]=x` is the array error in bash rather than
+			// the self-reference one — the order is measured, not derived.
+			if as.Index != nil {
+				r.errf("%s: %s[%s]: reference variable cannot be an array\n",
+					variant, name, subscriptText(as.Index))
+				r.exit.code = 1
+				continue assignLoop
+			}
+			switch r.lookupVar(name).Kind {
+			case expand.Indexed, expand.Associative:
+				r.errf("%s: %s: reference variable cannot be an array\n", variant, name)
+				r.exit.code = 1
+				continue assignLoop
+			}
+		}
 		if valType == "-n" && as.Value != nil {
 			// A nameref's target must be a name, optionally with a
 			// subscript, and may not be the reference itself (#389).
@@ -1970,10 +2122,37 @@ assignLoop:
 				continue
 			}
 		}
+		// A declaration follows a reference before it declares anything
+		// (#610). With `-n` absent, every attribute lands on the
+		// *target*: `typeset -n ref=foo; readonly ref` makes **foo**
+		// readonly, and `declare -i ref`, `declare -x ref` and even
+		// `declare -a ref` all reach through the same way — measured for
+		// each. koi marked the reference itself, which is one bug seen
+		// from both ends: an assignment through the reference was then
+		// allowed where bash refuses it, and re-pointing the reference
+		// was refused where bash allows it, since a reference's own
+		// readonly bit is what `for ref in one two three` trips over.
+		//
+		// A dangling reference resolves to nothing and keeps its own
+		// attributes, which is what `typeset -n foo1; typeset -r foo1`
+		// needs; assignVal follows the same rule for the value.
+		//
+		// A declaration creating a *new* local is the exception, and it
+		// has to be: there is no reference to follow yet, so `local ref`
+		// in a function shadows an outer nameref with an ordinary
+		// variable rather than reaching through it — measured, and
+		// following it would refuse the declaration whenever the outer
+		// reference's target happened to be readonly.
+		freshLocal := local && !global && !r.localInScope(name) &&
+			!r.declTempBound[name] && !inherit
+		written := name // the name as the caller spelled it, for diagnostics
+		if valType != "-n" && !freshLocal {
+			if n, _ := r.lookupVar(name).Resolve(r.writeEnv); n != "" {
+				name = n
+			}
+		}
 		vr := r.lookupVar(name)
-		freshLocal := false
-		if local && !global && !r.localInScope(name) && !r.declTempBound[name] && !inherit {
-			freshLocal = true
+		if freshLocal {
 			// A declaration that creates a *new* local starts from an
 			// unset variable rather than inheriting the outer one
 			// (#381): `V=abc; f(){ local V; echo "${V-unset}"; }`
@@ -2000,6 +2179,21 @@ assignLoop:
 			// g's `declare -g v=two` sets the global and leaves the
 			// local — and $v in both functions — untouched.
 			vr = r.globalVar(name)
+		}
+		// A declaration that assigns to a readonly variable is refused
+		// under the builtin's own name, and names the variable as it was
+		// *written* rather than the reference's target — measured for
+		// each of the three (#610). It answers 1 and carries on to the
+		// next name, the split #308 found for a plain assignment.
+		// `export` and `readonly` keep the bare wording setVar gives
+		// them, which is bash's for those two.
+		if !as.Naked && vr.ReadOnly {
+			switch variant {
+			case "declare", "typeset", "local":
+				r.errf("%s: %s: readonly variable\n", variant, written)
+				r.exit.code = 1
+				continue assignLoop
+			}
 		}
 		// The string form of a compound assignment (#379): a value that
 		// arrived through expansion as "( ... )" is parsed as an array
@@ -3632,11 +3826,31 @@ func splitKeywordAssigns(args []*syntax.Word) ([]*syntax.Word, []*syntax.Assign)
 	return rest, kw
 }
 
+// disabledCall reports whether the call seam must be skipped for this
+// name because `enable -n` switched the builtin off.
+//
+// This is what makes "disabled" mean what a script asks for. A name
+// [IsBuiltin] recognizes never reaches the ExecHandler, so an embedder
+// that *replaces* one of these builtins puts its version at the
+// CallHandler and renames the call (#565) -- which means skipping only
+// [Runner.builtin] would leave `enable -n printf` running koi's printf
+// instead of the program on the machine, silently, since the name never
+// gets as far as the check. The decision therefore belongs one layer
+// earlier than the dispatch: a disabled builtin is not offered to the
+// seam at all, and falls straight through to exec.
+//
+// The cost is that a handler which merely *observes* every call does not
+// see one to a disabled builtin. That is accepted rather than worked
+// around: the alternative is a per-chain guard the embedder has to
+// remember at every wiring site, and forgetting one reproduces exactly
+// the bug this closes (#603).
+func (r *Runner) disabledCall(name string) bool { return r.disabledBuiltins[name] }
+
 func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 	if r.stop(ctx) {
 		return
 	}
-	if r.callHandler != nil {
+	if r.callHandler != nil && !r.disabledCall(args[0]) {
 		var err error
 		args, err = r.callHandler(r.handlerCtx(ctx, handlerKindCall, pos), args)
 		if err != nil {
@@ -3806,7 +4020,7 @@ func (r *Runner) call(ctx context.Context, pos syntax.Pos, args []string) {
 // `true`/`false`, or rename it to something that belongs to the exec
 // seam; both land below.
 func (r *Runner) callSkippingFuncs(ctx context.Context, pos syntax.Pos, args []string) exitStatus {
-	if r.callHandler != nil {
+	if r.callHandler != nil && !r.disabledCall(args[0]) {
 		var err error
 		args, err = r.callHandler(r.handlerCtx(ctx, handlerKindCall, pos), args)
 		if err != nil {
@@ -3864,6 +4078,22 @@ func (r *Runner) open(ctx context.Context, path string, flags int, mode os.FileM
 			return os.Open(os.DevNull)
 		}
 		return f, err
+	}
+
+	// A path naming one of the shell's *own* descriptors is answered from
+	// the descriptor table rather than by the operating system (#645).
+	// koi's descriptors are modelled, not dup2'd, so `/dev/stdin` opened
+	// through the OS is the descriptor the *process* was started with —
+	// which inside a pipeline, a redirected block or a `{ } < f` is not
+	// the descriptor the shell has. `echo x | . /dev/stdin` sourced the
+	// terminal, or the script file itself, instead of the pipe.
+	if fd, ok := shellFDPath(path); ok {
+		if f, err, handled := r.openShellFD(path, fd, flags); handled {
+			if err != nil && print {
+				r.errf("%v\n", err)
+			}
+			return f, err
+		}
 	}
 
 	f, err := r.openHandler(r.handlerCtx(ctx, handlerKindOpen, todoPos), path, flags, mode)

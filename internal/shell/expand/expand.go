@@ -233,7 +233,14 @@ func (cfg *Config) envGet(name string) string {
 		// glob is reachable without prepareConfig in tests.
 		return ""
 	}
-	return cfg.Env.Get(name).String()
+	vr := cfg.Env.Get(name)
+	// A reference is followed on read here too (#610): arithmetic asks
+	// for a name's value through this, and a nameref's own String() is
+	// empty, so `declare -n r=v; v=7; echo $((r+1))` answered 1.
+	if _, v := vr.Resolve(cfg.Env); v.IsSet() {
+		vr = v
+	}
+	return vr.String()
 }
 
 func (cfg *Config) envSet(name, value string) error {
